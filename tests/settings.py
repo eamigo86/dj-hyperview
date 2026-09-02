@@ -1,5 +1,5 @@
 SECRET_KEY = "test-only-key"
-INSTALLED_APPS: list[str] = []
+INSTALLED_APPS = ["dj_hyperview"]
 DATABASES = {
     "default": {
         "ENGINE": "django.db.backends.sqlite3",

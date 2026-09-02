@@ -43,6 +43,7 @@ branch = true
 source = ["dj_hyperview"]
 
 [tool.coverage.report]
+fail_under = 95
 show_missing = true
 skip_covered = true
 
