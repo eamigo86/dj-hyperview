@@ -5,7 +5,7 @@ from typing import Any
 
 from django.apps import apps
 from django.core.exceptions import AppRegistryNotReady
-from django.db import IntegrityError, router, transaction
+from django.db import DatabaseError, IntegrityError, router, transaction
 
 from dj_hyperview.exceptions import HyperviewError, SourceUnavailable
 from dj_hyperview.sources import canonicalize_template_name
@@ -14,7 +14,13 @@ from ._config import _database_alias_is_configured
 
 SOURCE = "database"
 
-__all__ = ["PublicationConflict", "PublicationResult", "publish_template"]
+__all__ = [
+    "PublicationConflict",
+    "PublicationResult",
+    "delete_template",
+    "publish_template",
+    "rename_template",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,6 +57,22 @@ def _database_alias(model: type[Any], using: object) -> str:
     if not _database_alias_is_configured(alias) or alias is None:
         raise SourceUnavailable(SOURCE, "alias unavailable")
     return alias
+
+
+def _mutation_target(using: str | None) -> tuple[type[Any], str]:
+    if using is not None and not _database_alias_is_configured(using):
+        raise SourceUnavailable(SOURCE, "alias unavailable")
+    model = _template_model()
+    if model is None:
+        raise SourceUnavailable(SOURCE, "app unavailable")
+    return model, _database_alias(model, using)
+
+
+def _validate_expected_revision(expected_revision: int | None) -> None:
+    if expected_revision is not None and (
+        type(expected_revision) is not int or expected_revision < 1
+    ):
+        raise ValueError("expected_revision must be a positive integer or None")
 
 
 def publish_template(
@@ -132,3 +154,126 @@ def publish_template(
     if conflict:
         raise PublicationConflict
     return result
+
+
+def rename_template(
+    current_name: str,
+    new_name: str,
+    *,
+    content: str | None = None,
+    active: bool | None = None,
+    expected_revision: int | None = None,
+    using: str | None = None,
+) -> PublicationResult:
+    """Rename one validated database template atomically.
+
+    Args:
+        current_name: Canonical name identifying the current template.
+        new_name: Canonical name to persist after the mutation.
+        content: Replacement source, or None to preserve it.
+        active: Replacement activity state, or None to preserve it.
+        expected_revision: Existing revision required for the mutation.
+        using: Explicit database alias, or None to use Django write routing.
+
+    Returns:
+        Immutable metadata for the persisted mutation.
+
+    Raises:
+        InvalidTemplateName: If either name is unsafe or noncanonical.
+        ValueError: If expected_revision is not a positive integer or None.
+        ValidationError: If model field validation rejects the mutation.
+        PublicationConflict: If the source is missing, the revision is stale,
+            or another row owns the target name.
+        SourceUnavailable: If the optional app or database alias is unavailable.
+        DatabaseError: If database access fails.
+    """
+    current = canonicalize_template_name(current_name)
+    target = canonicalize_template_name(new_name)
+    _validate_expected_revision(expected_revision)
+    model, alias = _mutation_target(using)
+    conflict = False
+    result: PublicationResult
+
+    with transaction.atomic(using=alias):
+        manager = model._default_manager.using(alias)
+        try:
+            template = manager.select_for_update().get(name=current)
+        except model.DoesNotExist:
+            template = None
+        if template is None:
+            raise PublicationConflict
+        if expected_revision is not None and template.revision != expected_revision:
+            raise PublicationConflict
+        template.name = target
+        if content is not None:
+            template.content = content
+        if active is not None:
+            template.active = active
+        template.revision += 1
+        template.full_clean(validate_unique=False, validate_constraints=False)
+        try:
+            with transaction.atomic(using=alias):
+                template.save(using=alias, force_update=True)
+        except IntegrityError:
+            conflict = target != current and manager.filter(name=target).exists()
+            if not conflict:
+                raise
+        except DatabaseError:
+            conflict = not manager.filter(name=current).exists()
+            if not conflict:
+                raise
+        if not conflict:
+            result = PublicationResult(target, template.revision, False)
+
+    if conflict:
+        raise PublicationConflict
+    return result
+
+
+def delete_template(
+    name: str,
+    *,
+    expected_revision: int | None = None,
+    using: str | None = None,
+) -> bool:
+    """Delete one database template atomically.
+
+    Args:
+        name: Canonical name identifying the template.
+        expected_revision: Existing revision required for deletion.
+        using: Explicit database alias, or None to use Django write routing.
+
+    Returns:
+        True when a row was deleted, otherwise False for an unguarded miss.
+
+    Raises:
+        InvalidTemplateName: If the template name is unsafe or noncanonical.
+        ValueError: If expected_revision is not a positive integer or None.
+        PublicationConflict: If a guarded template is missing or stale, or a
+            locked row disappears before deletion.
+        SourceUnavailable: If the optional app or database alias is unavailable.
+        DatabaseError: If database access fails.
+    """
+    canonical = canonicalize_template_name(name)
+    _validate_expected_revision(expected_revision)
+    model, alias = _mutation_target(using)
+    conflict = False
+
+    with transaction.atomic(using=alias):
+        manager = model._default_manager.using(alias)
+        try:
+            template = manager.select_for_update().get(name=canonical)
+        except model.DoesNotExist:
+            template = None
+        if template is None:
+            if expected_revision is None:
+                return False
+            raise PublicationConflict
+        if expected_revision is not None and template.revision != expected_revision:
+            raise PublicationConflict
+        deleted, _ = template.delete(using=alias)
+        conflict = deleted == 0
+
+    if conflict:
+        raise PublicationConflict
+    return True

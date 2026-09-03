@@ -148,8 +148,8 @@ names. Rollbacks and rolled-back savepoints discard callbacks. A cache failure
 remains observable after commit and therefore does not mean the database write
 rolled back. Raw fixture saves and bulk APIs still require explicit invalidation
 through `invalidate_templates`; automatic bulk hooks remain post-MVP.
-Use `dj_hyperview.contrib.database.services.publish_template()` for validated
-per-template publication. It creates revision 1, increments updates once, and
+Use the public database services to publish, rename, or delete validated
+templates. Publication creates revision 1, increments updates once, and
 accepts `expected_revision` for optimistic conflict detection; omitting it uses
 last-write-wins under the selected database row lock. Its immutable result hides
 the model and confirms persistence in the current transaction; an enclosing
