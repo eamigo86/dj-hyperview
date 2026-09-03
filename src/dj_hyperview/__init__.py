@@ -1,6 +1,12 @@
 """Reusable Django infrastructure for Hyperview interfaces."""
 
-from .cache import CACHE_MISS, CacheEntry, TemplateCache, template_cache_key
+from .cache import (
+    CACHE_MISS,
+    CacheEntry,
+    TemplateCache,
+    invalidate_templates,
+    template_cache_key,
+)
 from .engine import HyperviewEngine, render_template
 from .exceptions import (
     HyperviewConfigurationError,
@@ -47,6 +53,7 @@ __all__ = [
     "TemplateSource",
     "TemplateValidationError",
     "detect_hyperview_request",
+    "invalidate_templates",
     "resolve_template",
     "render_template",
     "template_cache_key",

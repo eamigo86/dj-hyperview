@@ -164,19 +164,36 @@ class TemplateResolver:
 
     def resolve(self, name: str) -> ResolvedTemplate:
         canonical = canonicalize_template_name(name)
+        generation = self._generation(canonical)
         for source, source_id in zip(self.sources, self._source_ids, strict=True):
-            resolved = self._resolve_source(source, source_id, canonical)
+            resolved = self._resolve_source(source, source_id, canonical, generation)
             if resolved is not None:
                 return resolved
         raise TemplateNotFound(canonical)
 
+    def _generation(self, name: str) -> str | None:
+        if self.cache is None or not any(
+            source_id is not None for source_id in self._source_ids
+        ):
+            return None
+        try:
+            return self.cache.generation(name)
+        except SourceUnavailable:
+            if self.failure_mode == "raise":
+                raise
+            return None
+
     def _resolve_source(
-        self, source: TemplateSource, source_id: str | None, name: str
+        self,
+        source: TemplateSource,
+        source_id: str | None,
+        name: str,
+        generation: str | None,
     ) -> ResolvedTemplate | None:
-        if self.cache is None or source_id is None:
+        if self.cache is None or source_id is None or generation is None:
             return source.resolve(name)
         try:
-            entry = self.cache.get_resolved(source_id, name)
+            entry = self.cache.get_resolved(source_id, name, generation)
         except SourceUnavailable:
             if self.failure_mode == "raise":
                 raise
@@ -189,9 +206,9 @@ class TemplateResolver:
         resolved = source.resolve(name)
         try:
             if resolved is None:
-                self.cache.set_resolved_miss(source_id, name)
+                self.cache.set_resolved_miss(source_id, name, generation)
             else:
-                self.cache.set_resolved(source_id, name, resolved)
+                self.cache.set_resolved(source_id, name, resolved, generation)
         except SourceUnavailable:
             if self.failure_mode == "raise":
                 raise

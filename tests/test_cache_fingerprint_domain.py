@@ -182,6 +182,12 @@ class TrackingCache(BaseCache):
         type(self).values[key] = value
         return True
 
+    def add(self, key, value, timeout=None, version=None):
+        if key in type(self).values:
+            return False
+        type(self).values[key] = value
+        return True
+
     @classmethod
     def reset(cls):
         cls.values = {}
@@ -233,7 +239,7 @@ def test_only_unsupported_source_bypasses_cache_and_leaks_no_options():
         assert resolver.resolve("screen.xml").content == "winner"
 
     assert OptionalSource.calls == {"unsupported": 2, "stable": 1}
-    assert (TrackingCache.get_calls, TrackingCache.set_calls) == (2, 1)
+    assert (TrackingCache.get_calls, TrackingCache.set_calls) == (4, 1)
     assert "never-cache-this" not in str(TrackingCache.values)
 
 
