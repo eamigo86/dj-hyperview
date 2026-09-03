@@ -101,6 +101,16 @@ backslashes, NUL bytes, and filesystem symlink escapes are rejected. A source
 returns `None` only for a miss; when every source misses, resolution raises
 `TemplateNotFound`.
 
+### Optional database app
+
+Install `"dj_hyperview.contrib.database"` in `INSTALLED_APPS` and run Django
+migrations to make the `HyperviewTemplate` model available. The base package
+does not import this model or require a database table. Model `full_clean()`
+checks canonical names and template safety; `save()` intentionally follows
+Django's standard behavior and does not call validation automatically. Database
+loading, admin integration, and publication services are separate opt-in
+features.
+
 ## Cache contract
 
 `TemplateCache` stores only serialized raw `ResolvedTemplate` data through a
