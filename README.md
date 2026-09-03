@@ -106,14 +106,38 @@ points are rejected.
 ### Optional database app
 
 Install `"dj_hyperview.contrib.database"` in `INSTALLED_APPS` and run Django
-migrations to make the `HyperviewTemplate` model available. The base package
-does not import this model or require a database table. Model `full_clean()`
-checks canonical names and template safety; `save()` intentionally follows
-Django's standard behavior and does not call validation automatically. Database
-loading, admin integration, and publication services are separate opt-in
-features. Name uniqueness follows the database backend's collation: the package
-does not case-fold names, and SQLite's default treats `screen.xml` and
-`Screen.xml` as distinct.
+migrations to make the `HyperviewTemplate` model available. Then enable the
+database source where its precedence belongs:
+
+```python
+INSTALLED_APPS = [
+    # ...
+    "dj_hyperview.contrib.database",
+]
+
+HYPERVIEW = {
+    "SOURCES": [
+        {"BACKEND": "dj_hyperview.contrib.database.sources.DatabaseSource"},
+    ],
+}
+```
+
+The source uses Django's default manager and database router. Set
+`"OPTIONS": {"using": "replica"}` only to select an explicit database alias.
+Active exact-name rows are hits, including empty content; inactive or absent
+rows are misses and resolution continues to the next source. Without cache, a
+later lookup observes row content and revision changes. Generic source caching
+retains its normal TTL/invalidation semantics.
+
+The base package does not import the model or require a database table. Model
+`full_clean()` checks canonical names and template safety; `save()` intentionally
+follows Django's standard behavior and does not call validation automatically.
+Admin and transactional publication/invalidation remain separate opt-in work;
+until publication services are enabled, consumers must call
+`invalidate_templates()` after committed ORM changes when cache is configured.
+Name uniqueness follows the database backend's collation: the package does not
+case-fold names, and SQLite's default treats `screen.xml` and `Screen.xml` as
+distinct.
 
 ## Cache contract
 
