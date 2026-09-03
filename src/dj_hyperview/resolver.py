@@ -65,6 +65,8 @@ def _normalize_fingerprint(value: object) -> object:
         return ["str", value]
     if isinstance(value, bytes):
         return ["bytes", value.hex()]
+    if isinstance(value, memoryview):
+        raise TypeError
     if callable(value):
         module = getattr(value, "__module__", None)
         qualname = getattr(value, "__qualname__", None)
