@@ -105,17 +105,17 @@ def _source_fingerprint(index: int, backend: str, options: object) -> str | None
 
 def _source_cacheable(source: object) -> bool:
     try:
-        marker = getattr_static(
+        static_marker = getattr_static(
             source, "_dj_hyperview_cacheable", _MISSING_CACHE_MARKER
         )
     except Exception:
         return False
-    if marker is _MISSING_CACHE_MARKER:
-        return True
     try:
-        value = source._dj_hyperview_cacheable
+        value = getattr(source, "_dj_hyperview_cacheable", _MISSING_CACHE_MARKER)
     except Exception:
         return False
+    if value is _MISSING_CACHE_MARKER:
+        return static_marker is _MISSING_CACHE_MARKER
     return type(value) is bool and value
 
 
