@@ -147,7 +147,12 @@ names after SQL, so literal and expression renames invalidate both old and new
 names. Rollbacks and rolled-back savepoints discard callbacks. A cache failure
 remains observable after commit and therefore does not mean the database write
 rolled back. Raw fixture saves and bulk APIs still require explicit invalidation
-until their controlled Task 8 integrations are enabled.
+through `invalidate_templates`; automatic bulk hooks remain post-MVP.
+Use `dj_hyperview.contrib.database.services.publish_template()` for validated
+per-template publication. It creates revision 1, increments updates once, and
+accepts `expected_revision` for optimistic conflict detection; omitting it uses
+last-write-wins under the selected database row lock. Its immutable result hides
+the model. SQLite cannot prove row-lock serialization, so tests inject races.
 Name uniqueness follows the database backend's collation: the package does not
 case-fold names, and SQLite's default treats `screen.xml` and `Screen.xml` as
 distinct.
