@@ -13,6 +13,8 @@ from .sources import ResolvedTemplate
 
 _ABSENT = object()
 _FIELDS = {"name", "content", "origin", "source", "revision"}
+_MISS_FIELDS = {"version", "state"}
+_TEMPLATE_FIELDS = {*_MISS_FIELDS, "template"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -32,6 +34,15 @@ CACHE_MISS = CacheEntry(None)
 def _validate_timeout(value: object, minimum: int, label: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise ValueError(f"Cache {label} must be an integer >= {minimum}")
+
+
+def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError("duplicate JSON key")
+        value[key] = item
+    return value
 
 
 def template_cache_key(namespace: str, source: str, name: str, revision: str) -> str:
@@ -59,6 +70,8 @@ class TemplateCache:
             raise ValueError("Cache namespace must be a non-empty string")
         _validate_timeout(ttl, 1, "TTL")
         _validate_timeout(negative_ttl, 0, "negative TTL")
+        if not isinstance(alias, str) or not alias:
+            raise SourceUnavailable("cache", "invalid alias")
         self.namespace = namespace
         self.alias = alias
         self.ttl = ttl
@@ -85,7 +98,7 @@ class TemplateCache:
         payload = self.backend.get(self.key(source, name, revision), _ABSENT)
         if payload is _ABSENT:
             return None
-        return self._decode(payload)
+        return self._decode(payload, source, name, revision)
 
     def set(self, template: ResolvedTemplate) -> None:
         payload = json.dumps(
@@ -105,17 +118,27 @@ class TemplateCache:
             self.key(source, name, revision), payload, timeout=self.negative_ttl
         )
 
-    def _decode(self, payload: object) -> CacheEntry:
+    def _decode(
+        self, payload: object, source: str, name: str, revision: str
+    ) -> CacheEntry:
         try:
-            value = json.loads(payload)
-            if value == {"version": 1, "state": "miss"}:
+            if not isinstance(payload, str):
+                raise TypeError
+            value = json.loads(payload, object_pairs_hook=_unique_object)
+            if type(value.get("version")) is not int or value["version"] != 1:
+                raise ValueError
+            if value.get("state") == "miss":
+                if set(value) != _MISS_FIELDS:
+                    raise ValueError
                 return CACHE_MISS
+            if value.get("state") != "template" or set(value) != _TEMPLATE_FIELDS:
+                raise ValueError
             template = value["template"]
             if (
-                value.get("version") != 1
-                or value.get("state") != "template"
-                or set(template) != _FIELDS
+                set(template) != _FIELDS
                 or not all(isinstance(item, str) for item in template.values())
+                or (template["source"], template["name"], template["revision"])
+                != (source, name, revision)
             ):
                 raise ValueError
             return CacheEntry(ResolvedTemplate(**template))

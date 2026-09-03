@@ -109,6 +109,8 @@ returns `None` when no entry exists, `CACHE_MISS` for a cached source miss, and
 a `CacheEntry` for content—even when that content is empty. Fixed-length
 SHA-256 keys isolate namespace, source, name, and revision safely. Resolver
 integration and failure policies are intentionally deferred to the next slice.
+Cached JSON is treated as untrusted: exact version/shape/type and lookup identity
+must match, while duplicate keys or invalid aliases raise `SourceUnavailable`.
 
 ## Template engine
 
