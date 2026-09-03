@@ -11,6 +11,20 @@ from .resolver import TemplateResolver
 from .validation import validate_rendered_hxml
 
 
+class _ValidatedTemplate:
+    def __init__(self, template, validation: ValidationSettings) -> None:
+        self._template = template
+        self.validation = validation
+
+    def __getattr__(self, name):
+        return getattr(self._template, name)
+
+    def render(self, context=None, request=None) -> str:
+        with template_snapshot():
+            rendered = self._template.render(context, request)
+        return validate_rendered_hxml(rendered, config=self.validation)
+
+
 class HyperviewEngine:
     """Compile and render consumer templates through the Hyperview resolver."""
 
@@ -41,7 +55,7 @@ class HyperviewEngine:
         )
 
     def get_template(self, name: str):
-        return self.backend.get_template(name)
+        return _ValidatedTemplate(self.backend.get_template(name), self.validation)
 
     def select_template(self, names: Sequence[str]):
         chain = []
@@ -59,8 +73,7 @@ class HyperviewEngine:
                 if isinstance(name, str)
                 else self.select_template(name)
             )
-            rendered = template.render(context, request)
-        return validate_rendered_hxml(rendered, config=self.validation)
+            return template.render(context, request)
 
     def render_hxml(self, name: str | Sequence[str], context=None, request=None) -> str:
         """Render and, when configured, validate consumer HXML."""

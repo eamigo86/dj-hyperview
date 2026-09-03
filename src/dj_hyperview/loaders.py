@@ -21,6 +21,9 @@ _active_snapshot: ContextVar[dict[str, ResolvedTemplate | None] | None] = Contex
 @contextmanager
 def template_snapshot() -> Iterator[None]:
     """Isolate resolved revisions for one render context."""
+    if _active_snapshot.get() is not None:
+        yield
+        return
     token = _active_snapshot.set({})
     try:
         yield

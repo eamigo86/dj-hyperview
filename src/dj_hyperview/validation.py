@@ -11,7 +11,7 @@ from .exceptions import TemplateValidationError
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 SCHEMA_MESSAGE = "document does not match schema"
 XSD_NAMESPACE = "{http://www.w3.org/2001/XMLSchema}"
-IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("{#", "#}"))
+IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"), ("{#", "#}"))
 
 
 def _fail(code: str, message: str) -> None:

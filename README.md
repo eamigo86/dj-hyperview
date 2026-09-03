@@ -108,6 +108,8 @@ configured Hyperview sources. Root templates, `{% include %}`, and
 `{% extends %}` therefore use the same canonical names and source precedence;
 the host project's HTML template loaders are not modified. No compiled-template
 cache is installed, so a new render sees newly published source content.
+Templates returned by `get_template()` or `select_template()` preserve
+Django's render signature and metadata while enforcing the same validation.
 
 During one render, the first result—or miss—for each template name is pinned.
 Repeated includes cannot mix revisions if a source changes concurrently, while
