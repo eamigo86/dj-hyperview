@@ -4,6 +4,7 @@ from collections.abc import Callable, Iterator
 from typing import Any
 from unittest.mock import patch
 
+import django
 import pytest
 from django.core.cache import caches
 from django.core.exceptions import FieldDoesNotExist, FieldError
@@ -341,7 +342,7 @@ def test_update_mutates_only_primary_keys_captured_by_the_locked_snapshot(
 
     def insert_phantom_then_update(queryset: QuerySet, **kwargs: Any) -> int:
         nonlocal inserted
-        if not inserted:
+        if not inserted and not queryset.query.is_empty():
             inserted = True
             queryset_model._base_manager.using(queryset.db).bulk_create(
                 [queryset_model(name="phantom.xml", content="<old />")]
@@ -412,11 +413,6 @@ def test_union_update_preserves_native_rejection_without_writing(
             "Cannot update a query once a slice has been taken.",
             id="sliced",
         ),
-        pytest.param(
-            lambda model: model.objects.distinct("name"),
-            "Cannot call update() after .distinct(*fields).",
-            id="distinct-fields",
-        ),
     ],
 )
 def test_update_preserves_native_shape_preconditions_before_queries(
@@ -468,3 +464,64 @@ def test_update_preserves_annotation_ordering_and_rejects_aggregate_ordering(
     assert len(queries) == 0
     assert queryset_model.objects.get(pk=template.pk).content == "<annotated />"
     schedule.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("changes", "error_type"),
+    [
+        pytest.param(
+            {"content": "<new />", "unknown": "value"},
+            FieldDoesNotExist,
+            id="unknown-field",
+        ),
+        pytest.param(
+            {"content": F("missing_alias")},
+            FieldError,
+            id="unresolved-expression",
+        ),
+    ],
+)
+def test_invalid_update_values_fail_before_database_queries(
+    queryset_model: type[Model],
+    changes: dict[str, Any],
+    error_type: type[Exception],
+) -> None:
+    template = queryset_model.objects.create(name="screen.xml", content="<old />")
+
+    with (
+        patch(
+            "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+        ) as schedule,
+        CaptureQueriesContext(connection) as queries,
+    ):
+        with pytest.raises(error_type):
+            queryset_model.objects.filter(pk=template.pk).update(**changes)
+
+    assert len(queries) == 0
+    assert queryset_model.objects.get(pk=template.pk).content == "<old />"
+    schedule.assert_not_called()
+
+
+def test_distinct_fields_update_matches_supported_django_version(
+    queryset_model: type[Model],
+) -> None:
+    template = queryset_model.objects.create(name="screen.xml", content="<old />")
+
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        if django.VERSION[:2] >= (6, 1):
+            with CaptureQueriesContext(connection) as queries:
+                with pytest.raises(
+                    TypeError, match=r"Cannot call update\(\) after .distinct"
+                ):
+                    queryset_model.objects.distinct("name").update(content="<new />")
+            assert len(queries) == 0
+            schedule.assert_not_called()
+        else:
+            updated = queryset_model.objects.distinct("name").update(content="<new />")
+            assert updated == 1
+            schedule.assert_called_once_with("screen.xml", using="default")
+
+    expected = "<old />" if django.VERSION[:2] >= (6, 1) else "<new />"
+    assert queryset_model.objects.get(pk=template.pk).content == expected

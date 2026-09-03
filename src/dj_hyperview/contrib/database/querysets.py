@@ -3,7 +3,6 @@
 from collections.abc import Iterable
 from typing import Any
 
-from django.core.exceptions import FieldError
 from django.db import models, transaction
 
 from dj_hyperview.sources import canonicalize_template_name
@@ -17,19 +16,8 @@ def _canonical_names(values: Iterable[object]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(canonicalize_template_name(value) for value in values))
 
 
-def _validate_update_preconditions(queryset: models.QuerySet) -> None:
-    queryset._not_support_combined_queries("update")
-    if queryset.query.is_sliced:
-        raise TypeError("Cannot update a query once a slice has been taken.")
-    if queryset.query.distinct_fields:
-        raise TypeError("Cannot call update() after .distinct(*fields).")
-    for ordering in queryset.query.order_by:
-        alias = ordering.removeprefix("-") if isinstance(ordering, str) else ordering
-        annotation = queryset.query.annotations.get(alias)
-        if annotation is not None and annotation.contains_aggregate:
-            raise FieldError(
-                f"Cannot update when ordering by an aggregate: {annotation}"
-            )
+def _preflight_update(queryset: models.QuerySet, values: dict[str, Any]) -> None:
+    models.QuerySet.update(queryset.none(), **values)
 
 
 class HyperviewTemplateQuerySet(models.QuerySet):
@@ -52,21 +40,25 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             ValueError: If the update attempts to modify the primary key.
             DatabaseError: If selection or update SQL fails.
         """
-        _validate_update_preconditions(self)
+        primary_key = self.model._meta.pk
+        if {"pk", primary_key.name, primary_key.attname} & kwargs.keys():
+            _preflight_update(self, {})
+            raise ValueError("QuerySet.update cannot modify the primary key")
+        _preflight_update(self, kwargs)
         self._for_write = True
         using = self.db
         queryset = self.using(using)
-        primary_key = self.model._meta.pk
-        if {"pk", primary_key.name, primary_key.attname} & kwargs.keys():
-            raise ValueError("QuerySet.update cannot modify the primary key")
         if "name" in kwargs and type(kwargs["name"]) is str:
             canonicalize_template_name(kwargs["name"])
         if _OBSERVABLE_FIELDS.isdisjoint(kwargs):
             return models.QuerySet.update(queryset, **kwargs)
 
         with transaction.atomic(using=using):
+            snapshot = queryset.all()
+            snapshot.query.distinct = False
+            snapshot.query.distinct_fields = ()
             rows = tuple(
-                queryset.select_for_update()
+                snapshot.select_for_update()
                 .order_by(primary_key.name)
                 .values_list(primary_key.name, "name")
             )
