@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import traceback
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -9,6 +10,8 @@ from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
 from django.forms import modelform_factory
 from django.test import override_settings
+
+from dj_hyperview.contrib.database.validators import validate_canonical_template_name
 
 ROOT = Path(__file__).parents[1]
 UNSAFE_UNICODE_NAMES = (
@@ -120,6 +123,21 @@ def test_full_clean_rejects_noncanonical_or_too_long_names(name):
     assert "name" in captured.value.error_dict
     if isinstance(name, str) and name:
         assert name not in str(captured.value)
+
+
+def test_name_validator_drops_invalid_name_exception_context():
+    sensitive_name = "../private-screen.xml"
+
+    with pytest.raises(ValidationError) as captured:
+        validate_canonical_template_name(sensitive_name)
+
+    error = captured.value
+    rendered = "".join(traceback.format_exception(error))
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    assert sensitive_name not in str(error)
+    assert sensitive_name not in repr(error)
+    assert sensitive_name not in rendered
 
 
 @pytest.mark.parametrize(

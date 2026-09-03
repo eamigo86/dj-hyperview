@@ -8,14 +8,18 @@ from dj_hyperview.sources import canonicalize_template_name
 from dj_hyperview.validation import validate_hxml, validate_template_source
 
 
-def validate_canonical_template_name(value):
-    """Validate one canonical template name without exposing its value."""
+def _is_canonical_template_name(value):
     try:
         canonicalize_template_name(value)
     except InvalidTemplateName:
-        raise ValidationError(
-            "Enter a canonical template name.", code="invalid"
-        ) from None
+        return False
+    return True
+
+
+def validate_canonical_template_name(value):
+    """Validate one canonical template name without exposing its value."""
+    if not _is_canonical_template_name(value):
+        raise ValidationError("Enter a canonical template name.", code="invalid")
 
 
 def validate_stored_template_source(value):

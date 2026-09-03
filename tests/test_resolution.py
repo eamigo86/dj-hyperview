@@ -1,10 +1,16 @@
+import traceback
 from dataclasses import FrozenInstanceError
 from hashlib import sha256
+from pathlib import Path
 
 import pytest
 from django.test import override_settings
 
-from dj_hyperview.exceptions import InvalidTemplateName, TemplateNotFound
+from dj_hyperview.exceptions import (
+    InvalidTemplateName,
+    SourceUnavailable,
+    TemplateNotFound,
+)
 from dj_hyperview.resolver import TemplateResolver, resolve_template
 from dj_hyperview.sources import (
     FileSystemSource,
@@ -61,6 +67,20 @@ def test_canonical_name_rejects_unsafe_names(name):
 
     assert error.value.name == name
     assert str(error.value) == "Invalid template name"
+    assert error.value.__cause__ is None
+    assert error.value.__context__ is None
+    if isinstance(name, str) and name:
+        assert name not in repr(error.value)
+
+
+def test_canonical_name_error_traceback_redacts_name():
+    sensitive_name = "../private-screen.xml"
+
+    with pytest.raises(InvalidTemplateName) as captured:
+        canonicalize_template_name(sensitive_name)
+
+    rendered = "".join(traceback.format_exception(captured.value))
+    assert sensitive_name not in rendered
 
 
 def test_filesystem_source_uses_directories_in_order_and_utf8(tmp_path):
@@ -114,6 +134,72 @@ def test_filesystem_source_rejects_symlink_escape(tmp_path):
 
     with pytest.raises(InvalidTemplateName):
         FileSystemSource([root]).resolve("linked.xml")
+
+
+def test_filesystem_symlink_rejection_redacts_exception_chain(tmp_path, monkeypatch):
+    root = tmp_path / "private-root"
+    outside = tmp_path / "private-outside"
+    root.mkdir()
+    outside.mkdir()
+    secret = outside / "sensitive-screen.xml"
+    secret.write_text("<view>private</view>", encoding="utf-8")
+    link = root / "escape"
+    link.symlink_to(outside, target_is_directory=True)
+    source = FileSystemSource([root])
+    requested_name = f"{link.name}/{secret.name}"
+
+    def fail_if_read(_path):
+        raise AssertionError("outside template must not be read")
+
+    monkeypatch.setattr(Path, "read_bytes", fail_if_read)
+    with pytest.raises(InvalidTemplateName) as captured:
+        source.resolve(requested_name)
+
+    error = captured.value
+    rendered = "".join(traceback.format_exception(error))
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    for sensitive in (
+        requested_name,
+        secret.name,
+        root.name,
+        outside.name,
+        str(root),
+        str(outside),
+    ):
+        assert sensitive not in str(error)
+        assert sensitive not in repr(error)
+        assert sensitive not in rendered
+
+
+def test_filesystem_source_preserves_path_resolution_errors(tmp_path, monkeypatch):
+    root = tmp_path / "root"
+    root.mkdir()
+    source = FileSystemSource([root])
+    failure = OSError("storage unavailable")
+
+    def fail_resolve(_path):
+        raise failure
+
+    monkeypatch.setattr(Path, "resolve", fail_resolve)
+
+    with pytest.raises(OSError) as captured:
+        source.resolve("screen.xml")
+
+    assert captured.value is failure
+
+
+def test_resolver_preserves_source_unavailable():
+    failure = SourceUnavailable("filesystem", "storage unavailable")
+
+    class FailingSource:
+        def resolve(self, name):
+            raise failure
+
+    with pytest.raises(SourceUnavailable) as captured:
+        TemplateResolver([FailingSource()]).resolve("screen.xml")
+
+    assert captured.value is failure
 
 
 class RecordingSource:

@@ -1,3 +1,4 @@
+import traceback
 from threading import Barrier, Event, Lock, Thread
 from unittest.mock import patch
 
@@ -135,10 +136,18 @@ def test_concurrent_old_readers_and_invalidations_never_repopulate(old):
 
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_names_validate_before_effects_and_duplicates_rotate_once():
+    unsafe_name = "../private-screen.xml"
     with override_settings(HYPERVIEW=config("validation")):
         with patch.object(TemplateCache, "invalidate") as rotate:
-            with pytest.raises(InvalidTemplateName):
-                invalidate_templates("screen.xml", "../unsafe.xml")
+            with pytest.raises(InvalidTemplateName) as captured:
+                invalidate_templates("screen.xml", unsafe_name)
+            error = captured.value
+            rendered = "".join(traceback.format_exception(error))
+            assert error.__cause__ is None
+            assert error.__context__ is None
+            assert unsafe_name not in str(error)
+            assert unsafe_name not in repr(error)
+            assert unsafe_name not in rendered
             assert rotate.call_count == 0
             invalidate_templates("screen.xml", "screen.xml")
             rotate.assert_called_once_with("screen.xml")

@@ -9,6 +9,14 @@ from dj_hyperview.exceptions import InvalidTemplateName
 from .base import ResolvedTemplate, canonicalize_template_name
 
 
+def _is_within_root(candidate: Path, root: Path) -> bool:
+    try:
+        candidate.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
 class FileSystemSource:
     """Resolve UTF-8 templates below configured directories."""
 
@@ -23,10 +31,8 @@ class FileSystemSource:
         canonical = canonicalize_template_name(name)
         for root in self.template_dirs:
             candidate = (root / canonical).resolve()
-            try:
-                candidate.relative_to(root)
-            except ValueError as error:
-                raise InvalidTemplateName(name) from error
+            if not _is_within_root(candidate, root):
+                raise InvalidTemplateName(name)
             if not candidate.is_file():
                 continue
             data = candidate.read_bytes()
