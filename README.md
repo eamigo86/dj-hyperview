@@ -113,6 +113,8 @@ SHA-256 keys isolate namespace, source, name, and revision safely. Resolver
 integration and failure policies are intentionally deferred to the next slice.
 Cached JSON is treated as untrusted: exact version/shape/type and lookup identity
 must match, while duplicate keys or invalid aliases raise `SourceUnavailable`.
+Checks and runtime accept an alias only when Django resolves its configured name
+to a cache backend; leading underscores alone do not make an alias invalid.
 
 ## Template engine
 

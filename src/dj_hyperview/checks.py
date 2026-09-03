@@ -7,6 +7,8 @@ from django.conf import settings
 from django.core.checks import CheckMessage, Error, register
 from django.utils.module_loading import import_string
 
+from .cache import _resolve_cache_alias
+
 SETTING = "settings.HYPERVIEW"
 DATABASE_SOURCE = "dj_hyperview.contrib.database.sources.DatabaseSource"
 
@@ -73,7 +75,8 @@ def _check_cache(value: Any) -> list[CheckMessage]:
         return [_error("E004", "CACHE", "must be a mapping")]
     errors = []
     alias = value.get("ALIAS", "default")
-    if not isinstance(alias, str) or alias not in settings.CACHES:
+    _, alias_error = _resolve_cache_alias(alias)
+    if alias_error is not None:
         errors.append(_error("E004", "CACHE.ALIAS", "must name a configured cache"))
     for name, default, minimum in (("TTL", 300, 1), ("NEGATIVE_TTL", 15, 0)):
         current = value.get(name, default)

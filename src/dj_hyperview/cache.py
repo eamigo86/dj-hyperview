@@ -7,6 +7,7 @@ from dataclasses import asdict, dataclass
 
 from django.conf import settings
 from django.core.cache import caches
+from django.core.cache.backends.base import BaseCache
 
 from .conf import get_settings
 from .exceptions import SourceUnavailable
@@ -14,6 +15,8 @@ from .sources import ResolvedTemplate
 
 _ABSENT = object()
 _FAILURE = object()
+_BACKEND_FAILURE = "backend failure"
+_INVALID_ALIAS = "invalid alias"
 _FIELDS = {"name", "content", "origin", "source", "revision"}
 _MISS_FIELDS = {"version", "state", "source", "name", "revision"}
 _TEMPLATE_FIELDS = {"version", "state", "template"}
@@ -54,13 +57,24 @@ def _without_untrusted_exception[T](operation: Callable[[], T]) -> T | object:
         return _FAILURE
 
 
+def _resolve_cache_alias(alias: object) -> tuple[BaseCache | None, str | None]:
+    if not isinstance(alias, str) or not alias or alias not in settings.CACHES:
+        return None, _INVALID_ALIAS
+    backend = _without_untrusted_exception(lambda: caches[alias])
+    if backend is _FAILURE:
+        return None, _BACKEND_FAILURE
+    if not isinstance(backend, BaseCache):
+        return None, _INVALID_ALIAS
+    return backend, None
+
+
 def template_cache_key(namespace: str, source: str, name: str, revision: str) -> str:
     """Return a backend-safe key for one raw template revision."""
     components = json.dumps(
         [namespace, source, name, revision],
         ensure_ascii=False,
         separators=(",", ":"),
-    ).encode()
+    ).encode(errors="surrogatepass")
     return f"djhv:v1:{hashlib.sha256(components).hexdigest()}"
 
 
@@ -79,20 +93,14 @@ class TemplateCache:
             raise ValueError("Cache namespace must be a non-empty string")
         _validate_timeout(ttl, 1, "TTL")
         _validate_timeout(negative_ttl, 0, "negative TTL")
-        if (
-            not isinstance(alias, str)
-            or not alias
-            or alias.startswith("_")
-            or alias not in settings.CACHES
-        ):
-            raise SourceUnavailable("cache", "invalid alias")
+        backend, alias_error = _resolve_cache_alias(alias)
+        if alias_error is not None:
+            source = f"cache:{alias}" if alias_error == _BACKEND_FAILURE else "cache"
+            raise SourceUnavailable(source, alias_error)
         self.namespace = namespace
         self.alias = alias
         self.ttl = ttl
         self.negative_ttl = negative_ttl
-        backend = _without_untrusted_exception(lambda: caches[alias])
-        if backend is _FAILURE:
-            raise SourceUnavailable(f"cache:{alias}", "backend failure")
         self.backend = backend
 
     @classmethod
