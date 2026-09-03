@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 from collections.abc import Iterable
+from inspect import getattr_static
 from pathlib import PosixPath, PurePath, PurePosixPath, PureWindowsPath, WindowsPath
 
 from django.conf import settings as django_settings
@@ -20,6 +21,7 @@ from .sources import (
 )
 
 _PATH_TYPES = (PurePosixPath, PureWindowsPath, PosixPath, WindowsPath)
+_MISSING_CACHE_MARKER = object()
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -102,7 +104,19 @@ def _source_fingerprint(index: int, backend: str, options: object) -> str | None
 
 
 def _source_cacheable(source: object) -> bool:
-    return getattr(source, "_dj_hyperview_cacheable", True) is not False
+    try:
+        marker = getattr_static(
+            source, "_dj_hyperview_cacheable", _MISSING_CACHE_MARKER
+        )
+    except Exception:
+        return False
+    if marker is _MISSING_CACHE_MARKER:
+        return True
+    try:
+        value = source._dj_hyperview_cacheable
+    except Exception:
+        return False
+    return type(value) is bool and value
 
 
 class TemplateResolver:
@@ -112,6 +126,9 @@ class TemplateResolver:
         sources: Ordered raw-template sources.
         cache: Optional raw-template cache.
         failure_mode: Cache failure policy, either bypass or raise.
+
+    Raises:
+        ValueError: If the cache policy or source identity count is invalid.
     """
 
     def __init__(
