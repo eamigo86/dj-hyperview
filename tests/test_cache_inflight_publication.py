@@ -129,7 +129,7 @@ def test_inflight_writer_cannot_publish_into_reused_generation(old, transition):
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_current_claim_is_permanent_and_retirement_starts_at_rotation():
+def test_root_claim_is_permanent_and_successor_retires_at_next_rotation():
     cache = TemplateCache("claim-lifecycle", alias="screens", ttl=10, negative_ttl=5)
     backend = ClockBackend()
     cache.backend = backend
@@ -141,8 +141,13 @@ def test_current_claim_is_permanent_and_retirement_starts_at_rotation():
     with patch("dj_hyperview.cache.secrets.token_hex", return_value="b" * 32):
         cache.invalidate("screen.xml")
     new = cache.generation("screen.xml")
-    assert backend.expiry(cache._claim_key("screen.xml", old)) == 14
+    assert backend.expiry(cache._claim_key("screen.xml", old)) is None
     assert backend.expiry(cache._claim_key("screen.xml", new)) is None
+
+    with patch("dj_hyperview.cache.secrets.token_hex", return_value="c" * 32):
+        cache.invalidate("screen.xml")
+    assert backend.expiry(cache._claim_key("screen.xml", old)) is None
+    assert backend.expiry(cache._claim_key("screen.xml", new)) == 14
 
 
 @pytest.mark.parametrize("effect", ["false", "exception"])
@@ -170,7 +175,11 @@ def arm_rotation(cache, backend, generation):
     def rotate(key):
         if key == raw_key:
             backend._put(generation_key, successor, None)
-            backend._put(cache._claim_key("screen.xml", successor), "claimed", None)
+            backend._put(
+                cache._claim_key("screen.xml", successor),
+                cache._claim_value("screen.xml", successor, "successor"),
+                None,
+            )
 
     backend.after_set = rotate
     return raw_key, generation_key
@@ -205,6 +214,8 @@ def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(operation, 
     cache = TemplateCache(f"cleanup-{operation}-{effect}", alias="screens", ttl=10)
     backend = ClockBackend()
     cache.backend = backend
+    cache.generation("screen.xml")
+    cache.invalidate("screen.xml")
     generation = cache.generation("screen.xml")
     raw_key, generation_key = arm_rotation(cache, backend, generation)
     claim_key = cache._claim_key("screen.xml", generation)

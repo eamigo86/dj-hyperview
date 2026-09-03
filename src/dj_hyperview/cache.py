@@ -25,8 +25,9 @@ _RESOLVED_FIELDS = {"version", "state", "source", "name", "template"}
 _RESOLVED_MISS_FIELDS = {"version", "state", "source", "name"}
 _RESOLVER_REVISION = "@resolved"
 _GENERATION_ATTEMPTS = 8
-_CLAIM_VALUE = "claimed"
 _GENERATION_DOMAIN = "dj-hyperview:generation:v2"
+_CLAIM_DOMAIN = "dj-hyperview:generation-claim:v1"
+_CLAIM_KINDS = ("root", "successor")
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,21 +142,44 @@ class TemplateCache:
     def _claim_key(self, name: str, generation: str) -> str:
         return self.key("@generation-claim", name, generation)
 
+    def _claim_value(self, name: str, generation: str, kind: str) -> str:
+        identity = json.dumps(
+            [_CLAIM_DOMAIN, self.namespace, name, generation, kind],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode(errors="surrogatepass")
+        return json.dumps(
+            {
+                "version": 1,
+                "kind": kind,
+                "identity": hashlib.sha256(identity).hexdigest(),
+            },
+            separators=(",", ":"),
+        )
+
+    def _read_claim(self, name: str, generation: str) -> str:
+        value = _without_untrusted_exception(
+            lambda: self.backend.get(self._claim_key(name, generation), _ABSENT)
+        )
+        if value is _FAILURE or value is _ABSENT:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+        for kind in _CLAIM_KINDS:
+            if value == self._claim_value(name, generation, kind):
+                return kind
+        raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
+
     def _retain_claim(self, name: str, generation: str) -> None:
+        kind = self._read_claim(name, generation)
+        if kind == "root":
+            return
         self._store(
             self._claim_key(name, generation),
-            _CLAIM_VALUE,
+            self._claim_value(name, generation, kind),
             max(self.ttl, self.negative_ttl),
         )
 
     def _keep_claim(self, name: str, generation: str) -> None:
-        result = _without_untrusted_exception(
-            lambda: self.backend.add(
-                self._claim_key(name, generation), _CLAIM_VALUE, timeout=None
-            )
-        )
-        if type(result) is not bool:
-            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+        self._read_claim(name, generation)
 
     def _candidate(self, name: str, current: str | None) -> str:
         entropy = _without_untrusted_exception(lambda: secrets.token_hex(16))
@@ -169,21 +193,22 @@ class TemplateCache:
         return hashlib.sha256(material).hexdigest()[:32]
 
     def _claim_generation(self, name: str, current: str | None) -> str:
+        kind = "root" if current is None else "successor"
         for _ in range(_GENERATION_ATTEMPTS):
             candidate = self._candidate(name, current)
             claimed = _without_untrusted_exception(
                 lambda candidate=candidate: self.backend.add(
-                    self._claim_key(name, candidate), _CLAIM_VALUE, timeout=None
+                    self._claim_key(name, candidate),
+                    self._claim_value(name, candidate, kind),
+                    timeout=None,
                 )
             )
             if claimed is True:
                 return candidate
-            if claimed is not False:
-                try:
-                    self._retain_claim(name, candidate)
-                except SourceUnavailable:
-                    pass
-                break
+            if claimed is False:
+                self._read_claim(name, candidate)
+                continue
+            break
         raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def _read_generation(self, name: str) -> str:

@@ -131,15 +131,17 @@ with their pinned snapshot. The call returns only after every requested token
 rotation succeeds; any cache failure raises `SourceUnavailable`, independently
 of the resolver's ordinary `bypass` policy. Multi-name rotation is not atomic,
 so a partial failure is observable and callers may safely retry every name.
-The current token's shared claim does not expire; replacement starts a bounded
-retirement lasting at least the longest raw TTL. Successors are domain-separated
-digests of the previous token plus fresh entropy, not the entropy itself. Every
-raw content or miss write rechecks the shared generation and removes a
-superseded exact key when possible; `bypass` may still return authoritative
-source data, but never reports that stale cache publication as successful. If
-an operator evicts both generation and claim metadata while retaining raw
-entries, generic caches cannot prove uniqueness; cryptographic uniqueness is
-the fallback rather than a durable transactional guarantee.
+Root-token claims never expire; this prevents initial-token reuse after ordinary
+generation-key eviction, at the cost of one permanent marker per claimed root
+candidate. Successor claims are permanent while current and receive bounded
+retirement only after replacement, lasting at least the longest raw TTL.
+Successors are domain-separated digests of the previous token plus fresh
+entropy, not the entropy itself. Every raw content or miss write rechecks the
+shared generation and removes a superseded exact key when possible; `bypass`
+may still return authoritative source data, but never reports that stale cache
+publication as successful. If an operator evicts both generation and permanent
+root-claim metadata while retaining raw entries, generic caches cannot prove
+uniqueness; cryptographic uniqueness is the fallback, not a durable transaction.
 
 ## Template engine
 
