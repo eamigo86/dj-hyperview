@@ -1,4 +1,4 @@
-from pathlib import Path
+from pathlib import Path, PurePosixPath, PureWindowsPath
 
 import pytest
 from django.core.cache.backends.base import BaseCache
@@ -82,19 +82,89 @@ def fingerprint_callable():
     return None
 
 
+def fingerprint(value):
+    from dj_hyperview.resolver import _source_fingerprint
+
+    return _source_fingerprint(0, STUB, {"value": value})
+
+
+def test_path_fingerprint_distinguishes_dialect_not_equivalent_posix_classes():
+    raw = r"a\b"
+
+    assert fingerprint(Path(raw)) == fingerprint(PurePosixPath(raw))
+    assert fingerprint(PureWindowsPath(raw)) != fingerprint(PurePosixPath(raw))
+
+
+def test_mapping_fingerprint_has_total_order_for_path_key_collisions():
+    posix, windows = Path(r"a\b"), PureWindowsPath(r"a\b")
+    first = {posix: "posix", windows: "windows"}
+    reversed_order = {windows: "windows", posix: "posix"}
+
+    assert first == reversed_order
+    assert fingerprint(first) == fingerprint(reversed_order)
+
+
+def test_mapping_fingerprint_is_canonical_for_heterogeneous_and_equal_keys():
+    values = [(1, "number"), ("1", "text"), (PurePosixPath("1"), "path")]
+    first, reversed_order = dict(values), dict(reversed(values))
+
+    assert fingerprint(first) == fingerprint(reversed_order)
+    assert {True: "same"} == {1: "same"} == {1.0: "same"}
+    assert fingerprint({True: "same"}) == fingerprint({1: "same"})
+    assert fingerprint({1: "same"}) == fingerprint({1.0: "same"})
+
+
+class PathReportingSource:
+    def __init__(self, value):
+        self.value = value
+
+    def resolve(self, name):
+        from dj_hyperview.sources import ResolvedTemplate
+
+        content = type(self.value).__name__
+        return ResolvedTemplate(name, content, "path:x", "path", content)
+
+
+@override_settings(CACHES=LOCMEM)
+def test_path_dialect_change_does_not_return_stale_cached_content():
+    def source(value):
+        return {
+            "BACKEND": f"{__name__}.PathReportingSource",
+            "OPTIONS": {"value": value},
+        }
+
+    with override_settings(HYPERVIEW=configured(source(Path(r"a\b")))):
+        assert (
+            TemplateResolver.from_settings().resolve("screen.xml").content
+            == "PosixPath"
+        )
+    with override_settings(HYPERVIEW=configured(source(PureWindowsPath(r"a\b")))):
+        resolved = TemplateResolver.from_settings().resolve("screen.xml")
+
+    assert resolved.content == "PureWindowsPath"
+
+
 def test_fingerprint_is_canonical_for_supported_nested_configuration(tmp_path):
     from dj_hyperview.resolver import _source_fingerprint
 
     left = {
         "secret": "contraseña-🦊",
-        "nested": {"path": Path(tmp_path), "items": [1, True, None]},
+        "nested": {
+            "path": Path(tmp_path),
+            "items": [1, True, None],
+            "dialects": [PurePosixPath(r"á\b"), PureWindowsPath(r"á\b")],
+        },
         "callable": fingerprint_callable,
         "dotted": "tests.stubs.TemplateSource",
     }
     right = {
         "dotted": left["dotted"],
         "callable": left["callable"],
-        "nested": {"items": [1, True, None], "path": Path(tmp_path)},
+        "nested": {
+            "dialects": left["nested"]["dialects"],
+            "items": [1, True, None],
+            "path": Path(tmp_path),
+        },
         "secret": left["secret"],
     }
 

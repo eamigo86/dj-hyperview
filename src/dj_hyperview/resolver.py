@@ -4,7 +4,7 @@ import hashlib
 import json
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from pathlib import PurePath
+from pathlib import PurePath, PureWindowsPath
 
 from django.conf import settings as django_settings
 from django.utils.module_loading import import_string
@@ -26,6 +26,28 @@ def _canonical_bytes(value: object) -> bytes:
     )
 
 
+def _normalize_path(value: PurePath) -> object:
+    dialect = "windows" if isinstance(value, PureWindowsPath) else "posix"
+    return ["path", dialect, str(value)]
+
+
+def _normalize_mapping_key(value: object) -> object:
+    if type(value) is bool:
+        return ["number", int(value), 1]
+    if type(value) is int:
+        return ["number", value, 1]
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise TypeError
+        numerator, denominator = value.as_integer_ratio()
+        return ["number", numerator, denominator]
+    if isinstance(value, PurePath):
+        return _normalize_path(value)
+    if isinstance(value, tuple):
+        return ["tuple", [_normalize_mapping_key(item) for item in value]]
+    return _normalize_fingerprint(value)
+
+
 def _normalize_fingerprint(value: object) -> object:
     if value is None:
         return ["none"]
@@ -38,7 +60,7 @@ def _normalize_fingerprint(value: object) -> object:
             raise TypeError
         return ["float", value]
     if isinstance(value, PurePath):
-        return ["path", str(value)]
+        return _normalize_path(value)
     if isinstance(value, str):
         return ["str", value]
     if isinstance(value, bytes):
@@ -54,10 +76,10 @@ def _normalize_fingerprint(value: object) -> object:
         return ["callable", path]
     if isinstance(value, Mapping):
         pairs = [
-            (_normalize_fingerprint(key), _normalize_fingerprint(item))
+            (_normalize_mapping_key(key), _normalize_fingerprint(item))
             for key, item in value.items()
         ]
-        pairs.sort(key=lambda pair: _canonical_bytes(pair[0]))
+        pairs.sort(key=_canonical_bytes)
         return ["mapping", pairs]
     if isinstance(value, Sequence):
         kind = f"{type(value).__module__}.{type(value).__qualname__}"
