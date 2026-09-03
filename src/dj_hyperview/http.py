@@ -3,6 +3,9 @@
 from django.http import HttpResponse
 from django.template.response import TemplateResponse
 
+from .conf import get_settings
+from .engine import HyperviewEngine
+
 HYPERVIEW_MEDIA_TYPE = "application/vnd.hyperview+xml"
 
 
@@ -37,3 +40,14 @@ class HyperviewTemplateResponse(TemplateResponse):
             using=using,
             headers=headers,
         )
+
+    @property
+    def rendered_content(self):
+        if (
+            self.using is not None
+            or not isinstance(self.template_name, (str, list, tuple))
+            or not get_settings().sources
+        ):
+            return super().rendered_content
+        context = self.resolve_context(self.context_data)
+        return HyperviewEngine().render(self.template_name, context, self._request)

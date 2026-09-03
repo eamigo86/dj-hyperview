@@ -90,12 +90,33 @@ HYPERVIEW = {
 ```
 
 ```python
-from dj_hyperview import resolve_template
+from dj_hyperview import render_template, resolve_template
 
 screen = resolve_template("account/profile.xml")
+markup = render_template("account/profile.xml", {"username": "Ada"})
 ```
 
 Template names are relative POSIX paths. Absolute paths, empty or dot segments,
 backslashes, NUL bytes, and filesystem symlink escapes are rejected. A source
 returns `None` only for a miss; when every source misses, resolution raises
 `TemplateNotFound`.
+
+## Template engine
+
+`render_template()` uses a dedicated Django template engine backed only by the
+configured Hyperview sources. Root templates, `{% include %}`, and
+`{% extends %}` therefore use the same canonical names and source precedence;
+the host project's HTML template loaders are not modified. No compiled-template
+cache is installed, so a new render sees newly published source content.
+
+During one render, the first result—or miss—for each template name is pinned.
+Repeated includes cannot mix revisions if a source changes concurrently, while
+separate sync or async request contexts remain isolated. Dynamic names that have
+not yet been resolved still observe source state at their first lookup because
+the source protocol intentionally provides point lookups rather than a global
+transaction.
+
+When `HYPERVIEW["SOURCES"]` is configured, `HyperviewTemplateResponse` and
+`HyperviewTemplateView` use this engine while preserving Django's lazy response,
+status, header, context, and escaping behavior. An explicit `using=` continues
+to select the consumer's standard Django template engine.
