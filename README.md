@@ -131,24 +131,20 @@ with their pinned snapshot. The call returns only after every requested token
 rotation succeeds; any cache failure raises `SourceUnavailable`, independently
 of the resolver's ordinary `bypass` policy. Multi-name rotation is not atomic,
 so a partial failure is observable and callers may safely retry every name.
-Root-token claims never expire; this prevents initial-token reuse after ordinary
-generation-key eviction, at the cost of one permanent marker per claimed root
-candidate. Successor claims are permanent while current and receive bounded
-retirement only after replacement, lasting at least the longest raw TTL. Claim
-metadata binds each token to its root/successor lifecycle and current claims are
-promoted back to no-expiry on access. A publication shortens its predecessor
-only after both a different shared generation and successful raw-key deletion
-are confirmed; uncertainty keeps a safe permanent tombstone.
+Every successfully claimed root or successor token leaves a shared,
+non-expiring tombstone. Claim metadata binds each token to its root/successor
+lifecycle, so repeated entropy cannot reuse an older generation even after raw
+TTLs pass. Failed and concurrent candidates also remain claimed: correctness
+costs roughly one small marker per generated candidate, reclaimed only with the
+cache namespace/backend lifecycle.
 Successors are domain-separated digests of the previous token plus fresh
 entropy, not the entropy itself. Every raw content or miss write rechecks the
-shared generation and removes a superseded exact key when possible; `bypass`
-may still return authoritative source data, but never reports that stale cache
-publication as successful. If an operator evicts both generation and permanent
-root-claim metadata while retaining raw entries, generic caches cannot prove
-uniqueness; cryptographic uniqueness is the fallback, not a durable transaction.
-Without backend-specific CAS, concurrent stale rotations may also leave safe
-permanent successor tombstones; retirement is best-effort, never at the expense
-of coherence.
+shared generation and removes a superseded exact key only when the backend
+returns exactly `True`; `None`, `False`, and exceptions are ambiguous failures.
+`bypass` may still return authoritative source data, but never reports stale
+cache publication as successful or weakens its tombstone. If an operator evicts
+a tombstone while retaining raw entries, generic caches cannot prove uniqueness;
+cryptographic uniqueness is the fallback, not a durable transaction.
 
 ## Template engine
 

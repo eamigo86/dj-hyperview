@@ -133,7 +133,7 @@ class TemplateCache:
 
     def _delete(self, key: str) -> None:
         result = _without_untrusted_exception(lambda: self.backend.delete(key))
-        if result is _FAILURE or result is False:
+        if result is not True:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def _generation_key(self, name: str) -> str:
@@ -167,25 +167,6 @@ class TemplateCache:
         if value == self._claim_value(name, generation, kind):
             return kind
         raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
-
-    def _retire_claim(self, name: str, generation: str) -> None:
-        kind = self._read_claim(name, generation)
-        if kind == "root":
-            return
-        self._store(
-            self._claim_key(name, generation),
-            self._claim_value(name, generation, kind),
-            max(self.ttl, self.negative_ttl),
-        )
-
-    def _keep_claim(self, name: str, generation: str) -> None:
-        kind = self._read_claim(name, generation)
-        key = self._claim_key(name, generation)
-        touched = _without_untrusted_exception(
-            lambda: self.backend.touch(key, timeout=None)
-        )
-        if touched is not True:
-            self._store(key, self._claim_value(name, generation, kind), None)
 
     def _candidate(self, name: str, current: str | None) -> str:
         entropy = _without_untrusted_exception(lambda: secrets.token_hex(16))
@@ -262,45 +243,21 @@ class TemplateCache:
                 if added is False
                 else _FAILURE
             )
-            if added is False and token != candidate:
-                self._retire_claim(name, candidate)
-            elif added is not True:
-                self._retire_if_unused(name, candidate)
         if token is _FAILURE:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
         if not self._valid_generation(token):
             raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
-        self._keep_claim(name, token)
+        self._read_claim(name, token)
         return token
 
     def invalidate(self, name: str) -> None:
         """Rotate a template generation without deleting backend-specific keys."""
         current = self.generation(name)
         candidate = self._claim_generation(name, current)
-        try:
-            displaced = self._read_generation(name)
-            self._store(self._generation_key(name), candidate, None)
-        except SourceUnavailable:
-            self._retire_if_unused(name, candidate)
-            raise
+        self._store(self._generation_key(name), candidate, None)
         confirmed = self._read_generation(name)
-        if confirmed == candidate:
-            for replaced in dict.fromkeys((current, displaced)):
-                if replaced != candidate:
-                    self._retire_claim(name, replaced)
-        else:
-            self._retire_claim(name, candidate)
-
-    def _retire_if_unused(self, name: str, candidate: str) -> None:
-        current = _without_untrusted_exception(
-            lambda: self.backend.get(self._generation_key(name), _ABSENT)
-        )
-        if current is _FAILURE or current == candidate:
-            return
-        try:
-            self._retire_claim(name, candidate)
-        except SourceUnavailable:
-            pass
+        if confirmed != candidate:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def get(self, source: str, name: str, revision: str) -> CacheEntry | None:
         payload = _without_untrusted_exception(
@@ -406,14 +363,14 @@ class TemplateCache:
             self._preserve_claim_and_delete(name, generation, key)
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure") from None
         if current != generation:
-            clean = self._discard_replaced_publication(name, generation, key)
+            clean = self._discard_replaced_publication(key)
             reason = "generation changed" if clean else "backend failure"
             raise SourceUnavailable(f"cache:{self.alias}", reason)
 
     def _preserve_claim_and_delete(self, name: str, generation: str, key: str) -> bool:
         clean = True
         try:
-            self._keep_claim(name, generation)
+            self._read_claim(name, generation)
         except SourceUnavailable:
             clean = False
         try:
@@ -422,19 +379,9 @@ class TemplateCache:
             clean = False
         return clean
 
-    def _discard_replaced_publication(
-        self, name: str, generation: str, key: str
-    ) -> bool:
+    def _discard_replaced_publication(self, key: str) -> bool:
         try:
             self._delete(key)
-        except SourceUnavailable:
-            try:
-                self._keep_claim(name, generation)
-            except SourceUnavailable:
-                pass
-            return False
-        try:
-            self._retire_claim(name, generation)
         except SourceUnavailable:
             return False
         return True

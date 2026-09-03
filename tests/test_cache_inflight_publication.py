@@ -56,15 +56,6 @@ class ClockBackend:
             return False
         return self.values.pop(key, None) is not None
 
-    def touch(self, key, timeout=None):
-        if self._fault("touch", key):
-            return False
-        value = self._live(key)
-        if value is None:
-            return False
-        self._put(key, value, timeout)
-        return True
-
     def _put(self, key, value, timeout):
         expires = None if timeout is None else self.now + timeout
         self.values[key] = (value, expires)
@@ -138,7 +129,7 @@ def test_inflight_writer_cannot_publish_into_reused_generation(old, transition):
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_root_claim_is_permanent_and_successor_retires_at_next_rotation():
+def test_root_and_successor_claims_remain_permanent_across_rotations():
     cache = TemplateCache("claim-lifecycle", alias="screens", ttl=10, negative_ttl=5)
     backend = ClockBackend()
     cache.backend = backend
@@ -158,12 +149,12 @@ def test_root_claim_is_permanent_and_successor_retires_at_next_rotation():
     with patch("dj_hyperview.cache.secrets.token_hex", return_value="c" * 32):
         cache.invalidate("screen.xml")
     assert backend.expiry(cache._claim_key("screen.xml", old)) is None
-    assert backend.expiry(cache._claim_key("screen.xml", new)) == 14
+    assert backend.expiry(cache._claim_key("screen.xml", new)) is None
 
 
 @pytest.mark.parametrize("effect", ["false", "exception"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_failed_rotation_retires_its_unused_candidate(effect):
+def test_failed_rotation_keeps_its_unused_candidate_tombstone(effect):
     cache = TemplateCache(f"failed-candidate-{effect}", alias="screens", ttl=10)
     backend = ClockBackend()
     cache.backend = backend
@@ -173,7 +164,7 @@ def test_failed_rotation_retires_its_unused_candidate(effect):
         with pytest.raises(SourceUnavailable, match="backend failure"):
             cache.invalidate("screen.xml")
     assert cache.generation("screen.xml") == current
-    assert backend.expiry(cache._claim_key("screen.xml", candidate)) == 15
+    assert backend.expiry(cache._claim_key("screen.xml", candidate)) is None
 
 
 def arm_rotation(cache, backend, generation):
@@ -218,7 +209,7 @@ def test_resolver_handles_rotation_between_raw_write_and_confirmation(old, mode)
     assert backend.get(raw_key, "absent") == "absent"
 
 
-@pytest.mark.parametrize("operation", ["get", "claim", "delete"])
+@pytest.mark.parametrize("operation", ["get", "delete"])
 @pytest.mark.parametrize("effect", ["false", "exception"])
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(operation, effect):
@@ -230,10 +221,8 @@ def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(operation, 
     generation = cache.generation("screen.xml")
     raw_key, generation_key = arm_rotation(cache, backend, generation)
     claim_key = cache._claim_key("screen.xml", generation)
-    fault_key = {"get": generation_key, "claim": claim_key, "delete": raw_key}[
-        operation
-    ]
-    backend.faults[("set" if operation == "claim" else operation, fault_key)] = effect
+    fault_key = {"get": generation_key, "delete": raw_key}[operation]
+    backend.faults[(operation, fault_key)] = effect
     template = ResolvedTemplate("screen.xml", "old", "memory:x", "memory", "old")
 
     with pytest.raises(SourceUnavailable, match="backend failure"):

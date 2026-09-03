@@ -62,30 +62,6 @@ def test_failed_raw_delete_keeps_replaced_successor_permanent(effect):
     assert backend.expiry(cache._claim_key("screen.xml", current)) is None
 
 
-@pytest.mark.parametrize("effect", ["false", "exception"])
-@override_settings(CACHES=LOCMEM_CACHES)
-def test_touch_failure_falls_back_to_promoting_current_claim(effect):
-    cache, backend, current = successor_cache(f"touch-fallback-{effect}")
-    claim_key = cache._claim_key("screen.xml", current)
-    marker = backend.get(claim_key)
-    backend._put(claim_key, marker, 3)
-    backend.faults[("touch", claim_key)] = effect
-
-    assert cache.generation("screen.xml") == current
-    assert backend.expiry(claim_key) is None
-
-
-@pytest.mark.parametrize("effect", ["false", "exception"])
-@override_settings(CACHES=LOCMEM_CACHES)
-def test_touch_and_set_failure_make_claim_promotion_fail_typed(effect):
-    cache, backend, current = successor_cache(f"touch-set-{effect}")
-    claim_key = cache._claim_key("screen.xml", current)
-    backend.faults.update({("touch", claim_key): effect, ("set", claim_key): effect})
-
-    with pytest.raises(SourceUnavailable, match="backend failure"):
-        cache.generation("screen.xml")
-
-
 @pytest.mark.parametrize("actual", ["root", "successor"])
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_current_generation_rejects_valid_marker_with_wrong_kind(actual):
@@ -130,7 +106,7 @@ def test_candidate_collision_rejects_valid_marker_with_wrong_kind(current):
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_stale_rotation_retires_successor_seen_immediately_before_write():
+def test_stale_rotation_preserves_successor_seen_before_write():
     backend = ClockBackend()
     first = TemplateCache("stale-rotate", alias="screens", ttl=10)
     second = TemplateCache("stale-rotate", alias="screens", ttl=10)
@@ -175,6 +151,4 @@ def test_stale_rotation_retires_successor_seen_immediately_before_write():
             assert outcome == {"value": None}
 
     assert second.generation("screen.xml") == second_candidate
-    assert backend.expiry(first._claim_key("screen.xml", first_candidate)) == max(
-        first.ttl, first.negative_ttl
-    )
+    assert backend.expiry(first._claim_key("screen.xml", first_candidate)) is None
