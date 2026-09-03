@@ -20,6 +20,7 @@ from django.db.models.signals import post_save, pre_save
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
+from dj_hyperview.contrib.database import querysets as database_querysets
 from dj_hyperview.contrib.database.querysets import HyperviewTemplateQuerySet
 from dj_hyperview.exceptions import InvalidTemplateName
 from dj_hyperview.resolver import TemplateResolver
@@ -40,6 +41,25 @@ HYPERVIEW = {
     ],
     "CACHE": {"ALIAS": "screens", "NAMESPACE": "queryset-update"},
 }
+
+
+class _TrackedValue(Value):
+    def __init__(
+        self,
+        value: str,
+        events: list[str],
+        *,
+        fail_after: int | None = None,
+    ) -> None:
+        super().__init__(value)
+        self.events = events
+        self.fail_after = fail_after
+
+    def resolve_expression(self, *args: object, **kwargs: object) -> Any:
+        self.events.append("resolve")
+        if self.fail_after is not None and len(self.events) > self.fail_after:
+            raise RuntimeError("expression resolved more than native update")
+        return super().resolve_expression(*args, **kwargs)
 
 
 class _SplitReadWriteRouter:
@@ -337,19 +357,21 @@ def test_update_mutates_only_primary_keys_captured_by_the_locked_snapshot(
     queryset_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
     original = queryset_model.objects.create(name="original.xml", content="<old />")
-    django_update = QuerySet.update
+    execute_update = database_querysets._execute_update
     inserted = False
 
-    def insert_phantom_then_update(queryset: QuerySet, **kwargs: Any) -> int:
+    def insert_phantom_then_update(query: Any, using: str) -> int:
         nonlocal inserted
-        if not inserted and not queryset.query.is_empty():
+        if not inserted:
             inserted = True
-            queryset_model._base_manager.using(queryset.db).bulk_create(
+            queryset_model._base_manager.using(using).bulk_create(
                 [queryset_model(name="phantom.xml", content="<old />")]
             )
-        return django_update(queryset, **kwargs)
+        return execute_update(query, using)
 
-    monkeypatch.setattr(QuerySet, "update", insert_phantom_then_update)
+    monkeypatch.setattr(
+        database_querysets, "_execute_update", insert_phantom_then_update
+    )
     with patch(
         "dj_hyperview.contrib.database.querysets._schedule_invalidation"
     ) as schedule:
@@ -525,3 +547,68 @@ def test_distinct_fields_update_matches_supported_django_version(
 
     expected = "<old />" if django.VERSION[:2] >= (6, 1) else "<new />"
     assert queryset_model.objects.get(pk=template.pk).content == expected
+
+
+def test_controlled_update_resolves_expression_only_as_native_update_does(
+    queryset_model: type[Model],
+) -> None:
+    native = queryset_model.objects.create(name="native.xml", content="<old />")
+    controlled = queryset_model.objects.create(name="controlled.xml", content="<old />")
+    native_events: list[str] = []
+    controlled_events: list[str] = []
+
+    assert (
+        QuerySet.update(
+            queryset_model.objects.filter(pk=native.pk),
+            content=_TrackedValue("<native />", native_events, fail_after=2),
+        )
+        == 1
+    )
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        assert (
+            queryset_model.objects.filter(pk=controlled.pk).update(
+                content=_TrackedValue("<controlled />", controlled_events, fail_after=2)
+            )
+            == 1
+        )
+
+    assert native_events == ["resolve", "resolve"]
+    assert controlled_events == native_events
+    assert queryset_model.objects.get(pk=controlled.pk).content == "<controlled />"
+    schedule.assert_called_once_with("controlled.xml", using="default")
+
+
+def test_none_update_matches_native_resolution_and_query_boundary(
+    queryset_model: type[Model],
+) -> None:
+    native_events: list[str] = []
+    controlled_events: list[str] = []
+
+    with CaptureQueriesContext(connection) as native_queries:
+        assert (
+            QuerySet.update(
+                queryset_model.objects.none(),
+                content=_TrackedValue("<native />", native_events),
+            )
+            == 0
+        )
+    with (
+        patch(
+            "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+        ) as schedule,
+        CaptureQueriesContext(connection) as controlled_queries,
+    ):
+        assert (
+            queryset_model.objects.none().update(
+                content=_TrackedValue("<controlled />", controlled_events)
+            )
+            == 0
+        )
+
+    assert native_events == ["resolve", "resolve"]
+    assert controlled_events == native_events
+    assert len(native_queries) == 0
+    assert len(controlled_queries) == 0
+    schedule.assert_not_called()
