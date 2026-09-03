@@ -6,6 +6,7 @@ from django.template import TemplateDoesNotExist
 from django.test import RequestFactory, override_settings
 
 from dj_hyperview.engine import HyperviewEngine, render_template
+from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.http import HyperviewTemplateResponse
 from dj_hyperview.loaders import ResolverLoader
 from dj_hyperview.resolver import TemplateResolver
@@ -89,21 +90,24 @@ def test_extends_and_include_use_resolver_names_and_precedence():
     )
 
 
-def test_empty_root_template_renders_as_content_not_a_miss():
+def test_empty_root_template_is_found_then_rejected_as_invalid_hxml():
     engine = HyperviewEngine(TemplateResolver([MemorySource({"empty.xml": ""})]))
 
-    assert engine.render("empty.xml") == ""
+    with pytest.raises(TemplateValidationError) as error:
+        engine.render("empty.xml")
+
+    assert error.value.code == "malformed_xml"
 
 
 def test_render_snapshot_does_not_mix_a_concurrent_source_mutation():
     source = BlockingMutationSource(
         {
             "screen.xml": (
-                '{% include "shared.xml" %}'
+                '<view>{% include "shared.xml" %}'
                 "{% include choices %}"
                 '{% include "trigger.xml" %}'
                 '{% include "shared.xml" %}'
-                "{% include choices %}"
+                "{% include choices %}</view>"
             ),
             "shared.xml": "old",
             "fallback.xml": "fallback",
@@ -118,9 +122,9 @@ def test_render_snapshot_does_not_mix_a_concurrent_source_mutation():
         assert source.paused.wait(timeout=2)
         source.templates["shared.xml"] = "new"
         source.templates["future.xml"] = "future"
-        assert engine.render("screen.xml", context) == "newfuturenewfuture"
+        assert engine.render("screen.xml", context) == "<view>newfuturenewfuture</view>"
         source.resume.set()
-        assert rendered.result(timeout=2) == "oldfallbackoldfallback"
+        assert rendered.result(timeout=2) == "<view>oldfallbackoldfallback</view>"
 
 
 def test_template_response_uses_the_dedicated_engine(tmp_path):
@@ -155,7 +159,7 @@ def test_template_response_uses_the_dedicated_engine(tmp_path):
                 "loaders": [
                     (
                         "django.template.loaders.locmem.Loader",
-                        {"screen.xml": "standard"},
+                        {"screen.xml": "<view>standard</view>"},
                     )
                 ]
             },
@@ -163,7 +167,10 @@ def test_template_response_uses_the_dedicated_engine(tmp_path):
     ],
     HYPERVIEW={
         "SOURCES": [
-            {"BACKEND": "tests.stubs.TemplateSource", "OPTIONS": {"content": "hv"}}
+            {
+                "BACKEND": "tests.stubs.TemplateSource",
+                "OPTIONS": {"content": "<view>hv</view>"},
+            }
         ]
     },
 )
@@ -172,7 +179,7 @@ def test_template_response_preserves_explicit_django_engine_selection():
         RequestFactory().get("/screen"), "screen.xml", using="django"
     )
 
-    assert response.render().content == b"standard"
+    assert response.render().content == b"<view>standard</view>"
 
 
 @override_settings(

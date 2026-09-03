@@ -123,7 +123,8 @@ to select the consumer's standard Django template engine.
 
 ## HXML validation
 
-The dedicated render path escapes context, rejects DTD/entities before compile,
-and enforces rendered XML schema, byte, depth, and node limits. Consumer XSD
+Every public engine/response render path escapes context, rejects active
+DTD/entities before compile without misclassifying comments or CDATA, and
+enforces rendered XML schema, byte, depth, and node limits. Consumer XSD
 includes/imports are denied to prevent network or traversal access. Failures
 raise `TemplateValidationError`; no application schema or screen is included.

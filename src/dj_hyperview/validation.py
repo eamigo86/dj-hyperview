@@ -11,6 +11,7 @@ from .exceptions import TemplateValidationError
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 SCHEMA_MESSAGE = "document does not match schema"
 XSD_NAMESPACE = "{http://www.w3.org/2001/XMLSchema}"
+IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("{#", "#}"))
 
 
 def _fail(code: str, message: str) -> None:
@@ -27,11 +28,57 @@ def _parser() -> etree.XMLParser:
     )
 
 
+def _django_comment_end(document: str, index: int) -> int | None:
+    if not document.startswith("{%", index):
+        return None
+    tag_end = document.find("%}", index + 2)
+    if tag_end < 0:
+        return None
+    bits = document[index + 2 : tag_end].strip().split()
+    if not bits or bits[0] != "comment":
+        return None
+    cursor = tag_end + 2
+    while cursor < len(document):
+        tag_start = document.find("{%", cursor)
+        if tag_start < 0:
+            return len(document)
+        tag_end = document.find("%}", tag_start + 2)
+        if tag_end < 0:
+            return len(document)
+        bits = document[tag_start + 2 : tag_end].strip().split()
+        if bits and bits[0] == "endcomment":
+            return tag_end + 2
+        cursor = tag_end + 2
+    return len(document)
+
+
+def _contains_forbidden_declaration(document: str) -> bool:
+    index = 0
+    while index < len(document):
+        for opening, closing in IGNORED_BLOCKS:
+            if document.startswith(opening, index):
+                end = document.find(closing, index + len(opening))
+                index = len(document) if end < 0 else end + len(closing)
+                break
+        else:
+            comment_end = _django_comment_end(document, index)
+            if comment_end is not None:
+                index = comment_end
+            elif document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
+                return True
+            else:
+                index += 1
+    return False
+
+
 def _guard_document(document: str, config: ValidationSettings) -> bytes:
-    encoded = document.encode()
+    try:
+        encoded = document.encode()
+    except UnicodeEncodeError as error:
+        raise TemplateValidationError("malformed_xml", "invalid XML") from error
     if len(encoded) > config.max_bytes:
         _fail("max_bytes", "document exceeds MAX_BYTES")
-    if "<!DOCTYPE" in document or "<!ENTITY" in document:
+    if _contains_forbidden_declaration(document):
         _fail("forbidden_declaration", FORBIDDEN_MESSAGE)
     return encoded
 
@@ -116,4 +163,14 @@ def validate_hxml(document: str, *, config: ValidationSettings | None = None) ->
     root = _parse(document, resolved)
     if resolved.schema is not None:
         _validate_schema(root, document, resolved)
+    return document
+
+
+def validate_rendered_hxml(
+    document: str, *, config: ValidationSettings | None = None
+) -> str:
+    """Apply the configured post-render validation policy."""
+    resolved = config or get_settings().validation
+    if resolved.mode in {"render", "publish_and_render"}:
+        return validate_hxml(document, config=resolved)
     return document

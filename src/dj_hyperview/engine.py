@@ -8,7 +8,7 @@ from django.template.backends.django import DjangoTemplates
 from .conf import ValidationSettings, get_settings
 from .loaders import template_snapshot
 from .resolver import TemplateResolver
-from .validation import validate_hxml
+from .validation import validate_rendered_hxml
 
 
 class HyperviewEngine:
@@ -59,14 +59,12 @@ class HyperviewEngine:
                 if isinstance(name, str)
                 else self.select_template(name)
             )
-            return template.render(context, request)
+            rendered = template.render(context, request)
+        return validate_rendered_hxml(rendered, config=self.validation)
 
     def render_hxml(self, name: str | Sequence[str], context=None, request=None) -> str:
         """Render and, when configured, validate consumer HXML."""
-        rendered = self.render(name, context, request)
-        if self.validation.mode in {"render", "publish_and_render"}:
-            validate_hxml(rendered, config=self.validation)
-        return rendered
+        return self.render(name, context, request)
 
 
 def render_template(name: str, context=None, request=None) -> str:
