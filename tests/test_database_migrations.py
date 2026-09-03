@@ -40,5 +40,6 @@ def test_package_contains_python_migration_without_runtime_markup():
     migration = ROOT / "src/dj_hyperview/contrib/database/migrations/0001_initial.py"
 
     assert migration.is_file()
+    assert (migration.parent / "0002_field_validators.py").is_file()
     assert not list((ROOT / "src/dj_hyperview/contrib").rglob("*.xml"))
     assert not list((ROOT / "src/dj_hyperview/contrib").rglob("*.hxml"))

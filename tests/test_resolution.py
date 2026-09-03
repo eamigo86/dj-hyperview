@@ -13,8 +13,27 @@ from dj_hyperview.sources import (
     canonicalize_template_name,
 )
 
+UNSAFE_UNICODE_NAMES = (
+    "screens/home\n.xml",
+    "screens/home\t.xml",
+    "screens/\x01home.xml",
+    "screens/\x7fhome.xml",
+    "screens/\x85home.xml",
+    "screens/\ud800.xml",
+    "screens/\udfff.xml",
+)
 
-@pytest.mark.parametrize("name", ["screen.xml", "screens/home.hxml", "niñez.xml"])
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "screen.xml",
+        "screens/home.hxml",
+        "niñez.xml",
+        "screens/e\u0301.xml",
+        "screens/👩\u200d💻.xml",
+    ],
+)
 def test_canonical_name_preserves_relative_posix_path(name):
     assert canonicalize_template_name(name) == name
 
@@ -33,6 +52,7 @@ def test_canonical_name_preserves_relative_posix_path(name):
         "screens/",
         "screens\\screen.xml",
         "screens/\0screen.xml",
+        *UNSAFE_UNICODE_NAMES,
     ],
 )
 def test_canonical_name_rejects_unsafe_names(name):
@@ -40,6 +60,7 @@ def test_canonical_name_rejects_unsafe_names(name):
         canonicalize_template_name(name)
 
     assert error.value.name == name
+    assert str(error.value) == "Invalid template name"
 
 
 def test_filesystem_source_uses_directories_in_order_and_utf8(tmp_path):
@@ -103,6 +124,17 @@ class RecordingSource:
     def resolve(self, name):
         self.calls.append(name)
         return self.result
+
+
+@pytest.mark.parametrize("name", UNSAFE_UNICODE_NAMES)
+def test_resolver_rejects_unsafe_unicode_name_before_source_lookup(name):
+    source = RecordingSource()
+
+    with pytest.raises(InvalidTemplateName) as captured:
+        TemplateResolver([source]).resolve(name)
+
+    assert str(captured.value) == "Invalid template name"
+    assert source.calls == []
 
 
 def test_resolver_uses_first_match_and_skips_misses():

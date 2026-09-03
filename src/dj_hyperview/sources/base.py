@@ -3,6 +3,7 @@
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
 from typing import Protocol, runtime_checkable
+from unicodedata import category
 
 from dj_hyperview.exceptions import InvalidTemplateName
 
@@ -37,6 +38,7 @@ def canonicalize_template_name(name: str) -> str:
         or PureWindowsPath(name).drive
         or "\\" in name
         or "\0" in name
+        or any(category(character) in {"Cc", "Cs"} for character in name)
         or any(part in {"", ".", ".."} for part in parts)
     ):
         raise InvalidTemplateName(name)

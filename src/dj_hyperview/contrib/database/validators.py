@@ -1,0 +1,32 @@
+from dataclasses import replace
+
+from django.core.exceptions import ValidationError
+
+from dj_hyperview.conf import get_settings
+from dj_hyperview.exceptions import InvalidTemplateName, TemplateValidationError
+from dj_hyperview.sources import canonicalize_template_name
+from dj_hyperview.validation import validate_hxml, validate_template_source
+
+
+def validate_canonical_template_name(value):
+    """Validate one canonical template name without exposing its value."""
+    try:
+        canonicalize_template_name(value)
+    except InvalidTemplateName:
+        raise ValidationError(
+            "Enter a canonical template name.", code="invalid"
+        ) from None
+
+
+def validate_stored_template_source(value):
+    """Apply safe publish-time checks to stored consumer source."""
+    config = get_settings().validation
+    try:
+        validate_template_source(value, config=config)
+        if "{%" not in value and "{#" not in value:
+            validate_hxml(value, config=replace(config, schema=None))
+    except TemplateValidationError as error:
+        raise ValidationError(
+            f"Invalid Hyperview template source ({error.code}).",
+            code=error.code,
+        ) from None

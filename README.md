@@ -99,7 +99,9 @@ markup = render_template("account/profile.xml", {"username": "Ada"})
 Template names are relative POSIX paths. Absolute paths, empty or dot segments,
 backslashes, NUL bytes, and filesystem symlink escapes are rejected. A source
 returns `None` only for a miss; when every source misses, resolution raises
-`TemplateNotFound`.
+`TemplateNotFound`. Unicode remains case-preserving and unnormalized; combining
+marks and format characters are accepted, while control and surrogate code
+points are rejected.
 
 ### Optional database app
 
@@ -109,7 +111,9 @@ does not import this model or require a database table. Model `full_clean()`
 checks canonical names and template safety; `save()` intentionally follows
 Django's standard behavior and does not call validation automatically. Database
 loading, admin integration, and publication services are separate opt-in
-features.
+features. Name uniqueness follows the database backend's collation: the package
+does not case-fold names, and SQLite's default treats `screen.xml` and
+`Screen.xml` as distinct.
 
 ## Cache contract
 

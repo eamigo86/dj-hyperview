@@ -18,7 +18,7 @@ class InvalidTemplateName(HyperviewError, ValueError):
 
     def __init__(self, name: object) -> None:
         self.name = name
-        super().__init__(f"Invalid template name: {name!r}")
+        super().__init__("Invalid template name")
 
 
 class TemplateNotFound(HyperviewError, LookupError):

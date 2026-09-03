@@ -2,14 +2,24 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
+from django.forms import modelform_factory
 from django.test import override_settings
 
 ROOT = Path(__file__).parents[1]
+UNSAFE_UNICODE_NAMES = (
+    "screens/home\n.xml",
+    "screens/home\t.xml",
+    "screens/\x01home.xml",
+    "screens/\x7fhome.xml",
+    "screens/\x85home.xml",
+    "screens/\ud800.xml",
+    "screens/\udfff.xml",
+)
 
 
 def run_isolated(settings_module, source, *, database=None):
@@ -98,6 +108,7 @@ def test_template_model_fields_defaults_meta_and_string():
         "screens\\home.xml",
         "screens/./home.xml",
         "x" * 256,
+        *UNSAFE_UNICODE_NAMES,
     ],
 )
 def test_full_clean_rejects_noncanonical_or_too_long_names(name):
@@ -118,6 +129,15 @@ def test_full_clean_rejects_noncanonical_or_too_long_names(name):
         (None, "null"),
         ("<view>", "malformed_xml"),
         ("<!DOCTYPE view><view />", "forbidden_declaration"),
+        (
+            "<!ENTITY x SYSTEM 'file:///etc/passwd'><view>&x;</view>",
+            "forbidden_declaration",
+        ),
+        (
+            "<!DOCTYPE view SYSTEM 'https://example.invalid/x'><view />",
+            "forbidden_declaration",
+        ),
+        ("<view>\ud800</view>", "malformed_xml"),
     ],
 )
 def test_full_clean_rejects_invalid_template_source_without_leaking_it(content, code):
@@ -157,15 +177,40 @@ def test_full_clean_accepts_safe_static_or_django_template_source(content):
     assert template.content == content
 
 
-@pytest.mark.parametrize("name", ["../screen.xml", "x" * 256])
-def test_clean_rejects_unsafe_name_without_normalizing_it(name):
+reject_all_schema = Mock(return_value=False)
+
+
+@override_settings(HYPERVIEW={"VALIDATION": {"SCHEMA": reject_all_schema}})
+def test_model_source_validation_does_not_apply_schema_before_render():
+    template = template_model()(name="screen.xml", content="<view />")
+
+    template.full_clean(validate_unique=False, validate_constraints=False)
+
+    reject_all_schema.assert_not_called()
+
+
+@pytest.mark.parametrize("name", ["../screen.xml", "x" * 256, *UNSAFE_UNICODE_NAMES])
+def test_clean_fields_rejects_unsafe_name_without_normalizing_it(name):
     template = template_model()(name=name, content="<view />")
 
     with pytest.raises(ValidationError) as captured:
-        template.clean()
+        template.clean_fields()
 
     assert "name" in captured.value.error_dict
     assert template.name == name
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("revision", [0, -1])
+def test_full_clean_reports_nonpositive_revision_on_field(revision):
+    template = template_model()(
+        name="screen.xml", content="<view />", revision=revision
+    )
+
+    with pytest.raises(ValidationError) as captured:
+        template.full_clean(validate_unique=False)
+
+    assert set(captured.value.error_dict) == {"revision"}
 
 
 @pytest.fixture
@@ -176,6 +221,110 @@ def template_table(transactional_db):
     yield model
     with connection.schema_editor() as editor:
         editor.delete_model(model)
+
+
+@pytest.mark.parametrize(
+    ("exclude", "attributes"),
+    [
+        ({"content"}, {"name": "screen.xml", "content": "<view>"}),
+        ({"name"}, {"name": "../unsafe.xml", "content": "<view />"}),
+        ({"name", "content"}, {"name": "../unsafe.xml", "content": "<view>"}),
+    ],
+)
+def test_clean_fields_honors_explicit_exclusions(exclude, attributes):
+    template = template_model()(**attributes)
+
+    template.clean_fields(exclude=exclude)
+
+    assert template.name == attributes["name"]
+    assert template.content == attributes["content"]
+
+
+@pytest.mark.parametrize(
+    ("fields", "attributes", "data"),
+    [
+        (["name"], {"content": "<view>"}, {"name": "screen.xml"}),
+        (["content"], {"name": "../unsafe.xml"}, {"content": "<view />"}),
+        ([], {"name": "../unsafe.xml", "content": "<view>"}, {}),
+    ],
+)
+def test_modelform_ignores_invalid_fields_it_excludes(
+    template_table, fields, attributes, data
+):
+    instance = template_table(**attributes)
+    form_class = modelform_factory(template_table, fields=fields)
+
+    form = form_class(data, instance=instance)
+
+    assert form.is_valid(), form.errors.as_data()
+    assert form.errors.as_data() == {}
+
+
+@pytest.mark.parametrize(
+    ("exclude", "attributes", "data"),
+    [
+        (["content"], {"content": "<view>"}, {"name": "screen.xml", "revision": 1}),
+        (
+            ["name"],
+            {"name": "../unsafe.xml"},
+            {"content": "<view />", "revision": 1},
+        ),
+        (
+            ["name", "content"],
+            {"name": "../unsafe.xml", "content": "<view>"},
+            {"revision": 1},
+        ),
+    ],
+)
+def test_modelform_exclude_option_skips_stored_invalid_fields(
+    template_table, exclude, attributes, data
+):
+    form_class = modelform_factory(template_table, exclude=exclude)
+
+    form = form_class(data, instance=template_table(**attributes))
+
+    assert form.is_valid(), form.errors.as_data()
+    assert form.errors.as_data() == {}
+
+
+@pytest.mark.parametrize(
+    ("fields", "instance", "data", "error_field"),
+    [
+        (["name"], {"content": "<view />"}, {"name": "bad\n.xml"}, "name"),
+        (["content"], {"name": "screen.xml"}, {"content": "<view>"}, "content"),
+    ],
+)
+def test_modelform_reports_only_included_invalid_field(
+    template_table, fields, instance, data, error_field
+):
+    form_class = modelform_factory(template_table, fields=fields)
+
+    form = form_class(data, instance=template_table(**instance))
+
+    assert form.is_valid() is False
+    assert set(form.errors.as_data()) == {error_field}
+
+
+def test_deferred_instance_full_clean_remains_valid(template_table):
+    row = template_table.objects.create(name="screen.xml", content="<view />")
+
+    deferred = template_table.objects.only("name").get(pk=row.pk)
+    deferred.full_clean()
+
+    assert deferred.name == "screen.xml"
+
+
+def test_sqlite_uniqueness_is_case_sensitive_by_default(template_table):
+    template_table.objects.create(name="screen.xml", content="<view />")
+    other = template_table(name="Screen.xml", content="<view />")
+
+    other.full_clean()
+    other.save()
+
+    assert set(template_table.objects.values_list("name", flat=True)) == {
+        "screen.xml",
+        "Screen.xml",
+    }
 
 
 def test_database_enforces_unique_name_and_positive_revision(template_table):
