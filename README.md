@@ -140,13 +140,14 @@ standard `HyperviewTemplate` admin. Its create/edit forms reuse the model field
 validators, expose content and active state, and keep revision and timestamps
 read-only. Projects that omit Django admin do not import or register this module.
 
-Model save/delete and `QuerySet.delete()` schedule invalidation with Django's
-`transaction.on_commit()` on the mutation database alias. Renames invalidate the
-old and new canonical names; rollbacks and rolled-back savepoints discard their
-callbacks. A cache failure remains observable after commit and therefore does
-not mean the database write rolled back. Raw fixture saves, `QuerySet.update()`
-and bulk APIs still require explicit invalidation until their controlled Task 8
-integrations are enabled.
+Model save/delete plus controlled `QuerySet.delete()` and `QuerySet.update()`
+schedule invalidation with Django's `transaction.on_commit()` on the mutation
+database alias. Updates snapshot locked rows and validate their actual stored
+names after SQL, so literal and expression renames invalidate both old and new
+names. Rollbacks and rolled-back savepoints discard callbacks. A cache failure
+remains observable after commit and therefore does not mean the database write
+rolled back. Raw fixture saves and bulk APIs still require explicit invalidation
+until their controlled Task 8 integrations are enabled.
 Name uniqueness follows the database backend's collation: the package does not
 case-fold names, and SQLite's default treats `screen.xml` and `Screen.xml` as
 distinct.

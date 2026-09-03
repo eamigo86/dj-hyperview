@@ -1,6 +1,9 @@
+"""Database model for optional Hyperview template storage."""
+
 from django.core.validators import MinValueValidator
 from django.db import models
 
+from .querysets import HyperviewTemplateManager
 from .validators import (
     validate_canonical_template_name,
     validate_stored_template_source,
@@ -19,6 +22,8 @@ class HyperviewTemplate(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    objects = HyperviewTemplateManager()
+
     class Meta:
         app_label = "dj_hyperview_database"
         ordering = ("name",)
@@ -31,5 +36,10 @@ class HyperviewTemplate(models.Model):
             )
         ]
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Return the canonical template name.
+
+        Returns:
+            Canonical name stored for this template.
+        """
         return self.name

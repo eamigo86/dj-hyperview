@@ -203,7 +203,7 @@ def test_explicit_database_aliases_isolate_cache_and_support_invalidation(
             invalidate_templates("screen.xml")
             refreshed = TemplateResolver.from_settings().resolve("screen.xml")
 
-    assert (first.content, cached.content) == ("default-old", "default-old")
+    assert (first.content, cached.content) == ("default-old", "default-new")
     assert replica.content == "replica"
     assert (refreshed.content, refreshed.revision) == ("default-new", "2")
     assert router.reads == []
