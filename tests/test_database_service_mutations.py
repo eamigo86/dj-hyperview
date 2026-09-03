@@ -8,7 +8,7 @@ import pytest
 from django.apps import apps
 from django.core.exceptions import ValidationError
 from django.db import DatabaseError, IntegrityError, connections, transaction
-from django.db.models import Model
+from django.db.models import Model, QuerySet
 from django.test import override_settings
 
 from dj_hyperview.contrib.database.services import (
@@ -206,6 +206,68 @@ def test_rename_preserves_unverified_database_error(
     assert mutation_model.objects.get().name == "old.xml"
 
 
+def test_case_equivalent_target_does_not_mask_unrelated_integrity_error(
+    mutation_model: type[Model],
+) -> None:
+    connection = connections["default"]
+    if connection.vendor != "sqlite":
+        pytest.skip("SQLite NOCASE regression")
+    name_field = mutation_model._meta.get_field("name")
+    original_collation = name_field.db_collation
+    with connection.schema_editor() as editor:
+        editor.delete_model(mutation_model)
+    name_field.db_collation = "nocase"
+    try:
+        with connection.schema_editor() as editor:
+            editor.create_model(mutation_model)
+    finally:
+        name_field.db_collation = original_collation
+
+    mutation_model.objects.create(name="screen.xml", content="<old />")
+    table = connection.ops.quote_name(mutation_model._meta.db_table)
+    trigger = connection.ops.quote_name("djhv_rename_unrelated_abort")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TRIGGER {trigger} BEFORE UPDATE ON {table} "
+            "BEGIN SELECT RAISE(ABORT, 'unrelated rename failure'); END"
+        )
+    try:
+        with pytest.raises(IntegrityError, match="unrelated rename failure"):
+            rename_template("screen.xml", "Screen.xml")
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute(f"DROP TRIGGER {trigger}")
+
+    stored = mutation_model.objects.get()
+    assert (stored.name, stored.revision) == ("screen.xml", 1)
+
+
+@pytest.mark.parametrize("primary_type", [IntegrityError, DatabaseError])
+def test_rename_proof_failure_preserves_primary_database_error(
+    mutation_model: type[Model],
+    monkeypatch: pytest.MonkeyPatch,
+    primary_type: type[DatabaseError],
+) -> None:
+    primary = primary_type("primary write failure")
+    secondary = DatabaseError("secondary proof failure")
+    mutation_model.objects.create(name="old.xml", content="<old />")
+
+    def fail_save(instance: Model, *args: object, **kwargs: object) -> None:
+        del instance, args, kwargs
+        raise primary
+
+    def fail_exists(queryset: QuerySet) -> bool:
+        del queryset
+        raise secondary
+
+    monkeypatch.setattr(mutation_model, "save", fail_save)
+    monkeypatch.setattr(QuerySet, "exists", fail_exists)
+    with pytest.raises(primary_type) as captured:
+        rename_template("old.xml", "new.xml")
+
+    assert captured.value is primary
+
+
 @pytest.mark.parametrize("operation", ["rename", "delete"])
 def test_concurrent_source_deletion_becomes_conflict_without_recreation(
     mutation_model: type[Model], monkeypatch: pytest.MonkeyPatch, operation: str
@@ -222,6 +284,25 @@ def test_concurrent_source_deletion_becomes_conflict_without_recreation(
             delete_template("old.xml")
 
     assert mutation_model.objects.count() == 0
+
+
+def test_zero_row_delete_discards_invalidation_before_conflict(
+    mutation_model: type[Model], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    def stale_locked_row(queryset: QuerySet, *args: object, **kwargs: object) -> Model:
+        del queryset, args, kwargs
+        return mutation_model(pk=99, name="old.xml", content="<old />")
+
+    monkeypatch.setattr(QuerySet, "get", stale_locked_row)
+    with (
+        patch(
+            INVALIDATE, side_effect=SourceUnavailable("cache:test", "failure")
+        ) as invalidate,
+        pytest.raises(PublicationConflict),
+    ):
+        delete_template("old.xml")
+
+    invalidate.assert_not_called()
 
 
 def test_rollback_and_postcommit_cache_failure_keep_database_truth(

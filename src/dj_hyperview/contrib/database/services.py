@@ -75,6 +75,13 @@ def _validate_expected_revision(expected_revision: int | None) -> None:
         raise ValueError("expected_revision must be a positive integer or None")
 
 
+def _proof_exists(queryset: Any) -> bool | None:
+    try:
+        return queryset.exists()
+    except DatabaseError:
+        return None
+
+
 def publish_template(
     name: str,
     content: str,
@@ -215,13 +222,17 @@ def rename_template(
             with transaction.atomic(using=alias):
                 template.save(using=alias, force_update=True)
         except IntegrityError:
-            conflict = target != current and manager.filter(name=target).exists()
-            if not conflict:
+            competing_target = _proof_exists(
+                manager.filter(name=target).exclude(pk=template.pk)
+            )
+            if competing_target is None or not competing_target:
                 raise
+            conflict = True
         except DatabaseError:
-            conflict = not manager.filter(name=current).exists()
-            if not conflict:
+            source_exists = _proof_exists(manager.filter(pk=template.pk, name=current))
+            if source_exists is None or source_exists:
                 raise
+            conflict = True
         if not conflict:
             result = PublicationResult(target, template.revision, False)
 
@@ -257,8 +268,6 @@ def delete_template(
     canonical = canonicalize_template_name(name)
     _validate_expected_revision(expected_revision)
     model, alias = _mutation_target(using)
-    conflict = False
-
     with transaction.atomic(using=alias):
         manager = model._default_manager.using(alias)
         try:
@@ -272,8 +281,6 @@ def delete_template(
         if expected_revision is not None and template.revision != expected_revision:
             raise PublicationConflict
         deleted, _ = template.delete(using=alias)
-        conflict = deleted == 0
-
-    if conflict:
-        raise PublicationConflict
+        if deleted == 0:
+            raise PublicationConflict
     return True
