@@ -6,6 +6,7 @@ from .exceptions import (
     HyperviewError,
     InvalidTemplateName,
     TemplateNotFound,
+    TemplateValidationError,
 )
 from .http import HYPERVIEW_MEDIA_TYPE, HyperviewResponse, HyperviewTemplateResponse
 from .loaders import ResolverLoader
@@ -17,6 +18,7 @@ from .middleware import (
 )
 from .resolver import TemplateResolver, resolve_template
 from .sources import FileSystemSource, ResolvedTemplate, TemplateSource
+from .validation import validate_hxml
 from .views import HyperviewTemplateView
 
 __all__ = [
@@ -37,7 +39,9 @@ __all__ = [
     "TemplateNotFound",
     "TemplateResolver",
     "TemplateSource",
+    "TemplateValidationError",
     "detect_hyperview_request",
     "resolve_template",
     "render_template",
+    "validate_hxml",
 ]

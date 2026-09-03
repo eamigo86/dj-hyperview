@@ -50,4 +50,4 @@ class HyperviewTemplateResponse(TemplateResponse):
         ):
             return super().rendered_content
         context = self.resolve_context(self.context_data)
-        return HyperviewEngine().render(self.template_name, context, self._request)
+        return HyperviewEngine().render_hxml(self.template_name, context, self._request)

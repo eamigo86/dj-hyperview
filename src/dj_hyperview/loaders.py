@@ -7,9 +7,11 @@ from contextvars import ContextVar
 from django.template import Origin
 from django.template.loaders.base import Loader
 
+from .conf import ValidationSettings
 from .exceptions import TemplateNotFound
 from .resolver import TemplateResolver
 from .sources import ResolvedTemplate
+from .validation import validate_template_source
 
 _active_snapshot: ContextVar[dict[str, ResolvedTemplate | None] | None] = ContextVar(
     "dj_hyperview_template_snapshot", default=None
@@ -37,9 +39,12 @@ class ResolverOrigin(Origin):
 class ResolverLoader(Loader):
     """Load templates through an ordered TemplateResolver."""
 
-    def __init__(self, engine, resolver: TemplateResolver) -> None:
+    def __init__(
+        self, engine, resolver: TemplateResolver, validation: ValidationSettings
+    ) -> None:
         super().__init__(engine)
         self.resolver = resolver
+        self.validation = validation
 
     def _resolve(self, name: str) -> ResolvedTemplate:
         snapshot = _active_snapshot.get()
@@ -66,4 +71,4 @@ class ResolverLoader(Loader):
         yield ResolverOrigin(resolved, self)
 
     def get_contents(self, origin):
-        return origin.resolved.content
+        return validate_template_source(origin.resolved.content, config=self.validation)

@@ -120,3 +120,10 @@ When `HYPERVIEW["SOURCES"]` is configured, `HyperviewTemplateResponse` and
 `HyperviewTemplateView` use this engine while preserving Django's lazy response,
 status, header, context, and escaping behavior. An explicit `using=` continues
 to select the consumer's standard Django template engine.
+
+## HXML validation
+
+The dedicated render path escapes context, rejects DTD/entities before compile,
+and enforces rendered XML schema, byte, depth, and node limits. Consumer XSD
+includes/imports are denied to prevent network or traversal access. Failures
+raise `TemplateValidationError`; no application schema or screen is included.

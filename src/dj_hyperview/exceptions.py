@@ -27,3 +27,12 @@ class TemplateNotFound(HyperviewError, LookupError):
     def __init__(self, name: str) -> None:
         self.name = name
         super().__init__(f"Template not found: {name}")
+
+
+class TemplateValidationError(HyperviewError, ValueError):
+    """HXML failed a deterministic validation rule."""
+
+    def __init__(self, code: str, message: str) -> None:
+        self.code = code
+        self.message = message
+        super().__init__(f"HXML validation failed [{code}]: {message}")
