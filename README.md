@@ -134,9 +134,14 @@ normal cache TTL and manual invalidation semantics.
 The base package does not import the model or require a database table. Model
 `full_clean()` checks canonical names and template safety; `save()` intentionally
 follows Django's standard behavior and does not call validation automatically.
-Admin and transactional publication/invalidation remain separate opt-in work;
-until publication services are enabled, consumers must call
-`invalidate_templates()` after committed ORM changes when cache is configured.
+When `django.contrib.admin` is installed, Django autodiscovery registers a
+standard `HyperviewTemplate` admin. Its create/edit forms reuse the model field
+validators, expose content and active state, and keep revision and timestamps
+read-only. Projects that omit Django admin do not import or register this module.
+
+Transactional publication/invalidation remains separate opt-in work. Until the
+Task 8 publication services are enabled, admin and direct ORM mutations require
+an explicit `invalidate_templates()` call after commit when cache is configured.
 Name uniqueness follows the database backend's collation: the package does not
 case-fold names, and SQLite's default treats `screen.xml` and `Screen.xml` as
 distinct.
