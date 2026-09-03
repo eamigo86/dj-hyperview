@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from django import forms
 from django.contrib import admin, messages
-from django.db import DEFAULT_DB_ALIAS, models, router
+from django.db import DEFAULT_DB_ALIAS, connections, models, router
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.utils.datastructures import MultiValueDict
@@ -23,17 +23,40 @@ __all__ = ["HyperviewTemplateAdmin", "HyperviewTemplateAdminForm"]
 _CONFLICT_MESSAGE = "Template changed; reload and retry."
 
 
-def _submitted_revision(data: Mapping[str, Any]) -> int:
+def _submitted_revision(
+    data: Mapping[str, Any], *, using: str = DEFAULT_DB_ALIAS
+) -> int:
+    """Parse one canonical revision within the selected database range.
+
+    Args:
+        data: Submitted form values.
+        using: Database alias whose integer range constrains revisions.
+
+    Returns:
+        Canonical positive revision.
+
+    Raises:
+        PublicationConflict: If the token is ambiguous, malformed, or out of range.
+    """
     values = (
         data.getlist("expected_revision")
         if isinstance(data, MultiValueDict)
         else [data.get("expected_revision")]
     )
     value = values[0] if len(values) == 1 else None
-    revision = int(value) if type(value) is str and value.isdecimal() else 0
-    if revision < 1 or str(revision) != value:
+    maximum = connections[using].ops.integer_field_range("PositiveIntegerField")[1]
+    maximum_text = str(maximum) if type(maximum) is int and maximum > 0 else ""
+    if (
+        type(value) is not str
+        or not value
+        or len(value) > len(maximum_text)
+        or not value.isascii()
+        or not value.isdecimal()
+        or value.startswith("0")
+        or (len(value) == len(maximum_text) and value > maximum_text)
+    ):
         raise PublicationConflict
-    return revision
+    return int(value)
 
 
 class HyperviewTemplateAdminForm(forms.ModelForm):
@@ -75,7 +98,12 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
         if self.instance.pk is None:
             return cleaned
         try:
-            revision_matches = _submitted_revision(self.data) == self.instance.revision
+            revision_matches = (
+                _submitted_revision(
+                    self.data, using=self.instance._state.db or DEFAULT_DB_ALIAS
+                )
+                == self.instance.revision
+            )
         except PublicationConflict:
             revision_matches = False
         if not revision_matches:
@@ -197,7 +225,9 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         """
         delete_template(
             obj.name,
-            expected_revision=_submitted_revision(request.POST),
+            expected_revision=_submitted_revision(
+                request.POST, using=obj._state.db or DEFAULT_DB_ALIAS
+            ),
             using=obj._state.db,
         )
 

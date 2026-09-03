@@ -6,6 +6,7 @@ from unittest.mock import call, patch
 
 import pytest
 from django.apps import apps
+from django.db import DEFAULT_DB_ALIAS, connections
 from django.urls import reverse
 
 from dj_hyperview.contrib.database.services import PublicationConflict
@@ -235,6 +236,81 @@ def test_admin_delete_rejects_duplicate_revision_values(
 
     assert b"Template changed; reload and retry." in response.content
     assert model.objects.filter(pk=template.pk).exists()
+    delete_api.assert_not_called()
+    schedule.assert_not_called()
+
+
+@pytest.mark.parametrize("operation", ["change", "delete"])
+@pytest.mark.parametrize(
+    "token", ["9" * 5_000, "\u0669" * 5_000], ids=["ascii", "unicode"]
+)
+def test_admin_rejects_oversized_revision_before_publication(
+    admin_client, operation: str, token: str
+) -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin")
+    model = _model()
+    template = model.objects.create(name="screen.xml", content="<old />")
+    _, change, delete = _urls(template)
+    url = change if operation == "change" else delete
+    data = _form("screen.xml", "<lost />") if operation == "change" else {"post": "yes"}
+    data["expected_revision"] = token
+    service_name = "rename_template" if operation == "change" else "delete_template"
+
+    with (
+        patch.object(
+            module, service_name, wraps=getattr(module, service_name)
+        ) as service,
+        patch(SCHEDULE) as schedule,
+    ):
+        response = admin_client.post(url, data, follow=True)
+
+    template.refresh_from_db()
+    assert b"Template changed; reload and retry." in response.content
+    assert (template.content, template.revision) == ("<old />", 1)
+    service.assert_not_called()
+    schedule.assert_not_called()
+
+
+def test_admin_revision_parser_honors_database_range(admin_client) -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin")
+    maximum = connections[DEFAULT_DB_ALIAS].ops.integer_field_range(
+        "PositiveIntegerField"
+    )[1]
+    assert maximum is not None
+    model = _model()
+
+    editable = model.objects.create(name="edit.xml", content="<old />")
+    model._base_manager.filter(pk=editable.pk).update(revision=maximum - 1)
+    _, change, _ = _urls(editable)
+    changed = admin_client.post(change, _form("edit.xml", "<new />", maximum - 1))
+    editable.refresh_from_db()
+    assert changed.status_code == 302
+    assert (editable.content, editable.revision) == ("<new />", maximum)
+
+    deletable = model.objects.create(name="delete.xml", content="<view />")
+    model._base_manager.filter(pk=deletable.pk).update(revision=maximum)
+    _, _, delete = _urls(deletable)
+    deleted = admin_client.post(
+        delete, {"post": "yes", "expected_revision": str(maximum)}
+    )
+    assert deleted.status_code == 302
+    assert not model.objects.filter(pk=deletable.pk).exists()
+
+    rejected = model.objects.create(name="reject.xml", content="<view />")
+    _, _, reject_delete = _urls(rejected)
+    with (
+        patch.object(
+            module, "delete_template", wraps=module.delete_template
+        ) as delete_api,
+        patch(SCHEDULE) as schedule,
+    ):
+        response = admin_client.post(
+            reject_delete,
+            {"post": "yes", "expected_revision": str(maximum + 1)},
+            follow=True,
+        )
+    assert b"Template changed; reload and retry." in response.content
+    assert model.objects.filter(pk=rejected.pk).exists()
     delete_api.assert_not_called()
     schedule.assert_not_called()
 
