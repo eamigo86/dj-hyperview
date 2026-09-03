@@ -11,3 +11,19 @@ class HyperviewConfigurationError(HyperviewError, ImproperlyConfigured):
     def __init__(self, issues: Sequence[str]) -> None:
         self.issues = tuple(issues)
         super().__init__(f"Invalid HYPERVIEW configuration: {'; '.join(issues)}")
+
+
+class InvalidTemplateName(HyperviewError, ValueError):
+    """A template name cannot be resolved safely."""
+
+    def __init__(self, name: object) -> None:
+        self.name = name
+        super().__init__(f"Invalid template name: {name!r}")
+
+
+class TemplateNotFound(HyperviewError, LookupError):
+    """No configured source could resolve a template."""
+
+    def __init__(self, name: str) -> None:
+        self.name = name
+        super().__init__(f"Template not found: {name}")

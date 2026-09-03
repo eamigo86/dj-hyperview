@@ -70,3 +70,32 @@ Mutable Hyperview forms can use Django's normal CSRF protection:
 
 The tag emits an XML-escaped hidden `csrfmiddlewaretoken` field. It calls
 Django's standard token API and does not bypass `CsrfViewMiddleware`.
+
+## Template sources
+
+Sources are queried in declaration order; the first match wins. The built-in
+filesystem source reads UTF-8 templates from the consumer's directories:
+
+```python
+HYPERVIEW = {
+    "TEMPLATE_DIRS": [BASE_DIR / "mobile_screens"],
+    "SOURCES": [
+        {"BACKEND": "dj_hyperview.sources.FileSystemSource"},
+        {
+            "BACKEND": "my_project.hyperview.TenantSource",
+            "OPTIONS": {"tenant_key": "slug"},
+        },
+    ],
+}
+```
+
+```python
+from dj_hyperview import resolve_template
+
+screen = resolve_template("account/profile.xml")
+```
+
+Template names are relative POSIX paths. Absolute paths, empty or dot segments,
+backslashes, NUL bytes, and filesystem symlink escapes are rejected. A source
+returns `None` only for a miss; when every source misses, resolution raises
+`TemplateNotFound`.

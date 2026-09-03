@@ -1,6 +1,11 @@
 """Reusable Django infrastructure for Hyperview interfaces."""
 
-from .exceptions import HyperviewConfigurationError, HyperviewError
+from .exceptions import (
+    HyperviewConfigurationError,
+    HyperviewError,
+    InvalidTemplateName,
+    TemplateNotFound,
+)
 from .http import HYPERVIEW_MEDIA_TYPE, HyperviewResponse, HyperviewTemplateResponse
 from .middleware import (
     HYPERVIEW_VERSION_HEADER,
@@ -8,11 +13,14 @@ from .middleware import (
     HyperviewRequestDetails,
     detect_hyperview_request,
 )
+from .resolver import TemplateResolver, resolve_template
+from .sources import FileSystemSource, ResolvedTemplate, TemplateSource
 from .views import HyperviewTemplateView
 
 __all__ = [
     "HYPERVIEW_MEDIA_TYPE",
     "HYPERVIEW_VERSION_HEADER",
+    "FileSystemSource",
     "HyperviewConfigurationError",
     "HyperviewError",
     "HyperviewMiddleware",
@@ -20,5 +28,11 @@ __all__ = [
     "HyperviewResponse",
     "HyperviewTemplateResponse",
     "HyperviewTemplateView",
+    "InvalidTemplateName",
+    "ResolvedTemplate",
+    "TemplateNotFound",
+    "TemplateResolver",
+    "TemplateSource",
     "detect_hyperview_request",
+    "resolve_template",
 ]
