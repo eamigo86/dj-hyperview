@@ -105,7 +105,7 @@ def test_invalidation_isolates_name_namespace_content_miss_and_eviction():
 def test_concurrent_old_readers_and_invalidations_never_repopulate(old):
     namespace = f"race-{'miss' if old is None else 'content'}"
     source = Source({"screen.xml": old}, readers=3)
-    current = resolver(source, namespace)
+    current = resolver(source, namespace, failure_mode="bypass")
     readers = [launch(lambda: current.resolve("screen.xml")) for _ in range(3)]
     source.started.wait(timeout=3)
     gate = Barrier(3)

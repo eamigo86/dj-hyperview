@@ -26,6 +26,7 @@ _RESOLVED_MISS_FIELDS = {"version", "state", "source", "name"}
 _RESOLVER_REVISION = "@resolved"
 _GENERATION_ATTEMPTS = 8
 _CLAIM_VALUE = "claimed"
+_GENERATION_DOMAIN = "dj-hyperview:generation:v2"
 
 
 @dataclass(frozen=True, slots=True)
@@ -129,6 +130,14 @@ class TemplateCache:
         if result is _FAILURE or result is False:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
+    def _delete(self, key: str) -> None:
+        result = _without_untrusted_exception(lambda: self.backend.delete(key))
+        if result is _FAILURE or result is False:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+
+    def _generation_key(self, name: str) -> str:
+        return self.key("@generation", name, "@token")
+
     def _claim_key(self, name: str, generation: str) -> str:
         return self.key("@generation-claim", name, generation)
 
@@ -139,34 +148,53 @@ class TemplateCache:
             max(self.ttl, self.negative_ttl),
         )
 
-    def _ensure_claim(self, name: str, generation: str) -> None:
+    def _keep_claim(self, name: str, generation: str) -> None:
         result = _without_untrusted_exception(
             lambda: self.backend.add(
-                self._claim_key(name, generation),
-                _CLAIM_VALUE,
-                timeout=max(self.ttl, self.negative_ttl),
+                self._claim_key(name, generation), _CLAIM_VALUE, timeout=None
             )
         )
         if type(result) is not bool:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
-    def _claim_generation(self, name: str) -> str:
+    def _candidate(self, name: str, current: str | None) -> str:
+        entropy = _without_untrusted_exception(lambda: secrets.token_hex(16))
+        if type(entropy) is not str:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+        material = json.dumps(
+            [_GENERATION_DOMAIN, self.namespace, name, current, entropy],
+            ensure_ascii=False,
+            separators=(",", ":"),
+        ).encode(errors="surrogatepass")
+        return hashlib.sha256(material).hexdigest()[:32]
+
+    def _claim_generation(self, name: str, current: str | None) -> str:
         for _ in range(_GENERATION_ATTEMPTS):
-            candidate = secrets.token_hex(16)
-            if not self._valid_generation(candidate):
-                break
+            candidate = self._candidate(name, current)
             claimed = _without_untrusted_exception(
                 lambda candidate=candidate: self.backend.add(
-                    self._claim_key(name, candidate),
-                    _CLAIM_VALUE,
-                    timeout=max(self.ttl, self.negative_ttl),
+                    self._claim_key(name, candidate), _CLAIM_VALUE, timeout=None
                 )
             )
             if claimed is True:
                 return candidate
             if claimed is not False:
+                try:
+                    self._retain_claim(name, candidate)
+                except SourceUnavailable:
+                    pass
                 break
         raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+
+    def _read_generation(self, name: str) -> str:
+        token = _without_untrusted_exception(
+            lambda: self.backend.get(self._generation_key(name), _ABSENT)
+        )
+        if token is _FAILURE or token is _ABSENT:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+        if not self._valid_generation(token):
+            raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
+        return token
 
     @staticmethod
     def _valid_generation(token: object) -> bool:
@@ -178,10 +206,10 @@ class TemplateCache:
 
     def generation(self, name: str) -> str:
         """Return the shared generation token for a canonical template name."""
-        key = self.key("@generation", name, "@token")
+        key = self._generation_key(name)
         token = _without_untrusted_exception(lambda: self.backend.get(key, _ABSENT))
         if token is _ABSENT:
-            candidate = self._claim_generation(name)
+            candidate = self._claim_generation(name, None)
             added = _without_untrusted_exception(
                 lambda: self.backend.add(key, candidate, timeout=None)
             )
@@ -194,18 +222,40 @@ class TemplateCache:
                 if added is False
                 else _FAILURE
             )
+            if added is False and token != candidate:
+                self._retain_claim(name, candidate)
+            elif added is not True:
+                self._retire_if_unused(name, candidate)
         if token is _FAILURE:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
         if not self._valid_generation(token):
             raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
-        self._ensure_claim(name, token)
+        self._keep_claim(name, token)
         return token
 
     def invalidate(self, name: str) -> None:
         """Rotate a template generation without deleting backend-specific keys."""
-        self.generation(name)
-        candidate = self._claim_generation(name)
-        self._store(self.key("@generation", name, "@token"), candidate, None)
+        current = self.generation(name)
+        candidate = self._claim_generation(name, current)
+        try:
+            self._store(self._generation_key(name), candidate, None)
+        except SourceUnavailable:
+            self._retire_if_unused(name, candidate)
+            raise
+        self._retain_claim(name, current)
+        if self._read_generation(name) != candidate:
+            self._retain_claim(name, candidate)
+
+    def _retire_if_unused(self, name: str, candidate: str) -> None:
+        current = _without_untrusted_exception(
+            lambda: self.backend.get(self._generation_key(name), _ABSENT)
+        )
+        if current is _FAILURE or current == candidate:
+            return
+        try:
+            self._retain_claim(name, candidate)
+        except SourceUnavailable:
+            pass
 
     def get(self, source: str, name: str, revision: str) -> CacheEntry | None:
         payload = _without_untrusted_exception(
@@ -299,13 +349,33 @@ class TemplateCache:
         timeout: int,
         generation: str | None,
     ) -> None:
+        key = self.key(source, name, self._resolved_revision(generation))
+        self._store(key, payload, timeout)
         if generation is not None:
+            self._confirm_publication(name, generation, key)
+
+    def _confirm_publication(self, name: str, generation: str, key: str) -> None:
+        try:
+            current = self._read_generation(name)
+        except SourceUnavailable:
+            self._discard_publication(name, generation, key)
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure") from None
+        if current != generation:
+            clean = self._discard_publication(name, generation, key)
+            reason = "generation changed" if clean else "backend failure"
+            raise SourceUnavailable(f"cache:{self.alias}", reason)
+
+    def _discard_publication(self, name: str, generation: str, key: str) -> bool:
+        clean = True
+        try:
             self._retain_claim(name, generation)
-        self._store(
-            self.key(source, name, self._resolved_revision(generation)),
-            payload,
-            timeout,
-        )
+        except SourceUnavailable:
+            clean = False
+        try:
+            self._delete(key)
+        except SourceUnavailable:
+            clean = False
+        return clean
 
     def _decode_resolved(self, payload: object, source: str, name: str) -> CacheEntry:
         def decode() -> CacheEntry:

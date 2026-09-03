@@ -20,8 +20,7 @@ SHARED_CACHES = {
 
 
 def token_sequence(*values):
-    tokens = iter(values)
-    return lambda _size: next(tokens)
+    return iter(values)
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
@@ -29,10 +28,7 @@ def test_rotation_retries_claimed_candidates_without_namespace_reuse():
     cache = TemplateCache("claimed-rotation", alias="screens")
     old = cache.generation("screen.xml")
     new = "f" * 32
-    with patch(
-        "dj_hyperview.cache.secrets.token_hex",
-        side_effect=token_sequence(old, old, new),
-    ):
+    with patch.object(cache, "_candidate", side_effect=token_sequence(old, old, new)):
         cache.invalidate("screen.xml")
     assert cache.generation("screen.xml") == new
 
@@ -47,9 +43,8 @@ def test_generation_eviction_rejects_retained_historical_claim():
     current.cache.backend.delete(
         current.cache.key("@generation", "screen.xml", "@token")
     )
-    with patch(
-        "dj_hyperview.cache.secrets.token_hex",
-        side_effect=token_sequence(old, "e" * 32),
+    with patch.object(
+        current.cache, "_candidate", side_effect=token_sequence(old, "e" * 32)
     ):
         assert resolver(source, "claimed-eviction").resolve("screen.xml").content == (
             "new"
@@ -60,7 +55,7 @@ def test_generation_eviction_rejects_retained_historical_claim():
 def test_candidate_exhaustion_raises_without_rotating():
     cache = TemplateCache("claim-exhaustion", alias="screens")
     old = cache.generation("screen.xml")
-    with patch("dj_hyperview.cache.secrets.token_hex", return_value=old):
+    with patch.object(cache, "_candidate", return_value=old):
         with pytest.raises(SourceUnavailable, match="backend failure"):
             cache.invalidate("screen.xml")
     assert cache.generation("screen.xml") == old
