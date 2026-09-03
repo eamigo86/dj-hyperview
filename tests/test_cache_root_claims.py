@@ -86,7 +86,8 @@ def test_candidate_add_false_requires_an_exact_claim_marker(state):
     cache = TemplateCache(f"candidate-claim-{state}", alias="screens")
     backend = ClockBackend()
     cache.backend = backend
-    current, candidate, fallback = cache.generation("screen.xml"), "e" * 32, "f" * 32
+    current = cache.generation("screen.xml")
+    candidate, fallback = "s" + "e" * 32, "s" + "f" * 32
     claim_key = cache._claim_key("screen.xml", candidate)
     if state == "malformed":
         backend._put(claim_key, "untrusted", None)
@@ -108,7 +109,7 @@ def test_valid_claim_collision_retries_and_markers_are_secret_safe():
     backend = ClockBackend()
     first.backend = backend
     first.generation("screen.xml")
-    collision, successor = "e" * 32, "f" * 32
+    collision, successor = "s" + "e" * 32, "s" + "f" * 32
     marker = first._claim_value("screen.xml", collision, "successor")
     backend._put(first._claim_key("screen.xml", collision), marker, None)
 

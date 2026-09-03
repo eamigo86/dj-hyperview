@@ -26,9 +26,16 @@ def token_sequence(*values):
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_rotation_retries_claimed_candidates_without_namespace_reuse():
     cache = TemplateCache("claimed-rotation", alias="screens")
-    old = cache.generation("screen.xml")
-    new = "f" * 32
-    with patch.object(cache, "_candidate", side_effect=token_sequence(old, old, new)):
+    cache.generation("screen.xml")
+    claimed, new = "s" + "e" * 32, "s" + "f" * 32
+    cache.backend.set(
+        cache._claim_key("screen.xml", claimed),
+        cache._claim_value("screen.xml", claimed, "successor"),
+        timeout=None,
+    )
+    with patch.object(
+        cache, "_candidate", side_effect=token_sequence(claimed, claimed, new)
+    ):
         cache.invalidate("screen.xml")
     assert cache.generation("screen.xml") == new
 
@@ -44,7 +51,7 @@ def test_generation_eviction_rejects_retained_historical_claim():
         current.cache.key("@generation", "screen.xml", "@token")
     )
     with patch.object(
-        current.cache, "_candidate", side_effect=token_sequence(old, "e" * 32)
+        current.cache, "_candidate", side_effect=token_sequence(old, "r" + "e" * 32)
     ):
         assert resolver(source, "claimed-eviction").resolve("screen.xml").content == (
             "new"
@@ -55,7 +62,13 @@ def test_generation_eviction_rejects_retained_historical_claim():
 def test_candidate_exhaustion_raises_without_rotating():
     cache = TemplateCache("claim-exhaustion", alias="screens")
     old = cache.generation("screen.xml")
-    with patch.object(cache, "_candidate", return_value=old):
+    claimed = "s" + "e" * 32
+    cache.backend.set(
+        cache._claim_key("screen.xml", claimed),
+        cache._claim_value("screen.xml", claimed, "successor"),
+        timeout=None,
+    )
+    with patch.object(cache, "_candidate", return_value=claimed):
         with pytest.raises(SourceUnavailable, match="backend failure"):
             cache.invalidate("screen.xml")
     assert cache.generation("screen.xml") == old

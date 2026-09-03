@@ -56,6 +56,15 @@ class ClockBackend:
             return False
         return self.values.pop(key, None) is not None
 
+    def touch(self, key, timeout=None):
+        if self._fault("touch", key):
+            return False
+        value = self._live(key)
+        if value is None:
+            return False
+        self._put(key, value, timeout)
+        return True
+
     def _put(self, key, value, timeout):
         expires = None if timeout is None else self.now + timeout
         self.values[key] = (value, expires)
@@ -135,12 +144,14 @@ def test_root_claim_is_permanent_and_successor_retires_at_next_rotation():
     cache.backend = backend
     with patch("dj_hyperview.cache.secrets.token_hex", return_value="a" * 32):
         old = cache.generation("screen.xml")
+    assert old.startswith("r")
     assert backend.expiry(cache._claim_key("screen.xml", old)) is None
 
     backend.advance(4)
     with patch("dj_hyperview.cache.secrets.token_hex", return_value="b" * 32):
         cache.invalidate("screen.xml")
     new = cache.generation("screen.xml")
+    assert new.startswith("s")
     assert backend.expiry(cache._claim_key("screen.xml", old)) is None
     assert backend.expiry(cache._claim_key("screen.xml", new)) is None
 
@@ -156,7 +167,7 @@ def test_failed_rotation_retires_its_unused_candidate(effect):
     cache = TemplateCache(f"failed-candidate-{effect}", alias="screens", ttl=10)
     backend = ClockBackend()
     cache.backend = backend
-    current, candidate = cache.generation("screen.xml"), "f" * 32
+    current, candidate = cache.generation("screen.xml"), "s" + "f" * 32
     backend.faults[("set", cache._generation_key("screen.xml"))] = effect
     with patch.object(cache, "_candidate", return_value=candidate):
         with pytest.raises(SourceUnavailable, match="backend failure"):
@@ -170,7 +181,7 @@ def arm_rotation(cache, backend, generation):
         "source:test", "screen.xml", cache._resolved_revision(generation)
     )
     generation_key = cache.key("@generation", "screen.xml", "@token")
-    successor = "f" * 32
+    successor = "s" + "f" * 32
 
     def rotate(key):
         if key == raw_key:
@@ -228,9 +239,9 @@ def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(operation, 
     with pytest.raises(SourceUnavailable, match="backend failure"):
         cache.set_resolved("source:test", "screen.xml", template, generation)
     backend.faults.clear()
+    assert backend.expiry(claim_key) is None
     if operation == "delete":
         assert backend.get(raw_key, "absent") != "absent"
-        assert backend.expiry(claim_key) == max(cache.ttl, cache.negative_ttl)
     else:
         assert backend.get(raw_key, "absent") == "absent"
 
