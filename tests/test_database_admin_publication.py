@@ -171,3 +171,79 @@ def test_admin_transaction_outcomes_preserve_database_truth(admin_client) -> Non
     template.refresh_from_db()
     assert (template.content, template.revision) == ("<old />", 1)
     invalidate.assert_not_called()
+
+
+def test_add_form_excludes_revision_control_from_get_and_post(admin_client) -> None:
+    model = _model()
+    add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
+
+    page = admin_client.get(add)
+    form = page.context["adminform"].form
+    assert "expected_revision" not in form.fields
+    assert b'name="expected_revision"' not in page.content
+
+    data = _form("screen.xml", "<view />")
+    data["expected_revision"] = ["7", "9"]
+    response = admin_client.post(add, data)
+    assert response.status_code == 302
+    template = model.objects.get()
+    assert (template.name, template.revision) == ("screen.xml", 1)
+
+
+@pytest.mark.parametrize("values", [["999", "1"], ["1", "999"], ["1", "1"]])
+def test_admin_change_rejects_duplicate_revision_values(
+    admin_client, values: list[str]
+) -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin")
+    model = _model()
+    template = model.objects.create(name="screen.xml", content="<old />")
+    _, change, _ = _urls(template)
+    data = _form("screen.xml", "<lost />")
+    data["expected_revision"] = values
+
+    with (
+        patch.object(module, "rename_template", wraps=module.rename_template) as rename,
+        patch(SCHEDULE) as schedule,
+    ):
+        response = admin_client.post(change, data, follow=True)
+
+    template.refresh_from_db()
+    assert b"Template changed; reload and retry." in response.content
+    assert (template.content, template.revision) == ("<old />", 1)
+    rename.assert_not_called()
+    schedule.assert_not_called()
+
+
+@pytest.mark.parametrize("values", [["999", "1"], ["1", "999"], ["1", "1"]])
+def test_admin_delete_rejects_duplicate_revision_values(
+    admin_client, values: list[str]
+) -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin")
+    model = _model()
+    template = model.objects.create(name="screen.xml", content="<view />")
+    _, _, delete = _urls(template)
+
+    with (
+        patch.object(
+            module, "delete_template", wraps=module.delete_template
+        ) as delete_api,
+        patch(SCHEDULE) as schedule,
+    ):
+        response = admin_client.post(
+            delete, {"post": "yes", "expected_revision": values}, follow=True
+        )
+
+    assert b"Template changed; reload and retry." in response.content
+    assert model.objects.filter(pk=template.pk).exists()
+    delete_api.assert_not_called()
+    schedule.assert_not_called()
+
+
+def test_admin_form_public_overrides_have_complete_docstrings() -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin")
+    init_doc = module.HyperviewTemplateAdminForm.__init__.__doc__ or ""
+    clean_doc = module.HyperviewTemplateAdminForm.clean.__doc__ or ""
+
+    assert "Args:" in init_doc
+    assert "Returns:" in clean_doc
+    assert "Raises:" in clean_doc

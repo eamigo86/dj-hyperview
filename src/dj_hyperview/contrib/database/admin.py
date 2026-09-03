@@ -1,5 +1,6 @@
 """Standard Django admin integration for stored Hyperview templates."""
 
+from collections.abc import Mapping
 from typing import Any, cast
 
 from django import forms
@@ -7,6 +8,7 @@ from django.contrib import admin, messages
 from django.db import DEFAULT_DB_ALIAS, models, router
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.template.response import TemplateResponse
+from django.utils.datastructures import MultiValueDict
 
 from .models import HyperviewTemplate
 from .services import (
@@ -21,9 +23,14 @@ __all__ = ["HyperviewTemplateAdmin", "HyperviewTemplateAdminForm"]
 _CONFLICT_MESSAGE = "Template changed; reload and retry."
 
 
-def _posted_revision(request: HttpRequest) -> int:
-    value = request.POST.get("expected_revision")
-    revision = int(value) if value and value.isdecimal() else 0
+def _submitted_revision(data: Mapping[str, Any]) -> int:
+    values = (
+        data.getlist("expected_revision")
+        if isinstance(data, MultiValueDict)
+        else [data.get("expected_revision")]
+    )
+    value = values[0] if len(values) == 1 else None
+    revision = int(value) if type(value) is str and value.isdecimal() else 0
     if revision < 1 or str(revision) != value:
         raise PublicationConflict
     return revision
@@ -37,6 +44,12 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
     )
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize controls appropriate to a new or persisted template.
+
+        Args:
+            *args: Positional arguments forwarded to the model form.
+            **kwargs: Keyword arguments forwarded to the model form.
+        """
         instance = kwargs.get("instance")
         self._loaded_name = (
             instance.name
@@ -44,7 +57,9 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
             else None
         )
         super().__init__(*args, **kwargs)
-        if self.instance.pk is not None:
+        if self.instance.pk is None:
+            self.fields.pop("expected_revision", None)
+        else:
             self.fields["expected_revision"].initial = self.instance.revision
 
     def clean(self) -> dict[str, Any]:
@@ -52,13 +67,18 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
 
         Returns:
             Values cleaned by the standard model form boundary.
+
+        Raises:
+            ValidationError: If the revision token is missing, ambiguous, or stale.
         """
         cleaned = super().clean()
-        if (
-            self.instance.pk is not None
-            and "expected_revision" not in self.errors
-            and cleaned.get("expected_revision") != self.instance.revision
-        ):
+        if self.instance.pk is None:
+            return cleaned
+        try:
+            revision_matches = _submitted_revision(self.data) == self.instance.revision
+        except PublicationConflict:
+            revision_matches = False
+        if not revision_matches:
             raise forms.ValidationError(_CONFLICT_MESSAGE, code="publication_conflict")
         return cleaned
 
@@ -79,6 +99,23 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     ordering = ("name",)
     readonly_fields = ("revision", "created_at", "updated_at")
+
+    def get_fields(
+        self, request: HttpRequest, obj: HyperviewTemplate | None = None
+    ) -> tuple[str, ...]:
+        """Exclude revision input when no persisted object exists.
+
+        Args:
+            request: Current admin request.
+            obj: Persisted object for a change form, or None for creation.
+
+        Returns:
+            Fields appropriate to the requested mutation.
+        """
+        fields = tuple(super().get_fields(request, obj))
+        if obj is None:
+            return tuple(field for field in fields if field != "expected_revision")
+        return fields
 
     def get_queryset(self, request: HttpRequest) -> models.QuerySet:
         """Select the write database and lock change or delete POST rows.
@@ -159,7 +196,9 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
             SourceUnavailable: If post-commit invalidation fails.
         """
         delete_template(
-            obj.name, expected_revision=_posted_revision(request), using=obj._state.db
+            obj.name,
+            expected_revision=_submitted_revision(request.POST),
+            using=obj._state.db,
         )
 
     def changeform_view(
