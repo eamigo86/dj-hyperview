@@ -3,6 +3,7 @@
 from collections.abc import Iterable
 from typing import Any
 
+from django.core.exceptions import FieldError
 from django.db import models, transaction
 
 from dj_hyperview.sources import canonicalize_template_name
@@ -14,6 +15,21 @@ _OBSERVABLE_FIELDS = frozenset({"name", "content", "active", "revision"})
 
 def _canonical_names(values: Iterable[object]) -> tuple[str, ...]:
     return tuple(dict.fromkeys(canonicalize_template_name(value) for value in values))
+
+
+def _validate_update_preconditions(queryset: models.QuerySet) -> None:
+    queryset._not_support_combined_queries("update")
+    if queryset.query.is_sliced:
+        raise TypeError("Cannot update a query once a slice has been taken.")
+    if queryset.query.distinct_fields:
+        raise TypeError("Cannot call update() after .distinct(*fields).")
+    for ordering in queryset.query.order_by:
+        alias = ordering.removeprefix("-") if isinstance(ordering, str) else ordering
+        annotation = queryset.query.annotations.get(alias)
+        if annotation is not None and annotation.contains_aggregate:
+            raise FieldError(
+                f"Cannot update when ordering by an aggregate: {annotation}"
+            )
 
 
 class HyperviewTemplateQuerySet(models.QuerySet):
@@ -30,9 +46,13 @@ class HyperviewTemplateQuerySet(models.QuerySet):
 
         Raises:
             InvalidTemplateName: If a literal or resulting name is unsafe.
+            NotSupportedError: If the QuerySet combines multiple queries.
+            TypeError: If slicing or field-specific distinct makes update invalid.
+            FieldError: If fields or ordering expressions are invalid.
             ValueError: If the update attempts to modify the primary key.
             DatabaseError: If selection or update SQL fails.
         """
+        _validate_update_preconditions(self)
         self._for_write = True
         using = self.db
         queryset = self.using(using)
@@ -52,9 +72,9 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             )
             old_names = _canonical_names(name for _, name in rows)
             primary_keys = tuple(row_primary_key for row_primary_key, _ in rows)
-            authoritative = self.model._base_manager.using(using).filter(
-                pk__in=primary_keys
-            )
+            authoritative = queryset.all()
+            authoritative.query.clear_where()
+            authoritative = authoritative.filter(pk__in=primary_keys)
             updated = models.QuerySet.update(authoritative, **kwargs)
             if not updated:
                 return updated

@@ -1,14 +1,20 @@
 """Controlled database QuerySet update integration tests."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from typing import Any
 from unittest.mock import patch
 
 import pytest
 from django.core.cache import caches
-from django.core.exceptions import FieldDoesNotExist
-from django.db import IntegrityError, connection, connections, transaction
-from django.db.models import Case, F, Model, QuerySet, Value, When
+from django.core.exceptions import FieldDoesNotExist, FieldError
+from django.db import (
+    IntegrityError,
+    NotSupportedError,
+    connection,
+    connections,
+    transaction,
+)
+from django.db.models import Case, Count, F, Model, QuerySet, Value, When
 from django.db.models.signals import post_save, pre_save
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
@@ -354,3 +360,111 @@ def test_update_mutates_only_primary_keys_captured_by_the_locked_snapshot(
     assert queryset_model.objects.get(pk=original.pk).content == "<updated />"
     assert queryset_model.objects.get(name="phantom.xml").content == "<old />"
     schedule.assert_called_once_with("original.xml", using="default")
+
+
+def test_update_preserves_aliases_used_by_expressions(
+    queryset_model: type[Model],
+) -> None:
+    template = queryset_model.objects.create(name="screen.xml", content="<old />")
+
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        updated = (
+            queryset_model.objects.alias(replacement=Value("<aliased />"))
+            .filter(pk=template.pk)
+            .update(content=F("replacement"))
+        )
+
+    assert updated == 1
+    assert queryset_model.objects.get(pk=template.pk).content == "<aliased />"
+    schedule.assert_called_once_with("screen.xml", using="default")
+
+
+def test_union_update_preserves_native_rejection_without_writing(
+    queryset_model: type[Model],
+) -> None:
+    first = queryset_model.objects.create(name="first.xml", content="<first />")
+    second = queryset_model.objects.create(name="second.xml", content="<second />")
+    combined = (
+        queryset_model.objects.filter(pk=first.pk)
+        .order_by()
+        .union(queryset_model.objects.filter(pk=second.pk).order_by())
+    )
+
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        with pytest.raises(NotSupportedError):
+            combined.update(content="<unexpected />")
+
+    assert list(
+        queryset_model.objects.order_by("pk").values_list("content", flat=True)
+    ) == ["<first />", "<second />"]
+    schedule.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    ("build_queryset", "message"),
+    [
+        pytest.param(
+            lambda model: model.objects.all()[:1],
+            "Cannot update a query once a slice has been taken.",
+            id="sliced",
+        ),
+        pytest.param(
+            lambda model: model.objects.distinct("name"),
+            "Cannot call update() after .distinct(*fields).",
+            id="distinct-fields",
+        ),
+    ],
+)
+def test_update_preserves_native_shape_preconditions_before_queries(
+    queryset_model: type[Model],
+    build_queryset: Callable[[type[Model]], QuerySet],
+    message: str,
+) -> None:
+    queryset_model.objects.create(name="screen.xml", content="<old />")
+
+    with (
+        patch(
+            "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+        ) as schedule,
+        CaptureQueriesContext(connection) as queries,
+    ):
+        with pytest.raises(TypeError) as error:
+            build_queryset(queryset_model).update(content="<unexpected />")
+
+    assert len(queries) == 0
+    assert str(error.value) == message
+    assert queryset_model.objects.get().content == "<old />"
+    schedule.assert_not_called()
+
+
+def test_update_preserves_annotation_ordering_and_rejects_aggregate_ordering(
+    queryset_model: type[Model],
+) -> None:
+    template = queryset_model.objects.create(name="screen.xml", content="<old />")
+
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        updated = (
+            queryset_model.objects.annotate(replacement=Value("<annotated />"))
+            .order_by("-replacement")
+            .update(content=F("replacement"))
+        )
+        assert updated == 1
+        schedule.assert_called_once_with("screen.xml", using="default")
+        schedule.reset_mock()
+        with CaptureQueriesContext(connection) as queries:
+            with pytest.raises(
+                FieldError, match="Cannot update when ordering by an aggregate"
+            ):
+                queryset_model.objects.alias(total=Count("pk")).order_by(
+                    "total"
+                ).update(content="<unexpected />")
+
+    assert len(queries) == 0
+    assert queryset_model.objects.get(pk=template.pk).content == "<annotated />"
+    schedule.assert_not_called()
