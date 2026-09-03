@@ -2,7 +2,6 @@ import json
 
 import pytest
 from django.core.cache import caches
-from django.core.cache.backends.base import InvalidCacheBackendError
 from django.test import override_settings
 
 from dj_hyperview.cache import CACHE_MISS, TemplateCache
@@ -189,13 +188,14 @@ def test_cache_normalizes_invalid_alias_types(alias):
 
 
 @override_settings(CACHES=BROKEN_CACHES)
-def test_cache_normalizes_invalid_backend_configuration_and_preserves_cause():
+def test_cache_normalizes_invalid_backend_configuration_without_leaking_cause():
     with pytest.raises(SourceUnavailable) as captured:
         TemplateCache("tenant", alias="broken")
 
     assert captured.value.source == "cache:broken"
-    assert captured.value.reason == "unknown alias"
-    assert isinstance(captured.value.__cause__, InvalidCacheBackendError)
+    assert captured.value.reason == "backend failure"
+    assert captured.value.__cause__ is None
+    assert captured.value.__context__ is None
 
 
 @pytest.mark.parametrize("kwargs", [{"ttl": True}, {"negative_ttl": True}])
@@ -206,6 +206,15 @@ def test_cache_rejects_boolean_timeouts(kwargs):
 
 def test_cache_still_accepts_the_exact_supported_miss_envelope():
     cache = TemplateCache("exact-miss", alias="screens")
-    store_payload(cache, {"version": 1, "state": "miss"})
+    store_payload(
+        cache,
+        {
+            "version": 1,
+            "state": "miss",
+            "source": "memory",
+            "name": "screen.xml",
+            "revision": "r1",
+        },
+    )
 
     assert cache.get(*LOOKUP) is CACHE_MISS

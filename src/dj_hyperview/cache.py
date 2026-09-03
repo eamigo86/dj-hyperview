@@ -2,19 +2,21 @@
 
 import hashlib
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 
+from django.conf import settings
 from django.core.cache import caches
-from django.core.cache.backends.base import InvalidCacheBackendError
 
 from .conf import get_settings
 from .exceptions import SourceUnavailable
 from .sources import ResolvedTemplate
 
 _ABSENT = object()
+_FAILURE = object()
 _FIELDS = {"name", "content", "origin", "source", "revision"}
-_MISS_FIELDS = {"version", "state"}
-_TEMPLATE_FIELDS = {*_MISS_FIELDS, "template"}
+_MISS_FIELDS = {"version", "state", "source", "name", "revision"}
+_TEMPLATE_FIELDS = {"version", "state", "template"}
 
 
 @dataclass(frozen=True, slots=True)
@@ -45,6 +47,13 @@ def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
     return value
 
 
+def _without_untrusted_exception[T](operation: Callable[[], T]) -> T | object:
+    try:
+        return operation()
+    except Exception:  # Cache backends and serialized payloads are untrusted.
+        return _FAILURE
+
+
 def template_cache_key(namespace: str, source: str, name: str, revision: str) -> str:
     """Return a backend-safe key for one raw template revision."""
     components = json.dumps(
@@ -70,16 +79,21 @@ class TemplateCache:
             raise ValueError("Cache namespace must be a non-empty string")
         _validate_timeout(ttl, 1, "TTL")
         _validate_timeout(negative_ttl, 0, "negative TTL")
-        if not isinstance(alias, str) or not alias:
+        if (
+            not isinstance(alias, str)
+            or not alias
+            or alias.startswith("_")
+            or alias not in settings.CACHES
+        ):
             raise SourceUnavailable("cache", "invalid alias")
         self.namespace = namespace
         self.alias = alias
         self.ttl = ttl
         self.negative_ttl = negative_ttl
-        try:
-            self.backend = caches[alias]
-        except InvalidCacheBackendError as error:
-            raise SourceUnavailable(f"cache:{alias}", "unknown alias") from error
+        backend = _without_untrusted_exception(lambda: caches[alias])
+        if backend is _FAILURE:
+            raise SourceUnavailable(f"cache:{alias}", "backend failure")
+        self.backend = backend
 
     @classmethod
     def from_settings(cls, namespace: str) -> "TemplateCache":
@@ -95,7 +109,11 @@ class TemplateCache:
         return template_cache_key(self.namespace, source, name, revision)
 
     def get(self, source: str, name: str, revision: str) -> CacheEntry | None:
-        payload = self.backend.get(self.key(source, name, revision), _ABSENT)
+        payload = _without_untrusted_exception(
+            lambda: self.backend.get(self.key(source, name, revision), _ABSENT)
+        )
+        if payload is _FAILURE:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
         if payload is _ABSENT:
             return None
         return self._decode(payload, source, name, revision)
@@ -106,29 +124,55 @@ class TemplateCache:
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        self.backend.set(
-            self.key(template.source, template.name, template.revision),
-            payload,
-            timeout=self.ttl,
+        result = _without_untrusted_exception(
+            lambda: self.backend.set(
+                self.key(template.source, template.name, template.revision),
+                payload,
+                timeout=self.ttl,
+            )
         )
+        if result is _FAILURE:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def set_miss(self, source: str, name: str, revision: str) -> None:
-        payload = json.dumps({"version": 1, "state": "miss"}, separators=(",", ":"))
-        self.backend.set(
-            self.key(source, name, revision), payload, timeout=self.negative_ttl
+        payload = json.dumps(
+            {
+                "version": 1,
+                "state": "miss",
+                "source": source,
+                "name": name,
+                "revision": revision,
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
         )
+        result = _without_untrusted_exception(
+            lambda: self.backend.set(
+                self.key(source, name, revision), payload, timeout=self.negative_ttl
+            )
+        )
+        if result is _FAILURE:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def _decode(
         self, payload: object, source: str, name: str, revision: str
     ) -> CacheEntry:
-        try:
+        def decode() -> CacheEntry:
             if not isinstance(payload, str):
                 raise TypeError
             value = json.loads(payload, object_pairs_hook=_unique_object)
             if type(value.get("version")) is not int or value["version"] != 1:
                 raise ValueError
             if value.get("state") == "miss":
-                if set(value) != _MISS_FIELDS:
+                if (
+                    set(value) != _MISS_FIELDS
+                    or not all(
+                        isinstance(value[field], str)
+                        for field in ("source", "name", "revision")
+                    )
+                    or (value["source"], value["name"], value["revision"])
+                    != (source, name, revision)
+                ):
                     raise ValueError
                 return CACHE_MISS
             if value.get("state") != "template" or set(value) != _TEMPLATE_FIELDS:
@@ -142,5 +186,8 @@ class TemplateCache:
             ):
                 raise ValueError
             return CacheEntry(ResolvedTemplate(**template))
-        except (AttributeError, KeyError, TypeError, ValueError) as error:
-            raise SourceUnavailable(f"cache:{self.alias}", "invalid payload") from error
+
+        entry = _without_untrusted_exception(decode)
+        if entry is _FAILURE:
+            raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
+        return entry

@@ -106,7 +106,9 @@ returns `None` only for a miss; when every source misses, resolution raises
 `TemplateCache` stores only serialized raw `ResolvedTemplate` data through a
 configured Django cache alias; it never caches compiled templates. A lookup
 returns `None` when no entry exists, `CACHE_MISS` for a cached source miss, and
-a `CacheEntry` for content—even when that content is empty. Fixed-length
+returns a `CacheEntry` for content—even when that content is empty. Every hit or
+miss is bound to its source, name, and revision. Backend failures use a stable
+public error without exposing cached template data. Fixed-length
 SHA-256 keys isolate namespace, source, name, and revision safely. Resolver
 integration and failure policies are intentionally deferred to the next slice.
 Cached JSON is treated as untrusted: exact version/shape/type and lookup identity

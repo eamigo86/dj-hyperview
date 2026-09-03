@@ -134,11 +134,9 @@ def test_unknown_cache_alias_raises_stable_public_error():
     with pytest.raises(SourceUnavailable) as captured:
         TemplateCache("tenant", alias="missing")
 
-    assert captured.value.source == "cache:missing"
-    assert captured.value.reason == "unknown alias"
-    assert str(captured.value) == (
-        "Template source unavailable: cache:missing (unknown alias)"
-    )
+    assert captured.value.source == "cache"
+    assert captured.value.reason == "invalid alias"
+    assert str(captured.value) == "Template source unavailable: cache (invalid alias)"
 
 
 @pytest.mark.parametrize(
