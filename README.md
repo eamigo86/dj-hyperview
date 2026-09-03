@@ -152,7 +152,9 @@ Use `dj_hyperview.contrib.database.services.publish_template()` for validated
 per-template publication. It creates revision 1, increments updates once, and
 accepts `expected_revision` for optimistic conflict detection; omitting it uses
 last-write-wins under the selected database row lock. Its immutable result hides
-the model. SQLite cannot prove row-lock serialization, so tests inject races.
+the model and confirms persistence in the current transaction; an enclosing
+transaction may still roll it back. SQLite cannot prove row-lock serialization,
+so tests inject races.
 Name uniqueness follows the database backend's collation: the package does not
 case-fold names, and SQLite's default treats `screen.xml` and `Screen.xml` as
 distinct.

@@ -19,7 +19,7 @@ __all__ = ["PublicationConflict", "PublicationResult", "publish_template"]
 
 @dataclass(frozen=True, slots=True)
 class PublicationResult:
-    """Describe one successfully committed template mutation.
+    """Describe one template mutation persisted in the current transaction.
 
     Attributes:
         name: Canonical template name.
@@ -116,12 +116,17 @@ def publish_template(
             created = False
 
         template.full_clean(validate_unique=False, validate_constraints=False)
-        try:
-            template.save(using=alias)
-        except IntegrityError:
-            transaction.set_rollback(True, using=alias)
-            conflict = True
+        if created:
+            try:
+                with transaction.atomic(using=alias):
+                    template.save(using=alias)
+            except IntegrityError:
+                conflict = manager.filter(name=canonical).exists()
+                if not conflict:
+                    raise
         else:
+            template.save(using=alias)
+        if not conflict:
             result = PublicationResult(canonical, template.revision, created)
 
     if conflict:

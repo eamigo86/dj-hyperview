@@ -213,20 +213,106 @@ def test_invalid_database_alias_fails_safely(using: object) -> None:
 def test_create_race_becomes_redacted_publication_conflict(
     publication_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    sensitive = "UNIQUE screen.xml secret database detail"
+    publication_model.objects.create(name="screen.xml", content="<winner />")
+    original_get = QuerySet.get
+    lookup_count = 0
 
-    def fail_save(instance: Model, *args: object, **kwargs: object) -> None:
-        del instance, args, kwargs
-        raise IntegrityError(sensitive)
+    def miss_existing_once(
+        queryset: QuerySet, *args: object, **kwargs: object
+    ) -> Model:
+        nonlocal lookup_count
+        lookup_count += 1
+        if lookup_count == 1:
+            raise publication_model.DoesNotExist
+        return original_get(queryset, *args, **kwargs)
 
-    monkeypatch.setattr(publication_model, "save", fail_save)
-    with pytest.raises(PublicationConflict) as captured:
+    monkeypatch.setattr(QuerySet, "get", miss_existing_once)
+    with (
+        patch(SCHEDULE) as schedule,
+        pytest.raises(PublicationConflict) as captured,
+    ):
         publish_template("screen.xml", "<private />")
 
     rendered = "".join(traceback.format_exception(captured.value))
     assert str(captured.value) == "Template publication conflict"
     assert (captured.value.__cause__, captured.value.__context__) == (None, None)
-    assert sensitive not in rendered
+    assert "UNIQUE constraint failed" not in rendered
+    assert publication_model._meta.db_table not in rendered
+    assert publication_model.objects.get(name="screen.xml").content == "<winner />"
+    schedule.assert_not_called()
+
+
+def test_unverified_create_integrity_error_remains_database_error(
+    publication_model: type[Model], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    failure = IntegrityError("private create infrastructure failure")
+
+    def fail_save(instance: Model, *args: object, **kwargs: object) -> None:
+        del instance, args, kwargs
+        raise failure
+
+    monkeypatch.setattr(publication_model, "save", fail_save)
+    with (
+        patch(SCHEDULE) as schedule,
+        pytest.raises(IntegrityError) as captured,
+    ):
+        publish_template("screen.xml", "<private />")
+
+    assert captured.value is failure
+    assert publication_model.objects.count() == 0
+    schedule.assert_not_called()
+
+
+def test_update_integrity_error_remains_database_error(
+    publication_model: type[Model], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    publication_model.objects.create(name="screen.xml", content="<original />")
+    failure = IntegrityError("private update infrastructure failure")
+
+    def fail_save(instance: Model, *args: object, **kwargs: object) -> None:
+        del instance, args, kwargs
+        raise failure
+
+    monkeypatch.setattr(publication_model, "save", fail_save)
+    with (
+        patch(SCHEDULE) as schedule,
+        pytest.raises(IntegrityError) as captured,
+    ):
+        publish_template("screen.xml", "<changed />")
+
+    stored = publication_model.objects.get(name="screen.xml")
+    assert captured.value is failure
+    assert (stored.content, stored.revision) == ("<original />", 1)
+    schedule.assert_not_called()
+
+
+def test_sqlite_update_constraint_error_is_not_a_publication_conflict(
+    publication_model: type[Model],
+) -> None:
+    connection = connections["default"]
+    if connection.vendor != "sqlite":
+        pytest.skip("SQLite trigger regression")
+    publication_model.objects.create(name="screen.xml", content="<original />")
+    table = connection.ops.quote_name(publication_model._meta.db_table)
+    trigger = connection.ops.quote_name("djhv_publication_update_abort")
+    with connection.cursor() as cursor:
+        cursor.execute(
+            f"CREATE TRIGGER {trigger} BEFORE UPDATE ON {table} "
+            "BEGIN SELECT RAISE(ABORT, 'update blocked'); END"
+        )
+    try:
+        with (
+            patch(SCHEDULE) as schedule,
+            pytest.raises(IntegrityError, match="update blocked"),
+        ):
+            publish_template("screen.xml", "<changed />")
+    finally:
+        with connection.cursor() as cursor:
+            cursor.execute(f"DROP TRIGGER {trigger}")
+
+    stored = publication_model.objects.get(name="screen.xml")
+    assert (stored.content, stored.revision) == ("<original />", 1)
+    schedule.assert_not_called()
 
 
 def test_database_failure_and_outer_rollback_leave_no_publication(
