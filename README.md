@@ -111,7 +111,9 @@ cache is installed, so a new render sees newly published source content.
 Templates returned by `get_template()` or `select_template()` preserve
 Django's render signature and metadata while enforcing the same validation.
 
-During one render, the first result—or miss—for each template name is pinned.
+During one render, the first result—or miss—for each template name is pinned per
+resolver identity. Nested engines sharing a resolver reuse its snapshot, while
+different resolvers remain isolated even when they render the same name.
 Repeated includes cannot mix revisions if a source changes concurrently, while
 separate sync or async request contexts remain isolated. Dynamic names that have
 not yet been resolved still observe source state at their first lookup because

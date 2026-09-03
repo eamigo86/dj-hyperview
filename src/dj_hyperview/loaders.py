@@ -3,6 +3,7 @@
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from dataclasses import dataclass
 
 from django.template import Origin
 from django.template.loaders.base import Loader
@@ -13,22 +14,57 @@ from .resolver import TemplateResolver
 from .sources import ResolvedTemplate
 from .validation import validate_template_source
 
-_active_snapshot: ContextVar[dict[str, ResolvedTemplate | None] | None] = ContextVar(
-    "dj_hyperview_template_snapshot", default=None
+
+@dataclass(frozen=True, slots=True)
+class _ResolverSnapshot:
+    resolver: TemplateResolver
+    templates: dict[str, ResolvedTemplate | None]
+
+
+_active_snapshots: ContextVar[tuple[_ResolverSnapshot, ...]] = ContextVar(
+    "dj_hyperview_template_snapshots", default=()
 )
 
 
+def _snapshot_for(
+    resolver: TemplateResolver,
+) -> dict[str, ResolvedTemplate | None] | None:
+    for snapshot in _active_snapshots.get():
+        if snapshot.resolver is resolver:
+            return snapshot.templates
+    return None
+
+
+def _remember(
+    resolver: TemplateResolver, name: str, resolved: ResolvedTemplate | None
+) -> None:
+    _active_snapshots.set(
+        tuple(
+            _ResolverSnapshot(resolver, {**snapshot.templates, name: resolved})
+            if snapshot.resolver is resolver
+            else snapshot
+            for snapshot in _active_snapshots.get()
+        )
+    )
+
+
 @contextmanager
-def template_snapshot() -> Iterator[None]:
-    """Isolate resolved revisions for one render context."""
-    if _active_snapshot.get() is not None:
+def template_snapshot(resolver: TemplateResolver) -> Iterator[None]:
+    """Isolate resolved revisions per resolver within one render context."""
+    if _snapshot_for(resolver) is not None:
         yield
         return
-    token = _active_snapshot.set({})
+    _active_snapshots.set((*_active_snapshots.get(), _ResolverSnapshot(resolver, {})))
     try:
         yield
     finally:
-        _active_snapshot.reset(token)
+        _active_snapshots.set(
+            tuple(
+                snapshot
+                for snapshot in _active_snapshots.get()
+                if snapshot.resolver is not resolver
+            )
+        )
 
 
 class ResolverOrigin(Origin):
@@ -50,7 +86,7 @@ class ResolverLoader(Loader):
         self.validation = validation
 
     def _resolve(self, name: str) -> ResolvedTemplate:
-        snapshot = _active_snapshot.get()
+        snapshot = _snapshot_for(self.resolver)
         if snapshot is not None and name in snapshot:
             resolved = snapshot[name]
             if resolved is None:
@@ -60,10 +96,10 @@ class ResolverLoader(Loader):
             resolved = self.resolver.resolve(name)
         except TemplateNotFound:
             if snapshot is not None:
-                _active_snapshot.set({**snapshot, name: None})
+                _remember(self.resolver, name, None)
             raise
         if snapshot is not None:
-            _active_snapshot.set({**snapshot, name: resolved})
+            _remember(self.resolver, name, resolved)
         return resolved
 
     def get_template_sources(self, template_name):

@@ -12,15 +12,21 @@ from .validation import validate_rendered_hxml
 
 
 class _ValidatedTemplate:
-    def __init__(self, template, validation: ValidationSettings) -> None:
+    def __init__(
+        self,
+        template,
+        validation: ValidationSettings,
+        resolver: TemplateResolver,
+    ) -> None:
         self._template = template
+        self._resolver = resolver
         self.validation = validation
 
     def __getattr__(self, name):
         return getattr(self._template, name)
 
     def render(self, context=None, request=None) -> str:
-        with template_snapshot():
+        with template_snapshot(self._resolver):
             rendered = self._template.render(context, request)
         return validate_rendered_hxml(rendered, config=self.validation)
 
@@ -55,7 +61,9 @@ class HyperviewEngine:
         )
 
     def get_template(self, name: str):
-        return _ValidatedTemplate(self.backend.get_template(name), self.validation)
+        return _ValidatedTemplate(
+            self.backend.get_template(name), self.validation, self.resolver
+        )
 
     def select_template(self, names: Sequence[str]):
         chain = []
@@ -67,7 +75,7 @@ class HyperviewEngine:
         raise TemplateDoesNotExist(", ".join(names), chain=chain)
 
     def render(self, name: str | Sequence[str], context=None, request=None) -> str:
-        with template_snapshot():
+        with template_snapshot(self.resolver):
             template = (
                 self.get_template(name)
                 if isinstance(name, str)
