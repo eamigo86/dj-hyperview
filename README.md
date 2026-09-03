@@ -135,10 +135,10 @@ The base package does not import the model or require a database table. Model
 `full_clean()` checks canonical names and template safety; `save()` intentionally
 follows Django's standard behavior and does not call `full_clean()` automatically.
 Installed mutation signals still reject a noncanonical name before its SQL write.
-When `django.contrib.admin` is installed, Django autodiscovery registers a
-standard `HyperviewTemplate` admin. Its create/edit forms reuse the model field
-validators, expose content and active state, and keep revision and timestamps
-read-only. Projects that omit Django admin do not import or register this module.
+When `django.contrib.admin` is installed, its standard model admin routes
+create, edit, rename, and delete through the validated publication services.
+Hidden revision tokens reject stale forms while revision and timestamps stay
+read-only; bulk delete remains signal-backed. Omitting admin imports none of it.
 
 Model save/delete plus controlled `QuerySet.delete()` and `QuerySet.update()`
 schedule invalidation with Django's `transaction.on_commit()` on the mutation

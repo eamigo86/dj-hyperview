@@ -180,7 +180,7 @@ def test_admin_mutation_requires_csrf(admin_user) -> None:
 
 
 @pytest.mark.django_db
-def test_superuser_can_complete_admin_crud_without_changing_revision(
+def test_superuser_can_complete_admin_crud_through_publication_services(
     admin_client,
 ) -> None:
     _, model = _admin_types()
@@ -214,6 +214,7 @@ def test_superuser_can_complete_admin_crud_without_changing_revision(
             "name": "screens/updated.xml",
             "content": "<view><text>updated</text></view>",
             "active": "on",
+            "expected_revision": "1",
             "revision": 99,
             "_save": "Save",
         },
@@ -223,7 +224,7 @@ def test_superuser_can_complete_admin_crud_without_changing_revision(
     assert (template.name, template.content, template.revision) == (
         "screens/updated.xml",
         "<view><text>updated</text></view>",
-        1,
+        2,
     )
 
     delete = reverse(
@@ -231,7 +232,7 @@ def test_superuser_can_complete_admin_crud_without_changing_revision(
         args=[template.pk],
     )
     assert admin_client.get(delete).status_code == 200
-    deleted = admin_client.post(delete, {"post": "yes"})
+    deleted = admin_client.post(delete, {"post": "yes", "expected_revision": "2"})
     assert (deleted.status_code, deleted.headers["Location"]) == (302, changelist)
     assert model.objects.count() == 0
 
