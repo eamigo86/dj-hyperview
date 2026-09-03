@@ -36,3 +36,12 @@ class TemplateValidationError(HyperviewError, ValueError):
         self.code = code
         self.message = message
         super().__init__(f"HXML validation failed [{code}]: {message}")
+
+
+class SourceUnavailable(HyperviewError):
+    """A configured template infrastructure source cannot be used safely."""
+
+    def __init__(self, source: str, reason: str) -> None:
+        self.source = source
+        self.reason = reason
+        super().__init__(f"Template source unavailable: {source} ({reason})")

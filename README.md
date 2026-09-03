@@ -101,6 +101,15 @@ backslashes, NUL bytes, and filesystem symlink escapes are rejected. A source
 returns `None` only for a miss; when every source misses, resolution raises
 `TemplateNotFound`.
 
+## Cache contract
+
+`TemplateCache` stores only serialized raw `ResolvedTemplate` data through a
+configured Django cache alias; it never caches compiled templates. A lookup
+returns `None` when no entry exists, `CACHE_MISS` for a cached source miss, and
+a `CacheEntry` for content—even when that content is empty. Fixed-length
+SHA-256 keys isolate namespace, source, name, and revision safely. Resolver
+integration and failure policies are intentionally deferred to the next slice.
+
 ## Template engine
 
 `render_template()` uses a dedicated Django template engine backed only by the

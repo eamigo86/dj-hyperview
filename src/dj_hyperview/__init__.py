@@ -1,10 +1,12 @@
 """Reusable Django infrastructure for Hyperview interfaces."""
 
+from .cache import CACHE_MISS, CacheEntry, TemplateCache, template_cache_key
 from .engine import HyperviewEngine, render_template
 from .exceptions import (
     HyperviewConfigurationError,
     HyperviewError,
     InvalidTemplateName,
+    SourceUnavailable,
     TemplateNotFound,
     TemplateValidationError,
 )
@@ -24,6 +26,8 @@ from .views import HyperviewTemplateView
 __all__ = [
     "HYPERVIEW_MEDIA_TYPE",
     "HYPERVIEW_VERSION_HEADER",
+    "CACHE_MISS",
+    "CacheEntry",
     "FileSystemSource",
     "HyperviewEngine",
     "HyperviewConfigurationError",
@@ -36,6 +40,8 @@ __all__ = [
     "InvalidTemplateName",
     "ResolvedTemplate",
     "ResolverLoader",
+    "SourceUnavailable",
+    "TemplateCache",
     "TemplateNotFound",
     "TemplateResolver",
     "TemplateSource",
@@ -43,5 +49,6 @@ __all__ = [
     "detect_hyperview_request",
     "resolve_template",
     "render_template",
+    "template_cache_key",
     "validate_hxml",
 ]
