@@ -127,8 +127,14 @@ Call `invalidate_templates("screens/home.xml")` after publishing raw content.
 Invalidation rotates a shared, namespaced token for each canonical name, so all
 sources' older hits and misses become invisible and a read that started earlier
 cannot repopulate the new generation. Already-running renders may still finish
-with their pinned snapshot; future lookups observe the new generation. A shared
-cache must be available for the guarantee to span multiple worker processes.
+with their pinned snapshot. The call returns only after every requested token
+rotation succeeds; any cache failure raises `SourceUnavailable`, independently
+of the resolver's ordinary `bypass` policy. Multi-name rotation is not atomic,
+so a partial failure is observable and callers may safely retry every name.
+Shared candidate claims prevent token reuse while prior raw entries can live.
+If an operator evicts both generation and claim metadata while retaining raw
+entries, generic caches cannot prove uniqueness; cryptographic token uniqueness
+is the documented fallback rather than a durable transactional guarantee.
 
 ## Template engine
 

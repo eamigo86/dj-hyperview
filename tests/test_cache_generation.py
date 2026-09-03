@@ -160,11 +160,8 @@ def test_invalidation_initialization_failure_obeys_policy(failure_mode):
     error = SourceUnavailable("cache:screens", "backend failure")
     with override_settings(HYPERVIEW=config("init-failure", failure_mode)):
         with patch.object(TemplateCache, "from_settings", side_effect=error):
-            if failure_mode == "raise":
-                with pytest.raises(SourceUnavailable, match="backend failure"):
-                    invalidate_templates("screen.xml")
-            else:
-                assert invalidate_templates("screen.xml") is None
+            with pytest.raises(SourceUnavailable, match="backend failure"):
+                invalidate_templates("screen.xml")
 
 
 @pytest.mark.parametrize("operation", ["read", "write-false", "write-error", "payload"])
@@ -196,14 +193,11 @@ def test_generation_failures_are_safe_and_obey_policy(
 
     with override_settings(HYPERVIEW=config(namespace, failure_mode)):
         with patch.object(TemplateCache, "from_settings", return_value=current.cache):
-            if failure_mode == "raise":
+            if operation.startswith("write") or failure_mode == "raise":
                 reason = (
                     "invalid payload" if operation == "payload" else "backend failure"
                 )
                 with pytest.raises(SourceUnavailable, match=reason):
                     call()
-            elif operation.startswith("write"):
-                call()
-                assert current.resolve("screen.xml").content == "new"
             else:
                 assert call().content == "old"

@@ -5,7 +5,6 @@ import json
 import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
-from threading import Lock
 
 from django.conf import settings
 from django.core.cache import caches
@@ -25,8 +24,8 @@ _TEMPLATE_FIELDS = {"version", "state", "template"}
 _RESOLVED_FIELDS = {"version", "state", "source", "name", "template"}
 _RESOLVED_MISS_FIELDS = {"version", "state", "source", "name"}
 _RESOLVER_REVISION = "@resolved"
-_DISABLED_GENERATIONS: set[tuple[str, str, str]] = set()
-_DISABLED_LOCK = Lock()
+_GENERATION_ATTEMPTS = 8
+_CLAIM_VALUE = "claimed"
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,16 +122,66 @@ class TemplateCache:
     def key(self, source: str, name: str, revision: str) -> str:
         return template_cache_key(self.namespace, source, name, revision)
 
+    def _store(self, key: str, value: object, timeout: int | None) -> None:
+        result = _without_untrusted_exception(
+            lambda: self.backend.set(key, value, timeout=timeout)
+        )
+        if result is _FAILURE or result is False:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+
+    def _claim_key(self, name: str, generation: str) -> str:
+        return self.key("@generation-claim", name, generation)
+
+    def _retain_claim(self, name: str, generation: str) -> None:
+        self._store(
+            self._claim_key(name, generation),
+            _CLAIM_VALUE,
+            max(self.ttl, self.negative_ttl),
+        )
+
+    def _ensure_claim(self, name: str, generation: str) -> None:
+        result = _without_untrusted_exception(
+            lambda: self.backend.add(
+                self._claim_key(name, generation),
+                _CLAIM_VALUE,
+                timeout=max(self.ttl, self.negative_ttl),
+            )
+        )
+        if type(result) is not bool:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+
+    def _claim_generation(self, name: str) -> str:
+        for _ in range(_GENERATION_ATTEMPTS):
+            candidate = secrets.token_hex(16)
+            if not self._valid_generation(candidate):
+                break
+            claimed = _without_untrusted_exception(
+                lambda candidate=candidate: self.backend.add(
+                    self._claim_key(name, candidate),
+                    _CLAIM_VALUE,
+                    timeout=max(self.ttl, self.negative_ttl),
+                )
+            )
+            if claimed is True:
+                return candidate
+            if claimed is not False:
+                break
+        raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+
+    @staticmethod
+    def _valid_generation(token: object) -> bool:
+        return (
+            type(token) is str
+            and len(token) == 32
+            and all(character in "0123456789abcdef" for character in token)
+        )
+
     def generation(self, name: str) -> str:
         """Return the shared generation token for a canonical template name."""
-        identity = (self.alias, self.namespace, name)
-        with _DISABLED_LOCK:
-            if identity in _DISABLED_GENERATIONS:
-                raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
         key = self.key("@generation", name, "@token")
         token = _without_untrusted_exception(lambda: self.backend.get(key, _ABSENT))
         if token is _ABSENT:
-            candidate = secrets.token_hex(16)
+            candidate = self._claim_generation(name)
             added = _without_untrusted_exception(
                 lambda: self.backend.add(key, candidate, timeout=None)
             )
@@ -147,32 +196,16 @@ class TemplateCache:
             )
         if token is _FAILURE:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
-        if (
-            type(token) is not str
-            or len(token) != 32
-            or any(character not in "0123456789abcdef" for character in token)
-        ):
+        if not self._valid_generation(token):
             raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
+        self._ensure_claim(name, token)
         return token
 
     def invalidate(self, name: str) -> None:
         """Rotate a template generation without deleting backend-specific keys."""
-        identity = (self.alias, self.namespace, name)
-        result = _without_untrusted_exception(
-            lambda: self.backend.set(
-                self.key("@generation", name, "@token"),
-                secrets.token_hex(16),
-                timeout=None,
-            )
-        )
-        failed = result is _FAILURE or result is False
-        with _DISABLED_LOCK:
-            if failed:
-                _DISABLED_GENERATIONS.add(identity)
-            else:
-                _DISABLED_GENERATIONS.discard(identity)
-        if failed:
-            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+        self.generation(name)
+        candidate = self._claim_generation(name)
+        self._store(self.key("@generation", name, "@token"), candidate, None)
 
     def get(self, source: str, name: str, revision: str) -> CacheEntry | None:
         payload = _without_untrusted_exception(
@@ -190,15 +223,11 @@ class TemplateCache:
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        result = _without_untrusted_exception(
-            lambda: self.backend.set(
-                self.key(template.source, template.name, template.revision),
-                payload,
-                timeout=self.ttl,
-            )
+        self._store(
+            self.key(template.source, template.name, template.revision),
+            payload,
+            self.ttl,
         )
-        if result is _FAILURE:
-            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def set_miss(self, source: str, name: str, revision: str) -> None:
         payload = json.dumps(
@@ -212,13 +241,7 @@ class TemplateCache:
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        result = _without_untrusted_exception(
-            lambda: self.backend.set(
-                self.key(source, name, revision), payload, timeout=self.negative_ttl
-            )
-        )
-        if result is _FAILURE:
-            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+        self._store(self.key(source, name, revision), payload, self.negative_ttl)
 
     def get_resolved(
         self, source: str, name: str, generation: str | None = None
@@ -276,15 +299,13 @@ class TemplateCache:
         timeout: int,
         generation: str | None,
     ) -> None:
-        result = _without_untrusted_exception(
-            lambda: self.backend.set(
-                self.key(source, name, self._resolved_revision(generation)),
-                payload,
-                timeout=timeout,
-            )
+        if generation is not None:
+            self._retain_claim(name, generation)
+        self._store(
+            self.key(source, name, self._resolved_revision(generation)),
+            payload,
+            timeout,
         )
-        if result is _FAILURE:
-            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def _decode_resolved(self, payload: object, source: str, name: str) -> CacheEntry:
         def decode() -> CacheEntry:
@@ -369,15 +390,6 @@ def invalidate_templates(*names: str) -> None:
     if isinstance(raw, Mapping) and not raw.get("CACHE"):
         return
     config = get_settings().cache
-    try:
-        cache = TemplateCache.from_settings(config.namespace)
-    except SourceUnavailable:
-        if config.failure_mode == "raise":
-            raise
-        return
+    cache = TemplateCache.from_settings(config.namespace)
     for name in canonical:
-        try:
-            cache.invalidate(name)
-        except SourceUnavailable:
-            if config.failure_mode == "raise":
-                raise
+        cache.invalidate(name)
