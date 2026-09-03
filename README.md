@@ -122,12 +122,14 @@ HYPERVIEW = {
 }
 ```
 
-The source uses Django's default manager and database router. Set
-`"OPTIONS": {"using": "replica"}` only to select an explicit database alias.
+The source uses Django's default manager and database router. Router-selected
+sources are intentionally uncached because routing may vary by request or tenant.
+Set `"OPTIONS": {"using": "replica"}` to pin a configured database alias and
+enable generic raw-cache acceleration with an alias-specific identity.
 Active exact-name rows are hits, including empty content; inactive or absent
 rows are misses and resolution continues to the next source. Without cache, a
-later lookup observes row content and revision changes. Generic source caching
-retains its normal TTL/invalidation semantics.
+later lookup observes row content and revision changes. Explicit aliases retain
+normal cache TTL and manual invalidation semantics.
 
 The base package does not import the model or require a database table. Model
 `full_clean()` checks canonical names and template safety; `save()` intentionally

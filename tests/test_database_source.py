@@ -208,8 +208,10 @@ def test_configured_source_without_contrib_fails_before_resolver_construction():
 
 
 @pytest.mark.django_db(transaction=True)
-@pytest.mark.parametrize("using", [None, "missing"])
-def test_database_infrastructure_failures_are_stable_and_redacted(using):
+@pytest.mark.parametrize(
+    ("using", "reason"), [(None, "query failed"), ("missing", "alias unavailable")]
+)
+def test_database_infrastructure_failures_are_stable_and_redacted(using, reason):
     sensitive_name = "private/screen.xml"
     with override_settings(INSTALLED_APPS=DATABASE_APPS):
         source = database_source_class()(using=using)
@@ -218,7 +220,7 @@ def test_database_infrastructure_failures_are_stable_and_redacted(using):
 
     error = captured.value
     rendered = "".join(traceback.format_exception(error))
-    assert str(error) == "Template source unavailable: database (query failed)"
+    assert str(error) == f"Template source unavailable: database ({reason})"
     assert error.__cause__ is None
     assert error.__context__ is None
     assert sensitive_name not in repr(error)

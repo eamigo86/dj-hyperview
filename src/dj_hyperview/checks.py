@@ -1,3 +1,5 @@
+"""Django system checks for consumer Hyperview configuration."""
+
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
@@ -59,13 +61,24 @@ def _check_sources(value: Any) -> list[CheckMessage]:
             errors.append(_error("E003", path, "must be a mapping"))
             continue
         backend = source.get("BACKEND")
-        if backend == DATABASE_SOURCE and not apps.is_installed(
-            "dj_hyperview.contrib.database"
-        ):
-            errors.append(_error("E010", backend, "requires its contrib app"))
+        options = source.get("OPTIONS", {})
+        if backend == DATABASE_SOURCE:
+            if not apps.is_installed("dj_hyperview.contrib.database"):
+                errors.append(_error("E010", backend, "requires its contrib app"))
+            if isinstance(options, Mapping):
+                from .contrib.database._config import _database_alias_is_configured
+
+                if not _database_alias_is_configured(options.get("using")):
+                    errors.append(
+                        _error(
+                            "E011",
+                            f"{path}.OPTIONS.using",
+                            "must be None or name a configured database",
+                        )
+                    )
         elif not _importable(backend):
             errors.append(_error("E003", f"{path}.BACKEND", "must be importable"))
-        if not isinstance(source.get("OPTIONS", {}), Mapping):
+        if not isinstance(options, Mapping):
             errors.append(_error("E003", f"{path}.OPTIONS", "must be a mapping"))
     return errors
 
@@ -137,6 +150,15 @@ def _check_validation(value: Any) -> list[CheckMessage]:
 def check_hyperview_settings(
     app_configs: Any = None, **kwargs: Any
 ) -> list[CheckMessage]:
+    """Validate the package configuration through Django's checks framework.
+
+    Args:
+        app_configs: Optional application subset supplied by Django.
+        **kwargs: Additional check-runner options supplied by Django.
+
+    Returns:
+        Actionable errors and operational warnings for current settings.
+    """
     del app_configs, kwargs
     raw = getattr(settings, "HYPERVIEW", {})
     if not isinstance(raw, Mapping):

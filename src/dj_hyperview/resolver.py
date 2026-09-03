@@ -101,8 +101,18 @@ def _source_fingerprint(index: int, backend: str, options: object) -> str | None
     return f"source:{digest}"
 
 
+def _source_cacheable(source: object) -> bool:
+    return getattr(source, "_dj_hyperview_cacheable", True) is not False
+
+
 class TemplateResolver:
-    """Return the first template found by an ordered source collection."""
+    """Return the first template found by an ordered source collection.
+
+    Args:
+        sources: Ordered raw-template sources.
+        cache: Optional raw-template cache.
+        failure_mode: Cache failure policy, either bypass or raise.
+    """
 
     def __init__(
         self,
@@ -117,12 +127,16 @@ class TemplateResolver:
             raise ValueError("Cache failure mode must be 'bypass' or 'raise'")
         self.cache = cache
         self.failure_mode = failure_mode
-        self._source_ids = tuple(_source_ids or self._default_source_ids())
+        identities = self._default_source_ids() if _source_ids is None else _source_ids
+        self._source_ids = tuple(identities)
         if len(self._source_ids) != len(self.sources):
             raise ValueError("Each template source requires one cache identity")
 
     def _default_source_ids(self) -> Iterable[str | None]:
         for index, source in enumerate(self.sources):
+            if not _source_cacheable(source):
+                yield None
+                continue
             kind = type(source)
             try:
                 options = vars(source)
@@ -134,6 +148,15 @@ class TemplateResolver:
 
     @classmethod
     def from_settings(cls) -> "TemplateResolver":
+        """Create a resolver from validated current Django settings.
+
+        Returns:
+            A resolver with ordered sources and optional raw caching.
+
+        Raises:
+            HyperviewConfigurationError: If Hyperview settings are invalid.
+            SourceUnavailable: If cache initialization fails in raise mode.
+        """
         config = get_settings()
         sources = tuple(
             import_string(source.backend)(**source.options) for source in config.sources
@@ -151,6 +174,9 @@ class TemplateResolver:
         for index, (source, instance) in enumerate(
             zip(config.sources, sources, strict=True)
         ):
+            if not _source_cacheable(instance):
+                source_ids.append(None)
+                continue
             options = dict(source.options)
             if isinstance(instance, FileSystemSource):
                 options["template_dirs"] = instance.template_dirs
@@ -163,6 +189,19 @@ class TemplateResolver:
         )
 
     def resolve(self, name: str) -> ResolvedTemplate:
+        """Resolve one template according to configured source precedence.
+
+        Args:
+            name: Canonicalizable consumer template name.
+
+        Returns:
+            The first matching raw template.
+
+        Raises:
+            InvalidTemplateName: If the name is unsafe or non-canonical.
+            SourceUnavailable: If a source or required cache operation fails.
+            TemplateNotFound: If every configured source misses.
+        """
         canonical = canonicalize_template_name(name)
         generation = self._generation(canonical)
         for source, source_id in zip(self.sources, self._source_ids, strict=True):
@@ -216,5 +255,17 @@ class TemplateResolver:
 
 
 def resolve_template(name: str) -> ResolvedTemplate:
-    """Resolve a template using the current Django settings."""
+    """Resolve a template using the current Django settings.
+
+    Args:
+        name: Canonicalizable consumer template name.
+
+    Returns:
+        The first matching raw template.
+
+    Raises:
+        InvalidTemplateName: If the name is unsafe or non-canonical.
+        SourceUnavailable: If a source or required cache operation fails.
+        TemplateNotFound: If every configured source misses.
+    """
     return TemplateResolver.from_settings().resolve(name)
