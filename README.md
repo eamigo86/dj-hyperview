@@ -133,19 +133,20 @@ normal cache TTL and manual invalidation semantics.
 
 The base package does not import the model or require a database table. Model
 `full_clean()` checks canonical names and template safety; `save()` intentionally
-follows Django's standard behavior and does not call validation automatically.
+follows Django's standard behavior and does not call `full_clean()` automatically.
+Installed mutation signals still reject a noncanonical name before its SQL write.
 When `django.contrib.admin` is installed, Django autodiscovery registers a
 standard `HyperviewTemplate` admin. Its create/edit forms reuse the model field
 validators, expose content and active state, and keep revision and timestamps
 read-only. Projects that omit Django admin do not import or register this module.
 
-Database mutation integrations schedule invalidation with Django's
-`transaction.on_commit()` on the mutation's database alias. Rollbacks and rolled
-back savepoints discard their callbacks. A cache failure remains observable only
-after the database commit and therefore does not mean that the database write was
-rolled back. Until the remaining Task 8 integrations are enabled, admin and
-direct ORM mutations still require an explicit `invalidate_templates()` call
-after commit when cache is configured.
+Model save/delete and `QuerySet.delete()` schedule invalidation with Django's
+`transaction.on_commit()` on the mutation database alias. Renames invalidate the
+old and new canonical names; rollbacks and rolled-back savepoints discard their
+callbacks. A cache failure remains observable after commit and therefore does
+not mean the database write rolled back. Raw fixture saves, `QuerySet.update()`
+and bulk APIs still require explicit invalidation until their controlled Task 8
+integrations are enabled.
 Name uniqueness follows the database backend's collation: the package does not
 case-fold names, and SQLite's default treats `screen.xml` and `Screen.xml` as
 distinct.
