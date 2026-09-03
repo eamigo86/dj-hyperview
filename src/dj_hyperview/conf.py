@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any
 
 from django.conf import settings as django_settings
+from django.core.checks import ERROR
 
 Schema = str | Path | Callable[[str], None] | None
 
@@ -20,6 +21,7 @@ class CacheSettings:
     ttl: int = 300
     negative_ttl: int = 15
     failure_mode: str = "bypass"
+    namespace: str = "dj-hyperview"
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,7 +55,7 @@ def get_settings() -> HyperviewSettings:
     from .checks import check_hyperview_settings
     from .exceptions import HyperviewConfigurationError
 
-    errors = check_hyperview_settings()
+    errors = [error for error in check_hyperview_settings() if error.level >= ERROR]
     if errors:
         raise HyperviewConfigurationError(
             [f"{error.id}: {error.msg}" for error in errors]

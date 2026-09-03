@@ -109,8 +109,7 @@ returns `None` when no entry exists, `CACHE_MISS` for a cached source miss, and
 returns a `CacheEntry` for content—even when that content is empty. Every hit or
 miss is bound to its source, name, and revision. Backend failures use a stable
 public error without exposing cached template data. Fixed-length
-SHA-256 keys isolate namespace, source, name, and revision safely. Resolver
-integration and failure policies are intentionally deferred to the next slice.
+SHA-256 keys isolate each namespace; opt-in `HYPERVIEW.CACHE` wraps every source and honors `bypass`/`raise`, while omission preserves uncached resolution.
 Cached JSON is treated as untrusted: exact version/shape/type and lookup identity
 must match, while duplicate keys or invalid aliases raise `SourceUnavailable`.
 Checks and runtime accept an alias only when Django resolves its configured name

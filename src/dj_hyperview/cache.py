@@ -20,6 +20,9 @@ _INVALID_ALIAS = "invalid alias"
 _FIELDS = {"name", "content", "origin", "source", "revision"}
 _MISS_FIELDS = {"version", "state", "source", "name", "revision"}
 _TEMPLATE_FIELDS = {"version", "state", "template"}
+_RESOLVED_FIELDS = {"version", "state", "source", "name", "template"}
+_RESOLVED_MISS_FIELDS = {"version", "state", "source", "name"}
+_RESOLVER_REVISION = "@resolved"
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +164,85 @@ class TemplateCache:
         )
         if result is _FAILURE:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+
+    def get_resolved(self, source: str, name: str) -> CacheEntry | None:
+        """Return the latest raw result cached for one configured source."""
+        payload = _without_untrusted_exception(
+            lambda: self.backend.get(
+                self.key(source, name, _RESOLVER_REVISION), _ABSENT
+            )
+        )
+        if payload is _FAILURE:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+        if payload is _ABSENT:
+            return None
+        return self._decode_resolved(payload, source, name)
+
+    def set_resolved(self, source: str, name: str, template: ResolvedTemplate) -> None:
+        payload = json.dumps(
+            {
+                "version": 1,
+                "state": "resolved",
+                "source": source,
+                "name": name,
+                "template": asdict(template),
+            },
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        self._set_resolved(source, name, payload, self.ttl)
+
+    def set_resolved_miss(self, source: str, name: str) -> None:
+        payload = json.dumps(
+            {"version": 1, "state": "source-miss", "source": source, "name": name},
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        self._set_resolved(source, name, payload, self.negative_ttl)
+
+    def _set_resolved(self, source: str, name: str, payload: str, timeout: int) -> None:
+        result = _without_untrusted_exception(
+            lambda: self.backend.set(
+                self.key(source, name, _RESOLVER_REVISION), payload, timeout=timeout
+            )
+        )
+        if result is _FAILURE:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+
+    def _decode_resolved(self, payload: object, source: str, name: str) -> CacheEntry:
+        def decode() -> CacheEntry:
+            if not isinstance(payload, str):
+                raise TypeError
+            value = json.loads(payload, object_pairs_hook=_unique_object)
+            if type(value.get("version")) is not int or value["version"] != 1:
+                raise ValueError
+            if value.get("state") == "source-miss":
+                if (
+                    set(value) != _RESOLVED_MISS_FIELDS
+                    or not all(
+                        isinstance(value[field], str) for field in ("source", "name")
+                    )
+                    or (value["source"], value["name"]) != (source, name)
+                ):
+                    raise ValueError
+                return CACHE_MISS
+            if value.get("state") != "resolved" or set(value) != _RESOLVED_FIELDS:
+                raise ValueError
+            template = value["template"]
+            if (
+                not isinstance(template, dict)
+                or set(template) != _FIELDS
+                or not all(isinstance(item, str) for item in template.values())
+                or template["name"] != name
+                or (value["source"], value["name"]) != (source, name)
+            ):
+                raise ValueError
+            return CacheEntry(ResolvedTemplate(**template))
+
+        entry = _without_untrusted_exception(decode)
+        if entry is _FAILURE:
+            raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
+        return entry
 
     def _decode(
         self, payload: object, source: str, name: str, revision: str

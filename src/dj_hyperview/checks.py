@@ -4,10 +4,10 @@ from typing import Any
 
 from django.apps import apps
 from django.conf import settings
-from django.core.checks import CheckMessage, Error, register
+from django.core.checks import CheckMessage, Error, Warning, register
 from django.utils.module_loading import import_string
 
-from .cache import _resolve_cache_alias
+from .cache import _BACKEND_FAILURE, _resolve_cache_alias
 
 SETTING = "settings.HYPERVIEW"
 DATABASE_SOURCE = "dj_hyperview.contrib.database.sources.DatabaseSource"
@@ -76,8 +76,20 @@ def _check_cache(value: Any) -> list[CheckMessage]:
     errors = []
     alias = value.get("ALIAS", "default")
     _, alias_error = _resolve_cache_alias(alias)
-    if alias_error is not None:
+    if alias_error == _BACKEND_FAILURE:
+        errors.append(
+            Warning(
+                "CACHE.ALIAS references an unavailable backend.",
+                hint="Cache failure behavior follows CACHE.FAILURE_MODE at runtime.",
+                obj=SETTING,
+                id="dj_hyperview.W001",
+            )
+        )
+    elif alias_error is not None:
         errors.append(_error("E004", "CACHE.ALIAS", "must name a configured cache"))
+    namespace = value.get("NAMESPACE", "dj-hyperview")
+    if not isinstance(namespace, str) or not namespace:
+        errors.append(_error("E004", "CACHE.NAMESPACE", "must be a non-empty string"))
     for name, default, minimum in (("TTL", 300, 1), ("NEGATIVE_TTL", 15, 0)):
         current = value.get(name, default)
         if (

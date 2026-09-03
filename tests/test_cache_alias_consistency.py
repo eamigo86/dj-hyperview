@@ -115,8 +115,11 @@ def test_backend_initialization_failure_is_safe_in_checks_and_runtime():
     with pytest.raises(SourceUnavailable) as captured:
         TemplateCache("tenant", alias="broken")
 
-    assert [error.id for error in errors] == ["dj_hyperview.E004"]
-    assert errors[0].msg == "CACHE.ALIAS must name a configured cache."
+    assert [error.id for error in errors] == ["dj_hyperview.W001"]
+    assert errors[0].msg == "CACHE.ALIAS references an unavailable backend."
+    assert errors[0].hint == (
+        "Cache failure behavior follows CACHE.FAILURE_MODE at runtime."
+    )
     assert captured.value.source == "cache:broken"
     assert captured.value.reason == "backend failure"
     assert captured.value.__cause__ is None
