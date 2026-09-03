@@ -1,6 +1,10 @@
 """Ordered resolution across configured template sources."""
 
-from collections.abc import Iterable
+import hashlib
+import json
+import math
+from collections.abc import Iterable, Mapping, Sequence
+from pathlib import PurePath
 
 from django.conf import settings as django_settings
 from django.utils.module_loading import import_string
@@ -8,7 +12,67 @@ from django.utils.module_loading import import_string
 from .cache import CACHE_MISS, TemplateCache
 from .conf import get_settings
 from .exceptions import SourceUnavailable, TemplateNotFound
-from .sources import ResolvedTemplate, TemplateSource, canonicalize_template_name
+from .sources import (
+    FileSystemSource,
+    ResolvedTemplate,
+    TemplateSource,
+    canonicalize_template_name,
+)
+
+
+def _canonical_bytes(value: object) -> bytes:
+    return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode(
+        errors="surrogatepass"
+    )
+
+
+def _normalize_fingerprint(value: object) -> object:
+    if value is None:
+        return ["none"]
+    if type(value) is bool:
+        return ["bool", value]
+    if type(value) is int:
+        return ["int", value]
+    if type(value) is float:
+        if not math.isfinite(value):
+            raise TypeError
+        return ["float", value]
+    if isinstance(value, PurePath):
+        return ["path", str(value)]
+    if isinstance(value, str):
+        return ["str", value]
+    if isinstance(value, bytes):
+        return ["bytes", value.hex()]
+    if callable(value):
+        module = getattr(value, "__module__", None)
+        qualname = getattr(value, "__qualname__", None)
+        if not module or not qualname or "<locals>" in qualname:
+            raise TypeError
+        path = f"{module}.{qualname}"
+        if import_string(path) is not value:
+            raise TypeError
+        return ["callable", path]
+    if isinstance(value, Mapping):
+        pairs = [
+            (_normalize_fingerprint(key), _normalize_fingerprint(item))
+            for key, item in value.items()
+        ]
+        pairs.sort(key=lambda pair: _canonical_bytes(pair[0]))
+        return ["mapping", pairs]
+    if isinstance(value, Sequence):
+        kind = f"{type(value).__module__}.{type(value).__qualname__}"
+        return ["sequence", kind, [_normalize_fingerprint(item) for item in value]]
+    raise TypeError
+
+
+def _source_fingerprint(index: int, backend: str, options: object) -> str | None:
+    """Return a secret-safe stable identity, or disable caching when impossible."""
+    try:
+        normalized = _normalize_fingerprint([index, backend, options])
+        digest = hashlib.sha256(_canonical_bytes(normalized)).hexdigest()
+    except Exception:  # Arbitrary consumer configuration is not a trust boundary.
+        return None
+    return f"source:{digest}"
 
 
 class TemplateResolver:
@@ -20,7 +84,7 @@ class TemplateResolver:
         *,
         cache: TemplateCache | None = None,
         failure_mode: str = "bypass",
-        _source_ids: Iterable[str] | None = None,
+        _source_ids: Iterable[str | None] | None = None,
     ) -> None:
         self.sources = tuple(sources)
         if failure_mode not in {"bypass", "raise"}:
@@ -31,10 +95,16 @@ class TemplateResolver:
         if len(self._source_ids) != len(self.sources):
             raise ValueError("Each template source requires one cache identity")
 
-    def _default_source_ids(self) -> Iterable[str]:
+    def _default_source_ids(self) -> Iterable[str | None]:
         for index, source in enumerate(self.sources):
             kind = type(source)
-            yield f"{index}:{kind.__module__}.{kind.__qualname__}"
+            try:
+                options = vars(source)
+            except TypeError:
+                options = source
+            yield _source_fingerprint(
+                index, f"{kind.__module__}.{kind.__qualname__}", options
+            )
 
     @classmethod
     def from_settings(cls) -> "TemplateResolver":
@@ -43,7 +113,7 @@ class TemplateResolver:
             import_string(source.backend)(**source.options) for source in config.sources
         )
         raw = getattr(django_settings, "HYPERVIEW", {})
-        if "CACHE" not in raw:
+        if not raw.get("CACHE"):
             return cls(sources)
         try:
             cache = TemplateCache.from_settings(config.cache.namespace)
@@ -51,9 +121,14 @@ class TemplateResolver:
             if config.cache.failure_mode == "raise":
                 raise
             return cls(sources)
-        source_ids = (
-            f"{index}:{source.backend}" for index, source in enumerate(config.sources)
-        )
+        source_ids = []
+        for index, (source, instance) in enumerate(
+            zip(config.sources, sources, strict=True)
+        ):
+            options = dict(source.options)
+            if isinstance(instance, FileSystemSource):
+                options["template_dirs"] = instance.template_dirs
+            source_ids.append(_source_fingerprint(index, source.backend, options))
         return cls(
             sources,
             cache=cache,
@@ -70,9 +145,9 @@ class TemplateResolver:
         raise TemplateNotFound(canonical)
 
     def _resolve_source(
-        self, source: TemplateSource, source_id: str, name: str
+        self, source: TemplateSource, source_id: str | None, name: str
     ) -> ResolvedTemplate | None:
-        if self.cache is None:
+        if self.cache is None or source_id is None:
             return source.resolve(name)
         try:
             entry = self.cache.get_resolved(source_id, name)

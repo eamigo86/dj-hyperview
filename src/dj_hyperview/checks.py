@@ -141,9 +141,15 @@ def check_hyperview_settings(
     raw = getattr(settings, "HYPERVIEW", {})
     if not isinstance(raw, Mapping):
         return [_error("E001", "HYPERVIEW", "must be a mapping")]
+    cache = raw.get("CACHE")
+    cache_errors = (
+        []
+        if "CACHE" not in raw or (isinstance(cache, Mapping) and not cache)
+        else _check_cache(cache)
+    )
     return [
         *_check_template_dirs(raw.get("TEMPLATE_DIRS", ())),
         *_check_sources(raw.get("SOURCES", ())),
-        *_check_cache(raw.get("CACHE", {})),
+        *cache_errors,
         *_check_validation(raw.get("VALIDATION", {})),
     ]

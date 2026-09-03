@@ -166,7 +166,7 @@ def test_resolver_corrupt_entry_obeys_policy(failure_mode):
     cache = TemplateCache(f"corrupt-{failure_mode}", alias="screens")
     source = RecordingSource("source")
     resolver = TemplateResolver([source], cache=cache, failure_mode=failure_mode)
-    source_id = "0:tests.test_cache_resolver.RecordingSource"
+    source_id = resolver._source_ids[0]
     cache.backend.set(cache.key(source_id, "screen.xml", "@resolved"), "invalid-json")
     if failure_mode == "raise":
         with pytest.raises(SourceUnavailable, match="invalid payload"):
