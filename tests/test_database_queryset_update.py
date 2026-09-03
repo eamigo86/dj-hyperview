@@ -8,7 +8,7 @@ import pytest
 from django.core.cache import caches
 from django.core.exceptions import FieldDoesNotExist
 from django.db import IntegrityError, connection, connections, transaction
-from django.db.models import Case, F, Model, Value, When
+from django.db.models import Case, F, Model, QuerySet, Value, When
 from django.db.models.signals import post_save, pre_save
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
@@ -33,6 +33,14 @@ HYPERVIEW = {
     ],
     "CACHE": {"ALIAS": "screens", "NAMESPACE": "queryset-update"},
 }
+
+
+class _SplitReadWriteRouter:
+    def db_for_read(self, model: type[Model], **hints: Any) -> str:
+        return "default"
+
+    def db_for_write(self, model: type[Model], **hints: Any) -> str:
+        return "replica"
 
 
 @pytest.fixture
@@ -287,3 +295,62 @@ def test_update_uses_the_selected_database_alias(
         "<updated />"
     )
     schedule.assert_called_once_with("replica.xml", using="replica")
+
+
+@override_settings(DATABASE_ROUTERS=[_SplitReadWriteRouter()])
+@pytest.mark.django_db(transaction=True, databases=ALIASES)
+def test_implicit_update_resolves_write_router_before_snapshot(
+    dual_queryset_model: type[Model],
+) -> None:
+    default = dual_queryset_model.objects.using("default").create(
+        name="default.xml", content="<default />"
+    )
+    replica = dual_queryset_model.objects.using("replica").create(
+        id=default.pk, name="replica.xml", content="<replica />"
+    )
+
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        updated = dual_queryset_model.objects.filter(pk=replica.pk).update(
+            content="<written />"
+        )
+
+    assert updated == 1
+    assert dual_queryset_model.objects.using("default").get(pk=default.pk).content == (
+        "<default />"
+    )
+    assert dual_queryset_model.objects.using("replica").get(pk=replica.pk).content == (
+        "<written />"
+    )
+    schedule.assert_called_once_with("replica.xml", using="replica")
+
+
+def test_update_mutates_only_primary_keys_captured_by_the_locked_snapshot(
+    queryset_model: type[Model], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    original = queryset_model.objects.create(name="original.xml", content="<old />")
+    django_update = QuerySet.update
+    inserted = False
+
+    def insert_phantom_then_update(queryset: QuerySet, **kwargs: Any) -> int:
+        nonlocal inserted
+        if not inserted:
+            inserted = True
+            queryset_model._base_manager.using(queryset.db).bulk_create(
+                [queryset_model(name="phantom.xml", content="<old />")]
+            )
+        return django_update(queryset, **kwargs)
+
+    monkeypatch.setattr(QuerySet, "update", insert_phantom_then_update)
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        updated = queryset_model.objects.filter(active=True).update(
+            content="<updated />"
+        )
+
+    assert updated == 1
+    assert queryset_model.objects.get(pk=original.pk).content == "<updated />"
+    assert queryset_model.objects.get(name="phantom.xml").content == "<old />"
+    schedule.assert_called_once_with("original.xml", using="default")

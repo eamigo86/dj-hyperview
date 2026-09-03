@@ -33,6 +33,7 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             ValueError: If the update attempts to modify the primary key.
             DatabaseError: If selection or update SQL fails.
         """
+        self._for_write = True
         using = self.db
         queryset = self.using(using)
         primary_key = self.model._meta.pk
@@ -50,10 +51,13 @@ class HyperviewTemplateQuerySet(models.QuerySet):
                 .values_list(primary_key.name, "name")
             )
             old_names = _canonical_names(name for _, name in rows)
-            updated = models.QuerySet.update(queryset, **kwargs)
+            primary_keys = tuple(row_primary_key for row_primary_key, _ in rows)
+            authoritative = self.model._base_manager.using(using).filter(
+                pk__in=primary_keys
+            )
+            updated = models.QuerySet.update(authoritative, **kwargs)
             if not updated:
                 return updated
-            primary_keys = tuple(primary_key for primary_key, _ in rows)
             new_names = _canonical_names(
                 self.model._base_manager.using(using)
                 .filter(pk__in=primary_keys)
