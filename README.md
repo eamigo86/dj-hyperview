@@ -113,9 +113,11 @@ SHA-256 keys isolate each namespace. A non-empty `HYPERVIEW.CACHE` is opt-in;
 omitting it or using `{}` never initializes a cache backend. Source identities hash
 position plus effective backend options (including filesystem roots) without
 exposing secrets; an unrepresentable custom configuration stays uncached.
-Buffer views (`memoryview`) are deliberately unrepresentable regardless of
-layout or format, so their source stays uncached rather than risking
-cross-type collisions with equal `bytes` keys.
+Fingerprinting accepts a closed domain: exact built-in scalars, `dict`, `list`,
+`tuple`, standard `pathlib` paths, and verified importable callables. Subclasses,
+generic container implementations, ranges, mutable/buffer containers such as
+`bytearray`, `memoryview`, and `array.array` stay uncached instead of risking an
+identity that omits observable semantics.
 Cached JSON is treated as untrusted: exact version/shape/type and lookup identity
 must match, while duplicate keys or invalid aliases raise `SourceUnavailable`.
 Checks and runtime accept an alias only when Django resolves its configured name

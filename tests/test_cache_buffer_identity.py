@@ -46,7 +46,6 @@ def test_every_memoryview_layout_is_unrepresentable(value):
     ("left", "right"),
     [
         pytest.param((True,), (1.0,), id="tuple-numeric"),
-        pytest.param(range(0, 3, 2), range(0, 4, 2), id="equal-range"),
     ],
 )
 def test_other_supported_equal_mapping_keys_remain_canonical(left, right):
@@ -54,11 +53,10 @@ def test_other_supported_equal_mapping_keys_remain_canonical(left, right):
     assert fingerprint({left: "value"}) == fingerprint({right: "value"})
 
 
-def test_bytearray_value_is_deterministic_but_distinct_from_immutable_bytes():
+def test_mutable_bytearray_value_is_unrepresentable():
     mutable = bytearray(b"same-key")
 
-    assert fingerprint(mutable) == fingerprint(bytearray(mutable))
-    assert fingerprint(mutable) != fingerprint(bytes(mutable))
+    assert fingerprint(mutable) is None
     with pytest.raises(TypeError):
         hash(mutable)
 

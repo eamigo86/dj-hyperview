@@ -3,8 +3,8 @@
 import hashlib
 import json
 import math
-from collections.abc import Iterable, Mapping, Sequence
-from pathlib import PurePath, PureWindowsPath
+from collections.abc import Iterable
+from pathlib import PosixPath, PurePath, PurePosixPath, PureWindowsPath, WindowsPath
 
 from django.conf import settings as django_settings
 from django.utils.module_loading import import_string
@@ -19,6 +19,8 @@ from .sources import (
     canonicalize_template_name,
 )
 
+_PATH_TYPES = (PurePosixPath, PureWindowsPath, PosixPath, WindowsPath)
+
 
 def _canonical_bytes(value: object) -> bytes:
     return json.dumps(value, ensure_ascii=False, separators=(",", ":")).encode(
@@ -32,41 +34,41 @@ def _normalize_path(value: PurePath) -> object:
 
 
 def _normalize_mapping_key(value: object) -> object:
-    if type(value) is bool:
+    value_type = type(value)
+    if value_type is bool:
         return ["number", int(value), 1]
-    if type(value) is int:
+    if value_type is int:
         return ["number", value, 1]
-    if type(value) is float:
+    if value_type is float:
         if not math.isfinite(value):
             raise TypeError
         numerator, denominator = value.as_integer_ratio()
         return ["number", numerator, denominator]
-    if isinstance(value, PurePath):
+    if value_type in _PATH_TYPES:
         return _normalize_path(value)
-    if isinstance(value, tuple):
+    if value_type is tuple:
         return ["tuple", [_normalize_mapping_key(item) for item in value]]
     return _normalize_fingerprint(value)
 
 
 def _normalize_fingerprint(value: object) -> object:
+    value_type = type(value)
     if value is None:
         return ["none"]
-    if type(value) is bool:
+    if value_type is bool:
         return ["bool", value]
-    if type(value) is int:
+    if value_type is int:
         return ["int", value]
-    if type(value) is float:
+    if value_type is float:
         if not math.isfinite(value):
             raise TypeError
         return ["float", value]
-    if isinstance(value, PurePath):
+    if value_type in _PATH_TYPES:
         return _normalize_path(value)
-    if isinstance(value, str):
+    if value_type is str:
         return ["str", value]
-    if isinstance(value, bytes):
+    if value_type is bytes:
         return ["bytes", value.hex()]
-    if isinstance(value, memoryview):
-        raise TypeError
     if callable(value):
         module = getattr(value, "__module__", None)
         qualname = getattr(value, "__qualname__", None)
@@ -76,15 +78,15 @@ def _normalize_fingerprint(value: object) -> object:
         if import_string(path) is not value:
             raise TypeError
         return ["callable", path]
-    if isinstance(value, Mapping):
+    if value_type is dict:
         pairs = [
             (_normalize_mapping_key(key), _normalize_fingerprint(item))
             for key, item in value.items()
         ]
         pairs.sort(key=_canonical_bytes)
         return ["mapping", pairs]
-    if isinstance(value, Sequence):
-        kind = f"{type(value).__module__}.{type(value).__qualname__}"
+    if value_type in (list, tuple):
+        kind = f"{value_type.__module__}.{value_type.__qualname__}"
         return ["sequence", kind, [_normalize_fingerprint(item) for item in value]]
     raise TypeError
 
