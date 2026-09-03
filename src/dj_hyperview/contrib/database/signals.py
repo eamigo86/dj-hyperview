@@ -19,6 +19,22 @@ class _MutationState:
     names: tuple[str, ...]
 
 
+def _persisted_name(
+    sender: type[HyperviewTemplate],
+    instance: HyperviewTemplate,
+    using: str,
+) -> str | None:
+    if instance.pk is None:
+        return None
+    name = (
+        sender._default_manager.using(using)
+        .filter(pk=instance.pk)
+        .values_list("name", flat=True)
+        .first()
+    )
+    return None if name is None else canonicalize_template_name(name)
+
+
 def _capture_save(
     sender: type[HyperviewTemplate],
     instance: HyperviewTemplate,
@@ -34,16 +50,7 @@ def _capture_save(
     ):
         return
 
-    old_name = None
-    if instance.pk is not None and not instance._state.adding:
-        old_name = (
-            sender._default_manager.using(using)
-            .filter(pk=instance.pk)
-            .values_list("name", flat=True)
-            .first()
-        )
-    if old_name is not None:
-        old_name = canonicalize_template_name(old_name)
+    old_name = _persisted_name(sender, instance, using)
     new_name = (
         old_name
         if old_name is not None
@@ -72,9 +79,12 @@ def _capture_delete(
     using: str,
     **kwargs: object,
 ) -> None:
-    del sender, kwargs
+    del kwargs
     instance.__dict__.pop(_STATE_ATTRIBUTE, None)
-    name = canonicalize_template_name(instance.name)
+    persisted_name = _persisted_name(sender, instance, using)
+    name = canonicalize_template_name(
+        instance.name if persisted_name is None else persisted_name
+    )
     instance.__dict__[_STATE_ATTRIBUTE] = _MutationState(using, (name,))
 
 

@@ -1,19 +1,49 @@
 """Database model signal integration tests."""
 
 from collections.abc import Iterator
+from typing import Any
 from unittest.mock import patch
 
 import pytest
+from django.core.cache import caches
 from django.db import connection, connections, transaction
 from django.db.models import Model
+from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
 from dj_hyperview.contrib.database.apps import DjHyperviewDatabaseConfig
 from dj_hyperview.contrib.database.signals import _connect_signal_handlers
-from dj_hyperview.exceptions import InvalidTemplateName
+from dj_hyperview.exceptions import InvalidTemplateName, TemplateNotFound
+from dj_hyperview.resolver import TemplateResolver
 from tests.test_database_app import run_isolated
 
 ALIASES = ("default", "replica")
+LOCMEM_CACHES = {
+    "signals": {
+        "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
+        "LOCATION": "database-signal-edge-cases",
+    }
+}
+
+
+def database_config(namespace: str) -> dict[str, object]:
+    """Return database-source settings backed by an isolated cache namespace.
+
+    Args:
+        namespace: Cache namespace for one regression scenario.
+
+    Returns:
+        Hyperview settings for the explicit default database.
+    """
+    return {
+        "SOURCES": [
+            {
+                "BACKEND": "dj_hyperview.contrib.database.sources.DatabaseSource",
+                "OPTIONS": {"using": "default"},
+            }
+        ],
+        "CACHE": {"ALIAS": "signals", "NAMESPACE": namespace},
+    }
 
 
 def test_app_ready_connects_signal_handlers() -> None:
@@ -26,7 +56,7 @@ def test_app_ready_connects_signal_handlers() -> None:
 
 
 @pytest.fixture
-def signal_model(transactional_db) -> Iterator[type[Model]]:
+def signal_model(transactional_db: None) -> Iterator[type[Model]]:
     from dj_hyperview.contrib.database.models import HyperviewTemplate
 
     _connect_signal_handlers()
@@ -38,7 +68,7 @@ def signal_model(transactional_db) -> Iterator[type[Model]]:
 
 
 @pytest.fixture
-def dual_signal_model(django_db_blocker) -> Iterator[type[Model]]:
+def dual_signal_model(django_db_blocker: Any) -> Iterator[type[Model]]:
     from dj_hyperview.contrib.database.models import HyperviewTemplate
 
     _connect_signal_handlers()
@@ -152,6 +182,86 @@ def test_instance_delete_schedules_its_name(signal_model: type[Model]) -> None:
     schedule.assert_called_once_with("screen.xml", using="default")
 
 
+def test_already_deleted_instance_preserves_fallback_invalidation(
+    signal_model: type[Model],
+) -> None:
+    template = signal_model.objects.create(name="screen.xml", content="<view />")
+    signal_model.objects.filter(pk=template.pk).delete()
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        template.delete()
+
+    schedule.assert_called_once_with("screen.xml", using="default")
+
+
+@override_settings(
+    CACHES=LOCMEM_CACHES,
+    HYPERVIEW=database_config("delete-persisted-name"),
+)
+def test_instance_delete_invalidates_persisted_name_after_unsaved_rename(
+    signal_model: type[Model],
+) -> None:
+    caches["signals"].clear()
+
+    with (
+        patch("dj_hyperview.checks.apps.is_installed", return_value=True),
+        patch(
+            "dj_hyperview.contrib.database.sources._template_model",
+            return_value=signal_model,
+        ),
+    ):
+        template = signal_model.objects.create(
+            name="persisted.xml", content="<persisted />"
+        )
+        assert TemplateResolver.from_settings().resolve("persisted.xml").content == (
+            "<persisted />"
+        )
+        template.name = "unsaved.xml"
+        template.delete()
+
+        assert not signal_model.objects.filter(name="persisted.xml").exists()
+        with pytest.raises(TemplateNotFound):
+            TemplateResolver.from_settings().resolve("persisted.xml")
+
+
+@pytest.mark.parametrize("force_update", [False, True])
+@override_settings(
+    CACHES=LOCMEM_CACHES,
+    HYPERVIEW=database_config("detached-persisted-name"),
+)
+def test_detached_update_invalidates_persisted_name(
+    signal_model: type[Model], force_update: bool
+) -> None:
+    caches["signals"].clear()
+
+    with (
+        patch("dj_hyperview.checks.apps.is_installed", return_value=True),
+        patch(
+            "dj_hyperview.contrib.database.sources._template_model",
+            return_value=signal_model,
+        ),
+    ):
+        stored = signal_model.objects.create(name="old.xml", content="<old />")
+        assert TemplateResolver.from_settings().resolve("old.xml").content == "<old />"
+        detached = signal_model(
+            id=stored.pk,
+            name="new.xml",
+            content="<new />",
+            active=True,
+            revision=2,
+            created_at=stored.created_at,
+            updated_at=stored.updated_at,
+        )
+        detached.save(force_update=force_update)
+
+        assert signal_model.objects.get(pk=stored.pk).name == "new.xml"
+        with pytest.raises(TemplateNotFound):
+            TemplateResolver.from_settings().resolve("old.xml")
+        assert TemplateResolver.from_settings().resolve("new.xml").content == "<new />"
+
+
 def test_save_callbacks_follow_commit_and_rollback(signal_model: type[Model]) -> None:
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 
@@ -213,6 +323,54 @@ def test_replica_rename_reads_old_name_from_mutation_alias(
     schedule.assert_called_once_with(
         "replica-old.xml", "replica-new.xml", using="replica"
     )
+
+
+@pytest.mark.django_db(transaction=True, databases=ALIASES)
+def test_replica_detached_update_reads_persisted_name_from_mutation_alias(
+    dual_signal_model: type[Model],
+) -> None:
+    default = dual_signal_model.objects.using("default").create(
+        name="default.xml", content="<default />"
+    )
+    replica = dual_signal_model.objects.using("replica").create(
+        id=default.pk, name="replica-old.xml", content="<replica />"
+    )
+    detached = dual_signal_model(
+        id=replica.pk,
+        name="replica-new.xml",
+        content="<new />",
+        created_at=replica.created_at,
+        updated_at=replica.updated_at,
+    )
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        detached.save(force_update=True, using="replica")
+
+    schedule.assert_called_once_with(
+        "replica-old.xml", "replica-new.xml", using="replica"
+    )
+
+
+@pytest.mark.django_db(transaction=True, databases=ALIASES)
+def test_replica_delete_ignores_unsaved_name_and_uses_mutation_alias(
+    dual_signal_model: type[Model],
+) -> None:
+    default = dual_signal_model.objects.using("default").create(
+        name="default.xml", content="<default />"
+    )
+    replica = dual_signal_model.objects.using("replica").create(
+        id=default.pk, name="replica.xml", content="<replica />"
+    )
+    replica.name = "../unsaved.xml"
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        replica.delete(using="replica")
+
+    schedule.assert_called_once_with("replica.xml", using="replica")
 
 
 @pytest.mark.django_db(transaction=True, databases=ALIASES)
