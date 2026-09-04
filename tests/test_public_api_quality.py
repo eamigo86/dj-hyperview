@@ -23,30 +23,27 @@ def _literal_exports(node: ast.AST | None) -> set[str] | None:
     return {item.value for item in node.elts}
 
 
-def _contains_export_name(node: ast.AST) -> bool:
-    return any(
-        isinstance(candidate, ast.Name) and candidate.id == "__all__"
-        for candidate in ast.walk(node)
-    )
-
-
-def _mutates_exports(node: ast.AST) -> bool:
+def _uses_exports(node: ast.AST) -> bool:
     for candidate in ast.walk(node):
-        if isinstance(candidate, ast.Assign) and any(
-            _contains_export_name(target) for target in candidate.targets
+        if isinstance(candidate, ast.Name) and candidate.id == "__all__":
+            return True
+        if isinstance(candidate, (ast.Global, ast.Nonlocal)) and "__all__" in (
+            candidate.names
         ):
             return True
-        if isinstance(candidate, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
-            if _contains_export_name(candidate.target):
-                return True
-        if isinstance(candidate, ast.Delete) and any(
-            _contains_export_name(target) for target in candidate.targets
+        if isinstance(candidate, ast.alias) and (
+            candidate.asname == "__all__" or candidate.name == "__all__"
         ):
             return True
         if (
-            isinstance(candidate, ast.Call)
-            and isinstance(candidate.func, ast.Attribute)
-            and _contains_export_name(candidate.func.value)
+            isinstance(candidate, ast.Subscript)
+            and isinstance(candidate.value, ast.Call)
+            and isinstance(candidate.value.func, ast.Name)
+            and candidate.value.func.id == "globals"
+            and not candidate.value.args
+            and not candidate.value.keywords
+            and isinstance(candidate.slice, ast.Constant)
+            and candidate.slice.value == "__all__"
         ):
             return True
     return False
@@ -64,9 +61,11 @@ def _exports(tree: ast.Module, path: str) -> tuple[set[str], list[str]]:
 
     for node in tree.body:
         value: ast.AST | None = None
-        if isinstance(node, ast.Assign) and any(
-            isinstance(target, ast.Name) and target.id == "__all__"
-            for target in node.targets
+        if (
+            isinstance(node, ast.Assign)
+            and len(node.targets) == 1
+            and isinstance(node.targets[0], ast.Name)
+            and node.targets[0].id == "__all__"
         ):
             value = node.value
         elif (
@@ -87,7 +86,7 @@ def _exports(tree: ast.Module, path: str) -> tuple[set[str], list[str]]:
                 exports.update(addition)
             continue
         else:
-            if _mutates_exports(node):
+            if _uses_exports(node):
                 unresolved(node)
             continue
 
@@ -277,4 +276,69 @@ __all__ = ["public"]
 __all__.append("other")
 ''') == [
         "sample.py:3:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_when_exports_escape_through_an_alias() -> None:
+    """Reject aliases that can mutate exports beyond static analysis."""
+    assert _audit_text('''"""Documented module."""
+__all__ = []
+exports = __all__
+exports.extend(["_hidden"])
+''') == [
+        "sample.py:3:<module>: __all__ cannot be resolved statically",
+    ]
+    assert _audit_text('''"""Documented module."""
+exports = __all__ = []
+exports.append("_hidden")
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_when_exports_reach_opaque_code() -> None:
+    """Reject opaque calls and function-scoped export references."""
+    assert _audit_text('''"""Documented module."""
+__all__ = []
+mutate(__all__)
+''') == [
+        "sample.py:3:<module>: __all__ cannot be resolved statically",
+    ]
+    assert _audit_text('''"""Documented module."""
+def expose():
+    """Return the export collection."""
+    return __all__
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_for_reflective_export_access() -> None:
+    """Reject obvious reflective access to the export collection."""
+    assert _audit_text('''"""Documented module."""
+exports = globals()["__all__"]
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_for_deleted_and_imported_exports() -> None:
+    """Reject deleting or importing the export collection dynamically."""
+    assert _audit_text('''"""Documented module."""
+__all__ = []
+del __all__
+''') == [
+        "sample.py:3:<module>: __all__ cannot be resolved statically",
+    ]
+    assert _audit_text('''"""Documented module."""
+from another_module import __all__
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+    assert _audit_text('''"""Documented module."""
+def configure():
+    """Declare dynamic exports."""
+    global __all__
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
     ]
