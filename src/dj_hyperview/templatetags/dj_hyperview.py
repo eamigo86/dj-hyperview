@@ -10,7 +10,11 @@ register = template.Library()
 
 @register.simple_tag(takes_context=True)
 def hv_csrf_token(context: template.RequestContext) -> SafeString:
-    """Render Django's CSRF token as a hidden Hyperview form field."""
+    """Render Django's CSRF token as a hidden Hyperview form field.
+
+    Args:
+        context: Current template context.
+    """
     return format_html(
         '<text-field hide="true" name="csrfmiddlewaretoken" value="{}" />',
         get_token(context.request),

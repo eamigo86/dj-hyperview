@@ -50,7 +50,11 @@ def _remember(
 
 @contextmanager
 def template_snapshot(resolver: TemplateResolver) -> Iterator[None]:
-    """Isolate resolved revisions per resolver within one render context."""
+    """Isolate resolved revisions per resolver within one render context.
+
+    Args:
+        resolver: Resolver that owns the snapshot.
+    """
     if _snapshot_for(resolver) is not None:
         yield
         return

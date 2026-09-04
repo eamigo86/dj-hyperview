@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).parents[1] / "src" / "dj_hyperview"
 _DEFINITION = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 _DOCUMENTABLE = (ast.Module, *_DEFINITION)
+_ARG_ENTRY = re.compile(r"^ {4}\*{0,2}(?P<name>[A-Za-z_]\w*)(?:\s+\([^)]*\))?:")
 
 
 def _diagnostic(path: str, node: ast.AST, symbol: str, reason: str) -> str:
@@ -128,6 +130,8 @@ def _type_issues(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     path: str,
     symbol: str,
+    *,
+    skip_receiver_names: bool = True,
 ) -> list[str]:
     parameters = [
         *node.args.posonlyargs,
@@ -138,7 +142,7 @@ def _type_issues(
     ]
     issues: list[str] = []
     for parameter in parameters:
-        if parameter.arg in {"self", "cls"}:
+        if skip_receiver_names and parameter.arg in {"self", "cls"}:
             continue
         if parameter.annotation is None:
             reason = f"public callable parameter '{parameter.arg}' lacks a type hint"
@@ -160,6 +164,73 @@ def _type_issues(
                 node,
                 symbol,
                 "public callable has an invalid return type hint",
+            )
+        )
+    return issues
+
+
+def _function_parameters(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+) -> list[ast.arg]:
+    return [
+        *node.args.posonlyargs,
+        *node.args.args,
+        *node.args.kwonlyargs,
+        *([node.args.vararg] if node.args.vararg else []),
+        *([node.args.kwarg] if node.args.kwarg else []),
+    ]
+
+
+def _function_args_issues(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    path: str,
+    docstring: str,
+) -> list[str]:
+    expected = {parameter.arg for parameter in _function_parameters(node)}
+    if not expected:
+        return []
+    lines = docstring.splitlines()
+    headers = [index for index, line in enumerate(lines) if line == "Args:"]
+    if not headers:
+        return [_diagnostic(path, node, node.name, "Args section is required")]
+    issues: list[str] = []
+    if len(headers) > 1:
+        issues.append(_diagnostic(path, node, node.name, "Args section is duplicated"))
+    body: list[str] = []
+    for line in lines[headers[0] + 1 :]:
+        if line and not line.startswith(" "):
+            break
+        body.append(line)
+    if not any(line.strip() for line in body):
+        issues.append(_diagnostic(path, node, node.name, "Args section is empty"))
+    documented = [
+        match.group("name")
+        for line in body
+        if (match := _ARG_ENTRY.match(line)) is not None
+    ]
+    for name in sorted(set(documented)):
+        if documented.count(name) > 1:
+            issues.append(
+                _diagnostic(
+                    path,
+                    node,
+                    node.name,
+                    f"Args section documents parameter '{name}' more than once",
+                )
+            )
+    for name in sorted(set(documented) - expected):
+        issues.append(
+            _diagnostic(
+                path,
+                node,
+                node.name,
+                f"Args section documents unknown parameter '{name}'",
+            )
+        )
+    for name in sorted(expected - set(documented)):
+        issues.append(
+            _diagnostic(
+                path, node, node.name, f"Args section missing parameter '{name}'"
             )
         )
     return issues
@@ -199,7 +270,11 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
                 _diagnostic(path, node, node.name, f"public {kind} lacks a docstring")
             )
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            issues.extend(_type_issues(node, path, node.name))
+            type_issues = _type_issues(node, path, node.name, skip_receiver_names=False)
+            issues.extend(type_issues)
+            docstring = ast.get_docstring(node)
+            if docstring is not None and not type_issues:
+                issues.extend(_function_args_issues(node, path, docstring))
         if isinstance(node, ast.ClassDef):
             for method in node.body:
                 if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -544,7 +619,11 @@ from somewhere import imported
 factory = lambda value: value
 
 def public(value: str) -> str:
-    """Return a value while defining private local behavior."""
+    """Return a value while defining private local behavior.
+
+    Args:
+        value: Value to return.
+    """
     def nested(missing):
         return missing
     return value
@@ -578,10 +657,18 @@ def whitespace_return(value: str) -> "   ":
     """Return one value."""
 
 def valid(value: " Model | None ") -> " list[Model] ":
-    """Preserve valid forward references."""
+    """Preserve valid forward references.
+
+    Args:
+        value: Forward-referenced value.
+    """
 
 def explicit_none(value: None) -> None:
-    """Preserve the normal None annotation."""
+    """Preserve the normal None annotation.
+
+    Args:
+        value: Explicit none value.
+    """
 '''
     assert _audit_text(source) == [
         "sample.py:3:empty: public callable parameter 'value' has an invalid type hint",
@@ -683,6 +770,112 @@ def test_auditor_accepts_supported_type_root_annotations() -> None:
         source = f'''"""Documented module."""
 
 def public(value: {annotation}) -> {annotation}:
-    """Round-trip one value."""
+    """Round-trip one value.
+
+    Args:
+        value: Value to preserve.
+    """
 '''
         assert _audit_text(source) == []
+
+
+def test_auditor_requires_nonempty_args_for_public_functions() -> None:
+    """Reject missing and empty argument sections on module functions."""
+    for docstring, reasons in (
+        ('"""Process a value."""', ["Args section is required"]),
+        (
+            '"""Process a value.\n\n    Args:\n    """',
+            ["Args section is empty", "Args section missing parameter 'value'"],
+        ),
+    ):
+        source = f'''"""Documented module."""
+def public(value: str) -> None:
+    {docstring}
+'''
+        assert _audit_text(source) == [
+            f"sample.py:2:public: {reason}" for reason in reasons
+        ]
+
+
+def test_auditor_requires_each_function_argument_exactly_once() -> None:
+    """Reject missing, extra, and duplicate public function argument entries."""
+    source = '''"""Documented module."""
+def public(first: str, second: str) -> None:
+    """Process values.
+
+    Args:
+        first: First value.
+        first: Duplicate value.
+        extra: Extra value.
+    """
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:public: Args section documents parameter 'first' more than once",
+        "sample.py:2:public: Args section documents unknown parameter 'extra'",
+        "sample.py:2:public: Args section missing parameter 'second'",
+    ]
+
+
+def test_auditor_requires_one_exact_args_header() -> None:
+    """Reject duplicate and noncanonical argument section headers."""
+    duplicate = '''"""Documented module."""
+def public(value: str) -> None:
+    """Process one value.
+
+    Args:
+        value: First entry.
+
+    Args:
+        value: Second entry.
+    """
+'''
+    assert _audit_text(duplicate) == ["sample.py:2:public: Args section is duplicated"]
+    wrong_header = '''"""Documented module."""
+def public(value: str) -> None:
+    """Process one value.
+
+    Arguments:
+        value: Value to process.
+    """
+'''
+    assert _audit_text(wrong_header) == ["sample.py:2:public: Args section is required"]
+
+
+def test_auditor_normalizes_all_sync_and_async_parameter_kinds() -> None:
+    """Accept exact entries for positional, keyword, and variadic arguments."""
+    source = '''"""Documented module."""
+async def public(pos_only: str, /, regular: str, *items: str,
+                 keyword_only: bool, **options: str) -> None:
+    """Process every argument category.
+
+    Args:
+        pos_only: Positional-only value.
+        regular: Regular value.
+        *items: Additional values.
+        keyword_only: Keyword-only flag.
+        **options: Additional options.
+    """
+'''
+    assert _audit_text(source) == []
+
+
+def test_module_self_and_cls_are_ordinary_public_parameters() -> None:
+    """Prevent module self and cls names from evading docs or type hints."""
+    documented = '''"""Documented module."""
+def public(self: str, cls: str) -> None:
+    """Process ordinary parameters.
+
+    Args:
+        self: First value.
+    """
+'''
+    assert _audit_text(documented) == [
+        "sample.py:2:public: Args section missing parameter 'cls'"
+    ]
+    assert _audit_text('''"""Documented module."""
+def public(self, cls) -> None:
+    """Process ordinary parameters."""
+''') == [
+        "sample.py:2:public: public callable parameter 'cls' lacks a type hint",
+        "sample.py:2:public: public callable parameter 'self' lacks a type hint",
+    ]

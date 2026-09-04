@@ -108,5 +108,11 @@ def render_template(
     context: dict[str, Any] | None = None,
     request: HttpRequest | None = None,
 ) -> str:
-    """Render a consumer template using current HYPERVIEW settings."""
+    """Render a consumer template using current HYPERVIEW settings.
+
+    Args:
+        name: Template name or ordered candidate names.
+        context: Optional template context.
+        request: Optional Django request.
+    """
     return HyperviewEngine().render_hxml(name, context, request)

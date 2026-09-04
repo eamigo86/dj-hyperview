@@ -19,13 +19,21 @@ def _is_canonical_template_name(value: str) -> bool:
 
 
 def validate_canonical_template_name(value: str) -> None:
-    """Validate one canonical template name without exposing its value."""
+    """Validate one canonical template name without exposing its value.
+
+    Args:
+        value: Candidate template name.
+    """
     if not _is_canonical_template_name(value):
         raise ValidationError("Enter a canonical template name.", code="invalid")
 
 
 def validate_stored_template_source(value: str) -> None:
-    """Apply safe publish-time checks to stored consumer source."""
+    """Apply safe publish-time checks to stored consumer source.
+
+    Args:
+        value: Consumer-owned template source.
+    """
     config = get_settings().validation
     try:
         validate_template_source(value, config=config)

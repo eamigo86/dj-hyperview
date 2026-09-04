@@ -78,7 +78,14 @@ def _resolve_cache_alias(alias: object) -> tuple[BaseCache | None, str | None]:
 
 
 def template_cache_key(namespace: str, source: str, name: str, revision: str) -> str:
-    """Return a backend-safe key for one raw template revision."""
+    """Return a backend-safe key for one raw template revision.
+
+    Args:
+        namespace: Cache namespace.
+        source: Source identity.
+        name: Canonical template name.
+        revision: Source revision.
+    """
     components = json.dumps(
         [namespace, source, name, revision],
         ensure_ascii=False,
@@ -469,7 +476,11 @@ class TemplateCache:
 
 
 def invalidate_templates(*names: str) -> None:
-    """Invalidate future cached lookups for canonical template names."""
+    """Invalidate future cached lookups for canonical template names.
+
+    Args:
+        *names: Canonicalizable template names.
+    """
     canonical = tuple(dict.fromkeys(canonicalize_template_name(name) for name in names))
     if not canonical:
         return

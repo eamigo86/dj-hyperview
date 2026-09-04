@@ -86,7 +86,12 @@ def _guard_document(document: str, config: ValidationSettings) -> bytes:
 def validate_template_source(
     document: str, *, config: ValidationSettings | None = None
 ) -> str:
-    """Reject unsafe declarations and oversized source before compilation."""
+    """Reject unsafe declarations and oversized source before compilation.
+
+    Args:
+        document: Raw template source.
+        config: Validation policy and limits.
+    """
     _guard_document(document, config or get_settings().validation)
     return document
 
@@ -158,7 +163,12 @@ def _validate_schema(root, document: str, config: ValidationSettings) -> None:
 
 
 def validate_hxml(document: str, *, config: ValidationSettings | None = None) -> str:
-    """Validate a rendered HXML document and return it unchanged."""
+    """Validate a rendered HXML document and return it unchanged.
+
+    Args:
+        document: Rendered HXML document.
+        config: Validation policy and limits.
+    """
     resolved = config or get_settings().validation
     root = _parse(document, resolved)
     if resolved.schema is not None:
@@ -169,7 +179,12 @@ def validate_hxml(document: str, *, config: ValidationSettings | None = None) ->
 def validate_rendered_hxml(
     document: str, *, config: ValidationSettings | None = None
 ) -> str:
-    """Apply the configured post-render validation policy."""
+    """Apply the configured post-render validation policy.
+
+    Args:
+        document: Rendered HXML document.
+        config: Validation policy and limits.
+    """
     resolved = config or get_settings().validation
     if resolved.mode in {"render", "publish_and_render"}:
         return validate_hxml(document, config=resolved)

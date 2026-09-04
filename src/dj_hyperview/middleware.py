@@ -27,7 +27,11 @@ class HyperviewRequestDetails:
 
 
 def detect_hyperview_request(request: HttpRequest) -> HyperviewRequestDetails:
-    """Return typed Hyperview metadata derived from verified client headers."""
+    """Return typed Hyperview metadata derived from verified client headers.
+
+    Args:
+        request: Incoming Django request.
+    """
     version = request.headers.get(HYPERVIEW_VERSION_HEADER)
     accept = request.headers.get("Accept", "")
     explicit_media_types = {

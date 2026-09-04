@@ -29,7 +29,11 @@ class TemplateSource(Protocol):
 
 
 def canonicalize_template_name(name: str) -> str:
-    """Return a canonical consumer-owned template name."""
+    """Return a canonical consumer-owned template name.
+
+    Args:
+        name: Candidate template name.
+    """
     if not isinstance(name, str):
         raise InvalidTemplateName(name)
 
