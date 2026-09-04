@@ -1228,3 +1228,85 @@ class Public:
         """
 '''
     assert _audit_text(source) == []
+
+
+def test_method_args_cover_async_binding_variants() -> None:
+    """Apply receiver semantics consistently to async method variants."""
+    source = '''"""Documented module."""
+class Public:
+    """Provide asynchronous method bindings."""
+
+    async def run(receiver, value: str) -> None:
+        """Run asynchronously.
+
+        Args:
+            value: Value to process.
+        """
+
+    @classmethod
+    async def build(receiver, value: str) -> None:
+        """Build asynchronously.
+
+        Args:
+            value: Value to process.
+        """
+
+    @staticmethod
+    async def inspect(self: str) -> None:
+        """Inspect an ordinary static parameter.
+
+        Args:
+            self: Value to inspect.
+        """
+'''
+    assert _audit_text(source) == []
+
+
+def test_method_args_cover_property_deleters() -> None:
+    """Treat a property deleter's first positional parameter as its receiver."""
+    source = '''"""Documented module."""
+class Public:
+    """Provide a deletable property."""
+
+    @property
+    def name(receiver) -> str:
+        """Return the current name."""
+        return "name"
+
+    @name.deleter
+    def name(receiver) -> None:
+        """Delete the current name."""
+'''
+    assert _audit_text(source) == []
+
+
+def test_method_args_cover_attributed_staticmethod_decorator_orders() -> None:
+    """Recognize attributed staticmethod decorators in either decorator order."""
+    source = '''"""Documented module."""
+import builtins
+
+def _trace(value):
+    return value
+
+class Public:
+    """Provide decorated static methods."""
+
+    @_trace
+    @builtins.staticmethod
+    def first(self: str) -> None:
+        """Inspect the first value.
+
+        Args:
+            self: First ordinary static parameter.
+        """
+
+    @builtins.staticmethod
+    @_trace
+    def second(cls: str) -> None:
+        """Inspect the second value.
+
+        Args:
+            cls: Second ordinary static parameter.
+        """
+'''
+    assert _audit_text(source) == []
