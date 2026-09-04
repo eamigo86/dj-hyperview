@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import ast
-import re
 from pathlib import Path
 
 PACKAGE_ROOT = Path(__file__).parents[1] / "src" / "dj_hyperview"
 _DEFINITION = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 _DOCUMENTABLE = (ast.Module, *_DEFINITION)
-_ARG_ENTRY = re.compile(r"^ {4}\*{0,2}(?P<name>[A-Za-z_]\w*)(?:\s+\([^)]*\))?:")
 
 
 def _diagnostic(path: str, node: ast.AST, symbol: str, reason: str) -> str:
@@ -171,14 +169,33 @@ def _type_issues(
 
 def _function_parameters(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
-) -> list[ast.arg]:
-    return [
-        *node.args.posonlyargs,
-        *node.args.args,
-        *node.args.kwonlyargs,
-        *([node.args.vararg] if node.args.vararg else []),
-        *([node.args.kwarg] if node.args.kwarg else []),
+) -> list[str]:
+    names = [
+        *(parameter.arg for parameter in node.args.posonlyargs),
+        *(parameter.arg for parameter in node.args.args),
+        *(parameter.arg for parameter in node.args.kwonlyargs),
     ]
+    if node.args.vararg is not None:
+        names.append(f"*{node.args.vararg.arg}")
+    if node.args.kwarg is not None:
+        names.append(f"**{node.args.kwarg.arg}")
+    return names
+
+
+def _argument_entry(line: str) -> tuple[str | None, bool]:
+    if not line.startswith("    ") or line.startswith("     "):
+        return None, False
+    declaration, separator, _ = line[4:].partition(":")
+    if not separator:
+        return None, False
+    label = declaration
+    if label.endswith(")") and " (" in label:
+        label = label.split(" (", 1)[0]
+    stars = len(label) - len(label.lstrip("*"))
+    name = label[stars:]
+    if stars > 2 or not name.isidentifier():
+        return None, True
+    return label, True
 
 
 def _function_args_issues(
@@ -186,13 +203,13 @@ def _function_args_issues(
     path: str,
     docstring: str,
 ) -> list[str]:
-    expected = {parameter.arg for parameter in _function_parameters(node)}
-    if not expected:
-        return []
+    expected = set(_function_parameters(node))
     lines = docstring.splitlines()
     headers = [index for index, line in enumerate(lines) if line == "Args:"]
     if not headers:
-        return [_diagnostic(path, node, node.name, "Args section is required")]
+        if expected:
+            return [_diagnostic(path, node, node.name, "Args section is required")]
+        return []
     issues: list[str] = []
     if len(headers) > 1:
         issues.append(_diagnostic(path, node, node.name, "Args section is duplicated"))
@@ -203,11 +220,22 @@ def _function_args_issues(
         body.append(line)
     if not any(line.strip() for line in body):
         issues.append(_diagnostic(path, node, node.name, "Args section is empty"))
-    documented = [
-        match.group("name")
-        for line in body
-        if (match := _ARG_ENTRY.match(line)) is not None
-    ]
+    documented: list[str] = []
+    for line in body:
+        label, is_entry = _argument_entry(line)
+        if not is_entry:
+            continue
+        if label is None:
+            issues.append(
+                _diagnostic(
+                    path,
+                    node,
+                    node.name,
+                    "Args section has an invalid parameter label",
+                )
+            )
+        else:
+            documented.append(label)
     for name in sorted(set(documented)):
         if documented.count(name) > 1:
             issues.append(
@@ -878,4 +906,79 @@ def public(self, cls) -> None:
 ''') == [
         "sample.py:2:public: public callable parameter 'cls' lacks a type hint",
         "sample.py:2:public: public callable parameter 'self' lacks a type hint",
+    ]
+
+
+def test_args_section_rejects_entries_when_function_has_no_parameters() -> None:
+    """Reject argument documentation that has no matching parameter."""
+    source = '''"""Documented module."""
+def public() -> None:
+    """Perform work.
+
+    Args:
+        extra: Unsupported value.
+    """
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:public: Args section documents unknown parameter 'extra'"
+    ]
+
+
+def test_args_section_preserves_variadic_stars() -> None:
+    """Require exact identities for regular and variadic parameters."""
+    source = '''"""Documented module."""
+def variadic(*items: str, **options: str) -> None:
+    """Process variadic values.
+
+    Args:
+        items: Missing the positional variadic marker.
+        options: Missing the keyword variadic marker.
+    """
+
+def regular(value: str) -> None:
+    """Process one regular value.
+
+    Args:
+        *value: Unexpected variadic marker.
+    """
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:variadic: Args section documents unknown parameter 'items'",
+        "sample.py:2:variadic: Args section documents unknown parameter 'options'",
+        "sample.py:2:variadic: Args section missing parameter '**options'",
+        "sample.py:2:variadic: Args section missing parameter '*items'",
+        "sample.py:10:regular: Args section documents unknown parameter '*value'",
+        "sample.py:10:regular: Args section missing parameter 'value'",
+    ]
+
+
+def test_args_section_accepts_unicode_identifiers_and_continuations() -> None:
+    """Accept Python identifiers without treating continuation text as entries."""
+    source = '''"""Documented module."""
+def public(café: str, 变量: str, *éléments: str) -> None:
+    """Process Unicode-named parameters.
+
+    Args:
+        café: First value.
+            Continuation: remains descriptive text.
+        变量 (str): Second value.
+        *éléments: Additional values.
+    """
+'''
+    assert _audit_text(source) == []
+
+
+def test_args_section_rejects_non_identifier_labels() -> None:
+    """Reject an entry whose label is not a Python identifier."""
+    source = '''"""Documented module."""
+def public(value: str) -> None:
+    """Process one value.
+
+    Args:
+        bad-name: Invalid label.
+    """
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:public: Args section has an invalid parameter label",
+        "sample.py:2:public: Args section missing parameter 'value'",
     ]
