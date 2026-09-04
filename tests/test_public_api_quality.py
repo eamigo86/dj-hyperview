@@ -334,6 +334,8 @@ def _returns_issues(
     lines = docstring.splitlines()
     headers = [index for index, line in enumerate(lines) if line == "Returns:"]
     has_value = _returns_value(node.returns)
+    if len(headers) > 1:
+        return [_diagnostic(path, node, symbol, "Returns section is duplicated")]
     if not headers:
         if has_value:
             return [_diagnostic(path, node, symbol, "Returns section is required")]
@@ -352,9 +354,14 @@ def _returns_issues(
         if line and not line.startswith(" "):
             break
         body.append(line)
-    prose = next((line.strip() for line in body if line.strip()), None)
-    if prose is None:
+    entry = next((line for line in body if line.strip()), None)
+    if entry is None:
         return [_diagnostic(path, node, symbol, "Returns section is empty")]
+    if not entry.startswith("    ") or entry.startswith("     "):
+        return [
+            _diagnostic(path, node, symbol, "Returns section has invalid indentation")
+        ]
+    prose = entry[4:]
     separator, balanced = _entry_separator(prose)
     if separator is not None and balanced:
         label = prose[:separator].strip()
@@ -1587,5 +1594,85 @@ def public(value: str) -> str:
     if not value:
         raise ValueError
     return value
+'''
+    assert _audit_text(source) == []
+
+
+def test_returns_section_rejects_duplicate_headers() -> None:
+    """Require exactly one Returns header."""
+    duplicate = '''"""Documented module."""
+def public() -> str:
+    """Return one value.
+
+    Returns:
+        First description.
+
+    Returns:
+        Second description.
+    """
+'''
+    assert _audit_text(duplicate) == [
+        "sample.py:2:public: Returns section is duplicated"
+    ]
+
+
+def test_returns_section_rejects_shallow_content() -> None:
+    """Require four-space indentation for the initial Returns prose."""
+    shallow = '''"""Documented module."""
+def public() -> str:
+    """Return one value.
+
+    Returns:
+      Insufficiently indented description.
+    """
+'''
+    assert _audit_text(shallow) == [
+        "sample.py:2:public: Returns section has invalid indentation"
+    ]
+
+
+def test_generator_annotations_require_returns_documentation() -> None:
+    """Treat generator and wrapped no-value annotations as value returns."""
+    source = '''"""Documented module."""
+def iterator() -> Iterator[str]:
+    """Yield values."""
+
+async def async_iterator() -> AsyncIterator[str]:
+    """Yield values asynchronously."""
+
+def wrapped() -> Awaitable[None]:
+    """Return an awaitable."""
+
+def union() -> NoReturn | str:
+    """Return a value or never return."""
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:iterator: Returns section is required",
+        "sample.py:5:async_iterator: Returns section is required",
+        "sample.py:8:wrapped: Returns section is required",
+        "sample.py:11:union: Returns section is required",
+    ]
+
+
+def test_qualified_no_value_returns_and_multiline_prose_are_valid() -> None:
+    """Accept exact qualified no-value hints and colon-bearing continuations."""
+    source = '''"""Documented module."""
+def none_type() -> "types.NoneType":
+    """Return no value."""
+
+def no_return() -> typing.NoReturn:
+    """Never return."""
+
+def never() -> "typing.Never":
+    """Never return."""
+
+def public() -> str:
+    """Return one value.
+
+    Returns:
+        A rendered result.
+            Note: Capitalized continuation text is still prose.
+    """
+    return "value"
 '''
     assert _audit_text(source) == []
