@@ -1030,6 +1030,32 @@ def public(literal: str, annotated: str, escaped: str) -> None:
     assert _audit_text(source) == []
 
 
+def test_args_section_parses_colons_inside_balanced_mapping_metadata() -> None:
+    """Keep mapping metadata colons inside the temporary type suffix."""
+    source = r'''"""Documented module."""
+def public(mapping: str) -> None:
+    r"""Process mapping metadata.
+
+    Args:
+        mapping (Annotated[str, {"key:part": {"nested:key": "value"}}]): Value.
+    """
+'''
+    assert _audit_text(source) == []
+
+
+def test_args_section_parses_escaped_single_quoted_metadata() -> None:
+    """Keep an escaped quote and colon inside single-quoted metadata."""
+    source = r'''"""Documented module."""
+def public(value: str) -> None:
+    r"""Process quoted metadata.
+
+    Args:
+        value (Literal['x\':y']): Value whose description contains ): safely.
+    """
+'''
+    assert _audit_text(source) == []
+
+
 def test_args_section_rejects_unbalanced_temporary_type_suffixes() -> None:
     """Diagnose malformed suffix structure without crashing the audit."""
     for entry in (
