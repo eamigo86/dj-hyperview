@@ -32,6 +32,9 @@ class FileSystemSource:
 
         Args:
             name: Canonical template name.
+
+        Returns:
+            The resolved template from the first matching root, otherwise a miss.
         """
         canonical = canonicalize_template_name(name)
         for root in self.template_dirs:

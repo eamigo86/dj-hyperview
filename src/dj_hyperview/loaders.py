@@ -54,6 +54,9 @@ def template_snapshot(resolver: TemplateResolver) -> Iterator[None]:
 
     Args:
         resolver: Resolver that owns the snapshot.
+
+    Returns:
+        A context manager that isolates one render snapshot.
     """
     if _snapshot_for(resolver) is not None:
         yield
@@ -114,6 +117,9 @@ class ResolverLoader(Loader):
 
         Args:
             template_name: Canonical template name.
+
+        Returns:
+            Available origins for the canonical template.
         """
         try:
             resolved = self._resolve(template_name)
@@ -126,5 +132,8 @@ class ResolverLoader(Loader):
 
         Args:
             origin: Resolver origin containing raw source content.
+
+        Returns:
+            The validated source content.
         """
         return validate_template_source(origin.resolved.content, config=self.validation)

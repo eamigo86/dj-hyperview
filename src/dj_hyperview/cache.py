@@ -38,7 +38,11 @@ class CacheEntry:
 
     @property
     def is_miss(self) -> bool:
-        """Report whether this entry represents a cached source miss."""
+        """Report whether this entry represents a cached source miss.
+
+        Returns:
+            Whether the entry is an explicit source miss.
+        """
         return self.template is None
 
 
@@ -85,6 +89,9 @@ def template_cache_key(namespace: str, source: str, name: str, revision: str) ->
         source: Source identity.
         name: Canonical template name.
         revision: Source revision.
+
+    Returns:
+        A deterministic backend-safe cache key.
     """
     components = json.dumps(
         [namespace, source, name, revision],
@@ -125,6 +132,9 @@ class TemplateCache:
 
         Args:
             namespace: Namespace isolating this package consumer's cache entries.
+
+        Returns:
+            A cache configured from current package settings.
         """
         config = get_settings().cache
         return cls(
@@ -141,6 +151,9 @@ class TemplateCache:
             source: Stable source identity.
             name: Canonical template name.
             revision: Source or generation revision.
+
+        Returns:
+            A deterministic backend-safe cache key.
         """
         return template_cache_key(self.namespace, source, name, revision)
 
@@ -250,6 +263,9 @@ class TemplateCache:
 
         Args:
             name: Canonical template name.
+
+        Returns:
+            The current shared generation token.
         """
         key = self._generation_key(name)
         token = _without_untrusted_exception(lambda: self.backend.get(key, _ABSENT))
@@ -294,6 +310,9 @@ class TemplateCache:
             source: Stable source identity.
             name: Canonical template name.
             revision: Exact source revision.
+
+        Returns:
+            The cached entry when present, otherwise absence.
         """
         payload = _without_untrusted_exception(
             lambda: self.backend.get(self.key(source, name, revision), _ABSENT)
@@ -351,6 +370,9 @@ class TemplateCache:
             source: Stable source identity.
             name: Canonical template name.
             generation: Optional shared generation token.
+
+        Returns:
+            The latest cached source result when present, otherwise absence.
         """
         revision = self._resolved_revision(generation)
         payload = _without_untrusted_exception(

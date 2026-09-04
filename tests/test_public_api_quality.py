@@ -124,6 +124,18 @@ def _is_valid_type_hint(annotation: ast.expr) -> bool:
     return _is_type_expression(annotation)
 
 
+def _returns_value(annotation: ast.expr) -> bool:
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        annotation = ast.parse(annotation.value.strip(), mode="eval").body
+    if isinstance(annotation, ast.Constant):
+        return annotation.value is not None
+    if isinstance(annotation, ast.Name):
+        return annotation.id not in {"NoneType", "NoReturn", "Never"}
+    if isinstance(annotation, ast.Attribute):
+        return annotation.attr not in {"NoneType", "NoReturn", "Never"}
+    return True
+
+
 def _type_issues(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     path: str,
@@ -275,6 +287,18 @@ def _function_args_issues(
             )
         else:
             documented.append(label)
+            content = line[4:]
+            separator, _ = _entry_separator(content)
+            declaration = content[:separator] if separator is not None else content
+            if declaration.endswith(")") and " (" in declaration:
+                issues.append(
+                    _diagnostic(
+                        path,
+                        node,
+                        symbol,
+                        f"Args section repeats the type for parameter '{label}'",
+                    )
+                )
     for name in sorted(set(documented)):
         if documented.count(name) > 1:
             issues.append(
@@ -297,6 +321,78 @@ def _function_args_issues(
     for name in sorted(expected - set(documented)):
         issues.append(
             _diagnostic(path, node, symbol, f"Args section missing parameter '{name}'")
+        )
+    return issues
+
+
+def _returns_issues(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    path: str,
+    symbol: str,
+    docstring: str,
+) -> list[str]:
+    lines = docstring.splitlines()
+    headers = [index for index, line in enumerate(lines) if line == "Returns:"]
+    has_value = _returns_value(node.returns)
+    if not headers:
+        if has_value:
+            return [_diagnostic(path, node, symbol, "Returns section is required")]
+        return []
+    if not has_value:
+        return [
+            _diagnostic(
+                path,
+                node,
+                symbol,
+                "Returns section is not allowed for a no-value return",
+            )
+        ]
+    body: list[str] = []
+    for line in lines[headers[0] + 1 :]:
+        if line and not line.startswith(" "):
+            break
+        body.append(line)
+    prose = next((line.strip() for line in body if line.strip()), None)
+    if prose is None:
+        return [_diagnostic(path, node, symbol, "Returns section is empty")]
+    separator, balanced = _entry_separator(prose)
+    if separator is not None and balanced:
+        label = prose[:separator].strip()
+        try:
+            expression = ast.parse(label, mode="eval").body
+        except SyntaxError:
+            expression = None
+        if expression is not None and _is_valid_type_hint(expression):
+            return [
+                _diagnostic(
+                    path,
+                    node,
+                    symbol,
+                    "Returns section repeats the return type",
+                )
+            ]
+    return []
+
+
+def _rest_type_issues(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    path: str,
+    symbol: str,
+    docstring: str,
+) -> list[str]:
+    stripped = [line.strip() for line in docstring.splitlines()]
+    issues: list[str] = []
+    if any(line.startswith(":type ") and ":" in line[6:] for line in stripped):
+        issues.append(
+            _diagnostic(
+                path, node, symbol, "docstring repeats a parameter type with :type"
+            )
+        )
+    if any(line.startswith(":rtype:") for line in stripped):
+        issues.append(
+            _diagnostic(
+                path, node, symbol, "docstring repeats a return type with :rtype"
+            )
         )
     return issues
 
@@ -350,6 +446,8 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
             docstring = ast.get_docstring(node)
             if docstring is not None and not type_issues:
                 issues.extend(_function_args_issues(node, path, node.name, docstring))
+                issues.extend(_returns_issues(node, path, node.name, docstring))
+                issues.extend(_rest_type_issues(node, path, node.name, docstring))
         if isinstance(node, ast.ClassDef):
             for method in node.body:
                 if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -383,6 +481,10 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
                                 docstring,
                                 skip_bound_receiver=bound_receiver,
                             )
+                        )
+                        issues.extend(_returns_issues(method, path, symbol, docstring))
+                        issues.extend(
+                            _rest_type_issues(method, path, symbol, docstring)
                         )
     return _ordered(issues)
 
@@ -539,7 +641,11 @@ mutate(__all__)
     ]
     assert _audit_text('''"""Documented module."""
 def expose() -> object:
-    """Return the export collection."""
+    """Return the export collection.
+
+    Returns:
+        The current export collection.
+    """
     return __all__
 ''') == [
         "sample.py:2:<module>: __all__ cannot be resolved statically",
@@ -716,6 +822,9 @@ def public(value: str) -> str:
 
     Args:
         value: Value to return.
+
+    Returns:
+        The supplied value.
     """
     def nested(missing):
         return missing
@@ -754,6 +863,9 @@ def valid(value: " Model | None ") -> " list[Model] ":
 
     Args:
         value: Forward-referenced value.
+
+    Returns:
+        Values preserving the forward reference.
     """
 
 def explicit_none(value: None) -> None:
@@ -860,6 +972,11 @@ def test_auditor_accepts_supported_type_root_annotations() -> None:
         "None",
         '"Model | None"',
     ):
+        returns = (
+            ""
+            if annotation == "None"
+            else "\n    Returns:\n        The preserved value.\n"
+        )
         source = f'''"""Documented module."""
 
 def public(value: {annotation}) -> {annotation}:
@@ -867,6 +984,7 @@ def public(value: {annotation}) -> {annotation}:
 
     Args:
         value: Value to preserve.
+{returns}
     """
 '''
         assert _audit_text(source) == []
@@ -1026,7 +1144,7 @@ def public(café: str, 变量: str, *éléments: str) -> None:
     Args:
         café: First value.
             Continuation: remains descriptive text.
-        变量 (str): Second value.
+        变量: Second value.
         *éléments: Additional values.
     """
 '''
@@ -1061,7 +1179,11 @@ def public(literal: str, annotated: str, escaped: str) -> None:
         escaped (Literal["x\":y"]): Escaped quote.
     """
 '''
-    assert _audit_text(source) == []
+    assert _audit_text(source) == [
+        "sample.py:2:public: Args section repeats the type for parameter 'annotated'",
+        "sample.py:2:public: Args section repeats the type for parameter 'escaped'",
+        "sample.py:2:public: Args section repeats the type for parameter 'literal'",
+    ]
 
 
 def test_args_section_parses_colons_inside_balanced_mapping_metadata() -> None:
@@ -1074,7 +1196,9 @@ def public(mapping: str) -> None:
         mapping (Annotated[str, {"key:part": {"nested:key": "value"}}]): Value.
     """
 '''
-    assert _audit_text(source) == []
+    assert _audit_text(source) == [
+        "sample.py:2:public: Args section repeats the type for parameter 'mapping'"
+    ]
 
 
 def test_args_section_parses_escaped_single_quoted_metadata() -> None:
@@ -1087,7 +1211,9 @@ def public(value: str) -> None:
         value (Literal['x\':y']): Value whose description contains ): safely.
     """
 '''
-    assert _audit_text(source) == []
+    assert _audit_text(source) == [
+        "sample.py:2:public: Args section repeats the type for parameter 'value'"
+    ]
 
 
 def test_args_section_rejects_unbalanced_temporary_type_suffixes() -> None:
@@ -1149,7 +1275,11 @@ class Public:
 
     @property
     def name(receiver) -> str:
-        """Return the current name."""
+        """Return the current name.
+
+        Returns:
+            The current name.
+        """
         return "name"
 
     @name.setter
@@ -1165,11 +1295,18 @@ class Public:
 
         Args:
             value: Initial value.
+
+        Returns:
+            The new instance.
         """
         return super().__new__(receiver)
 
     def __bool__(receiver) -> bool:
-        """Return whether the instance is truthy."""
+        """Return whether the instance is truthy.
+
+        Returns:
+            Whether the instance is truthy.
+        """
         return True
 
     def __init_subclass__(receiver, flag: bool = False) -> None:
@@ -1184,6 +1321,9 @@ class Public:
 
         Args:
             item: Item to resolve.
+
+        Returns:
+            The resolved item.
         """
         return item
 '''
@@ -1227,7 +1367,9 @@ class Public:
             **options: Additional options.
         """
 '''
-    assert _audit_text(source) == []
+    assert _audit_text(source) == [
+        "sample.py:5:Public.run: Args section repeats the type for parameter 'regular'"
+    ]
 
 
 def test_method_args_cover_async_binding_variants() -> None:
@@ -1270,7 +1412,11 @@ class Public:
 
     @property
     def name(receiver) -> str:
-        """Return the current name."""
+        """Return the current name.
+
+        Returns:
+            The current name.
+        """
         return "name"
 
     @name.deleter
@@ -1308,5 +1454,138 @@ class Public:
         Args:
             cls: Second ordinary static parameter.
         """
+'''
+    assert _audit_text(source) == []
+
+
+def test_returns_sections_match_value_semantics() -> None:
+    """Require returns prose only for annotations that can produce a value."""
+    source = '''"""Documented module."""
+def value() -> str:
+    """Return one value."""
+
+def empty() -> None:
+    """Return no value.
+
+    Returns:
+        Unsupported result.
+    """
+
+def none_type() -> NoneType:
+    """Return no value."""
+
+def no_return() -> NoReturn:
+    """Never return."""
+
+def never() -> Never:
+    """Never return."""
+
+def optional() -> str | None:
+    """Return an optional value."""
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:value: Returns section is required",
+        "sample.py:5:empty: Returns section is not allowed for a no-value return",
+        "sample.py:21:optional: Returns section is required",
+    ]
+
+
+def test_returns_sections_cover_async_properties_and_magic_methods() -> None:
+    """Audit value returns on async, property, and magic callables."""
+    source = '''"""Documented module."""
+async def fetch() -> str:
+    """Fetch one value."""
+
+class Public:
+    """Provide value-returning methods."""
+
+    @property
+    def name(receiver) -> str:
+        """Return the current name."""
+
+    def __str__(receiver) -> str:
+        """Return a display value.
+
+        Returns:
+            Human-readable value.
+        """
+        return "value"
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:fetch: Returns section is required",
+        "sample.py:9:Public.name: Returns section is required",
+    ]
+
+
+def test_returns_section_rejects_empty_and_typed_entries() -> None:
+    """Reject empty returns prose and labels that repeat the return type."""
+    source = '''"""Documented module."""
+def empty() -> str:
+    """Return one value.
+
+    Returns:
+    """
+
+def typed() -> list[str]:
+    """Return several values.
+
+    Returns:
+        list[str]: Collected values.
+    """
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:empty: Returns section is empty",
+        "sample.py:8:typed: Returns section repeats the return type",
+    ]
+
+
+def test_public_docstrings_reject_explicit_type_repetition() -> None:
+    """Reject Google and reStructuredText forms that duplicate annotations."""
+    source = '''"""Documented module."""
+def google(value: str) -> None:
+    """Process one value.
+
+    Args:
+        value (str): Value to process.
+    """
+
+def rest(value: str) -> str:
+    """Return one value.
+
+    Args:
+        value: Value to process.
+
+    Returns:
+        Processed value.
+
+    :type value: str
+    :rtype: str
+    """
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:google: Args section repeats the type for parameter 'value'",
+        "sample.py:9:rest: docstring repeats a parameter type with :type",
+        "sample.py:9:rest: docstring repeats a return type with :rtype",
+    ]
+
+
+def test_returns_prose_does_not_confuse_raises_entries() -> None:
+    """Accept direct returns prose and exception labels in a Raises section."""
+    source = '''"""Documented module."""
+def public(value: str) -> str:
+    """Return a checked value.
+
+    Args:
+        value: Value to check.
+
+    Returns:
+        The checked value.
+
+    Raises:
+        ValueError: If the value is empty.
+    """
+    if not value:
+        raise ValueError
+    return value
 '''
     assert _audit_text(source) == []

@@ -62,7 +62,11 @@ def _section(raw: Mapping[str, Any], defaults: Any) -> dict[str, Any]:
 
 
 def get_settings() -> HyperviewSettings:
-    """Validate and return current normalized Hyperview settings."""
+    """Validate and return current normalized Hyperview settings.
+
+    Returns:
+        The normalized package configuration.
+    """
     from .checks import check_hyperview_settings
     from .exceptions import HyperviewConfigurationError
 

@@ -14,6 +14,9 @@ def hv_csrf_token(context: template.RequestContext) -> SafeString:
 
     Args:
         context: Current template context.
+
+    Returns:
+        Escaped markup containing the hidden CSRF field.
     """
     return format_html(
         '<text-field hide="true" name="csrfmiddlewaretoken" value="{}" />',

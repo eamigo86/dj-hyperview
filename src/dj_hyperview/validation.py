@@ -91,6 +91,9 @@ def validate_template_source(
     Args:
         document: Raw template source.
         config: Validation policy and limits.
+
+    Returns:
+        The unchanged validated source.
     """
     _guard_document(document, config or get_settings().validation)
     return document
@@ -168,6 +171,9 @@ def validate_hxml(document: str, *, config: ValidationSettings | None = None) ->
     Args:
         document: Rendered HXML document.
         config: Validation policy and limits.
+
+    Returns:
+        The unchanged validated document.
     """
     resolved = config or get_settings().validation
     root = _parse(document, resolved)
@@ -184,6 +190,9 @@ def validate_rendered_hxml(
     Args:
         document: Rendered HXML document.
         config: Validation policy and limits.
+
+    Returns:
+        The rendered document after applying the configured policy.
     """
     resolved = config or get_settings().validation
     if resolved.mode in {"render", "publish_and_render"}:

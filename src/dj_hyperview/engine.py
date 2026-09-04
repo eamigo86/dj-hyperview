@@ -67,6 +67,9 @@ class HyperviewEngine:
 
         Args:
             name: Canonical template name.
+
+        Returns:
+            The compiled template with rendered validation.
         """
         return _ValidatedTemplate(
             self.backend.get_template(name), self.validation, self.resolver
@@ -77,6 +80,9 @@ class HyperviewEngine:
 
         Args:
             names: Ordered canonical template names.
+
+        Returns:
+            The first available compiled template.
         """
         chain = []
         for name in names:
@@ -98,6 +104,9 @@ class HyperviewEngine:
             name: Canonical name or ordered candidate names.
             context: Optional template context.
             request: Optional Django request.
+
+        Returns:
+            The rendered and validated Hyperview markup.
         """
         with template_snapshot(self.resolver):
             template = (
@@ -119,6 +128,9 @@ class HyperviewEngine:
             name: Canonical name or ordered candidate names.
             context: Optional template context.
             request: Optional Django request.
+
+        Returns:
+            The rendered Hyperview markup.
         """
         return self.render(name, context, request)
 
@@ -134,5 +146,8 @@ def render_template(
         name: Template name or ordered candidate names.
         context: Optional template context.
         request: Optional Django request.
+
+    Returns:
+        The rendered Hyperview markup.
     """
     return HyperviewEngine().render_hxml(name, context, request)

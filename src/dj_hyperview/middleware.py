@@ -31,6 +31,9 @@ def detect_hyperview_request(request: HttpRequest) -> HyperviewRequestDetails:
 
     Args:
         request: Incoming Django request.
+
+    Returns:
+        Verified Hyperview request metadata.
     """
     version = request.headers.get(HYPERVIEW_VERSION_HEADER)
     accept = request.headers.get("Accept", "")

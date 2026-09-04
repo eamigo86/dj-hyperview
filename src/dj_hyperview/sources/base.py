@@ -28,6 +28,9 @@ class TemplateSource(Protocol):
 
         Args:
             name: Canonical template name.
+
+        Returns:
+            The resolved template when found, otherwise a source-local miss.
         """
         ...
 
@@ -37,6 +40,9 @@ def canonicalize_template_name(name: str) -> str:
 
     Args:
         name: Candidate template name.
+
+    Returns:
+        The unchanged canonical template name.
     """
     if not isinstance(name, str):
         raise InvalidTemplateName(name)
