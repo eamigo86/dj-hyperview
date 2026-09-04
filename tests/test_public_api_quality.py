@@ -14,21 +14,90 @@ def _diagnostic(path: str, node: ast.AST, symbol: str, reason: str) -> str:
     return f"{path}:{getattr(node, 'lineno', 1)}:{symbol}: {reason}"
 
 
-def _exports(tree: ast.Module) -> set[str]:
+def _literal_exports(node: ast.AST | None) -> set[str] | None:
+    if not isinstance(node, (ast.List, ast.Tuple)) or not all(
+        isinstance(item, ast.Constant) and isinstance(item.value, str)
+        for item in node.elts
+    ):
+        return None
+    return {item.value for item in node.elts}
+
+
+def _contains_export_name(node: ast.AST) -> bool:
+    return any(
+        isinstance(candidate, ast.Name) and candidate.id == "__all__"
+        for candidate in ast.walk(node)
+    )
+
+
+def _mutates_exports(node: ast.AST) -> bool:
+    for candidate in ast.walk(node):
+        if isinstance(candidate, ast.Assign) and any(
+            _contains_export_name(target) for target in candidate.targets
+        ):
+            return True
+        if isinstance(candidate, (ast.AnnAssign, ast.AugAssign, ast.NamedExpr)):
+            if _contains_export_name(candidate.target):
+                return True
+        if isinstance(candidate, ast.Delete) and any(
+            _contains_export_name(target) for target in candidate.targets
+        ):
+            return True
+        if (
+            isinstance(candidate, ast.Call)
+            and isinstance(candidate.func, ast.Attribute)
+            and _contains_export_name(candidate.func.value)
+        ):
+            return True
+    return False
+
+
+def _exports(tree: ast.Module, path: str) -> tuple[set[str], list[str]]:
+    exports: set[str] = set()
+    assigned = False
+    issues: list[str] = []
+
+    def unresolved(node: ast.AST) -> None:
+        issues.append(
+            _diagnostic(path, node, "<module>", "__all__ cannot be resolved statically")
+        )
+
     for node in tree.body:
+        value: ast.AST | None = None
         if isinstance(node, ast.Assign) and any(
             isinstance(target, ast.Name) and target.id == "__all__"
             for target in node.targets
         ):
-            try:
-                value = ast.literal_eval(node.value)
-            except (ValueError, TypeError):
-                return set()
-            if isinstance(value, (list, tuple)) and all(
-                isinstance(item, str) for item in value
-            ):
-                return set(value)
-    return set()
+            value = node.value
+        elif (
+            isinstance(node, ast.AnnAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+        ):
+            value = node.value
+        elif (
+            isinstance(node, ast.AugAssign)
+            and isinstance(node.target, ast.Name)
+            and node.target.id == "__all__"
+        ):
+            addition = _literal_exports(node.value)
+            if not assigned or not isinstance(node.op, ast.Add) or addition is None:
+                unresolved(node)
+            else:
+                exports.update(addition)
+            continue
+        else:
+            if _mutates_exports(node):
+                unresolved(node)
+            continue
+
+        replacement = _literal_exports(value)
+        if replacement is None:
+            unresolved(node)
+        else:
+            exports = replacement
+            assigned = True
+    return exports, issues
 
 
 def _is_public(name: str, exports: set[str]) -> bool:
@@ -45,8 +114,7 @@ def _ordered(issues: list[str]) -> list[str]:
 
 def _audit_text(source: str, path: str = "sample.py") -> list[str]:
     tree = ast.parse(source, filename=path)
-    issues: list[str] = []
-    exports = _exports(tree)
+    exports, issues = _exports(tree, path)
     if ast.get_docstring(tree) is None:
         issues.append(
             _diagnostic(path, tree, "<module>", "runtime module lacks a docstring")
@@ -141,4 +209,72 @@ def _internal():
 '''
     assert _audit_text(source) == [
         "sample.py:4:_exported: public callable lacks a docstring"
+    ]
+
+
+def test_auditor_resolves_annotated_reassigned_and_incremental_exports() -> None:
+    """Require static export composition to match the final module value."""
+    source = '''"""Documented module."""
+__all__: list[str] = ["_discarded"]
+__all__ = ("_kept",)
+__all__ += ["_added"]
+
+def _discarded():
+    pass
+
+def _kept():
+    pass
+
+def _added():
+    pass
+'''
+    assert _audit_text(source) == [
+        "sample.py:9:_kept: public callable lacks a docstring",
+        "sample.py:12:_added: public callable lacks a docstring",
+    ]
+
+
+def test_auditor_fails_closed_for_unresolved_export_declarations() -> None:
+    """Reject dynamic assignments and annotated declarations without values."""
+    assert _audit_text('''"""Documented module."""
+__all__ = names()
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+    assert _audit_text('''"""Documented module."""
+__all__: list[str]
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_for_dynamic_export_composition() -> None:
+    """Reject incremental expressions and mutating calls on exports."""
+    assert _audit_text('''"""Documented module."""
+__all__ = ["public"]
+__all__ += names()
+''') == [
+        "sample.py:3:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_for_nested_and_item_export_mutations() -> None:
+    """Reject conditional declarations and item mutation of exports."""
+    assert _audit_text('''"""Documented module."""
+if enabled:
+    __all__ = ["_conditional"]
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+    assert _audit_text('''"""Documented module."""
+__all__ = ["public"]
+__all__[0] = "other"
+''') == [
+        "sample.py:3:<module>: __all__ cannot be resolved statically",
+    ]
+    assert _audit_text('''"""Documented module."""
+__all__ = ["public"]
+__all__.append("other")
+''') == [
+        "sample.py:3:<module>: __all__ cannot be resolved statically",
     ]
