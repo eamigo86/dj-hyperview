@@ -6,4 +6,3 @@ __pycache__/
 htmlcov/
 dist/
 *.egg-info/
-uv.lock
