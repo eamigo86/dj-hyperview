@@ -1,6 +1,6 @@
 # Tareas de implementación
 
-Este documento registra el trabajo verificable del paquete. Tasks 1–10 están completas y verificadas hasta `1c17ec1`; Tasks 11–13 permanecen pendientes dentro del mismo repositorio. El proyecto legacy permanece read-only y no participa en la implementación ni en los gates.
+Este documento registra el trabajo verificable del paquete. Tasks 1–11 están completas y verificadas hasta `4d0c502`; Tasks 12–13 permanecen pendientes dentro del mismo repositorio. El proyecto legacy permanece read-only y no participa en la implementación ni en los gates.
 
 ## Convenciones de trazabilidad
 
@@ -17,7 +17,7 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–10 están 
 | 1–8 | **Verificado** | Frontera, configuración, HTTP, resolución, seguridad, caché, DB/admin y publicación |
 | 9 | **Verificado** | Consumidor Django sintético propiedad del paquete |
 | 10 | **Verificado** | Aceptación HTTP end-to-end sobre ese consumidor |
-| 11 | **Pendiente** | Dependencias y matriz del paquete |
+| 11 | **Verificado** | Dependencias, lock y matriz del paquete |
 | 12 | **Pendiente** | Contrato package-owned con Hyperview 0.110.0 |
 | 13 | **Pendiente** | Documentación Zensical, CI, release, PyPI y Pages |
 
@@ -801,36 +801,74 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–10 están 
 
 ## Task 11 — Dependencias y compatibilidad
 
-**Estado:** Pendiente; próxima Task 11.1.
+**Estado:** Verificado.
 
-**Meta:** actualizar y congelar dependencias del paquete Python y consumidor sintético dentro de su repositorio.
+**Meta:** auditar dependencias, versionar una resolución exacta y verificar la matriz Python/Django sin añadir shims artificiales.
 
-### 11.1 Política de dependencias y lock
+### 11.1a Política de metadata
 
-- **Estado:** Pendiente; siguiente work unit.
-- **Meta:** definir una política reproducible de dependencias y lock antes de actualizar la matriz.
-- **Resultado:** No implementado.
-- **Problema encontrado:** `uv.lock` existe localmente, pero [`.gitignore`](../../.gitignore) lo excluye.
-- **Causa raíz:** el scaffold pospuso la decisión de versionar el entorno de desarrollo/CI.
-- **Solución:** Pendiente: auditar versiones estables, resolver el contrato del lock y documentar el mecanismo reproducible.
-- **Evidencia TDD/verificación:** No existe aún; Task 11 no comenzó.
-- **Trazabilidad:** branch y commit no creados.
-- **Componentes/rutas:** [`pyproject.toml`](../../pyproject.toml), [`.gitignore`](../../.gitignore).
+- **Estado:** Verificado.
+- **Meta:** declarar rangos compatibles que incluyan las versiones estables auditadas el 2026-09-04.
+- **Resultado:** metadata acotada para Django 5.2.17/6.1.1, lxml 6.1.3, uv-build 0.12.9, coverage 7.16.0, pytest 9.1.1, pytest-cov 7.1.0, pytest-django 4.14.0 y ruff 0.16.6.
+- **Problema encontrado:** metadata, guard y el lock de 366 líneas sumaban 438 líneas, por encima del presupuesto.
+- **Causa raíz:** el archivo de lock domina el tamaño aunque su cambio sea mecánico.
+- **Solución:** dividir 11.1 en dos children exact-parent: política compatible y lock exacto.
+- **Evidencia TDD/verificación:** RED por floor obsoleto de uv-build; guard focal y suites Django 5.2.17/6.1.1 GREEN; cierre independiente sin hallazgos.
+- **Trazabilidad:** rama `deps/01-package-metadata-policy`; parent [`5eb04c4`](https://github.com/eamigo86/dj-hyperview/commit/5eb04c4); commit [`40950bc`](https://github.com/eamigo86/dj-hyperview/commit/40950bc); 50 líneas.
+- **Componentes/rutas:** [`pyproject.toml`](../../pyproject.toml), [`tests/test_dependency_policy.py`](../../tests/test_dependency_policy.py).
 
-### Work units siguientes y criterios
+### 11.1b Lock exacto
 
-- Auditar versiones estables antes del cambio y documentar fecha.
-- Matriz Python 3.12–3.14 × Django 5.2/6.1.
-- Una celda Redis; todas las demás sin servicio externo obligatorio.
-- Resolver deprecations sin tocar legacy.
-- Mantener cada actualización agrupada por compatibilidad, ≤400 líneas cuando sea viable y con revert propio.
-- Gates: tests, ≥95% branches, Ruff, checks, migrations y package guard.
+- **Estado:** Verificado; cierra Task 11.1.
+- **Meta:** hacer reproducible el entorno de build/desarrollo/tests sin imponer pins exactos a consumidores.
+- **Resultado:** `uv.lock` está versionado, contiene 17 paquetes y fija las dependencias directas auditadas.
+- **Problema encontrado:** el RED confirmó que `uv.lock` seguía ignorado y no trackeado.
+- **Causa raíz:** el scaffold inicial había diferido la política del lock.
+- **Solución:** retirar la regla de ignore, versionar el lock y proteger metadata/resolución con un guard offline.
+- **Evidencia TDD/verificación:** guard RED en el parent; `uv lock --check` y suites agregadas GREEN. La advertencia intermedia de coverage quedó resuelta en 11.3.
+- **Trazabilidad:** rama `deps/01b-package-exact-lock`; parent [`40950bc`](https://github.com/eamigo86/dj-hyperview/commit/40950bc); commit [`e33f567`](https://github.com/eamigo86/dj-hyperview/commit/e33f567); 390 líneas.
+- **Componentes/rutas:** [`uv.lock`](../../uv.lock), [`.gitignore`](../../.gitignore), [`tests/test_dependency_policy.py`](../../tests/test_dependency_policy.py).
+
+### 11.2 Compatibilidad Django 5.2
+
+- **Estado:** Verificado.
+- **Meta:** convertir el soporte de Django 5.2.17 en un contrato ejecutable y fail-closed ante deprecations.
+- **Resultado:** el consumidor público renderiza correctamente en 5.2.17; no se añadió shim runtime.
+- **Problema encontrado:** la conducta ya era compatible, pero pytest no promovía deprecations a errores.
+- **Causa raíz:** declarar un rango Django no detecta APIs obsoletas durante tests.
+- **Solución:** añadir caracterización HTTP pública exacta y política permanente `filterwarnings = error`.
+- **Evidencia TDD/verificación:** RED por ausencia de la política; aceptación pública, checks, migraciones y suites duales GREEN; cierre independiente sin hallazgos.
+- **Trazabilidad:** rama `deps/02-django-52-compat`; parent [`e33f567`](https://github.com/eamigo86/dj-hyperview/commit/e33f567); commit [`27cbefc`](https://github.com/eamigo86/dj-hyperview/commit/27cbefc); 46 líneas.
+- **Componentes/rutas:** [`tests/compat/test_django_52.py`](../../tests/compat/test_django_52.py), [`pyproject.toml`](../../pyproject.toml).
+
+### 11.3 Django 6.1 y matriz Python
+
+- **Estado:** Verificado; cierra Task 11.
+- **Meta:** probar Django 6.1.1, Python 3.12–3.14, coverage agregado y Redis opt-in mediante un runner reproducible.
+- **Resultado:** `tools/test_matrix.py` genera seis comandos portables, ejecuta base+admin con cobertura honesta y mantiene Redis desactivado salvo opt-in explícito.
+- **Problema encontrado:** el gate default-only advertía 92% porque medía código admin mientras sus pruebas estaban omitidas.
+- **Causa raíz:** el umbral se aplicaba antes de anexar el perfil admin real a los datos de coverage.
+- **Solución:** ejecutar base con umbral intermedio 0, anexar admin y aplicar ≥95% sólo al agregado; fallar cerrado si Redis se pide sin URL.
+- **Evidencia TDD/verificación:** RED por runner ausente; focal offline GREEN en Python 3.12.11, 3.13.9 y 3.14.0; Django 5.2.17/6.1.1 con 727 base + 34 admin, agregado 98.15%/98.26% y branches 96.70%/96.93%; PASS 0/0/0.
+- **Trazabilidad:** rama `deps/03-django-61-python-matrix`; parent [`27cbefc`](https://github.com/eamigo86/dj-hyperview/commit/27cbefc); commit [`4d0c502`](https://github.com/eamigo86/dj-hyperview/commit/4d0c502); 329 líneas.
+- **Componentes/rutas:** [`tools/test_matrix.py`](../../tools/test_matrix.py), [`tests/compat/test_django_61.py`](../../tests/compat/test_django_61.py), [`tests/compat/test_supported_python.py`](../../tests/compat/test_supported_python.py), [`tests/compat/test_redis_profile.py`](../../tests/compat/test_redis_profile.py).
+
+### Cierre de Task 11
+
+- [x] Rangos compatibles y versiones estables auditadas al 2026-09-04.
+- [x] Lock exacto versionado y validable offline.
+- [x] Django 5.2.17/6.1.1 sin shim runtime y con deprecations fail-closed.
+- [x] Python 3.12–3.14 caracterizado en intérpretes instalados.
+- [x] Runner canónico agrega base+admin antes de aplicar ≥95%.
+- [x] Redis permanece opt-in; seis celdas y servicio real quedan para CI Task 13.4.
+- [x] Cuatro children exact-parent, convencionales, reversibles y de hasta 400 líneas.
+- [x] Verificación independiente cerró Task 11 sin hallazgos.
 
 ---
 
 ## Task 12 — Contrato package-owned con Hyperview 0.110.0
 
-**Estado:** Pendiente.
+**Estado:** Pendiente; próxima Task 12.1.
 
 **Decisión:** la versión estable oficial comprobada el 2026-09-04 es [`hyperview` 0.110.0 en npm](https://www.npmjs.com/package/hyperview/v/0.110.0). Task 12 valida el protocolo producido por el paquete; **no modifica ni moderniza la app mobile legacy**. Una app consumidora real será un proyecto separado y no un gate del release de `dj-hyperview`.
 
@@ -838,7 +876,7 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–10 están 
 
 | Child | Dependencia | Entregable | Límite | Rollback |
 |---|---|---|---:|---|
-| 12.1 `compat/01-hyperview-0110-fixtures` | Task 10 | Fixtures sólo de tests para full, fragment, behaviors/forms y CSRF relevante | ≤400 líneas | Revert elimina fixtures/contract tests |
+| 12.1 `compat/01-hyperview-0110-fixtures` | Task 11 | Fixtures sólo de tests para full, fragment, behaviors/forms y CSRF relevante | ≤400 líneas | Revert elimina fixtures/contract tests |
 | 12.2 `compat/02-hyperview-protocol-doc` | 12.1 | Assertions de media type/encoding/schema y documento de compatibilidad/version pin | ≤400 líneas | Revert elimina contrato documental sin runtime change |
 
 ### Criterios de aceptación
@@ -873,12 +911,14 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–10 están 
 
 ### 13.3 CI sin deploy
 
-- Matriz completa, Redis, ≥95% branches, Ruff/checks/migrations/wheel/name.
-- Zensical build en PR/main y artifact ordinario; sin Pages deploy.
+- Ruff/checks/migrations/wheel/name y Zensical build en PR/main.
+- Artifact ordinario; sin Pages deploy.
 
-### 13.4 Preview manual
+### 13.4 Matriz completa, Redis y preview manual
 
-- `workflow_dispatch`, artifact; sin Pages environment/write/deploy action.
+- Ejecutar las seis celdas Python/Django de `tools/test_matrix.py` y una celda Redis real opt-in.
+- Exigir ≥95% branches y propagar fallos de base/admin/servicio.
+- `workflow_dispatch` puede producir un preview artifact; sin Pages environment/write/deploy action.
 
 ### 13.5 Release y Pages
 

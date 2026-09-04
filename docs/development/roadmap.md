@@ -22,8 +22,8 @@ No se persigue convertir el proyecto legacy en el producto ni extender la librer
 | 8 | Publicación, mutaciones e invalidación poscommit | **Verificado** | 7 |
 | 9 | Consumidor Django sintético en el repo del paquete | **Verificado** | 8 |
 | 10 | Aceptación HTTP end-to-end sobre el consumidor sintético | **Verificado** | 9 |
-| 11 | Actualización final de dependencias y matriz del paquete | **Pendiente** | 10 |
-| 12 | Contrato package-owned con Hyperview 0.110.0; cliente real separado | **Pendiente; alcance resuelto** | 10 |
+| 11 | Dependencias auditadas, lock exacto y matriz reproducible | **Verificado** | 10 |
+| 12 | Contrato package-owned con Hyperview 0.110.0; cliente real separado | **Pendiente; alcance resuelto** | 11 |
 | 13 | Auditoría final, Zensical, CI, release, PyPI y Pages | **Pendiente** | 11 y 12 |
 
 Para el detalle y la trazabilidad de cada subtask, consultar [tasks.md](tasks.md).
@@ -33,9 +33,8 @@ Para el detalle y la trazabilidad de cada subtask, consultar [tasks.md](tasks.md
 ```text
 1 Paquete → 2 Configuración → 3 HTTP → 4 Resolución → 5 Seguridad HXML
     → 6 Caché → 7 DB/admin → 8 Publicación → 9 Consumidor sintético
-    → 10 Aceptación HTTP → 11 Compatibilidad ┐
-                              10 → 12 Contrato Hyperview 0.110.0 ├→ 13 Release
-                                                               ┘
+    → 10 Aceptación HTTP → 11 Compatibilidad
+    → 12 Contrato Hyperview 0.110.0 → 13 Release
 ```
 
 ### Implementación package-only de Tasks 9–10
@@ -48,7 +47,15 @@ El alcance corregido ya está completado y verificado:
 - No se copiaron pantallas, datos, modelos de negocio ni rutas del legacy.
 - No se promete compatibilidad drop-in con el namespace abandonado `django_hv`.
 - Las pruebas ejercitan sólo APIs públicas de `dj_hyperview`.
-- El cierre independiente de Task 10 obtuvo PASS sin hallazgos y dejó Task 11.1 como siguiente work unit.
+- El cierre independiente de Task 10 obtuvo PASS sin hallazgos.
+
+### Compatibilidad cerrada en Task 11
+
+- La metadata usa rangos compatibles auditados y `uv.lock` versiona la resolución exacta.
+- Django 5.2.17 y 6.1.1 pasan con deprecations como errores y sin shim runtime.
+- `tools/test_matrix.py` define Python 3.12–3.14 × Django 5.2/6.1 y Redis opt-in.
+- La ejecución real de las seis celdas y Redis queda como gate CI de Task 13.4.
+- El cierre independiente obtuvo PASS sin hallazgos; la siguiente acción es **Task 12.1**.
 
 ### Decisión de alcance para Task 12
 
@@ -66,7 +73,7 @@ Task 12 valida dentro del repo Python el protocolo contra [`hyperview` 0.110.0](
 
 ### Hito C — Compatibilidad
 
-**Pendiente:** Tasks 11–12. La próxima acción es **Task 11.1**, que resolverá la política de dependencias y del lock antes de congelar la matriz soportada. Task 12 validará el HXML producido contra Hyperview 0.110.0 sin ampliar el alcance al cliente móvil.
+**Parcialmente completado:** Task 11 está verificada. Queda Task 12, comenzando por **12.1**, para validar el HXML producido contra Hyperview 0.110.0 sin ampliar el alcance al cliente móvil.
 
 ### Hito D — Publicación
 
