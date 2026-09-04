@@ -7,7 +7,7 @@ application screens into the package.
 
 1. [Install dj-hyperview](installation.md).
 2. [Configure template resolution](configuration.md).
-3. Render a canonical template name through the public package API.
+3. Resolve a canonical template name through the public package API.
 
 The package owns resolution, validation, raw-template caching, HTTP responses,
 and optional database publication. Your Django project owns every screen,
@@ -21,7 +21,11 @@ schema, route, and application decision.
 
 dj-hyperview does not ship application screens, runtime XML or HXML files,
 Redis, or a required database app.
-Detailed operational guides arrive in Task 13.3.
+
+Choose the next guide for your source:
+
+- [Use filesystem sources](filesystem.md) for the smallest deployment.
+- [Publish through the database](database-admin.md) when editors need admin.
 
 The [development documentation](development/README.md) records architecture,
 decisions, task history, and release gates.

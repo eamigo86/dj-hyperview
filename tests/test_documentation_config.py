@@ -6,7 +6,13 @@ from pathlib import Path
 import yaml
 
 ROOT = Path(__file__).parents[1]
-DOCS = ("index.md", "installation.md", "configuration.md")
+DOCS = (
+    "index.md",
+    "installation.md",
+    "configuration.md",
+    "filesystem.md",
+    "database-admin.md",
+)
 
 
 def _documentation_pages() -> dict[str, str]:
@@ -28,6 +34,8 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
         {"Home": "index.md"},
         {"Installation": "installation.md"},
         {"Configuration": "configuration.md"},
+        {"Filesystem sources": "filesystem.md"},
+        {"Database and admin": "database-admin.md"},
     ]
     assert [target for item in config["nav"] for target in item.values()] == list(DOCS)
 
@@ -51,7 +59,7 @@ def test_documentation_declares_foundation_limits_and_valid_local_links() -> Non
     pages = _documentation_pages()
 
     assert "does not ship application screens" in pages["index.md"]
-    assert "Detailed operational guides arrive in Task 13.3." in pages["index.md"]
+    assert "[Use filesystem sources](filesystem.md)" in pages["index.md"]
     for source in DOCS:
         for target in DOCS:
             if f"]({target})" in pages[source]:
