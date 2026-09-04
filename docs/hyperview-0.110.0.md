@@ -9,6 +9,7 @@ and UTF-8 output.
 The [version manifest](../tests/contracts/hyperview/0.110.0/manifest.json)
 pins the official
 [Hyperview 0.110.0 npm release](https://www.npmjs.com/package/hyperview/v/0.110.0),
+the [official Hyperview repository](https://github.com/Instawork/hyperview),
 repository tag `v0.110.0`, upstream commit
 `f715ae5cdf07733a4b846d7744518e42dff40407`, artifact hashes, and relevant
 [Hyperview documentation](https://hyperview.org).
