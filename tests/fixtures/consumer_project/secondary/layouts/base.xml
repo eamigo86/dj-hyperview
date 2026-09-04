@@ -1,0 +1,1 @@
+<view><header>secondary-layout</header>{% block body %}{% endblock %}</view>

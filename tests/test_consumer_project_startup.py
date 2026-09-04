@@ -113,11 +113,14 @@ def test_consumer_starts_cleanly_through_public_package_apis() -> None:
 def test_consumer_scaffold_contains_only_portable_generic_configuration() -> None:
     """Consumer configuration remains repository-relative and domain neutral."""
     consumer_dir = PROJECT_ROOT / "tests" / "consumer_project"
-    python_sources = [
-        path.read_text(encoding="utf-8") for path in sorted(consumer_dir.glob("*.py"))
-    ]
+    source_paths = sorted(consumer_dir.glob("*.py"))
+    python_sources = [path.read_text(encoding="utf-8") for path in source_paths]
 
-    assert len(python_sources) == 3
+    assert {path.name for path in source_paths} >= {
+        "__init__.py",
+        "settings_base.py",
+        "urls.py",
+    }
     combined = "\n".join(python_sources)
     for forbidden in (
         "/Users/",
