@@ -63,13 +63,21 @@ class HyperviewEngine:
         )
 
     def get_template(self, name: str) -> _ValidatedTemplate:
-        """Compile one named consumer template with rendered validation."""
+        """Compile one named consumer template with rendered validation.
+
+        Args:
+            name: Canonical template name.
+        """
         return _ValidatedTemplate(
             self.backend.get_template(name), self.validation, self.resolver
         )
 
     def select_template(self, names: Sequence[str]) -> _ValidatedTemplate:
-        """Compile the first available template from an ordered candidate list."""
+        """Compile the first available template from an ordered candidate list.
+
+        Args:
+            names: Ordered canonical template names.
+        """
         chain = []
         for name in names:
             try:
@@ -84,7 +92,13 @@ class HyperviewEngine:
         context: dict[str, Any] | None = None,
         request: HttpRequest | None = None,
     ) -> str:
-        """Render a named template or ordered template selection."""
+        """Render a named template or ordered template selection.
+
+        Args:
+            name: Canonical name or ordered candidate names.
+            context: Optional template context.
+            request: Optional Django request.
+        """
         with template_snapshot(self.resolver):
             template = (
                 self.get_template(name)
@@ -99,7 +113,13 @@ class HyperviewEngine:
         context: dict[str, Any] | None = None,
         request: HttpRequest | None = None,
     ) -> str:
-        """Render and, when configured, validate consumer HXML."""
+        """Render and, when configured, validate consumer HXML.
+
+        Args:
+            name: Canonical name or ordered candidate names.
+            context: Optional template context.
+            request: Optional Django request.
+        """
         return self.render(name, context, request)
 
 

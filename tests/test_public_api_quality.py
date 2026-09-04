@@ -129,18 +129,19 @@ def _type_issues(
     path: str,
     symbol: str,
     *,
-    skip_receiver_names: bool = True,
+    skip_bound_receiver: bool = False,
 ) -> list[str]:
+    positional = [*node.args.posonlyargs, *node.args.args]
+    receiver = positional[0] if skip_bound_receiver and positional else None
     parameters = [
-        *node.args.posonlyargs,
-        *node.args.args,
+        *positional,
         *node.args.kwonlyargs,
         *([node.args.vararg] if node.args.vararg is not None else []),
         *([node.args.kwarg] if node.args.kwarg is not None else []),
     ]
     issues: list[str] = []
     for parameter in parameters:
-        if skip_receiver_names and parameter.arg in {"self", "cls"}:
+        if parameter is receiver:
             continue
         if parameter.annotation is None:
             reason = f"public callable parameter '{parameter.arg}' lacks a type hint"
@@ -169,10 +170,14 @@ def _type_issues(
 
 def _function_parameters(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
+    *,
+    skip_bound_receiver: bool = False,
 ) -> list[str]:
+    positional = [*node.args.posonlyargs, *node.args.args]
+    if skip_bound_receiver and positional:
+        positional = positional[1:]
     names = [
-        *(parameter.arg for parameter in node.args.posonlyargs),
-        *(parameter.arg for parameter in node.args.args),
+        *(parameter.arg for parameter in positional),
         *(parameter.arg for parameter in node.args.kwonlyargs),
     ]
     if node.args.vararg is not None:
@@ -232,25 +237,28 @@ def _argument_entry(line: str) -> tuple[str | None, bool]:
 def _function_args_issues(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     path: str,
+    symbol: str,
     docstring: str,
+    *,
+    skip_bound_receiver: bool = False,
 ) -> list[str]:
-    expected = set(_function_parameters(node))
+    expected = set(_function_parameters(node, skip_bound_receiver=skip_bound_receiver))
     lines = docstring.splitlines()
     headers = [index for index, line in enumerate(lines) if line == "Args:"]
     if not headers:
         if expected:
-            return [_diagnostic(path, node, node.name, "Args section is required")]
+            return [_diagnostic(path, node, symbol, "Args section is required")]
         return []
     issues: list[str] = []
     if len(headers) > 1:
-        issues.append(_diagnostic(path, node, node.name, "Args section is duplicated"))
+        issues.append(_diagnostic(path, node, symbol, "Args section is duplicated"))
     body: list[str] = []
     for line in lines[headers[0] + 1 :]:
         if line and not line.startswith(" "):
             break
         body.append(line)
     if not any(line.strip() for line in body):
-        issues.append(_diagnostic(path, node, node.name, "Args section is empty"))
+        issues.append(_diagnostic(path, node, symbol, "Args section is empty"))
     documented: list[str] = []
     for line in body:
         label, is_entry = _argument_entry(line)
@@ -261,7 +269,7 @@ def _function_args_issues(
                 _diagnostic(
                     path,
                     node,
-                    node.name,
+                    symbol,
                     "Args section has an invalid parameter label",
                 )
             )
@@ -273,7 +281,7 @@ def _function_args_issues(
                 _diagnostic(
                     path,
                     node,
-                    node.name,
+                    symbol,
                     f"Args section documents parameter '{name}' more than once",
                 )
             )
@@ -282,17 +290,25 @@ def _function_args_issues(
             _diagnostic(
                 path,
                 node,
-                node.name,
+                symbol,
                 f"Args section documents unknown parameter '{name}'",
             )
         )
     for name in sorted(expected - set(documented)):
         issues.append(
-            _diagnostic(
-                path, node, node.name, f"Args section missing parameter '{name}'"
-            )
+            _diagnostic(path, node, symbol, f"Args section missing parameter '{name}'")
         )
     return issues
+
+
+def _has_bound_receiver(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
+    for decorator in node.decorator_list:
+        name = decorator.id if isinstance(decorator, ast.Name) else None
+        if isinstance(decorator, ast.Attribute):
+            name = decorator.attr
+        if name == "staticmethod":
+            return False
+    return bool(node.args.posonlyargs or node.args.args)
 
 
 def _ordered(issues: list[str]) -> list[str]:
@@ -329,11 +345,11 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
                 _diagnostic(path, node, node.name, f"public {kind} lacks a docstring")
             )
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            type_issues = _type_issues(node, path, node.name, skip_receiver_names=False)
+            type_issues = _type_issues(node, path, node.name)
             issues.extend(type_issues)
             docstring = ast.get_docstring(node)
             if docstring is not None and not type_issues:
-                issues.extend(_function_args_issues(node, path, docstring))
+                issues.extend(_function_args_issues(node, path, node.name, docstring))
         if isinstance(node, ast.ClassDef):
             for method in node.body:
                 if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
@@ -349,7 +365,25 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
                         )
                     )
                 if _is_public_method(method.name):
-                    issues.extend(_type_issues(method, path, symbol))
+                    bound_receiver = _has_bound_receiver(method)
+                    type_issues = _type_issues(
+                        method,
+                        path,
+                        symbol,
+                        skip_bound_receiver=bound_receiver,
+                    )
+                    issues.extend(type_issues)
+                    docstring = ast.get_docstring(method)
+                    if docstring is not None and not type_issues:
+                        issues.extend(
+                            _function_args_issues(
+                                method,
+                                path,
+                                symbol,
+                                docstring,
+                                skip_bound_receiver=bound_receiver,
+                            )
+                        )
     return _ordered(issues)
 
 
@@ -1075,3 +1109,122 @@ def public(value: str) -> None:
             "sample.py:2:public: Args section has an invalid parameter label",
             "sample.py:2:public: Args section missing parameter 'value'",
         ]
+
+
+def test_method_args_share_bound_receiver_semantics_with_typing() -> None:
+    """Exclude renamed instance and class receivers but not static parameters."""
+    source = '''"""Documented module."""
+class Public:
+    """Provide representative method bindings."""
+
+    def run(receiver, value: str) -> None:
+        """Run with one value.
+
+        Args:
+            value: Value to process.
+        """
+
+    @classmethod
+    def build(receiver, value: str) -> None:
+        """Build with one value.
+
+        Args:
+            value: Value to process.
+        """
+
+    @staticmethod
+    def inspect(self: str) -> None:
+        """Inspect an ordinary static parameter."""
+'''
+    assert _audit_text(source) == [
+        "sample.py:21:Public.inspect: Args section is required"
+    ]
+
+
+def test_method_args_cover_properties_and_implicit_class_bindings() -> None:
+    """Recognize property, constructor, protocol, and implicit class receivers."""
+    source = '''"""Documented module."""
+class Public:
+    """Provide representative descriptors and protocol hooks."""
+
+    @property
+    def name(receiver) -> str:
+        """Return the current name."""
+        return "name"
+
+    @name.setter
+    def name(receiver, value: str) -> None:
+        """Set the current name.
+
+        Args:
+            value: New name.
+        """
+
+    def __new__(receiver, value: str) -> "Public":
+        """Create an instance.
+
+        Args:
+            value: Initial value.
+        """
+        return super().__new__(receiver)
+
+    def __bool__(receiver) -> bool:
+        """Return whether the instance is truthy."""
+        return True
+
+    def __init_subclass__(receiver, flag: bool = False) -> None:
+        """Initialize one subclass.
+
+        Args:
+            flag: Optional subclass flag.
+        """
+
+    def __class_getitem__(receiver, item: str) -> str:
+        """Resolve one class item.
+
+        Args:
+            item: Item to resolve.
+        """
+        return item
+'''
+    assert _audit_text(source) == []
+
+
+def test_method_args_reject_unknown_entries_without_parameters() -> None:
+    """Audit present argument sections even when a method has no parameters."""
+    source = '''"""Documented module."""
+class Public:
+    """Provide a malformed method contract."""
+
+    @staticmethod
+    def ping() -> None:
+        """Perform work.
+
+        Args:
+            extra: Unsupported value.
+        """
+'''
+    assert _audit_text(source) == [
+        "sample.py:6:Public.ping: Args section documents unknown parameter 'extra'"
+    ]
+
+
+def test_method_args_preserve_all_parameter_and_parser_semantics() -> None:
+    """Apply exact variadic, Unicode, and nested suffix parsing to methods."""
+    source = r'''"""Documented module."""
+class Public:
+    """Provide one fully shaped method."""
+
+    def run(receiver, café: str, /, regular: str, *items: str,
+            变量: bool, **options: str) -> None:
+        r"""Run with every parameter category.
+
+        Args:
+            café: Positional-only value.
+            regular (Annotated[str, {"key:part": "value"}]): Regular value.
+            *items: Additional values.
+            变量: Keyword-only value.
+            **options: Additional options.
+        """
+'''
+    assert _audit_text(source) == []

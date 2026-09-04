@@ -110,7 +110,11 @@ class ResolverLoader(Loader):
         return resolved
 
     def get_template_sources(self, template_name: str) -> Iterator[ResolverOrigin]:
-        """Yield the resolver origin for an available canonical template."""
+        """Yield the resolver origin for an available canonical template.
+
+        Args:
+            template_name: Canonical template name.
+        """
         try:
             resolved = self._resolve(template_name)
         except TemplateNotFound:
@@ -118,5 +122,9 @@ class ResolverLoader(Loader):
         yield ResolverOrigin(resolved, self)
 
     def get_contents(self, origin: ResolverOrigin) -> str:
-        """Return validated source content from a resolver origin."""
+        """Return validated source content from a resolver origin.
+
+        Args:
+            origin: Resolver origin containing raw source content.
+        """
         return validate_template_source(origin.resolved.content, config=self.validation)

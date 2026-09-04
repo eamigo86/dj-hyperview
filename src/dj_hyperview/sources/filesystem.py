@@ -28,7 +28,11 @@ class FileSystemSource:
         self.template_dirs = tuple(Path(path).resolve() for path in template_dirs)
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
-        """Resolve one canonical name from the first matching root."""
+        """Resolve one canonical name from the first matching root.
+
+        Args:
+            name: Canonical template name.
+        """
         canonical = canonicalize_template_name(name)
         for root in self.template_dirs:
             candidate = (root / canonical).resolve()

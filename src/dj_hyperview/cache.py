@@ -121,7 +121,11 @@ class TemplateCache:
 
     @classmethod
     def from_settings(cls, namespace: str) -> "TemplateCache":
-        """Create a template cache from current package settings."""
+        """Create a template cache from current package settings.
+
+        Args:
+            namespace: Namespace isolating this package consumer's cache entries.
+        """
         config = get_settings().cache
         return cls(
             namespace,
@@ -131,7 +135,13 @@ class TemplateCache:
         )
 
     def key(self, source: str, name: str, revision: str) -> str:
-        """Return the backend-safe key for one cached template identity."""
+        """Return the backend-safe key for one cached template identity.
+
+        Args:
+            source: Stable source identity.
+            name: Canonical template name.
+            revision: Source or generation revision.
+        """
         return template_cache_key(self.namespace, source, name, revision)
 
     def _store(self, key: str, value: object, timeout: int | None) -> None:
@@ -236,7 +246,11 @@ class TemplateCache:
         return _GENERATION_KINDS[token[0]]
 
     def generation(self, name: str) -> str:
-        """Return the shared generation token for a canonical template name."""
+        """Return the shared generation token for a canonical template name.
+
+        Args:
+            name: Canonical template name.
+        """
         key = self._generation_key(name)
         token = _without_untrusted_exception(lambda: self.backend.get(key, _ABSENT))
         if token is _ABSENT:
@@ -261,7 +275,11 @@ class TemplateCache:
         return token
 
     def invalidate(self, name: str) -> None:
-        """Rotate a template generation without deleting backend-specific keys."""
+        """Rotate a template generation without deleting backend-specific keys.
+
+        Args:
+            name: Canonical template name.
+        """
         current = self.generation(name)
         candidate = self._claim_generation(name, current)
         self._store(self._generation_key(name), candidate, None)
@@ -270,7 +288,13 @@ class TemplateCache:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def get(self, source: str, name: str, revision: str) -> CacheEntry | None:
-        """Read one exact raw-template cache entry."""
+        """Read one exact raw-template cache entry.
+
+        Args:
+            source: Stable source identity.
+            name: Canonical template name.
+            revision: Exact source revision.
+        """
         payload = _without_untrusted_exception(
             lambda: self.backend.get(self.key(source, name, revision), _ABSENT)
         )
@@ -281,7 +305,11 @@ class TemplateCache:
         return self._decode(payload, source, name, revision)
 
     def set(self, template: ResolvedTemplate) -> None:
-        """Store one resolved raw template."""
+        """Store one resolved raw template.
+
+        Args:
+            template: Resolved raw template to cache.
+        """
         payload = json.dumps(
             {"version": 1, "state": "template", "template": asdict(template)},
             ensure_ascii=False,
@@ -294,7 +322,13 @@ class TemplateCache:
         )
 
     def set_miss(self, source: str, name: str, revision: str) -> None:
-        """Store an explicit miss for one raw-template identity."""
+        """Store an explicit miss for one raw-template identity.
+
+        Args:
+            source: Stable source identity.
+            name: Canonical template name.
+            revision: Exact source revision.
+        """
         payload = json.dumps(
             {
                 "version": 1,
@@ -311,7 +345,13 @@ class TemplateCache:
     def get_resolved(
         self, source: str, name: str, generation: str | None = None
     ) -> CacheEntry | None:
-        """Return the latest raw result cached for one configured source."""
+        """Return the latest raw result cached for one configured source.
+
+        Args:
+            source: Stable source identity.
+            name: Canonical template name.
+            generation: Optional shared generation token.
+        """
         revision = self._resolved_revision(generation)
         payload = _without_untrusted_exception(
             lambda: self.backend.get(self.key(source, name, revision), _ABSENT)
@@ -329,7 +369,14 @@ class TemplateCache:
         template: ResolvedTemplate,
         generation: str | None = None,
     ) -> None:
-        """Store the latest resolved raw result for a configured source."""
+        """Store the latest resolved raw result for a configured source.
+
+        Args:
+            source: Stable source identity.
+            name: Canonical template name.
+            template: Resolved raw template to cache.
+            generation: Optional shared generation token.
+        """
         payload = json.dumps(
             {
                 "version": 1,
@@ -346,7 +393,13 @@ class TemplateCache:
     def set_resolved_miss(
         self, source: str, name: str, generation: str | None = None
     ) -> None:
-        """Store a latest-result miss for a configured source."""
+        """Store a latest-result miss for a configured source.
+
+        Args:
+            source: Stable source identity.
+            name: Canonical template name.
+            generation: Optional shared generation token.
+        """
         payload = json.dumps(
             {"version": 1, "state": "source-miss", "source": source, "name": name},
             ensure_ascii=False,
