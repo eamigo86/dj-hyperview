@@ -25,27 +25,11 @@ def _literal_exports(node: ast.AST | None) -> set[str] | None:
 
 def _uses_exports(node: ast.AST) -> bool:
     for candidate in ast.walk(node):
-        if isinstance(candidate, ast.Name) and candidate.id == "__all__":
-            return True
-        if isinstance(candidate, (ast.Global, ast.Nonlocal)) and "__all__" in (
-            candidate.names
-        ):
-            return True
-        if isinstance(candidate, ast.alias) and (
-            candidate.asname == "__all__" or candidate.name == "__all__"
-        ):
-            return True
-        if (
-            isinstance(candidate, ast.Subscript)
-            and isinstance(candidate.value, ast.Call)
-            and isinstance(candidate.value.func, ast.Name)
-            and candidate.value.func.id == "globals"
-            and not candidate.value.args
-            and not candidate.value.keywords
-            and isinstance(candidate.slice, ast.Constant)
-            and candidate.slice.value == "__all__"
-        ):
-            return True
+        for _, value in ast.iter_fields(candidate):
+            if value == "__all__" or (
+                isinstance(value, (list, tuple)) and "__all__" in value
+            ):
+                return True
     return False
 
 
@@ -73,6 +57,9 @@ def _exports(tree: ast.Module, path: str) -> tuple[set[str], list[str]]:
             and isinstance(node.target, ast.Name)
             and node.target.id == "__all__"
         ):
+            if _uses_exports(node.annotation):
+                unresolved(node)
+                continue
             value = node.value
         elif (
             isinstance(node, ast.AugAssign)
@@ -320,6 +307,66 @@ exports = globals()["__all__"]
 ''') == [
         "sample.py:2:<module>: __all__ cannot be resolved statically",
     ]
+
+
+def test_auditor_fails_closed_for_locals_subscript_reflection() -> None:
+    """Reject literal local-namespace export reflection."""
+    assert _audit_text('''"""Documented module."""
+exports = locals()["__all__"]
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_for_globals_get_reflection() -> None:
+    """Reject export reflection through the global namespace getter."""
+    assert _audit_text('''"""Documented module."""
+exports = globals().get("__all__")
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_for_locals_get_reflection() -> None:
+    """Reject export reflection through the local namespace getter."""
+    assert _audit_text('''"""Documented module."""
+exports = locals().get("__all__")
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_fails_closed_for_export_annotation_side_effects() -> None:
+    """Reject an export annotation that reads the assigned collection."""
+    assert _audit_text('''"""Documented module."""
+__all__: inspect(__all__) = []
+''') == [
+        "sample.py:2:<module>: __all__ cannot be resolved statically",
+    ]
+
+
+def test_auditor_rejects_literal_reflection_without_api_enumeration() -> None:
+    """Reject literal reflective forms while preserving static export literals."""
+    for expression in (
+        'vars()["__all__"]',
+        'getattr(module, "__all__")',
+        'setattr(module, "__all__", [])',
+        "module.__all__",
+    ):
+        assert _audit_text(f'"""Documented module."""\nvalue = {expression}\n') == [
+            "sample.py:2:<module>: __all__ cannot be resolved statically",
+        ]
+
+    assert (
+        _audit_text('''"""Documented module."""
+__all__ = ["__all__"]
+__all__ += ("_documented",)
+
+def _documented():
+    """Provide a documented private export."""
+''')
+        == []
+    )
 
 
 def test_auditor_fails_closed_for_deleted_and_imported_exports() -> None:
