@@ -8,6 +8,7 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).parents[1] / "src" / "dj_hyperview"
 _DEFINITION = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 _DOCUMENTABLE = (ast.Module, *_DEFINITION)
+_PUBLIC_DUNDERS = frozenset({"__init__", "__str__", "__call__"})
 
 
 def _diagnostic(path: str, node: ast.AST, symbol: str, reason: str) -> str:
@@ -90,6 +91,39 @@ def _is_public(name: str, exports: set[str]) -> bool:
     return not name.startswith("_") or name in exports
 
 
+def _is_public_method(name: str) -> bool:
+    return not name.startswith("_") or name in _PUBLIC_DUNDERS
+
+
+def _type_issues(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    path: str,
+    symbol: str,
+) -> list[str]:
+    parameters = [
+        *node.args.posonlyargs,
+        *node.args.args,
+        *node.args.kwonlyargs,
+        *([node.args.vararg] if node.args.vararg is not None else []),
+        *([node.args.kwarg] if node.args.kwarg is not None else []),
+    ]
+    issues = [
+        _diagnostic(
+            path,
+            node,
+            symbol,
+            f"public callable parameter '{parameter.arg}' lacks a type hint",
+        )
+        for parameter in parameters
+        if parameter.arg not in {"self", "cls"} and parameter.annotation is None
+    ]
+    if node.returns is None:
+        issues.append(
+            _diagnostic(path, node, symbol, "public callable lacks a return type hint")
+        )
+    return issues
+
+
 def _ordered(issues: list[str]) -> list[str]:
     def key(issue: str) -> tuple[str, int, str]:
         path, line, detail = issue.split(":", 2)
@@ -123,21 +157,24 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
             issues.append(
                 _diagnostic(path, node, node.name, f"public {kind} lacks a docstring")
             )
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            issues.extend(_type_issues(node, path, node.name))
         if isinstance(node, ast.ClassDef):
             for method in node.body:
+                if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                symbol = f"{node.name}.{method.name}"
                 if (
-                    isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef))
-                    and not method.name.startswith("_")
+                    not method.name.startswith("_")
                     and ast.get_docstring(method) is None
                 ):
                     issues.append(
                         _diagnostic(
-                            path,
-                            method,
-                            f"{node.name}.{method.name}",
-                            "public method lacks a docstring",
+                            path, method, symbol, "public method lacks a docstring"
                         )
                     )
+                if _is_public_method(method.name):
+                    issues.extend(_type_issues(method, path, symbol))
     return _ordered(issues)
 
 
@@ -160,13 +197,13 @@ def test_public_api_docstrings_have_no_debt_or_allowlist() -> None:
 def test_auditor_reports_deterministic_docstring_failures() -> None:
     """Prove all public symbol levels and private backticks are diagnosed."""
     source = '''class Public:
-    def run(self):
+    def run(self) -> None:
         pass
 
-def exposed():
+def exposed() -> None:
     pass
 
-def documented():
+def documented() -> None:
     """Uses `public` syntax."""
 
 def _private():
@@ -187,7 +224,7 @@ def test_auditor_honors_exports_without_requiring_private_symbols() -> None:
     source = '''"""Documented module."""
 __all__ = ["_exported"]
 
-def _exported():
+def _exported() -> None:
     pass
 
 def _internal():
@@ -208,10 +245,10 @@ __all__ += ["_added"]
 def _discarded():
     pass
 
-def _kept():
+def _kept() -> None:
     pass
 
-def _added():
+def _added() -> None:
     pass
 '''
     assert _audit_text(source) == [
@@ -292,7 +329,7 @@ mutate(__all__)
         "sample.py:3:<module>: __all__ cannot be resolved statically",
     ]
     assert _audit_text('''"""Documented module."""
-def expose():
+def expose() -> object:
     """Return the export collection."""
     return __all__
 ''') == [
@@ -362,7 +399,7 @@ def test_auditor_rejects_literal_reflection_without_api_enumeration() -> None:
 __all__ = ["__all__"]
 __all__ += ("_documented",)
 
-def _documented():
+def _documented() -> None:
     """Provide a documented private export."""
 ''')
         == []
@@ -383,9 +420,95 @@ from another_module import __all__
         "sample.py:2:<module>: __all__ cannot be resolved statically",
     ]
     assert _audit_text('''"""Documented module."""
-def configure():
+def configure() -> None:
     """Declare dynamic exports."""
     global __all__
 ''') == [
         "sample.py:2:<module>: __all__ cannot be resolved statically",
     ]
+
+
+def test_auditor_requires_every_public_parameter_and_return_type() -> None:
+    """Diagnose every public parameter category and the return annotation."""
+    source = '''"""Documented module."""
+
+def exposed(positional_only, /, regular, *items, keyword_only, **options):
+    """Expose every supported parameter category."""
+'''
+    assert _audit_text(source) == [
+        "sample.py:3:exposed: public callable lacks a return type hint",
+        "sample.py:3:exposed: public callable parameter 'items' lacks a type hint",
+        "sample.py:3:exposed: public callable parameter 'keyword_only' "
+        "lacks a type hint",
+        "sample.py:3:exposed: public callable parameter 'options' lacks a type hint",
+        "sample.py:3:exposed: public callable parameter 'positional_only' "
+        "lacks a type hint",
+        "sample.py:3:exposed: public callable parameter 'regular' lacks a type hint",
+    ]
+
+
+def test_auditor_types_async_decorated_and_relevant_dunder_methods() -> None:
+    """Cover async, descriptors, method decorators and package-owned dunders."""
+    source = '''"""Documented module."""
+
+async def fetch(value: str):
+    """Fetch a value asynchronously."""
+
+class Public:
+    """Provide representative package-owned methods."""
+
+    def __init__(self, value: str):
+        self.value = value
+
+    @staticmethod
+    def build(value: str):
+        """Build one instance."""
+
+    @classmethod
+    def create(cls, value: str):
+        """Create one instance."""
+
+    @property
+    def name(self):
+        """Return the public name."""
+
+    @name.setter
+    def name(self, value):
+        """Set the public name."""
+
+    def __str__(self):
+        return self.value
+
+    def __call__(self, value: str):
+        return value
+'''
+    assert _audit_text(source) == [
+        "sample.py:3:fetch: public callable lacks a return type hint",
+        "sample.py:9:Public.__init__: public callable lacks a return type hint",
+        "sample.py:13:Public.build: public callable lacks a return type hint",
+        "sample.py:17:Public.create: public callable lacks a return type hint",
+        "sample.py:21:Public.name: public callable lacks a return type hint",
+        "sample.py:25:Public.name: public callable lacks a return type hint",
+        "sample.py:25:Public.name: public callable parameter 'value' lacks a type hint",
+        "sample.py:28:Public.__str__: public callable lacks a return type hint",
+        "sample.py:31:Public.__call__: public callable lacks a return type hint",
+    ]
+
+
+def test_auditor_ignores_nonpublic_nested_imported_and_lambda_callables() -> None:
+    """Keep nonpublic and non-definition callables outside the public surface."""
+    source = '''"""Documented module."""
+from somewhere import imported
+
+factory = lambda value: value
+
+def public(value: str) -> str:
+    """Return a value while defining private local behavior."""
+    def nested(missing):
+        return missing
+    return value
+
+def _private(missing):
+    return missing
+'''
+    assert _audit_text(source) == []

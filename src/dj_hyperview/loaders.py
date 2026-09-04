@@ -5,7 +5,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
-from django.template import Origin
+from django.template import Engine, Origin
 from django.template.loaders.base import Loader
 
 from .conf import ValidationSettings
@@ -79,7 +79,10 @@ class ResolverLoader(Loader):
     """Load templates through an ordered TemplateResolver."""
 
     def __init__(
-        self, engine, resolver: TemplateResolver, validation: ValidationSettings
+        self,
+        engine: Engine,
+        resolver: TemplateResolver,
+        validation: ValidationSettings,
     ) -> None:
         super().__init__(engine)
         self.resolver = resolver
@@ -102,7 +105,7 @@ class ResolverLoader(Loader):
             _remember(self.resolver, name, resolved)
         return resolved
 
-    def get_template_sources(self, template_name):
+    def get_template_sources(self, template_name: str) -> Iterator[ResolverOrigin]:
         """Yield the resolver origin for an available canonical template."""
         try:
             resolved = self._resolve(template_name)
@@ -110,6 +113,6 @@ class ResolverLoader(Loader):
             return
         yield ResolverOrigin(resolved, self)
 
-    def get_contents(self, origin):
+    def get_contents(self, origin: ResolverOrigin) -> str:
         """Return validated source content from a resolver origin."""
         return validate_template_source(origin.resolved.content, config=self.validation)

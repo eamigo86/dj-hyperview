@@ -1,7 +1,9 @@
 """Dedicated Django template engine for Hyperview markup."""
 
 from collections.abc import Sequence
+from typing import Any
 
+from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
 from django.template.backends.django import DjangoTemplates
 
@@ -60,13 +62,13 @@ class HyperviewEngine:
             }
         )
 
-    def get_template(self, name: str):
+    def get_template(self, name: str) -> _ValidatedTemplate:
         """Compile one named consumer template with rendered validation."""
         return _ValidatedTemplate(
             self.backend.get_template(name), self.validation, self.resolver
         )
 
-    def select_template(self, names: Sequence[str]):
+    def select_template(self, names: Sequence[str]) -> _ValidatedTemplate:
         """Compile the first available template from an ordered candidate list."""
         chain = []
         for name in names:
@@ -76,7 +78,12 @@ class HyperviewEngine:
                 chain.append(error)
         raise TemplateDoesNotExist(", ".join(names), chain=chain)
 
-    def render(self, name: str | Sequence[str], context=None, request=None) -> str:
+    def render(
+        self,
+        name: str | Sequence[str],
+        context: dict[str, Any] | None = None,
+        request: HttpRequest | None = None,
+    ) -> str:
         """Render a named template or ordered template selection."""
         with template_snapshot(self.resolver):
             template = (
@@ -86,11 +93,20 @@ class HyperviewEngine:
             )
             return template.render(context, request)
 
-    def render_hxml(self, name: str | Sequence[str], context=None, request=None) -> str:
+    def render_hxml(
+        self,
+        name: str | Sequence[str],
+        context: dict[str, Any] | None = None,
+        request: HttpRequest | None = None,
+    ) -> str:
         """Render and, when configured, validate consumer HXML."""
         return self.render(name, context, request)
 
 
-def render_template(name: str, context=None, request=None) -> str:
+def render_template(
+    name: str,
+    context: dict[str, Any] | None = None,
+    request: HttpRequest | None = None,
+) -> str:
     """Render a consumer template using current HYPERVIEW settings."""
     return HyperviewEngine().render_hxml(name, context, request)

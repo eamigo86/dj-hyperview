@@ -1,9 +1,10 @@
 """Hyperview request detection and Django middleware."""
 
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 
 from asgiref.sync import iscoroutinefunction, markcoroutinefunction
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponseBase
 
 from .http import HYPERVIEW_MEDIA_TYPE
 
@@ -49,18 +50,25 @@ class HyperviewMiddleware:
     sync_capable = True
     async_capable = True
 
-    def __init__(self, get_response):
+    def __init__(
+        self,
+        get_response: Callable[
+            [HttpRequest], HttpResponseBase | Awaitable[HttpResponseBase]
+        ],
+    ) -> None:
         self.get_response = get_response
         self.async_mode = iscoroutinefunction(get_response)
         if self.async_mode:
             markcoroutinefunction(self)
 
-    def __call__(self, request):
+    def __call__(
+        self, request: HttpRequest
+    ) -> HttpResponseBase | Awaitable[HttpResponseBase]:
         if self.async_mode:
             return self.__acall__(request)
         _attach_hyperview(request)
         return self.get_response(request)
 
-    async def __acall__(self, request):
+    async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
         _attach_hyperview(request)
         return await self.get_response(request)
