@@ -13,6 +13,7 @@ LOCKED_DIRECT = {
     "pytest-django": "4.14.0",
     "ruff": "0.16.6",
     "uv-build": "0.12.9",
+    "zensical": "0.0.59",
 }
 
 
@@ -33,6 +34,7 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
         "pytest-django>=4.14,<5",
         "ruff>=0.16.6,<0.17",
         "uv-build>=0.12.9,<0.13",
+        "zensical==0.0.59",
     ]
     assert metadata["tool"]["dj-hyperview"] == {
         "dependency-audit-date": "2026-09-04",
