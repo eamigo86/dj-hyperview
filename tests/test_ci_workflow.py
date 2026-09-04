@@ -1,8 +1,11 @@
 """Continuous-integration workflow contract tests."""
 
 import re
+import shlex
+from collections.abc import Callable
 from pathlib import Path
 
+import pytest
 import yaml
 
 ROOT = Path(__file__).parents[1]
@@ -15,13 +18,53 @@ ACTION_PINS = {
 }
 
 
-def _workflow() -> dict[str, object]:
+def test_workflow_audit_accepts_the_active_contract() -> None:
+    """The checked-in workflow satisfies every semantic CI guard."""
+    assert _audit_workflow(WORKFLOW.read_text()) == []
+
+
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    [
+        (
+            lambda text: text.replace(
+                "  quality:\n",
+                "  quality:\n    permissions:\n      contents: write\n",
+                1,
+            ),
+            "quality: effective permissions must remain read-only",
+        ),
+        (
+            lambda text: text.replace(
+                "uv sync --locked\n", "uv sync --locked --all-groups\n", 1
+            ),
+            "quality: default sync must not install optional groups",
+        ),
+        (
+            lambda text: text.replace(
+                "          uv lock --check\n", "          # uv lock --check\n", 1
+            ),
+            "quality: active uv lock --check command is required",
+        ),
+    ],
+)
+def test_workflow_audit_rejects_fail_open_mutations(
+    mutate: Callable[[str], str], expected: str
+) -> None:
+    """Unsafe permissions, eager extras, and disabled gates are rejected."""
+    assert _audit_workflow(mutate(WORKFLOW.read_text())) == [expected]
+
+
+def _workflow(text: str | None = None) -> dict[str, object]:
     """Load CI YAML without coercing its on key to a boolean.
+
+    Args:
+        text: Optional workflow source instead of the checked-in file.
 
     Returns:
         The workflow mapping with scalar values kept as strings.
     """
-    return yaml.load(WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    return yaml.load(text or WORKFLOW.read_text(), Loader=yaml.BaseLoader)
 
 
 def _run_script(job: dict[str, object]) -> str:
@@ -34,6 +77,58 @@ def _run_script(job: dict[str, object]) -> str:
         Shell commands in execution order.
     """
     return "\n".join(step["run"] for step in job["steps"] if "run" in step)
+
+
+def _active_commands(job: dict[str, object]) -> list[list[str]]:
+    """Parse active, top-level shell commands from a workflow job."""
+    commands = []
+    for step in job["steps"]:
+        for line in step.get("run", "").splitlines():
+            tokens = shlex.split(line, comments=True)
+            if tokens:
+                commands.append(tokens)
+    return commands
+
+
+def _installs_optional_groups(command: list[str]) -> bool:
+    """Return whether a normal sync command installs optional groups."""
+    if command[:2] != ["uv", "sync"]:
+        return False
+    return "--all-groups" in command or any(
+        argument == "--group=redis"
+        or (
+            argument == "--group"
+            and index + 1 < len(command)
+            and command[index + 1] == "redis"
+        )
+        for index, argument in enumerate(command)
+    )
+
+
+def _audit_workflow(text: str) -> list[str]:
+    """Return deterministic safety violations in CI workflow source."""
+    workflow = _workflow(text)
+    global_permissions = workflow["permissions"]
+    jobs = workflow["jobs"]
+    violations = []
+
+    for name, job in jobs.items():
+        permissions = job.get("permissions", global_permissions)
+        if permissions.get("contents") != "read" or "write" in permissions.values():
+            violations.append(f"{name}: effective permissions must remain read-only")
+
+    normal_jobs = ("quality", "compatibility", "artifacts")
+    commands = {name: _active_commands(jobs[name]) for name in normal_jobs}
+    for name in normal_jobs:
+        if any(_installs_optional_groups(command) for command in commands[name]):
+            violations.append(f"{name}: default sync must not install optional groups")
+
+    if not any(
+        command[:2] == ["uv", "lock"] and "--check" in command
+        for command in commands["quality"]
+    ):
+        violations.append("quality: active uv lock --check command is required")
+    return violations
 
 
 def test_ci_is_reusable_and_defaults_to_read_only_permissions() -> None:
