@@ -11,6 +11,11 @@ import pytest
 from lxml import etree
 from tools.package_guard import validate_project
 
+from tests.hyperview_contract import (
+    ContractValidationError,
+    validate_contract_document,
+)
+
 PROJECT_ROOT = Path(__file__).parents[1]
 CONTRACT = Path(__file__).parent / "contracts" / "hyperview" / "0.110.0"
 NAMESPACE = "https://hyperview.org/hyperview"
@@ -45,6 +50,10 @@ def test_contract_manifest_pins_official_hyperview_0110_provenance() -> None:
     assert manifest["hyperview_version"] == "0.110.0"
     assert manifest["audited_at"] == "2026-09-04"
     assert manifest["namespace"] == NAMESPACE
+    assert manifest["validation"] == {
+        "schema": "focused-hyperview.xsd",
+        "reference_integrity": ("tests.hyperview_contract.validate_contract_document"),
+    }
     assert manifest["sources"] == {
         "npm": {
             "package": "hyperview",
@@ -79,7 +88,7 @@ def test_synthetic_fixture_parses_and_validates_offline(name: str) -> None:
     document = _parse(CONTRACT / name)
     schema = _schema()
 
-    assert schema.validate(document), schema.error_log
+    validate_contract_document(document, schema=schema)
     assert document.nsmap[None] == NAMESPACE
 
 
@@ -141,3 +150,28 @@ def test_parser_rejects_malformed_contract_input() -> None:
     """Reject malformed XML before focused schema validation."""
     with pytest.raises(etree.XMLSyntaxError):
         _parse(f'<view xmlns="{NAMESPACE}">'.encode())
+
+
+def test_contract_rejects_target_without_exactly_one_matching_id() -> None:
+    """Reject a target even though the focused XSD accepts dangling IDREFs."""
+    dangling = _parse(
+        f'<view xmlns="{NAMESPACE}" id="root" target="missing-id" />'.encode()
+    )
+    assert _schema().validate(dangling)
+
+    with pytest.raises(ContractValidationError, match="reference integrity failed"):
+        validate_contract_document(dangling, schema=_schema())
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        f'<view xmlns="{NAMESPACE}" id="duplicate"><view id="duplicate" /></view>',
+        f'<view xmlns="{NAMESPACE}" id="contains whitespace" />',
+        f'<view xmlns="{NAMESPACE}" id="root" target="" />',
+    ],
+)
+def test_contract_rejects_duplicate_or_invalid_ids(invalid: str) -> None:
+    """Reject non-unique and lexically invalid Hyperview identifiers."""
+    with pytest.raises(ContractValidationError, match="schema validation failed"):
+        validate_contract_document(_parse(invalid.encode()), schema=_schema())

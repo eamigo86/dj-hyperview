@@ -4,6 +4,10 @@
   "hyperview_version": "0.110.0",
   "audited_at": "2026-09-04",
   "namespace": "https://hyperview.org/hyperview",
+  "validation": {
+    "schema": "focused-hyperview.xsd",
+    "reference_integrity": "tests.hyperview_contract.validate_contract_document"
+  },
   "sources": {
     "npm": {
       "package": "hyperview",
