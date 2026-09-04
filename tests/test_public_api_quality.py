@@ -182,12 +182,43 @@ def _function_parameters(
     return names
 
 
+def _entry_separator(text: str) -> tuple[int | None, bool]:
+    closing = {"(": ")", "[": "]", "{": "}"}
+    stack: list[str] = []
+    quote: str | None = None
+    escaped = False
+    for index, character in enumerate(text):
+        if quote is not None:
+            if escaped:
+                escaped = False
+            elif character == "\\":
+                escaped = True
+            elif character == quote:
+                quote = None
+            continue
+        if character in {'"', "'"}:
+            quote = character
+        elif character in closing:
+            stack.append(closing[character])
+        elif character in closing.values():
+            if not stack or stack[-1] != character:
+                return None, False
+            stack.pop()
+        elif character == ":" and not stack:
+            return index, True
+    return None, not stack and quote is None
+
+
 def _argument_entry(line: str) -> tuple[str | None, bool]:
     if not line.startswith("    ") or line.startswith("     "):
         return None, False
-    declaration, separator, _ = line[4:].partition(":")
-    if not separator:
+    content = line[4:]
+    separator, balanced = _entry_separator(content)
+    if not balanced:
+        return None, True
+    if separator is None:
         return None, False
+    declaration = content[:separator]
     label = declaration
     if label.endswith(")") and " (" in label:
         label = label.split(" (", 1)[0]
@@ -982,3 +1013,39 @@ def public(value: str) -> None:
         "sample.py:2:public: Args section has an invalid parameter label",
         "sample.py:2:public: Args section missing parameter 'value'",
     ]
+
+
+def test_args_section_parses_colons_inside_temporary_type_suffixes() -> None:
+    """Ignore nested and quoted colons while locating an entry separator."""
+    source = r'''"""Documented module."""
+def public(literal: str, annotated: str, escaped: str) -> None:
+    r"""Process typed argument entries.
+
+    Args:
+        literal (Literal["x:y"]): Description may contain ): safely.
+        annotated (Annotated[list[dict[str, tuple[int, ...]]], "x:y"]): Nested.
+        escaped (Literal["x\":y"]): Escaped quote.
+    """
+'''
+    assert _audit_text(source) == []
+
+
+def test_args_section_rejects_unbalanced_temporary_type_suffixes() -> None:
+    """Diagnose malformed suffix structure without crashing the audit."""
+    for entry in (
+        'value (Literal["x:y"]: Missing parenthesis.',
+        'value (Literal["x:y]): Missing quote.',
+        "value (dict[str, list[int]]}: Mismatched delimiter.",
+    ):
+        source = f'''"""Documented module."""
+def public(value: str) -> None:
+    """Process one value.
+
+    Args:
+        {entry}
+    """
+'''
+        assert _audit_text(source) == [
+            "sample.py:2:public: Args section has an invalid parameter label",
+            "sample.py:2:public: Args section missing parameter 'value'",
+        ]
