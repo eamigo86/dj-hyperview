@@ -86,7 +86,7 @@ Task 12 valida dentro del repo Python el protocolo contra [`hyperview` 0.110.0](
 
 ### Hito D — Publicación
 
-**Pendiente:** Task 13. La próxima acción es **13.1, auditoría pública**; después siguen Zensical, CI, release, PyPI y Pages.
+**Pendiente:** Task 13 conserva seis children exact-parent: 13.1 auditoría pública, 13.2 Zensical, 13.3 guías, 13.4 CI/docs sin deploy, 13.5 preview manual y 13.6 PyPI→Pages.
 
 ## Reglas de ejecución
 

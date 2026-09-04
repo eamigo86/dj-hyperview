@@ -937,44 +937,90 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–12 están 
 
 **Estado:** Pendiente; próxima Task 13.1.
 
+**Meta:** cerrar el release sólo después de completar los seis children 13.1–13.6, con Tasks 1–12 verificadas.
+
+**Repositorios y publicación:** [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview) y [eamigo86.github.io/dj-hyperview](https://eamigo86.github.io/dj-hyperview/).
+
 ### 13.1 Auditoría pública
 
-- Google-style completa en módulos/clases/funciones/métodos públicos.
-- Type hints obligatorios; tipos no repetidos en docstrings; cero backticks dentro de docstrings.
+- **Estado:** Pendiente.
+- **Branch:** `release/01-public-api-audit`.
+- **Parent exacto:** `docs/restore-task-13-chain` HEAD.
+- **Estimación:** 240–360 líneas.
+- **RED:** `tests/test_public_api_quality.py`.
+- **GREEN:** auditor AST global y reparación package-owned Google-style, types y cero backticks.
+- **REFACTOR:** allowlist vacía.
+- **Criterio de aceptación:** API pública completa conforme.
+- **Rollback:** revertir auditor y deuda como una unidad.
 
-### 13.2 Fundación y guías Zensical
+### 13.2 Fundación Zensical
 
-- Pin exacto en [`pyproject.toml`](../../pyproject.toml)/lock.
-- Configurar `zensical.yml` y documentación de instalación/configuración.
-- Cubrir filesystem, DB/admin, caché, seguridad, testing, release y rollback.
-- Documentar refresh poscommit, invalidación manual bulk/SQL, tombstones/culling y retries.
-- No se requiere soporte Mermaid: los diagramas de desarrollo son texto plano.
+- **Estado:** Pendiente.
+- **Branch:** `release/02-zensical-foundation`.
+- **Parent exacto:** `release/01-public-api-audit` HEAD.
+- **Estimación:** 260–380 líneas.
+- **RED:** `tests/test_docs_configuration.py`.
+- **GREEN:** pin exacto compatible en [`pyproject.toml`](../../pyproject.toml)/lock, `zensical.yml` y `docs/{index,installation,configuration}.md`.
+- **REFACTOR:** navegación y enlaces.
+- **Criterio de aceptación:** URLs verificadas y cero UI bundled.
+- **Rollback:** eliminar tooling y docs base.
 
-### 13.3 CI sin deploy
+### 13.3 Guías del paquete
 
-- Ruff/checks/migrations/wheel/name y Zensical build en PR/main.
-- Artifact ordinario; sin Pages deploy.
+- **Estado:** Pendiente.
+- **Branch:** `release/03-package-guides`.
+- **Parent exacto:** `release/02-zensical-foundation` HEAD.
+- **Estimación:** 260–380 líneas.
+- **RED:** `tests/test_docs_examples.py`.
+- **GREEN:** guías filesystem, DB/admin, cache, seguridad, testing, release y rollback, incluidos refresh poscommit e invalidación manual bulk/SQL.
+- **REFACTOR:** snippets ejecutables.
+- **Criterio de aceptación:** ejemplos reproducibles y alineados con APIs públicas.
+- **Rollback:** eliminar sólo las guías.
 
-### 13.4 Matriz completa, Redis y preview manual
+### 13.4 CI y documentación sin deploy
 
-- Ejecutar las seis celdas Python/Django de `tools/test_matrix.py` y una celda Redis real opt-in.
-- Exigir ≥95% branches y propagar fallos de base/admin/servicio.
-- `workflow_dispatch` puede producir un preview artifact; sin Pages environment/write/deploy action.
+- **Estado:** Pendiente.
+- **Branch:** `release/04-ci-docs-validation`.
+- **Parent exacto:** `release/03-package-guides` HEAD.
+- **Estimación:** 330–395 líneas.
+- **RED:** `tests/test_ci_workflow_policy.py`.
+- **GREEN:** `.github/workflows/ci.yml` con Python 3.12–3.14 × Django 5.2.17/6.1.1, una celda Redis, ≥95% branches, Ruff/checks/migrations/lock/name, wheel install/content y Zensical build en PR/main con artifacts ordinarios.
+- **REFACTOR:** SHAs y permisos read-only.
+- **Criterio de aceptación:** cero deploy.
+- **Rollback:** quitar el workflow.
 
-### 13.5 Release y Pages
+### 13.5 Preview manual
 
-- Tag versionado construye/verifica package/docs.
-- Publicación PyPI exitosa precede `deploy-pages`.
-- Sitio: [eamigo86.github.io/dj-hyperview](https://eamigo86.github.io/dj-hyperview/).
-- Repositorio: [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview).
+- **Estado:** Pendiente.
+- **Branch:** `release/05-manual-docs-preview`.
+- **Parent exacto:** `release/04-ci-docs-validation` HEAD.
+- **Estimación:** 180–260 líneas.
+- **RED:** `tests/test_docs_preview_workflow.py`.
+- **GREEN:** workflow `workflow_dispatch` que construye Zensical y sube un artifact ordinario.
+- **REFACTOR:** concurrency y retention.
+- **Criterio de aceptación:** sin Pages environment, permiso write ni deploy action.
+- **Rollback:** eliminar el workflow.
+
+### 13.6 PyPI y después Pages
+
+- **Estado:** Pendiente.
+- **Branch:** `release/06-publish-pages`.
+- **Parent exacto:** `release/05-manual-docs-preview` HEAD.
+- **Estimación:** 320–395 líneas.
+- **RED:** `tests/test_release_workflow_policy.py`.
+- **GREEN:** workflow de tag versionado que valida/construye package+docs, publica PyPI y sólo tras éxito despliega el artifact Pages con permisos mínimos por job.
+- **REFACTOR:** environments y concurrency.
+- **Criterio de aceptación:** PR/main/manual jamás despliegan y cualquier fallo previo bloquea Pages.
+- **Rollback:** deshabilitar deploy sin afectar CI.
 
 ### Criterios de cierre
 
 - [x] Tasks 1–12 verificadas.
+- [ ] Los seis children 13.1–13.6 verificados en cadena exact-parent.
 - [ ] Checkout limpio reproduce todos los gates.
 - [ ] Wheel sin UI/XML/HXML runtime.
 - [ ] Zensical build validado en CI.
-- [ ] Release publicado antes de Pages.
+- [ ] Release PyPI exitoso antes de Pages.
 - [ ] [Estado](status.md) y [decisiones](decisions.md) actualizados.
 
 ---

@@ -89,13 +89,13 @@ El contrato fija Hyperview 0.110.0 para el HXML/HTTP producido: strict UTF-8, me
 | Riesgo/deuda | Impacto | Tratamiento |
 |---|---|---|
 | Seis celdas y Redis real pendientes | La matriz está definida, pero su ejecución exhaustiva requiere CI/servicio | Task 13.4 |
-| CI completa aún no consolidada | La evidencia local independiente no es todavía un gate de GitHub | Tasks 13.3–13.4 |
+| CI completa aún no consolidada | La evidencia local independiente no es todavía un gate de GitHub | Task 13.4 |
 | Snapshot por nombre, no global | Dos nombres resueltos inicialmente en instantes distintos pueden observar revisiones distintas | Mantener el contrato documentado; no prometer atomicidad global |
 | Multi-name invalidation no atómica | Un fallo puede dejar un subconjunto rotado | Error observable y retry del conjunto |
 | Tombstones sujetos a culling/eviction | Un backend mal dimensionado debilita la no reutilización | Guía operativa, namespace aislado y capacidad suficiente |
 | Claims permanentes | Crecimiento de pequeñas marcas por candidato | Dimensionamiento y rotación del namespace |
 | Bulk/SQL sin hooks | Una mutación externa puede dejar caché stale | Servicios o invalidación manual poscommit; hooks post-MVP |
-| No hay release ni Pages | El paquete aún no tiene publicación estable automatizada | Task 13 |
+| No hay release ni Pages | El paquete aún no tiene publicación estable automatizada | Task 13.6 |
 
 El perfil multi-DB contiene un alias SQLite deliberadamente roto para probar fallos redacted; ejecutar migraciones directamente con ese perfil puede emitir un `RuntimeWarning`. El gate canónico de migraciones está limpio y este diagnóstico no es un defecto del paquete.
 

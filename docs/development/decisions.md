@@ -17,7 +17,7 @@ Este ledger resume las decisiones vigentes. “Aceptada” significa que guía l
 | ADR-011 | Aceptada | Matriz Python 3.12–3.14 × Django 5.2/6.1 definida por `tools/test_matrix.py`; Redis sólo por opt-in. | Cubre LTS y versión moderna con comandos portables y sin exigir servicios al flujo local. | Las seis celdas y Redis real aumentan costo y quedan en CI Task 13.4. |
 | ADR-012 | Aceptada | TDD estricto, cobertura de ramas ≥95% y Feature Branch Chain con work units ≤400. | Conserva trazabilidad RED/GREEN y revisión/rollback manejables. | Más commits y gates, pero reduce riesgo de cambios opacos. |
 | ADR-013 | Aceptada | Docstrings Google-style completas en superficie pública, type hints obligatorios y cero backticks dentro de docstrings. | Contrato documental homogéneo sin duplicar tipos. | Exige auditoría final de APIs heredadas además de lint. |
-| ADR-014 | Aceptada | Zensical para docs; PR/main sólo validan; Pages se despliega después de publicar el release. | Evita que documentación pública describa una versión que todavía no existe en PyPI. | Pipeline de release tiene dependencia explícita y permisos por job. |
+| ADR-014 | Aceptada | Zensical se prepara en 13.2, PR/main validan en 13.4, el preview 13.5 sólo sube artifact y Pages se despliega en 13.6 después de PyPI. | Evita que documentación pública describa una versión que todavía no existe en PyPI. | Pipeline de seis children con dependencias y permisos explícitos. |
 | ADR-015 | Aceptada | El proyecto legacy es sólo referencia de lectura. | El entregable es el paquete reusable, no una modernización del prototipo. | El trabajo histórico realizado allí no cuenta como Tasks 9–10 y no se continúa. |
 | ADR-016 | Aceptada | Tasks 9–10 usan `tests/consumer_project/` dentro de [`tests/`](../../tests/) en el [repo del paquete](https://github.com/eamigo86/dj-hyperview). | Produce tests deterministas y distribuibles sin acoplarse al dominio legacy. | Modela instalación/settings/URLs y aceptación HTTP completa con dominios genéricos. |
 | ADR-017 | Aceptada | Las 40 filas experimentales legacy no se leen, copian, migran ni convierten en fixtures obligatorios. | Son datos de una prueba, no requisitos del producto. | Sólo sirven como contexto humano de referencia; no participan en tests ni gates. |
@@ -30,8 +30,8 @@ Este ledger resume las decisiones vigentes. “Aceptada” significa que guía l
 
 | Tema | Qué debe decidirse | Cuándo |
 |---|---|---|
-| Publicación | Entornos/secrets de PyPI y protección de GitHub Pages | Antes de Task 13.5 |
-| Caché en producción | Sizing, aislamiento y política de eviction del backend compartido | En guía operativa de Task 13.2 |
+| Publicación | Entornos/secrets de PyPI y protección de GitHub Pages | Antes de Task 13.6 |
+| Caché en producción | Sizing, aislamiento y política de eviction del backend compartido | En guía operativa de Task 13.3 |
 
 ## Relación con el plan
 
