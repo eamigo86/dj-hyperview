@@ -19,6 +19,7 @@ from tests.consumer_project.process import PROJECT_ROOT, run_consumer
         ("settings_database", [True, False, 4]),
         ("settings_admin", [True, True, 1]),
         ("settings_admin_postcommit", [True, True, 2]),
+        ("settings_multidb", [True, True, 2]),
     ],
 )
 def test_clean_startup_loads_only_enabled_optional_apps(
@@ -70,6 +71,7 @@ print(json.dumps([
         "settings_database",
         "settings_admin",
         "settings_admin_postcommit",
+        "settings_multidb",
     ],
 )
 def test_consumer_profiles_pass_framework_checks(settings_module: str) -> None:
