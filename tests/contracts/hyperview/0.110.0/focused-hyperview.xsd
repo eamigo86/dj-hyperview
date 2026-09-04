@@ -1,0 +1,92 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:hv="https://hyperview.org/hyperview"
+  targetNamespace="https://hyperview.org/hyperview"
+  elementFormDefault="qualified"
+>
+  <xs:annotation>
+    <xs:documentation>
+      Test-only focused subset of the Hyperview 0.110.0 contract. It validates
+      only the elements and attributes exercised by the synthetic fixtures and
+      is not a replacement for the complete upstream schema.
+    </xs:documentation>
+  </xs:annotation>
+
+  <xs:simpleType name="action">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="append" />
+      <xs:enumeration value="prepend" />
+      <xs:enumeration value="replace" />
+      <xs:enumeration value="replace-inner" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:attributeGroup name="commonAttributes">
+    <xs:attribute name="id" type="xs:ID" />
+    <xs:attribute name="href" type="xs:anyURI" />
+    <xs:attribute name="action" type="hv:action" />
+    <xs:attribute name="target" type="xs:IDREF" />
+  </xs:attributeGroup>
+
+  <xs:group name="viewChildren">
+    <xs:choice>
+      <xs:element ref="hv:view" />
+      <xs:element ref="hv:form" />
+      <xs:element ref="hv:text" />
+      <xs:element ref="hv:text-field" />
+    </xs:choice>
+  </xs:group>
+
+  <xs:element name="doc">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="hv:screen" minOccurs="1" maxOccurs="unbounded" />
+      </xs:sequence>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="screen">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="hv:body" />
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:ID" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="body">
+    <xs:complexType>
+      <xs:group ref="hv:viewChildren" minOccurs="0" maxOccurs="unbounded" />
+      <xs:attributeGroup ref="hv:commonAttributes" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="view">
+    <xs:complexType>
+      <xs:group ref="hv:viewChildren" minOccurs="0" maxOccurs="unbounded" />
+      <xs:attributeGroup ref="hv:commonAttributes" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="form">
+    <xs:complexType>
+      <xs:group ref="hv:viewChildren" minOccurs="0" maxOccurs="unbounded" />
+      <xs:attributeGroup ref="hv:commonAttributes" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="text">
+    <xs:complexType mixed="true">
+      <xs:attributeGroup ref="hv:commonAttributes" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="text-field">
+    <xs:complexType>
+      <xs:attribute name="name" type="xs:string" use="required" />
+      <xs:attribute name="value" type="xs:string" />
+      <xs:attributeGroup ref="hv:commonAttributes" />
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

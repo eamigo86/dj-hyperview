@@ -8,6 +8,7 @@ import shlex
 import subprocess
 import sys
 from collections.abc import Sequence
+from importlib import metadata
 
 SUPPORTED_PYTHONS = ("3.12", "3.13", "3.14")
 SUPPORTED_DJANGOS = ("5.2.17", "6.1.1")
@@ -108,6 +109,29 @@ def run_coverage(*, redis: bool) -> int:
     return 0
 
 
+def _run_for_django(version: str, *, redis: bool) -> int:
+    if metadata.version("Django") == version:
+        return run_coverage(redis=redis)
+    try:
+        environment = _profile_environment(redis=redis)
+    except ValueError as error:
+        print(error, file=sys.stderr)
+        return 2
+    command = (
+        "uv",
+        "run",
+        "--locked",
+        "--with",
+        f"Django=={version}",
+        "python",
+        "-m",
+        "tools.test_matrix",
+    )
+    if redis:
+        command += ("--redis",)
+    return subprocess.run(command, check=False, env=environment).returncode
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run coverage or print the supported compatibility matrix.
 
@@ -124,6 +148,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         help="enable the live Redis cell using DJHV_REDIS_URL",
     )
     parser.add_argument(
+        "--django-version",
+        choices=SUPPORTED_DJANGOS,
+        help="run the gate under one supported Django patch release",
+    )
+    parser.add_argument(
         "--show-matrix",
         action="store_true",
         help="print reproducible uv commands instead of running tests",
@@ -133,6 +162,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         for command in matrix_commands():
             print(shlex.join(command))
         return 0
+    if arguments.django_version:
+        return _run_for_django(arguments.django_version, redis=arguments.redis)
     return run_coverage(redis=arguments.redis)
 
 

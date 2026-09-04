@@ -68,3 +68,49 @@ def test_coverage_runner_stops_after_a_failed_phase(
 
     assert test_matrix.run_coverage(redis=False) == codes[-1]
     assert seen == list(test_matrix.coverage_commands()[:expected_calls])
+
+
+def test_requested_django_version_reexecutes_the_canonical_runner(
+    monkeypatch: Any,
+) -> None:
+    """A requested patch release runs the same gate in a locked uv overlay."""
+    seen: list[tuple[str, ...]] = []
+    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: "6.1.1")
+
+    def _fake_run(
+        command: tuple[str, ...], *, check: bool, env: dict[str, str]
+    ) -> SimpleNamespace:
+        seen.append(command)
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(test_matrix.subprocess, "run", _fake_run)
+
+    assert test_matrix.main(["--django-version", "5.2.17"]) == 0
+    assert seen == [
+        (
+            "uv",
+            "run",
+            "--locked",
+            "--with",
+            "Django==5.2.17",
+            "python",
+            "-m",
+            "tools.test_matrix",
+        )
+    ]
+
+
+def test_requested_installed_django_runs_coverage_without_reexec(
+    monkeypatch: Any,
+) -> None:
+    """The active supported patch release runs coverage directly."""
+    seen: list[bool] = []
+    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: "5.2.17")
+    monkeypatch.setattr(
+        test_matrix,
+        "run_coverage",
+        lambda *, redis: seen.append(redis) or 0,
+    )
+
+    assert test_matrix.main(["--django-version", "5.2.17"]) == 0
+    assert seen == [False]

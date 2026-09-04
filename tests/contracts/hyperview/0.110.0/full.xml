@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<doc xmlns="https://hyperview.org/hyperview">
+  <screen id="main-screen">
+    <body id="main-body">
+      <view id="welcome-panel">
+        <text id="welcome-copy">Hello</text>
+      </view>
+    </body>
+  </screen>
+</doc>

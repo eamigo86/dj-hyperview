@@ -1,0 +1,39 @@
+{
+  "contract": "focused-test-only",
+  "complete": false,
+  "hyperview_version": "0.110.0",
+  "audited_at": "2026-09-04",
+  "namespace": "https://hyperview.org/hyperview",
+  "sources": {
+    "npm": {
+      "package": "hyperview",
+      "published_at": "2026-08-19T15:56:02.351Z",
+      "tarball": "https://registry.npmjs.org/hyperview/-/hyperview-0.110.0.tgz",
+      "integrity": "sha512-Yj2VDMEkOtqVA01XAAg93fR/Kx5SUzxQUaaDG004B8Oc+DZOLVrLw4UJxZ7Gn6Mpc90Upor6wUEBRX+yKDZt1Q==",
+      "shasum": "a363b7b9d75efa6f91c85a9b9f89ee74b7c967ba"
+    },
+    "repository": {
+      "url": "https://github.com/Instawork/hyperview",
+      "tag": "v0.110.0",
+      "tag_object": "9c436e788c85c0d9b8b33310a36cc32983342504",
+      "commit": "f715ae5cdf07733a4b846d7744518e42dff40407"
+    },
+    "documentation": "https://hyperview.org/docs/guide_html"
+  },
+  "schema": {
+    "file": "focused-hyperview.xsd",
+    "scope": "Committed synthetic fixtures only",
+    "upstream_paths": ["schema/hyperview.xsd", "schema/core.xsd"]
+  },
+  "fixtures": {
+    "full.xml": "document",
+    "fragment.xml": "fragment",
+    "form.xml": "form-fragment"
+  },
+  "sha256": {
+    "focused-hyperview.xsd": "3ff04b8cad7fd7ead001ae0d14bc308454129afb57fdc8e0e7d1ccdbd1058a71",
+    "full.xml": "83ba2419f5f000f6fa099d7c7383d51fe175ab2e4d7466c9d8e5541e1c9665c5",
+    "fragment.xml": "b77dd677df3f9bdd2711b937446484cbec6a534c264c5f912465b781d1265b85",
+    "form.xml": "9cf171e452e537c884b134b74f6c8b67c343b04f1f64e039691ebc45427d7dc5"
+  }
+}

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<form xmlns="https://hyperview.org/hyperview" id="profile-form">
+  <text-field id="email-field" name="email" value="reader@example.test" />
+  <view id="submit-control" href="/profiles" action="replace" target="form-result">
+    <text>Save</text>
+  </view>
+  <view id="form-result" />
+</form>
