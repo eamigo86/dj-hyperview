@@ -94,16 +94,34 @@ def _is_public_method(name: str) -> bool:
     return not name.startswith("_") or (name.startswith("__") and name.endswith("__"))
 
 
+def _is_type_reference(annotation: ast.expr) -> bool:
+    return isinstance(annotation, ast.Name) or (
+        isinstance(annotation, ast.Attribute) and _is_type_reference(annotation.value)
+    )
+
+
+def _is_type_expression(annotation: ast.expr) -> bool:
+    if _is_type_reference(annotation):
+        return True
+    if isinstance(annotation, ast.Subscript):
+        return _is_type_expression(annotation.value)
+    if isinstance(annotation, ast.BinOp) and isinstance(annotation.op, ast.BitOr):
+        return _is_type_expression(annotation.left) and _is_type_expression(
+            annotation.right
+        )
+    return isinstance(annotation, ast.Constant) and annotation.value is None
+
+
 def _is_valid_type_hint(annotation: ast.expr) -> bool:
     if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
         expression = annotation.value.strip()
         if not expression:
             return False
         try:
-            ast.parse(expression, mode="eval")
+            annotation = ast.parse(expression, mode="eval").body
         except SyntaxError:
             return False
-    return True
+    return _is_type_expression(annotation)
 
 
 def _type_issues(
@@ -601,3 +619,70 @@ class Protocol:
         "sample.py:9:Protocol.__future_protocol__: public callable parameter 'value' "
         "lacks a type hint",
     ]
+
+
+def test_auditor_rejects_non_type_root_annotations() -> None:
+    """Reject literal, callable, container and comprehension root shapes."""
+    invalid_annotations = (
+        "42",
+        'b"Model"',
+        "True",
+        "False",
+        "...",
+        "[]",
+        "{}",
+        "set()",
+        "(int, str)",
+        "lambda: int",
+        "factory()",
+        "factory().Model",
+        "factory()[Model]",
+        "Model | 42",
+        "42 | Model",
+        "Model + Other",
+        "[item for item in items]",
+        "{item for item in items}",
+        "(item for item in items)",
+        "{item: item for item in items}",
+        '"42"',
+        '"func()"',
+    )
+    for annotation in invalid_annotations:
+        parameter_source = f'''"""Documented module."""
+
+def public(value: {annotation}) -> None:
+    """Accept one value."""
+'''
+        assert _audit_text(parameter_source) == [
+            "sample.py:3:public: public callable parameter 'value' "
+            "has an invalid type hint"
+        ]
+
+        return_source = f'''"""Documented module."""
+
+def public(value: int) -> {annotation}:
+    """Return one value."""
+'''
+        assert _audit_text(return_source) == [
+            "sample.py:3:public: public callable has an invalid return type hint"
+        ]
+
+
+def test_auditor_accepts_supported_type_root_annotations() -> None:
+    """Preserve references, generics, unions, metadata and explicit None."""
+    for annotation in (
+        "Model",
+        "models.Model",
+        "list[Model]",
+        "Model | None",
+        "Literal[42]",
+        'Annotated[int, "meta"]',
+        "None",
+        '"Model | None"',
+    ):
+        source = f'''"""Documented module."""
+
+def public(value: {annotation}) -> {annotation}:
+    """Round-trip one value."""
+'''
+        assert _audit_text(source) == []
