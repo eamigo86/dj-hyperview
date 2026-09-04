@@ -3,6 +3,11 @@
 Reusable Django infrastructure for serving Hyperview UI supplied by the host
 project.
 
+## Plan de desarrollo
+
+Consultá el [plan de desarrollo](docs/development/README.md) para ver el roadmap,
+la arquitectura, el trabajo completado, el estado actual y los criterios de release.
+
 ## Install for local development
 
 ```bash
