@@ -1,6 +1,6 @@
 # Plan de desarrollo de dj-hyperview
 
-Esta carpeta explica qué construye el paquete, qué está verificado y qué falta. El estado correcto al 4 de septiembre de 2026 es: **Tasks 1–8 verificadas en el repositorio del paquete; Tasks 9–13 pendientes**.
+Esta carpeta explica qué construye el paquete, qué está verificado y qué falta. El estado correcto al 4 de septiembre de 2026 es: **Tasks 1–10 verificadas en el repositorio del paquete; Tasks 11–13 pendientes**.
 
 > El proyecto legacy es material de consulta de solo lectura. No es el destino de implementación, no define el contrato público y sus datos no forman parte del paquete.
 
@@ -10,7 +10,7 @@ Esta carpeta explica qué construye el paquete, qué está verificado y qué fal
 2. [Roadmap](roadmap.md): secuencia corregida de Tasks 1–13.
 3. [Especificación](specification.md): comportamiento que debe ofrecer la versión inicial.
 4. [Arquitectura](architecture.md): componentes, flujos y límites técnicos.
-5. [Tareas](tasks.md): historial detallado de Tasks 1–8 y criterios futuros.
+5. [Tareas](tasks.md): historial detallado de Tasks 1–10 y criterios futuros.
 6. [Decisiones](decisions.md): decisiones de arquitectura y sus tradeoffs.
 
 ## Leyenda de estado

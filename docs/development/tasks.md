@@ -1,12 +1,12 @@
 # Tareas de implementación
 
-Este documento registra el trabajo verificable del paquete. Tasks 1–8 están completas en `d2f7355`; Tasks 9–13 son work units pendientes dentro del mismo repositorio. El proyecto legacy permanece read-only y no participa en la implementación ni en los gates.
+Este documento registra el trabajo verificable del paquete. Tasks 1–10 están completas y verificadas hasta `1c17ec1`; Tasks 11–13 permanecen pendientes dentro del mismo repositorio. El proyecto legacy permanece read-only y no participa en la implementación ni en los gates.
 
 ## Convenciones de trazabilidad
 
 - **Verificado:** implementación del paquete aprobada por revisión independiente.
 - **Pendiente:** work unit aún no integrado.
-- Cada commit enlazado pertenece a la historia pública de [`main`](https://github.com/eamigo86/dj-hyperview).
+- Los commits de Tasks 1–10 se trazan por SHA; la cadena local 9–10 deberá publicarse para que sus enlaces remotos sean resolubles.
 - Las ramas de Tasks 1–8 son nombres locales históricos; no se enlazan porque no se confirmó que estén publicadas.
 - Cuando Engram no conserva una cifra focal exacta, la evidencia lo declara en lugar de inferirla.
 
@@ -15,8 +15,8 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–8 están c
 | Task | Estado | Entregable |
 |---:|---|---|
 | 1–8 | **Verificado** | Frontera, configuración, HTTP, resolución, seguridad, caché, DB/admin y publicación |
-| 9 | **Pendiente** | Consumidor Django sintético propiedad del paquete |
-| 10 | **Pendiente** | Aceptación HTTP end-to-end sobre ese consumidor |
+| 9 | **Verificado** | Consumidor Django sintético propiedad del paquete |
+| 10 | **Verificado** | Aceptación HTTP end-to-end sobre ese consumidor |
 | 11 | **Pendiente** | Dependencias y matriz del paquete |
 | 12 | **Pendiente** | Contrato package-owned con Hyperview 0.110.0 |
 | 13 | **Pendiente** | Documentación Zensical, CI, release, PyPI y Pages |
@@ -669,84 +669,157 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–8 están c
 
 ## Task 9 — Consumidor Django sintético
 
-**Estado:** Pendiente.
+**Estado:** Verificado.
 
-**Meta:** demostrar que un proyecto nuevo instala/configura el paquete sin depender del legacy, corpus real ni paths absolutos.
+**Meta:** demostrar que un proyecto nuevo instala y configura el paquete sin depender de corpus real, servicios externos ni paths absolutos.
 
-### Work units propuestos
+### 9.1 Scaffold mínimo
 
-| Child | Dependencia | Entregable | Límite | Rollback |
-|---|---|---|---:|---|
-| 9.1 `integration/01-consumer-scaffold` | `d2f7355` + commit documental que adopte este plan | Crear `tests/consumer_project/` dentro de [`tests/`](../../tests/) con settings/URLs mínimos y `tests/fixtures/consumer_project/` dentro de [`tests/fixtures/`](../../tests/fixtures/), sólo para tests | ≤400 líneas | Revert único elimina el consumidor sin tocar runtime |
-| 9.2 `integration/02-consumer-filesystem` | 9.1 | Instalación, checks, URL genérica, filesystem, include/extends, miss/fallback y zero-DB/cache startup | ≤400 líneas | Revert conserva scaffold y elimina el modo filesystem |
-| 9.3 `integration/03-consumer-optional-stack` | 9.2 | Settings aislados para DB, admin, cache on/off y segundo alias; sin flujos E2E reservados a Task 10 | ≤400 líneas | Revert elimina sólo configuraciones opcionales |
+- **Estado:** Verificado.
+- **Meta:** crear un host Django portable, mínimo y filesystem-free bajo tests.
+- **Resultado:** el consumidor base instala sólo `DjHyperviewConfig`, usa URLConf vacío y no configura DB/cache.
+- **Problema encontrado:** el RED del parent no podía importar `tests.consumer_project`.
+- **Causa raíz:** el repositorio aún no tenía un proyecto consumidor package-owned.
+- **Solución:** añadir settings, URLs y un probe de startup en proceso limpio.
+- **Evidencia TDD/verificación:** RED por módulo ausente; 3 focales y 655 base + 34 admin por versión; cobertura agregada 98.15%/98.26%.
+- **Trazabilidad:** rama `integration/01-consumer-scaffold`; parent [`7be11a6`](https://github.com/eamigo86/dj-hyperview/commit/7be11a6); commit [`36ed0c9`](https://github.com/eamigo86/dj-hyperview/commit/36ed0c9); 143 líneas.
+- **Componentes/rutas:** [`tests/consumer_project/settings_base.py`](../../tests/consumer_project/settings_base.py), [`tests/consumer_project/urls.py`](../../tests/consumer_project/urls.py), [`tests/test_consumer_project_startup.py`](../../tests/test_consumer_project_startup.py).
 
-### Reglas
+### 9.2 Modo filesystem aislado
 
-- Todo código vive en el repo del paquete.
-- Fixtures usan dominios genéricos como `screens/home.xml`; no users/contacts/icons.
-- No import, copia, ejecución o modificación del legacy.
-- Ninguna fixture entra al wheel.
-- Paths derivados de `Path(__file__)`/pytest, nunca paths absolutos de una máquina.
+- **Estado:** Verificado.
+- **Meta:** probar resolución/render desde archivos sin DB, caché ni red.
+- **Resultado:** full, fragment, include, extends, precedencia, contenido vacío y nombres inseguros se ejercen con fixtures sintéticas.
+- **Problema encontrado:** el RED carecía de `settings_filesystem`; además, un guard inicial de tres archivos bloqueaba la extensión legítima del consumidor.
+- **Causa raíz:** no existía el perfil filesystem y el guard del scaffold asumía una cardinalidad fija.
+- **Solución:** añadir dos roots portables, fixtures sólo de tests y convertir el guard en un subconjunto mínimo extensible.
+- **Evidencia TDD/verificación:** RED por settings ausentes; 11 focales y 663 base + 34 admin por versión; cobertura agregada 98.15%/98.26%.
+- **Trazabilidad:** rama `integration/02-consumer-filesystem`; parent [`36ed0c9`](https://github.com/eamigo86/dj-hyperview/commit/36ed0c9); commit [`43f1829`](https://github.com/eamigo86/dj-hyperview/commit/43f1829); 214 líneas.
+- **Componentes/rutas:** [`tests/consumer_project/settings_filesystem.py`](../../tests/consumer_project/settings_filesystem.py), [`tests/test_consumer_filesystem.py`](../../tests/test_consumer_filesystem.py), [`tests/fixtures/consumer_project/`](../../tests/fixtures/consumer_project/).
 
-### Criterios de aceptación
+### 9.3 Capacidades opcionales
 
-- [ ] RED reproducible sobre el parent exacto de cada child.
-- [ ] Paquete Python y consumidor sintético dentro de su repositorio alcanzan ≥95% branch coverage.
-- [ ] Django 5.2/6.1; filesystem-only sin tabla/admin/cache.
-- [ ] DB/admin/cache sólo se activan en sus settings dedicados.
-- [ ] Package guard confirma wheel sin fixtures/runtime XML.
-- [ ] Verificación independiente cierra Task 9.
+- **Estado:** Verificado; cierra Task 9.
+- **Meta:** demostrar que DB, admin y caché son opt-in y permanecen aislados.
+- **Resultado:** cinco perfiles base/filesystem/database/cache/admin arrancan por separado; SQLite temporal y LocMem prueban source, revision, hit/miss/empty e invalidación.
+- **Problema encontrado:** el RED registró 9 fallos porque los perfiles opcionales no existían.
+- **Causa raíz:** el scaffold inicial no modelaba combinaciones opcionales sin contaminar el modo mínimo.
+- **Solución:** añadir settings separados, runner de proceso portable y pruebas de frontera/capacidades.
+- **Evidencia TDD/verificación:** RED 9 fallos/5 pases; 31 focales, 677 base + 34 admin por versión y cinco system checks; cobertura agregada 98.15%/98.26%.
+- **Trazabilidad:** rama `integration/03-consumer-optional-stack`; parent [`43f1829`](https://github.com/eamigo86/dj-hyperview/commit/43f1829); commit [`01d9940`](https://github.com/eamigo86/dj-hyperview/commit/01d9940); 373 líneas.
+- **Componentes/rutas:** [`tests/consumer_project/process.py`](../../tests/consumer_project/process.py), [`tests/consumer_project/settings_database.py`](../../tests/consumer_project/settings_database.py), [`tests/consumer_project/settings_cache.py`](../../tests/consumer_project/settings_cache.py), [`tests/consumer_project/settings_admin.py`](../../tests/consumer_project/settings_admin.py), [`tests/test_consumer_optional_stacks.py`](../../tests/test_consumer_optional_stacks.py), [`tests/test_consumer_installation_boundary.py`](../../tests/test_consumer_installation_boundary.py).
+
+### Cierre de Task 9
+
+- [x] RED reproducible sobre el parent exacto de cada child.
+- [x] Todos los children son commits convencionales, reversibles y de hasta 400 líneas.
+- [x] Django 5.2/6.1 y cobertura agregada/branches superiores al 95%.
+- [x] Filesystem-only funciona sin tabla/admin/cache; capacidades opcionales sólo se activan en settings dedicados.
+- [x] Fixtures permanecen bajo tests y fuera del runtime.
+- [x] Verificación independiente cerró Task 9.
 
 ---
 
 ## Task 10 — Aceptación HTTP end-to-end
 
-**Estado:** Pendiente.
+**Estado:** Verificado.
 
-**Meta:** verificar el flujo completo request → response → engine → source/cache y admin/service → commit → refresh exclusivamente sobre el consumidor sintético de Task 9.
+**Meta:** verificar request → response → engine → source/cache y admin/service → commit → refresh exclusivamente sobre el consumidor sintético.
 
-### Work units propuestos
+### 10.1 Documentos HTTP full y fragment
 
-| Child | Dependencia | Entregable | Límite | Rollback |
-|---|---|---|---:|---|
-| 10.1 `integration/04-http-full-fragment` | 9.3 | Views/responses, context escaping, status/headers y documentos full/fragment por filesystem | ≤400 líneas | Revert elimina endpoints/tests HTTP sin tocar consumer config |
-| 10.2 `integration/05-middleware-csrf` | 10.1 | Detección header/Accept, middleware sync/async y POST genérico protegido por CSRF | ≤400 líneas | Revert restaura sólo contrato GET de 10.1 |
-| 10.3 `integration/06-cache-failures` | 10.2 | Hit/miss/empty, cache on/off, `bypass`/`raise`, invalidación y reader en vuelo | ≤400 líneas | Revert elimina backend/fault fixtures |
-| 10.4 `integration/07-admin-postcommit` | 10.3 | DB/admin publish/rename/delete, commit/rollback y siguiente GET actualizado | ≤400 líneas | Revert elimina admin mutation acceptance; services unitarios permanecen |
-| 10.5 `integration/08-multidb-clean-process` | 10.4 | alias/router, callbacks por write alias, fallos poscommit y proceso limpio sin `django_hv` | ≤400 líneas | Revert elimina segundo alias/probes; no restaura dependencia abandonada |
+- **Estado:** Verificado.
+- **Meta:** probar respuestas, views y render lazy reales con metadata HTTP correcta.
+- **Resultado:** endpoints full/fragment cubren status, headers, media type, UTF-8, escaping, 405 y miss redacted.
+- **Problema encontrado:** el RED devolvía dos 404 porque las rutas aún no existían.
+- **Causa raíz:** Task 9 probaba integración del resolver, pero no exponía HTTP.
+- **Solución:** añadir views/URLs genéricas mediante APIs públicas y siete casos de aceptación.
+- **Evidencia TDD/verificación:** 2 RED esperados y 7 GREEN; cierre independiente en Django 5.2.17/6.1.1; cobertura agregada 98.15%/98.26%.
+- **Trazabilidad:** rama `integration/04-http-full-fragment`; parent [`01d9940`](https://github.com/eamigo86/dj-hyperview/commit/01d9940); commit [`e57344f`](https://github.com/eamigo86/dj-hyperview/commit/e57344f); 227 líneas.
+- **Componentes/rutas:** [`tests/consumer_project/views.py`](../../tests/consumer_project/views.py), [`tests/consumer_project/urls.py`](../../tests/consumer_project/urls.py), [`tests/test_consumer_http_documents.py`](../../tests/test_consumer_http_documents.py).
 
-### Reglas
+### 10.2 Middleware y CSRF
 
-- Sólo dominios genéricos del paquete; **nunca** trasladar users, contacts, icon cache, rutas o negocio legacy.
-- `django_hv` debe estar ausente/bloqueado en el probe final, sin prometer compatibilidad drop-in.
-- Una request ya iniciada puede terminar con su snapshot; la siguiente iniciada postcommit debe ver el cambio.
-- Un fallo de invalidación posterior al commit es observable y no se presenta como rollback DB.
+- **Estado:** Verificado.
+- **Meta:** probar detección header/Accept, middleware sync/async y un POST protegido por CSRF.
+- **Resultado:** el middleware se ejecuta una vez, preserva full/fragment y el formulario rechaza tokens ausentes/inválidos.
+- **Problema encontrado:** el RED devolvía tres 404 porque no existía la ruta de formulario.
+- **Causa raíz:** el contrato HTTP previo no ejercía el pipeline real de middleware y CSRF.
+- **Solución:** configurar el middleware antes de `CsrfViewMiddleware` y añadir form view/fixtures sintéticas.
+- **Evidencia TDD/verificación:** 3 RED esperados y 10 focales GREEN; 694 base + 34 admin por versión; cobertura agregada 98.15%/98.26%.
+- **Trazabilidad:** rama `integration/05-middleware-csrf`; parent [`e57344f`](https://github.com/eamigo86/dj-hyperview/commit/e57344f); commit [`1fc99fc`](https://github.com/eamigo86/dj-hyperview/commit/1fc99fc); 206 líneas.
+- **Componentes/rutas:** [`tests/test_consumer_middleware_csrf.py`](../../tests/test_consumer_middleware_csrf.py), [`tests/consumer_project/settings_filesystem.py`](../../tests/consumer_project/settings_filesystem.py), [`tests/fixtures/consumer_project/primary/forms/submission.xml`](../../tests/fixtures/consumer_project/primary/forms/submission.xml).
 
-### Criterios de aceptación
+### 10.3 Fuentes, caché y errores HTTP
 
-- [ ] Full y fragment usan media type/headers/status correctos.
-- [ ] Contexto hostil se escapa y HXML inválido falla de forma estable.
-- [ ] CSRF ausente/inválido falla; token válido completa una mutación genérica.
-- [ ] Filesystem, DB, cache y admin operan sólo cuando están configurados.
-- [ ] Commit refresca; rollback conserva; rename invalida old/new.
-- [ ] Multi-DB usa el alias de escritura.
-- [ ] Fallos de backend obedecen contrato `bypass`/`raise` y barrera fail-closed.
-- [ ] Cada child ≤400 líneas, commit convencional, rollback probado y ≥95% branches.
-- [ ] Verificación independiente cierra Task 10 antes de Task 11.
+- **Estado:** Verificado.
+- **Meta:** cubrir filesystem/DB/LocMem, precedencia, invalidación y errores estables a través de HTTP.
+- **Resultado:** los fallos se mapean a 400/404/422/503 con cuerpo HXML constante; origins filesystem no filtran paths.
+- **Problema encontrado:** el RED carecía del endpoint de source y una aserción heredada de redacción dependía del path temporal.
+- **Causa raíz:** los perfiles opcionales no tenían frontera HTTP y el test inspeccionaba filenames arbitrarios del traceback.
+- **Solución:** añadir un endpoint genérico, escenarios hit/miss/empty/bypass/raise y una aserción de redacción basada sólo en campos controlados.
+- **Evidencia TDD/verificación:** 3 RED; 28 focales, 706 base + 34 admin por versión; cobertura agregada 98.15%/98.26%.
+- **Trazabilidad:** rama `integration/06-sources-errors`; parent [`1fc99fc`](https://github.com/eamigo86/dj-hyperview/commit/1fc99fc); commit [`12ba223`](https://github.com/eamigo86/dj-hyperview/commit/12ba223); 395 líneas.
+- **Componentes/rutas:** [`tests/test_consumer_source_errors.py`](../../tests/test_consumer_source_errors.py), [`tests/test_database_source.py`](../../tests/test_database_source.py), [`tests/consumer_project/views.py`](../../tests/consumer_project/views.py).
+
+### 10.4 Admin y publicación poscommit
+
+- **Estado:** Verificado.
+- **Meta:** aceptar create/edit/rename/delete reales del admin y visibilidad sólo después del commit.
+- **Resultado:** caché permanece estable durante la transacción/rollback y la siguiente petición postcommit observa edit, rename o delete.
+- **Problema encontrado:** el RED falló en tres casos porque no existía un perfil combinado admin+cache.
+- **Causa raíz:** los perfiles opcionales aislados de Task 9 no podían demostrar juntos admin, servicios, transacción y caché.
+- **Solución:** añadir settings/URLs dedicados y aceptación con admin estándar y servicios públicos.
+- **Evidencia TDD/verificación:** 3 RED, 19 focales y 34 admin GREEN; verificación independiente incluida en el cierre acumulado de Task 10.
+- **Trazabilidad:** rama `integration/07-admin-postcommit`; parent [`12ba223`](https://github.com/eamigo86/dj-hyperview/commit/12ba223); commit [`936f8d4`](https://github.com/eamigo86/dj-hyperview/commit/936f8d4); 269 líneas.
+- **Componentes/rutas:** [`tests/consumer_project/settings_admin_postcommit.py`](../../tests/consumer_project/settings_admin_postcommit.py), [`tests/consumer_project/urls_admin_postcommit.py`](../../tests/consumer_project/urls_admin_postcommit.py), [`tests/test_consumer_admin_postcommit.py`](../../tests/test_consumer_admin_postcommit.py).
+
+### 10.5 Multi-DB y proceso limpio
+
+- **Estado:** Verificado; cierra Task 10.
+- **Meta:** probar routing/alias, callbacks ligados a la conexión, aislamiento transaccional y frontera package-only en proceso limpio.
+- **Resultado:** default/replica/broken verifican identidad de caché, read/write routing, commit/rollback independientes y errores redacted sin red/Redis/datos externos.
+- **Problema encontrado:** el RED registró tres `ModuleNotFoundError` porque `settings_multidb` no existía; la primera iteración usó `using()` donde el manager especial requería `db_manager()`.
+- **Causa raíz:** faltaba el perfil multi-DB y el test inicial confundió APIs de QuerySet y Manager.
+- **Solución:** añadir router/perfil sintéticos, usar `db_manager(alias)` y ejecutar un probe blocker-first con APIs públicas.
+- **Evidencia TDD/verificación:** 3 RED; 18 focales de 10.5 y 58 acumulados de Task 10; 716 base + 37 admin por versión; agregado 98.15%/98.26%, branches 96.70%/96.93%; PASS independiente 0/0/0.
+- **Trazabilidad:** rama `integration/08-multidb-clean-process`; parent [`936f8d4`](https://github.com/eamigo86/dj-hyperview/commit/936f8d4); commit [`1c17ec1`](https://github.com/eamigo86/dj-hyperview/commit/1c17ec1); 340 líneas.
+- **Componentes/rutas:** [`tests/consumer_project/routing.py`](../../tests/consumer_project/routing.py), [`tests/consumer_project/settings_multidb.py`](../../tests/consumer_project/settings_multidb.py), [`tests/test_consumer_multidb_isolation.py`](../../tests/test_consumer_multidb_isolation.py), [`tests/test_consumer_installation_boundary.py`](../../tests/test_consumer_installation_boundary.py).
+
+### Cierre de Task 10
+
+- [x] Full/fragment, contexto hostil, status/headers/media type/UTF-8 y errores estables.
+- [x] Middleware sync/async y CSRF ausente/inválido/válido.
+- [x] Filesystem, DB, cache y admin sólo cuando están configurados.
+- [x] Commit refresca; rollback conserva; rename invalida old/new.
+- [x] Multi-DB usa el alias correcto y `on_commit` queda ligado a su conexión.
+- [x] Los ocho children de Tasks 9–10 son exact-parent, convencionales, reversibles y de hasta 400 líneas.
+- [x] Verificación final en Django 5.2.17/6.1.1: 716 base + 37 admin, agregado 98.15%/98.26% y branches 96.70%/96.93%.
+- [x] Cero builds, acceso al legacy, Redis/red, datos externos o XML/HXML dentro de `src/`.
 
 ---
 
 ## Task 11 — Dependencias y compatibilidad
 
-**Estado:** Pendiente.
+**Estado:** Pendiente; próxima Task 11.1.
 
 **Meta:** actualizar y congelar dependencias del paquete Python y consumidor sintético dentro de su repositorio.
 
-### Work units y criterios
+### 11.1 Política de dependencias y lock
+
+- **Estado:** Pendiente; siguiente work unit.
+- **Meta:** definir una política reproducible de dependencias y lock antes de actualizar la matriz.
+- **Resultado:** No implementado.
+- **Problema encontrado:** `uv.lock` existe localmente, pero [`.gitignore`](../../.gitignore) lo excluye.
+- **Causa raíz:** el scaffold pospuso la decisión de versionar el entorno de desarrollo/CI.
+- **Solución:** Pendiente: auditar versiones estables, resolver el contrato del lock y documentar el mecanismo reproducible.
+- **Evidencia TDD/verificación:** No existe aún; Task 11 no comenzó.
+- **Trazabilidad:** branch y commit no creados.
+- **Componentes/rutas:** [`pyproject.toml`](../../pyproject.toml), [`.gitignore`](../../.gitignore).
+
+### Work units siguientes y criterios
 
 - Auditar versiones estables antes del cambio y documentar fecha.
-- Versionar una política reproducible para `uv.lock`, hoy excluido por [`.gitignore`](../../.gitignore).
 - Matriz Python 3.12–3.14 × Django 5.2/6.1.
 - Una celda Redis; todas las demás sin servicio externo obligatorio.
 - Resolver deprecations sin tocar legacy.

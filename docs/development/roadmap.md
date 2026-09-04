@@ -20,8 +20,8 @@ No se persigue convertir el proyecto legacy en el producto ni extender la librer
 | 6 | Caché cruda e invalidación segura frente a carreras | **Verificado** | 5 |
 | 7 | Contribución DB y admin opcionales | **Verificado** | 6 |
 | 8 | Publicación, mutaciones e invalidación poscommit | **Verificado** | 7 |
-| 9 | Consumidor Django sintético en el repo del paquete | **Pendiente; work units definidos** | 8 |
-| 10 | Aceptación HTTP end-to-end sobre el consumidor sintético | **Pendiente; work units definidos** | 9 |
+| 9 | Consumidor Django sintético en el repo del paquete | **Verificado** | 8 |
+| 10 | Aceptación HTTP end-to-end sobre el consumidor sintético | **Verificado** | 9 |
 | 11 | Actualización final de dependencias y matriz del paquete | **Pendiente** | 10 |
 | 12 | Contrato package-owned con Hyperview 0.110.0; cliente real separado | **Pendiente; alcance resuelto** | 10 |
 | 13 | Auditoría final, Zensical, CI, release, PyPI y Pages | **Pendiente** | 11 y 12 |
@@ -38,17 +38,17 @@ Para el detalle y la trazabilidad de cada subtask, consultar [tasks.md](tasks.md
                                                                ┘
 ```
 
-### Corrección de alcance para Tasks 9–10
+### Implementación package-only de Tasks 9–10
 
-El intento histórico de implementar adopción dentro del backend legacy no forma parte del paquete y no se considera completado. El plan corregido es concreto:
+El alcance corregido ya está completado y verificado:
 
-- Task 9 crea `tests/consumer_project/` dentro de [`tests/`](../../tests/) y fixtures exclusivamente dentro de [`tests/fixtures/`](../../tests/fixtures/).
+- Task 9 creó `tests/consumer_project/` dentro de [`tests/`](../../tests/) y fixtures exclusivamente dentro de [`tests/fixtures/`](../../tests/fixtures/).
 - Task 10 ejerce views/responses/middleware/CSRF/full+fragment, filesystem/DB/cache/admin poscommit, multi-DB y fallos sobre ese consumidor.
-- Cada child tiene parent exacto, límite de 400 líneas, pruebas y rollback propio; ver [Tasks 9–10](tasks.md).
-- No se copian pantallas, datos, modelos de negocio ni rutas del legacy.
+- Los ocho children forman una cadena exact-parent, cada uno con un commit reversible de hasta 400 líneas; ver [Tasks 9–10](tasks.md).
+- No se copiaron pantallas, datos, modelos de negocio ni rutas del legacy.
 - No se promete compatibilidad drop-in con el namespace abandonado `django_hv`.
 - Las pruebas ejercitan sólo APIs públicas de `dj_hyperview`.
-- El legacy sólo puede consultarse como referencia read-only; nunca es gate de CI, release o aceptación.
+- El cierre independiente de Task 10 obtuvo PASS sin hallazgos y dejó Task 11.1 como siguiente work unit.
 
 ### Decisión de alcance para Task 12
 
@@ -62,11 +62,11 @@ Task 12 valida dentro del repo Python el protocolo contra [`hyperview` 0.110.0](
 
 ### Hito B — Contrato de consumo
 
-**Pendiente:** Tasks 9–10. Debe demostrar una instalación realista desde cero y su HTTP end-to-end sin dependencia del prototipo original.
+**Completado y verificado:** Tasks 9–10 demuestran instalación desde cero, capacidades opcionales aisladas y HTTP end-to-end sobre el consumidor sintético.
 
 ### Hito C — Compatibilidad
 
-**Pendiente:** Tasks 11–12. Congela versiones soportadas y valida el HXML producido contra Hyperview 0.110.0 sin ampliar el alcance al cliente móvil.
+**Pendiente:** Tasks 11–12. La próxima acción es **Task 11.1**, que resolverá la política de dependencias y del lock antes de congelar la matriz soportada. Task 12 validará el HXML producido contra Hyperview 0.110.0 sin ampliar el alcance al cliente móvil.
 
 ### Hito D — Publicación
 
