@@ -31,6 +31,7 @@ dev = [
     "uv-build>=0.12.9,<0.13",
     "zensical==0.0.59",
 ]
+redis = ["redis==8.1.0"]
 
 [tool.uv]
 package = false

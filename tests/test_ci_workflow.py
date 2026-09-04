@@ -10,6 +10,7 @@ WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
 ACTION_PINS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",
+    "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "astral-sh/setup-uv": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
 }
 
@@ -39,7 +40,12 @@ def test_ci_is_reusable_and_defaults_to_read_only_permissions() -> None:
     """CI runs on changes or calls without write-capable credentials."""
     workflow = _workflow()
 
-    assert set(workflow["on"]) == {"pull_request", "push", "workflow_call"}
+    assert set(workflow["on"]) == {
+        "pull_request",
+        "push",
+        "workflow_call",
+        "workflow_dispatch",
+    }
     assert workflow["permissions"] == {"contents": "read"}
     assert {"quality", "compatibility"} <= set(workflow["jobs"])
     text = WORKFLOW.read_text()
@@ -105,3 +111,55 @@ def test_quality_job_checks_lock_style_settings_migrations_and_boundaries() -> N
         assert command in quality
     assert all("uv build" not in script for script in scripts.values())
     assert all("zensical build" not in script for script in scripts.values())
+
+
+def test_artifact_job_builds_checks_and_smokes_one_immutable_candidate() -> None:
+    """CI alone builds guarded distributions and docs, then tests the wheel."""
+    workflow = _workflow()
+    job = workflow["jobs"]["artifacts"]
+    script = _run_script(job)
+    upload = next(
+        step
+        for step in job["steps"]
+        if "actions/upload-artifact" in step.get("uses", "")
+    )
+
+    assert job["needs"] == ["quality", "compatibility"]
+    assert "uv build" in script
+    assert "uv run python -m tools.package_guard dist/*.whl" in script
+    assert "uv run zensical build --clean --strict -f zensical.yml" in script
+    assert 'smoke_dir="$(mktemp -d)"' in script
+    assert 'cd "$smoke_dir"' in script
+    assert "unset PYTHONPATH" in script
+    assert "uv pip install" in script and "dist/*.whl" in script
+    assert "dj_hyperview.__file__" in script
+    assert upload["with"] == {
+        "name": "release-candidate-${{ github.sha }}",
+        "path": "dist/*\nsite/\n",
+        "if-no-files-found": "error",
+        "retention-days": "7",
+    }
+
+
+def test_redis_job_is_versioned_real_and_strictly_opt_in() -> None:
+    """Redis runs only for an explicit reusable or manual workflow input."""
+    workflow = _workflow()
+    redis_input = {
+        "description": "Run live Redis acceptance",
+        "type": "boolean",
+        "default": "false",
+    }
+    job = workflow["jobs"]["redis"]
+    script = _run_script(job)
+
+    assert workflow["on"]["workflow_call"]["inputs"]["redis"] == redis_input
+    assert workflow["on"]["workflow_dispatch"]["inputs"]["redis"] == redis_input
+    assert job["if"] == "${{ inputs.redis == true }}"
+    assert job["services"]["redis"]["image"] == "redis:8.2.9-alpine"
+    assert job["env"]["DJHV_REDIS_URL"] == "redis://127.0.0.1:6379/15"
+    assert "--group redis" in script
+    assert "python -m tools.test_matrix --redis" in script
+    assert all(
+        "--group redis" not in _run_script(workflow["jobs"][name])
+        for name in ("quality", "compatibility", "artifacts")
+    )

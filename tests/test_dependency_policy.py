@@ -11,6 +11,7 @@ LOCKED_DIRECT = {
     "pytest": "9.1.1",
     "pytest-cov": "7.1.0",
     "pytest-django": "4.14.0",
+    "redis": "8.1.0",
     "ruff": "0.16.6",
     "uv-build": "0.12.9",
     "zensical": "0.0.59",
@@ -36,6 +37,7 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
         "uv-build>=0.12.9,<0.13",
         "zensical==0.0.59",
     ]
+    assert metadata["dependency-groups"]["redis"] == ["redis==8.1.0"]
     assert metadata["tool"]["dj-hyperview"] == {
         "dependency-audit-date": "2026-09-04",
         "supported-python": ["3.12", "3.13", "3.14"],
