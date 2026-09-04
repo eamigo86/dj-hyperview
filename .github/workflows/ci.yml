@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
+      - name: Sync exact development environment
+        run: uv sync --locked --all-groups
+      - name: Check dependency and style drift
+        run: |
+          uv lock --check
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Check Django profiles and migrations
+        run: |
+          PYTHONPATH=.:src uv run python -m django check --settings=tests.settings
+          PYTHONPATH=.:src uv run python -m django check --settings=tests.settings_database
+          PYTHONPATH=.:src uv run python -m django check --settings=tests.settings_database_admin
+          PYTHONPATH=.:src uv run python -m django makemigrations dj_hyperview_database --check --dry-run --settings=tests.settings_database
+      - name: Check public and package boundaries
+        run: |
+          uv run pytest -q tests/test_dependency_policy.py tests/test_package_boundary.py
+          uv run pytest -q tests/test_public_api_quality.py
+
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+        django: ["5.2.17", "6.1.1"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
+      - name: Run aggregate branch coverage
+        run: >-
+          uv run --locked --python ${{ matrix.python }}
+          --with Django==${{ matrix.django }}
+          python -m tools.test_matrix
+          --django-version ${{ matrix.django }}
