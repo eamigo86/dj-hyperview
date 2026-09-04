@@ -266,6 +266,9 @@ class TemplateCache:
 
         Returns:
             The current shared generation token.
+
+        Raises:
+            SourceUnavailable: If the backend or generation payload is invalid.
         """
         key = self._generation_key(name)
         token = _without_untrusted_exception(lambda: self.backend.get(key, _ABSENT))
@@ -295,6 +298,9 @@ class TemplateCache:
 
         Args:
             name: Canonical template name.
+
+        Raises:
+            SourceUnavailable: If generation rotation cannot be confirmed.
         """
         current = self.generation(name)
         candidate = self._claim_generation(name, current)
@@ -313,6 +319,9 @@ class TemplateCache:
 
         Returns:
             The cached entry when present, otherwise absence.
+
+        Raises:
+            SourceUnavailable: If the backend or cached payload is invalid.
         """
         payload = _without_untrusted_exception(
             lambda: self.backend.get(self.key(source, name, revision), _ABSENT)
@@ -373,6 +382,9 @@ class TemplateCache:
 
         Returns:
             The latest cached source result when present, otherwise absence.
+
+        Raises:
+            SourceUnavailable: If the backend or cached payload is invalid.
         """
         revision = self._resolved_revision(generation)
         payload = _without_untrusted_exception(

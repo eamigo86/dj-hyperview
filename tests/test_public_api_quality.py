@@ -404,6 +404,129 @@ def _rest_type_issues(
     return issues
 
 
+def _exception_label(expression: ast.expr | None) -> str:
+    if expression is None:
+        return "Exception"
+    if isinstance(expression, ast.Call):
+        expression = expression.func
+    if isinstance(expression, ast.Name):
+        return expression.id
+    if isinstance(expression, ast.Attribute):
+        return expression.attr
+    return "Exception"
+
+
+class _DirectRaiseVisitor(ast.NodeVisitor):
+    def __init__(self) -> None:
+        self.labels: set[str] = set()
+
+    def visit_Raise(self, node: ast.Raise) -> None:
+        self.labels.add(_exception_label(node.exc))
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        return
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        return
+
+    def visit_ClassDef(self, node: ast.ClassDef) -> None:
+        return
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        return
+
+
+def _direct_raise_labels(node: ast.FunctionDef | ast.AsyncFunctionDef) -> set[str]:
+    visitor = _DirectRaiseVisitor()
+    for statement in node.body:
+        visitor.visit(statement)
+    return visitor.labels
+
+
+def _raises_issues(
+    node: ast.FunctionDef | ast.AsyncFunctionDef,
+    path: str,
+    symbol: str,
+    docstring: str,
+) -> list[str]:
+    expected = _direct_raise_labels(node)
+    lines = docstring.splitlines()
+    headers = [index for index, line in enumerate(lines) if line == "Raises:"]
+    if len(headers) > 1:
+        return [_diagnostic(path, node, symbol, "Raises section is duplicated")]
+    if not headers:
+        return [
+            _diagnostic(
+                path,
+                node,
+                symbol,
+                f"Raises section is required for '{label}'",
+            )
+            for label in sorted(expected)
+        ]
+
+    body: list[str] = []
+    for line in lines[headers[0] + 1 :]:
+        if line and not line.startswith(" "):
+            break
+        body.append(line)
+    if not any(line.strip() for line in body):
+        return [_diagnostic(path, node, symbol, "Raises section is empty")]
+
+    documented: list[str] = []
+    has_entry = False
+    for line in body:
+        if not line.strip():
+            continue
+        if not line.startswith("    ") or (line.startswith("     ") and not has_entry):
+            return [
+                _diagnostic(
+                    path, node, symbol, "Raises section has invalid indentation"
+                )
+            ]
+        if line.startswith("     "):
+            continue
+        declaration, separator, description = line[4:].partition(":")
+        try:
+            exception = ast.parse(declaration.strip(), mode="eval").body
+        except SyntaxError:
+            exception = None
+        if (
+            not separator
+            or not description.strip()
+            or exception is None
+            or not _is_type_reference(exception)
+        ):
+            return [
+                _diagnostic(
+                    path, node, symbol, "Raises section has an invalid exception entry"
+                )
+            ]
+        documented.append(declaration.strip())
+        has_entry = True
+
+    for label in sorted(set(documented)):
+        if documented.count(label) > 1:
+            return [
+                _diagnostic(
+                    path,
+                    node,
+                    symbol,
+                    f"Raises section documents exception '{label}' more than once",
+                )
+            ]
+    documented_leaves = {label.rsplit(".", 1)[-1] for label in documented}
+    return [
+        _diagnostic(
+            path,
+            node,
+            symbol,
+            f"Raises section missing exception '{label}'",
+        )
+        for label in sorted(expected - documented_leaves)
+    ]
+
+
 def _has_bound_receiver(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
     for decorator in node.decorator_list:
         name = decorator.id if isinstance(decorator, ast.Name) else None
@@ -454,6 +577,7 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
             if docstring is not None and not type_issues:
                 issues.extend(_function_args_issues(node, path, node.name, docstring))
                 issues.extend(_returns_issues(node, path, node.name, docstring))
+                issues.extend(_raises_issues(node, path, node.name, docstring))
                 issues.extend(_rest_type_issues(node, path, node.name, docstring))
         if isinstance(node, ast.ClassDef):
             for method in node.body:
@@ -490,6 +614,7 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
                             )
                         )
                         issues.extend(_returns_issues(method, path, symbol, docstring))
+                        issues.extend(_raises_issues(method, path, symbol, docstring))
                         issues.extend(
                             _rest_type_issues(method, path, symbol, docstring)
                         )
@@ -1674,5 +1799,141 @@ def public() -> str:
             Note: Capitalized continuation text is still prose.
     """
     return "value"
+'''
+    assert _audit_text(source) == []
+
+
+def test_raises_section_covers_static_exceptions_and_from_chains() -> None:
+    """Require every directly raised static exception label."""
+    source = '''"""Documented module."""
+def public(flag: bool) -> None:
+    """Raise representative static exceptions.
+
+    Args:
+        flag: Select an exception.
+
+    Raises:
+        CustomError: If the final branch is reached.
+        ValueError: If the first branch is selected.
+    """
+    if flag:
+        raise ValueError
+    if not flag:
+        raise errors.SourceUnavailable()
+    raise CustomError() from ValueError()
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:public: Raises section missing exception 'SourceUnavailable'"
+    ]
+
+
+def test_raises_section_maps_bare_and_dynamic_raises_to_exception() -> None:
+    """Require the general Exception label for unclassified direct raises."""
+    bare = '''"""Documented module."""
+def public() -> None:
+    """Reraise the active exception."""
+    raise
+'''
+    dynamic = '''"""Documented module."""
+def public(error: object) -> None:
+    """Raise a dynamic value.
+
+    Args:
+        error: Dynamic exception value.
+    """
+    raise error[0]
+'''
+    expected = ["sample.py:2:public: Raises section is required for 'Exception'"]
+    assert _audit_text(bare) == expected
+    assert _audit_text(dynamic) == expected
+
+
+def test_raises_section_ignores_nested_scopes_and_supports_callables() -> None:
+    """Exclude nested raises while auditing sync, async, and method bodies."""
+    source = '''"""Documented module."""
+def outer() -> None:
+    """Define nested raising scopes."""
+    def nested():
+        raise LookupError
+    class Nested:
+        def method(self):
+            raise RuntimeError
+
+async def fetch() -> None:
+    """Fail asynchronously.
+
+    Raises:
+        OSError: If fetching fails.
+    """
+    raise OSError()
+
+class Public:
+    """Provide one failing method."""
+
+    def run(receiver) -> None:
+        """Fail synchronously.
+
+        Raises:
+            RuntimeError: If processing fails.
+        """
+        raise RuntimeError from None
+'''
+    assert _audit_text(source) == []
+
+
+def test_raises_section_rejects_invalid_google_structure() -> None:
+    """Reject missing, empty, duplicate, shallow, and duplicate-label sections."""
+    cases = (
+        ('"""Fail."""', "Raises section is required for 'ValueError'"),
+        (
+            '"""Fail.\n\n    Raises:\n    """',
+            "Raises section is empty",
+        ),
+        (
+            '"""Fail.\n\n    Raises:\n        ValueError: First.\n\n'
+            '    Raises:\n        ValueError: Second.\n    """',
+            "Raises section is duplicated",
+        ),
+        (
+            '"""Fail.\n\n    Raises:\n      ValueError: Too shallow.\n    """',
+            "Raises section has invalid indentation",
+        ),
+        (
+            '"""Fail.\n\n    Raises:\n        ValueError: First.\n'
+            '        ValueError: Second.\n    """',
+            "Raises section documents exception 'ValueError' more than once",
+        ),
+        (
+            '"""Fail.\n\n    Raises:\n        ValueError:\n    """',
+            "Raises section has an invalid exception entry",
+        ),
+    )
+    for docstring, reason in cases:
+        source = (
+            '"""Documented module."""\n'
+            f"def public() -> None:\n    {docstring}\n    raise ValueError\n"
+        )
+        assert _audit_text(source) == [f"sample.py:2:public: {reason}"]
+
+
+def test_raises_section_allows_additional_indirect_exceptions() -> None:
+    """Allow documented propagated errors and preserve valid exception labels."""
+    source = '''"""Documented module."""
+def public() -> None:
+    """Raise one direct error.
+
+    Raises:
+        ValueError: If direct validation fails.
+        OSError: If an indirect operation fails.
+    """
+    raise ValueError
+
+def indirect() -> None:
+    """Call an operation that may fail.
+
+    Raises:
+        RuntimeError: If the called operation fails.
+    """
+    operation()
 '''
     assert _audit_text(source) == []

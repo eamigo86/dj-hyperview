@@ -83,6 +83,9 @@ class HyperviewEngine:
 
         Returns:
             The first available compiled template.
+
+        Raises:
+            TemplateDoesNotExist: If no candidate template exists.
         """
         chain = []
         for name in names:

@@ -66,6 +66,9 @@ def get_settings() -> HyperviewSettings:
 
     Returns:
         The normalized package configuration.
+
+    Raises:
+        HyperviewConfigurationError: If package settings are invalid.
     """
     from .checks import check_hyperview_settings
     from .exceptions import HyperviewConfigurationError

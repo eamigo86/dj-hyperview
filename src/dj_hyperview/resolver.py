@@ -173,6 +173,7 @@ class TemplateResolver:
         Raises:
             HyperviewConfigurationError: If Hyperview settings are invalid.
             SourceUnavailable: If cache initialization fails in raise mode.
+            Exception: If cache initialization reraises an unclassified error.
         """
         config = get_settings()
         sources = tuple(

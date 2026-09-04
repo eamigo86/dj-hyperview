@@ -43,6 +43,9 @@ def canonicalize_template_name(name: str) -> str:
 
     Returns:
         The unchanged canonical template name.
+
+    Raises:
+        InvalidTemplateName: If the candidate is unsafe or noncanonical.
     """
     if not isinstance(name, str):
         raise InvalidTemplateName(name)

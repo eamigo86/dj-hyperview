@@ -35,6 +35,9 @@ class FileSystemSource:
 
         Returns:
             The resolved template from the first matching root, otherwise a miss.
+
+        Raises:
+            InvalidTemplateName: If path resolution escapes a configured root.
         """
         canonical = canonicalize_template_name(name)
         for root in self.template_dirs:

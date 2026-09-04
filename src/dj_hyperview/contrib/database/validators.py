@@ -23,6 +23,9 @@ def validate_canonical_template_name(value: str) -> None:
 
     Args:
         value: Candidate template name.
+
+    Raises:
+        ValidationError: If the candidate is unsafe or noncanonical.
     """
     if not _is_canonical_template_name(value):
         raise ValidationError("Enter a canonical template name.", code="invalid")
@@ -33,6 +36,9 @@ def validate_stored_template_source(value: str) -> None:
 
     Args:
         value: Consumer-owned template source.
+
+    Raises:
+        ValidationError: If validation rejects the template source.
     """
     config = get_settings().validation
     try:

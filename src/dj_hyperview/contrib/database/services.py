@@ -110,6 +110,7 @@ def publish_template(
             concurrent create wins the unique-name race.
         SourceUnavailable: If the optional app or database alias is unavailable.
         DatabaseError: If database access fails.
+        Exception: If an unclassified database write error is reraised.
     """
     canonical = canonicalize_template_name(name)
     if expected_revision is not None and (
@@ -193,6 +194,7 @@ def rename_template(
             or another row owns the target name.
         SourceUnavailable: If the optional app or database alias is unavailable.
         DatabaseError: If database access fails.
+        Exception: If an unclassified database write error is reraised.
     """
     current = canonicalize_template_name(current_name)
     target = canonicalize_template_name(new_name)
