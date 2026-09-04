@@ -3,10 +3,11 @@
 from typing import Any
 
 from django.http import HttpRequest
-from django.views.decorators.http import require_GET
+from django.views.decorators.http import require_GET, require_http_methods
 
 from dj_hyperview import (
     HyperviewEngine,
+    HyperviewRequestDetails,
     HyperviewResponse,
     HyperviewTemplateResponse,
     HyperviewTemplateView,
@@ -15,6 +16,16 @@ from dj_hyperview import (
 
 _FULL_TEMPLATE = "screens/full.xml"
 _FRAGMENT_TEMPLATE = "fragments/item.xml"
+_FORM_TEMPLATE = "forms/submission.xml"
+_FORM_RESULT_TEMPLATE = "fragments/submission.xml"
+
+
+def _marker_headers(request: HttpRequest) -> dict[str, str]:
+    details: HyperviewRequestDetails = request.hyperview
+    return {
+        "X-Consumer-Hyperview": str(bool(details)).lower(),
+        "X-Consumer-Hyperview-Version": details.version or "",
+    }
 
 
 class ConsumerFullDocumentView(HyperviewTemplateView):
@@ -83,3 +94,33 @@ def consumer_fragment(request: HttpRequest) -> HyperviewResponse:
             "X-Hyperview-Template": resolved.name,
         },
     )
+
+
+@require_http_methods(["GET", "POST"])
+def consumer_form(
+    request: HttpRequest,
+) -> HyperviewResponse | HyperviewTemplateResponse:
+    """Render and submit a generic CSRF-protected consumer form.
+
+    Args:
+        request: Incoming Django request with Hyperview metadata.
+
+    Returns:
+        Lazy form document for GET or rendered confirmation for POST.
+
+    Raises:
+        HyperviewError: If a consumer template cannot be resolved or rendered.
+    """
+    headers = _marker_headers(request)
+    if request.method == "GET":
+        return HyperviewTemplateResponse(
+            request,
+            _FORM_TEMPLATE,
+            headers=headers,
+        )
+    content = HyperviewEngine(TemplateResolver.from_settings()).render_hxml(
+        _FORM_RESULT_TEMPLATE,
+        {"message": request.POST.get("message", "")},
+        request,
+    )
+    return HyperviewResponse(content, status=201, headers=headers)
