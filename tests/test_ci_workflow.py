@@ -55,6 +55,90 @@ def test_workflow_audit_rejects_fail_open_mutations(
     assert _audit_workflow(mutate(WORKFLOW.read_text())) == [expected]
 
 
+@pytest.mark.parametrize(
+    ("mutate", "expected"),
+    [
+        (
+            lambda text: text.replace(
+                "run: uv sync --locked",
+                "run: true && uv sync --locked --all-groups",
+                1,
+            ),
+            "quality: uv sync must be a direct approved command",
+        ),
+        (
+            lambda text: text.replace(
+                "run: uv sync --locked",
+                "run: command uv sync --locked --all-groups",
+                1,
+            ),
+            "quality: uv sync must be a direct approved command",
+        ),
+        (
+            lambda text: text.replace(
+                "        run: uv sync --locked\n",
+                "        run: |\n"
+                "          sync_all() { uv sync --locked --all-groups; }\n"
+                "          sync_all\n",
+                1,
+            ),
+            "quality: uv sync must be a direct approved command",
+        ),
+        (
+            lambda text: text.replace(
+                "run: uv sync --locked",
+                "run: bash -c 'uv sync --locked --all-groups'",
+                1,
+            ),
+            "quality: uv sync must be a direct approved command",
+        ),
+        (
+            lambda text: (
+                text + "\n  extra:\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - run: uv sync --locked --all-groups\n"
+            ),
+            "extra: default sync must not install optional groups",
+        ),
+        (
+            lambda text: text.replace("uv lock --check", "uv lock --check || true", 1),
+            "quality: uv lock --check must be a direct blocking command",
+        ),
+    ],
+)
+def test_workflow_audit_rejects_ambiguous_command_grammar(
+    mutate: Callable[[str], str], expected: str
+) -> None:
+    """Executable prefixes, wrappers, new jobs, and swallowed failures fail."""
+    assert _audit_workflow(mutate(WORKFLOW.read_text())) == [expected]
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda text: text.replace(
+            "        run: uv sync --locked\n",
+            "        run: |\n"
+            "          # uv sync --all-groups is intentionally forbidden\n"
+            "          uv sync --locked\n",
+            1,
+        ),
+        lambda text: (
+            text + "\n  metadata:\n"
+            "    runs-on: ubuntu-latest\n"
+            "    steps:\n"
+            "      - run: uv run python -m tools.package_guard --help\n"
+        ),
+    ],
+)
+def test_workflow_audit_accepts_direct_commands_and_innocuous_comments(
+    mutate: Callable[[str], str],
+) -> None:
+    """Direct multiline commands and irrelevant jobs remain supported."""
+    assert _audit_workflow(mutate(WORKFLOW.read_text())) == []
+
+
 def _workflow(text: str | None = None) -> dict[str, object]:
     """Load CI YAML without coercing its on key to a boolean.
 
@@ -84,7 +168,10 @@ def _active_commands(job: dict[str, object]) -> list[list[str]]:
     commands = []
     for step in job["steps"]:
         for line in step.get("run", "").splitlines():
-            tokens = shlex.split(line, comments=True)
+            lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|(){}")
+            lexer.whitespace_split = True
+            lexer.commenters = "#"
+            tokens = list(lexer)
             if tokens:
                 commands.append(tokens)
     return commands
@@ -105,6 +192,26 @@ def _installs_optional_groups(command: list[str]) -> bool:
     )
 
 
+def _contains_uv(command: list[str], subcommand: str) -> bool:
+    """Return whether tokens contain a uv subcommand at any position."""
+    source = " ".join(command)
+    return (
+        re.search(rf"(?:^|\s)uv\s+{re.escape(subcommand)}(?:\s|$)", source) is not None
+    )
+
+
+def _approved_sync(job: dict[str, object]) -> list[str]:
+    """Return the sole direct sync command permitted for a job."""
+    services = job.get("services", {})
+    if (
+        job.get("if") == "${{ inputs.redis == true }}"
+        and isinstance(services, dict)
+        and "redis" in services
+    ):
+        return ["uv", "sync", "--locked", "--group", "redis"]
+    return ["uv", "sync", "--locked"]
+
+
 def _audit_workflow(text: str) -> list[str]:
     """Return deterministic safety violations in CI workflow source."""
     workflow = _workflow(text)
@@ -117,16 +224,31 @@ def _audit_workflow(text: str) -> list[str]:
         if permissions.get("contents") != "read" or "write" in permissions.values():
             violations.append(f"{name}: effective permissions must remain read-only")
 
-    normal_jobs = ("quality", "compatibility", "artifacts")
-    commands = {name: _active_commands(jobs[name]) for name in normal_jobs}
-    for name in normal_jobs:
-        if any(_installs_optional_groups(command) for command in commands[name]):
-            violations.append(f"{name}: default sync must not install optional groups")
+    valid_lock = False
+    invalid_lock = False
+    for name, job in jobs.items():
+        commands = _active_commands(job)
+        for command in commands:
+            if _contains_uv(command, "sync") and command != _approved_sync(job):
+                if command[:2] == ["uv", "sync"] and _installs_optional_groups(command):
+                    message = f"{name}: default sync must not install optional groups"
+                else:
+                    message = f"{name}: uv sync must be a direct approved command"
+                if message not in violations:
+                    violations.append(message)
 
-    if not any(
-        command[:2] == ["uv", "lock"] and "--check" in command
-        for command in commands["quality"]
-    ):
+            if _contains_uv(command, "lock"):
+                if name == "quality" and command == ["uv", "lock", "--check"]:
+                    valid_lock = True
+                else:
+                    invalid_lock = True
+                    message = (
+                        f"{name}: uv lock --check must be a direct blocking command"
+                    )
+                    if message not in violations:
+                        violations.append(message)
+
+    if not valid_lock and not invalid_lock:
         violations.append("quality: active uv lock --check command is required")
     return violations
 
