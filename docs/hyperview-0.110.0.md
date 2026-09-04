@@ -6,11 +6,19 @@ test-only contract for Hyperview 0.110.0. The contract covers the official
 fragments, form behaviors and references, Django CSRF, the Hyperview media type,
 and UTF-8 output.
 
-The version and provenance are pinned in
-`tests/contracts/hyperview/0.110.0/manifest.json` from the official
+The [version manifest](../tests/contracts/hyperview/0.110.0/manifest.json)
+pins the official
 [Hyperview 0.110.0 npm release](https://www.npmjs.com/package/hyperview/v/0.110.0),
-the [Instawork Hyperview repository](https://github.com/Instawork/hyperview),
-and [Hyperview documentation](https://hyperview.org).
+repository tag `v0.110.0`, upstream commit
+`f715ae5cdf07733a4b846d7744518e42dff40407`, artifact hashes, and relevant
+[Hyperview documentation](https://hyperview.org).
+
+## Validated boundary
+
+- Response bytes and XML declarations must agree on strict UTF-8.
+- DTD and entity declarations are rejected before schema validation.
+- A focused XSD validates shape; a separate check enforces exact ID references.
+- Full, fragment and form responses exercise media type, status, escaping and CSRF.
 
 ## Limits
 

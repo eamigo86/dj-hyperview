@@ -1,6 +1,6 @@
 # Tareas de implementación
 
-Este documento registra el trabajo verificable del paquete. Tasks 1–11 están completas y verificadas hasta `4d0c502`; Tasks 12–13 permanecen pendientes dentro del mismo repositorio. El proyecto legacy permanece read-only y no participa en la implementación ni en los gates.
+Este documento registra el trabajo verificable del paquete. Tasks 1–12 están completas y verificadas hasta `84fc76d`; Task 13 permanece pendiente dentro del mismo repositorio. El proyecto legacy permanece read-only y no participa en la implementación ni en los gates.
 
 ## Convenciones de trazabilidad
 
@@ -18,7 +18,7 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–11 están 
 | 9 | **Verificado** | Consumidor Django sintético propiedad del paquete |
 | 10 | **Verificado** | Aceptación HTTP end-to-end sobre ese consumidor |
 | 11 | **Verificado** | Dependencias, lock y matriz del paquete |
-| 12 | **Pendiente** | Contrato package-owned con Hyperview 0.110.0 |
+| 12 | **Verificado** | Contrato HXML/HTTP test-only con Hyperview 0.110.0 |
 | 13 | **Pendiente** | Documentación Zensical, CI, release, PyPI y Pages |
 
 ---
@@ -868,46 +868,87 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–11 están 
 
 ## Task 12 — Contrato package-owned con Hyperview 0.110.0
 
-**Estado:** Pendiente; próxima Task 12.1.
+**Estado:** Verificado.
 
-**Decisión:** la versión estable oficial comprobada el 2026-09-04 es [`hyperview` 0.110.0 en npm](https://www.npmjs.com/package/hyperview/v/0.110.0). Task 12 valida el protocolo producido por el paquete; **no modifica ni moderniza la app mobile legacy**. Una app consumidora real será un proyecto separado y no un gate del release de `dj-hyperview`.
+**Meta:** demostrar que el HXML y las respuestas HTTP producidas cumplen un contrato enfocado, reproducible y offline para Hyperview 0.110.0, sin ejecutar el cliente.
 
-### Work units propuestos
+### 12.1 Fixtures, schema y provenance
 
-| Child | Dependencia | Entregable | Límite | Rollback |
-|---|---|---|---:|---|
-| 12.1 `compat/01-hyperview-0110-fixtures` | Task 11 | Fixtures sólo de tests para full, fragment, behaviors/forms y CSRF relevante | ≤400 líneas | Revert elimina fixtures/contract tests |
-| 12.2 `compat/02-hyperview-protocol-doc` | 12.1 | Assertions de media type/encoding/schema y documento de compatibilidad/version pin | ≤400 líneas | Revert elimina contrato documental sin runtime change |
+- **Estado:** Verificado tras la remediación 12.1.1.
+- **Meta:** fijar un contrato sintético para documento, fragmento, formulario, behaviors y referencias.
+- **Resultado:** manifest con release npm, tag `v0.110.0` y commit `f715ae5cdf07733a4b846d7744518e42dff40407`; XSD enfocado y tres fixtures exclusivamente bajo tests.
+- **Problema encontrado:** no existía una evidencia offline versionada y el XSD upstream completo excedía el presupuesto del child.
+- **Causa raíz:** un pin de versión por sí solo no prueba la forma del HXML producido.
+- **Solución:** conservar hashes/provenance y un schema explícitamente incompleto limitado a fixtures sintéticas.
+- **Evidencia TDD/verificación:** 16 pruebas iniciales; Django 5.2.17/6.1.1 con 743 base + 34 admin y cobertura agregada 98.15%/98.26%; la revisión detectó los gaps corregidos en 12.1.1.
+- **Trazabilidad:** rama `compat/01-hyperview-0110-fixtures`; parent [`b46d95f`](https://github.com/eamigo86/dj-hyperview/commit/b46d95f); commit [`df078b`](https://github.com/eamigo86/dj-hyperview/commit/df078b); 373 líneas.
+- **Componentes/rutas:** [`tests/contracts/hyperview/0.110.0/`](../../tests/contracts/hyperview/0.110.0/), [`tests/test_hyperview_0110_fixtures.py`](../../tests/test_hyperview_0110_fixtures.py), [`tools/test_matrix.py`](../../tools/test_matrix.py).
 
-### Criterios de aceptación
+### 12.1.1 Integridad de referencias
 
-- [ ] HXML sintético representa full/fragment y elementos usados por el contrato declarado.
-- [ ] Salida del paquete cumple XML/schema/media type/encoding esperado por 0.110.0.
-- [ ] Fixtures permanecen fuera del wheel.
-- [ ] No hay Node/React Native/Expo ni cambios mobile en este repositorio Python.
-- [ ] Cualquier cambio futuro de versión exige revalidar el contrato, no asumir compatibilidad.
+- **Estado:** Verificado; cierra 12.1.
+- **Meta:** rechazar `xs:IDREF` colgantes y recuperar el gate de coverage del runner.
+- **Resultado:** XSD valida forma/IDs y el helper test-only exige cardinalidad exacta target→id; el runner vuelve a 100% de líneas/branches.
+- **Problema encontrado:** el XSD aceptaba un target inexistente y `tools/test_matrix.py` quedaba en 82.56% de coverage.
+- **Causa raíz:** XSD 1.0 no impone por sí solo la integridad referencial esperada y el selector nuevo no estaba triangulado.
+- **Solución:** añadir validación pos-schema con conteo de IDs/referencias y cubrir todos los modos/fallos del runner.
+- **Evidencia TDD/verificación:** RED reprodujo referencia colgante/helper ausente; focal 42 passed/1 skipped por versión; 754 base + 34 admin, branches 96.70%/96.93%; PASS independiente.
+- **Trazabilidad:** rama `compat/01a-hyperview-reference-integrity`; parent [`df078b`](https://github.com/eamigo86/dj-hyperview/commit/df078b); commit [`c229a54`](https://github.com/eamigo86/dj-hyperview/commit/c229a54); 175 líneas.
+- **Componentes/rutas:** [`tests/hyperview_contract.py`](../../tests/hyperview_contract.py), [`tests/test_hyperview_0110_fixtures.py`](../../tests/test_hyperview_0110_fixtures.py), [`tests/compat/test_supported_python.py`](../../tests/compat/test_supported_python.py), [`tests/contracts/hyperview/0.110.0/manifest.json`](../../tests/contracts/hyperview/0.110.0/manifest.json).
+
+### 12.2 Contrato HXML/HTTP
+
+- **Estado:** Verificado tras la remediación 12.2.1.
+- **Meta:** validar full/fragment/form, media type, encoding, status, escaping y CSRF por APIs públicas.
+- **Resultado:** un helper test-only compone respuesta HTTP, parse seguro, schema, referencias y root esperado; [la guía de compatibilidad](../hyperview-0.110.0.md) limita explícitamente la promesa.
+- **Problema encontrado:** la revisión halló que se confiaba en `response.charset` sin decodificar bytes y que DTDs no usados podían atravesar el parser.
+- **Causa raíz:** `resolve_entities=False` y `no_network=True` impiden expansión/acceso, pero no prohíben declarar DTD/entities.
+- **Solución:** conservar el contrato público/docs de 12.2 y endurecer su validador en 12.2.1.
+- **Evidencia TDD/verificación:** RED original por helper ausente; 10 escenarios iniciales y canónicos duales GREEN; la revisión bloqueó el cierre hasta remediar UTF-8/DTD/entities.
+- **Trazabilidad:** rama `compat/02-hyperview-protocol-doc`; parent [`c229a54`](https://github.com/eamigo86/dj-hyperview/commit/c229a54); commit [`670bb2b`](https://github.com/eamigo86/dj-hyperview/commit/670bb2b); 228 líneas.
+- **Componentes/rutas:** [`tests/hyperview_contract.py`](../../tests/hyperview_contract.py), [`tests/test_hyperview_0110_http_contract.py`](../../tests/test_hyperview_0110_http_contract.py), [`docs/hyperview-0.110.0.md`](../hyperview-0.110.0.md).
+
+### 12.2.1 Endurecimiento HTTP/XML
+
+- **Estado:** Verificado; cierra Task 12.
+- **Meta:** fallar cerrado ante bytes/declaraciones no UTF-8 y cualquier DTD/entity.
+- **Resultado:** decode UTF-8 estricto, encoding XML coherente, DTD/entities rechazados antes del schema y errores estables/redacted sin chaining.
+- **Problema encontrado:** el exact-parent RED produjo 9 fallos: 2 de encoding, 6 de DTD/entities y 1 de normalización del schema.
+- **Causa raíz:** el validador comprobaba metadata HTTP, no bytes reales, y delegaba declaraciones peligrosas a flags del parser.
+- **Solución:** decodificar `response.content` estrictamente, inspeccionar metadata del documento y normalizar excepciones lxml en la frontera test-only.
+- **Evidencia TDD/verificación:** RED exacto 9 fallos/12 pases; focal 39 passed por Django; 775 base + 34 admin por versión, agregado 98.15%/98.26%, branches 96.70%/96.93%; PASS con 0 CRITICAL/0 WARNING.
+- **Trazabilidad:** rama `compat/02a-hyperview-http-hardening`; parent [`670bb2b`](https://github.com/eamigo86/dj-hyperview/commit/670bb2b); commit [`84fc76d`](https://github.com/eamigo86/dj-hyperview/commit/84fc76d); 174 líneas.
+- **Componentes/rutas:** [`tests/hyperview_contract.py`](../../tests/hyperview_contract.py), [`tests/test_hyperview_0110_http_contract.py`](../../tests/test_hyperview_0110_http_contract.py).
+
+### Cierre de Task 12
+
+- [x] Documento, fragmento, formulario, behaviors, IDs y referencias validados.
+- [x] Media type, status, UTF-8, escaping y CSRF ejercidos por HTTP real.
+- [x] DTD/entities y encoding contradictorio fallan cerrado con errores redacted.
+- [x] Provenance npm/tag/commit y hashes preservados en manifest.
+- [x] Fixtures/schema/helper permanecen bajo tests; cero plantillas runtime.
+- [x] No se ejecutó Node, React Native, Expo ni cliente mobile.
+- [x] Cuatro children exact-parent, convencionales, reversibles y de hasta 400 líneas.
+- [x] Verificación independiente cerró Task 12 con 0 CRITICAL/0 WARNING.
 
 ---
 
 ## Task 13 — Documentación, CI y release
 
-**Estado:** Pendiente.
+**Estado:** Pendiente; próxima Task 13.1.
 
-### 13.0 Auditoría pública
+### 13.1 Auditoría pública
 
 - Google-style completa en módulos/clases/funciones/métodos públicos.
 - Type hints obligatorios; tipos no repetidos en docstrings; cero backticks dentro de docstrings.
 
-### 13.1 Fundación Zensical
+### 13.2 Fundación y guías Zensical
 
 - Pin exacto en [`pyproject.toml`](../../pyproject.toml)/lock.
-- Configurar `zensical.yml` y docs de instalación/configuración.
+- Configurar `zensical.yml` y documentación de instalación/configuración.
+- Cubrir filesystem, DB/admin, caché, seguridad, testing, release y rollback.
+- Documentar refresh poscommit, invalidación manual bulk/SQL, tombstones/culling y retries.
 - No se requiere soporte Mermaid: los diagramas de desarrollo son texto plano.
-
-### 13.2 Guías
-
-- Filesystem, DB/admin, caché, seguridad, testing, release y rollback.
-- Postcommit refresh, invalidación manual bulk/SQL, tombstones/culling y retries.
 
 ### 13.3 CI sin deploy
 
@@ -929,7 +970,7 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–11 están 
 
 ### Criterios de cierre
 
-- [ ] Tasks 9–12 verificadas.
+- [x] Tasks 1–12 verificadas.
 - [ ] Checkout limpio reproduce todos los gates.
 - [ ] Wheel sin UI/XML/HXML runtime.
 - [ ] Zensical build validado en CI.

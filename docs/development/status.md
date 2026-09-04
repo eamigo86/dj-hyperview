@@ -1,20 +1,20 @@
 # Estado del proyecto — 2026-09-04
 
-El estado funcional verificado de `dj-hyperview` culmina en [`4d0c502`](https://github.com/eamigo86/dj-hyperview/commit/4d0c502): **Tasks 1–11 completadas y verificadas** exclusivamente dentro del repositorio del paquete. Esta actualización documental parte de ese commit; Tasks 12–13 siguen pendientes.
+El estado funcional verificado de `dj-hyperview` culmina en [`84fc76d`](https://github.com/eamigo86/dj-hyperview/commit/84fc76d): **Tasks 1–12 completadas y verificadas** exclusivamente dentro del repositorio del paquete. Esta actualización documental parte de ese commit; Task 13 sigue pendiente.
 
 ## Snapshot
 
 | Campo | Valor |
 |---|---|
 | Repositorio | [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview) |
-| Rama funcional verificada | `deps/03-django-61-python-matrix` |
-| HEAD funcional | [`4d0c502`](https://github.com/eamigo86/dj-hyperview/commit/4d0c502) — `test(compat): add reproducible support matrix` |
-| Rama documental | `docs/status-through-task-11`, parent exacto `4d0c502` |
+| Rama funcional verificada | `compat/02a-hyperview-http-hardening` |
+| HEAD funcional | [`84fc76d`](https://github.com/eamigo86/dj-hyperview/commit/84fc76d) — `fix(compat): harden Hyperview HTTP validation` |
+| Rama documental | `docs/status-through-task-12`, parent exacto `84fc76d` |
 | Versión declarada | `0.1.0a1` |
 | Python declarado | `>=3.12,<3.15` |
 | Django declarado | `>=5.2,<6.2` |
-| Tasks válidas | 1–11 verificadas; 12–13 pendientes |
-| Próxima acción | Task 12.1 — fixtures/schema de Hyperview 0.110.0 |
+| Tasks válidas | 1–12 verificadas; Task 13 pendiente |
+| Próxima acción | Task 13.1 — auditoría pública |
 
 ## Capacidades realmente integradas
 
@@ -31,7 +31,7 @@ El estado funcional verificado de `dj-hyperview` culmina en [`4d0c502`](https://
 | Consumidor sintético | **Verificado** | Task 9, cinco perfiles package-owned y fixtures sólo de tests |
 | Aceptación HTTP E2E | **Verificado** | Task 10, full/fragment/CSRF/sources/cache/admin/multi-DB |
 | Dependencias y compatibilidad | **Verificado** | rangos auditados, lock exacto, Django 5.2/6.1 y Python 3.12–3.14 |
-| Contrato Hyperview 0.110.0 | **Pendiente, alcance resuelto** | Task 12 package-owned; cliente móvil real excluido |
+| Contrato Hyperview 0.110.0 | **Verificado** | HXML/HTTP test-only; fixtures/schema bajo tests; cliente móvil no ejecutado |
 | Release/Pages | **Pendiente** | Task 13 |
 
 ## Cadena verificada de Tasks 9–10
@@ -60,31 +60,29 @@ Cada child es un único commit convencional, reversible y dentro del límite de 
 
 La separación 11.1a/11.1b mantiene metadata y lock exacto en dos unidades reversibles dentro del presupuesto.
 
+## Cadena verificada de Task 12
+
+| Child | Rama | Commit | Parent | Líneas |
+|---:|---|---|---|---:|
+| 12.1 | `compat/01-hyperview-0110-fixtures` | [`df078b`](https://github.com/eamigo86/dj-hyperview/commit/df078b) | `b46d95f` | 373 |
+| 12.1.1 | `compat/01a-hyperview-reference-integrity` | [`c229a54`](https://github.com/eamigo86/dj-hyperview/commit/c229a54) | `df078b` | 175 |
+| 12.2 | `compat/02-hyperview-protocol-doc` | [`670bb2b`](https://github.com/eamigo86/dj-hyperview/commit/670bb2b) | `c229a54` | 228 |
+| 12.2.1 | `compat/02a-hyperview-http-hardening` | [`84fc76d`](https://github.com/eamigo86/dj-hyperview/commit/84fc76d) | `670bb2b` | 174 |
+
+Cada child es test/docs-only, reversible y permanece dentro del presupuesto.
+
 ## Evidencia final de calidad
 
-El cierre independiente de Task 11 obtuvo **PASS: 0 CRITICAL, 0 WARNING, 0 SUGGESTION**.
+El cierre independiente de Task 12 obtuvo **PASS: 0 CRITICAL, 0 WARNING**. El RED exacto de 12.2.1 fue 9 fallos y 12 pases.
 
 | Matriz | Suite base | Admin adicional | Cobertura agregada | Cobertura branches |
 |---|---:|---:|---:|---:|
-| Django 5.2.17 | 727 passed, 36 skipped | 34 passed | 98.15% | 96.70% |
-| Django 6.1.1 | 727 passed, 36 skipped | 34 passed | 98.26% | 96.93% |
+| Django 5.2.17 | 775 passed, 36 skipped | 34 passed | 98.15% | 96.70% |
+| Django 6.1.1 | 775 passed, 36 skipped | 34 passed | 98.26% | 96.93% |
 
-El focal offline pasó en CPython 3.12.11, 3.13.9 y 3.14.0. También pasaron diez perfiles con `django check`, migraciones sin cambios, Ruff, `uv lock --check` offline y package boundary. La advertencia anterior de coverage quedó resuelta por el runner canónico base+admin, no silenciada.
+El focal final obtuvo 39 pases por versión. También pasaron diez perfiles con `django check`, migraciones sin cambios, Ruff, lock offline y fronteras package/dependency/clean-process. El Python tocado alcanzó 100% de líneas y ramas.
 
-### Versiones auditadas — 2026-09-04
-
-| Componente | Versión |
-|---|---:|
-| Django | 5.2.17 / 6.1.1 |
-| lxml | 6.1.3 |
-| uv-build | 0.12.9 |
-| coverage | 7.16.0 |
-| pytest | 9.1.1 |
-| pytest-cov | 7.1.0 |
-| pytest-django | 4.14.0 |
-| Ruff | 0.16.6 |
-
-No se ejecutaron builds, Redis real ni la matriz completa de seis celdas. No se añadió shim runtime ni XML/HXML bajo `src/`.
+El contrato fija Hyperview 0.110.0 para el HXML/HTTP producido: strict UTF-8, media type/status, full/fragment/form, CSRF/escaping, schema enfocado, referencias exactas y rechazo fail-closed de DTD/entities. No se ejecutó Node/mobile ni se añadieron fixtures, schemas o plantillas bajo `src/`.
 
 ## Límites y riesgos abiertos
 
@@ -92,7 +90,6 @@ No se ejecutaron builds, Redis real ni la matriz completa de seis celdas. No se 
 |---|---|---|
 | Seis celdas y Redis real pendientes | La matriz está definida, pero su ejecución exhaustiva requiere CI/servicio | Task 13.4 |
 | CI completa aún no consolidada | La evidencia local independiente no es todavía un gate de GitHub | Tasks 13.3–13.4 |
-| Contrato Hyperview 0.110.0 pendiente | El HXML no tiene aún un gate explícito contra el cliente estable | Task 12 |
 | Snapshot por nombre, no global | Dos nombres resueltos inicialmente en instantes distintos pueden observar revisiones distintas | Mantener el contrato documentado; no prometer atomicidad global |
 | Multi-name invalidation no atómica | Un fallo puede dejar un subconjunto rotado | Error observable y retry del conjunto |
 | Tombstones sujetos a culling/eviction | Un backend mal dimensionado debilita la no reutilización | Guía operativa, namespace aislado y capacidad suficiente |
@@ -104,6 +101,6 @@ El perfil multi-DB contiene un alias SQLite deliberadamente roto para probar fal
 
 ## Próxima acción
 
-Implementar **Task 12.1 — fixtures/schema de Hyperview 0.110.0** desde el HEAD verificado, con RED → GREEN → REFACTOR, parent exacto, un commit reversible de hasta 400 líneas y sin builds locales.
+Implementar **Task 13.1 — auditoría pública** desde el HEAD verificado, con parent exacto, pruebas/gates documentales, un commit reversible de hasta 400 líneas y sin builds locales.
 
 El plan completo está en [roadmap.md](roadmap.md) y la trazabilidad detallada en [tasks.md](tasks.md).

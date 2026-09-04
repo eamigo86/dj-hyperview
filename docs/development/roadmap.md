@@ -23,7 +23,7 @@ No se persigue convertir el proyecto legacy en el producto ni extender la librer
 | 9 | Consumidor Django sintético en el repo del paquete | **Verificado** | 8 |
 | 10 | Aceptación HTTP end-to-end sobre el consumidor sintético | **Verificado** | 9 |
 | 11 | Dependencias auditadas, lock exacto y matriz reproducible | **Verificado** | 10 |
-| 12 | Contrato package-owned con Hyperview 0.110.0; cliente real separado | **Pendiente; alcance resuelto** | 11 |
+| 12 | Contrato HXML/HTTP test-only con Hyperview 0.110.0 | **Verificado** | 11 |
 | 13 | Auditoría final, Zensical, CI, release, PyPI y Pages | **Pendiente** | 11 y 12 |
 
 Para el detalle y la trazabilidad de cada subtask, consultar [tasks.md](tasks.md).
@@ -55,11 +55,20 @@ El alcance corregido ya está completado y verificado:
 - Django 5.2.17 y 6.1.1 pasan con deprecations como errores y sin shim runtime.
 - `tools/test_matrix.py` define Python 3.12–3.14 × Django 5.2/6.1 y Redis opt-in.
 - La ejecución real de las seis celdas y Redis queda como gate CI de Task 13.4.
-- El cierre independiente obtuvo PASS sin hallazgos; la siguiente acción es **Task 12.1**.
+- El cierre independiente obtuvo PASS sin hallazgos.
 
 ### Decisión de alcance para Task 12
 
-Task 12 valida dentro del repo Python el protocolo contra [`hyperview` 0.110.0](https://www.npmjs.com/package/hyperview/v/0.110.0), versión estable comprobada el 2026-09-04. No modifica ni moderniza la aplicación mobile legacy. Adoptar Hyperview en una app consumidora real será un proyecto independiente y no un release gate de `dj-hyperview`.
+Task 12 valida dentro del repo Python el protocolo contra [`hyperview` 0.110.0](https://www.npmjs.com/package/hyperview/v/0.110.0), versión estable comprobada el 2026-09-04. No modifica ni moderniza una aplicación mobile. Adoptar Hyperview en una app consumidora real será un proyecto independiente y no un release gate de `dj-hyperview`.
+
+### Contrato Hyperview cerrado en Task 12
+
+- Fixtures, schema enfocado, manifest y validadores viven exclusivamente bajo [`tests/`](../../tests/).
+- La provenance fija release npm, tag `v0.110.0` y commit upstream `f715ae5cdf07733a4b846d7744518e42dff40407`.
+- El contrato HXML/HTTP exige UTF-8 estricto, rechaza DTD/entities y valida referencias `xs:ID`/`xs:IDREF`.
+- No se ejecutó un cliente Node/mobile y no se incorporaron plantillas runtime.
+- Detalle mantenible: [compatibilidad Hyperview 0.110.0](../hyperview-0.110.0.md).
+- El cierre independiente obtuvo PASS sin CRITICAL ni WARNING; la siguiente acción es **Task 13.1**.
 
 ## Hitos
 
@@ -73,11 +82,11 @@ Task 12 valida dentro del repo Python el protocolo contra [`hyperview` 0.110.0](
 
 ### Hito C — Compatibilidad
 
-**Parcialmente completado:** Task 11 está verificada. Queda Task 12, comenzando por **12.1**, para validar el HXML producido contra Hyperview 0.110.0 sin ampliar el alcance al cliente móvil.
+**Completado y verificado:** Tasks 11–12 fijan dependencias/matriz y validan el HXML/HTTP producido contra Hyperview 0.110.0 sin ejecutar un cliente móvil.
 
 ### Hito D — Publicación
 
-**Pendiente:** Task 13. Completa documentación, automatización, paquete publicable y Pages condicionado a un release exitoso.
+**Pendiente:** Task 13. La próxima acción es **13.1, auditoría pública**; después siguen Zensical, CI, release, PyPI y Pages.
 
 ## Reglas de ejecución
 
