@@ -8,7 +8,6 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).parents[1] / "src" / "dj_hyperview"
 _DEFINITION = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 _DOCUMENTABLE = (ast.Module, *_DEFINITION)
-_PUBLIC_DUNDERS = frozenset({"__init__", "__str__", "__call__"})
 
 
 def _diagnostic(path: str, node: ast.AST, symbol: str, reason: str) -> str:
@@ -92,7 +91,19 @@ def _is_public(name: str, exports: set[str]) -> bool:
 
 
 def _is_public_method(name: str) -> bool:
-    return not name.startswith("_") or name in _PUBLIC_DUNDERS
+    return not name.startswith("_") or (name.startswith("__") and name.endswith("__"))
+
+
+def _is_valid_type_hint(annotation: ast.expr) -> bool:
+    if isinstance(annotation, ast.Constant) and isinstance(annotation.value, str):
+        expression = annotation.value.strip()
+        if not expression:
+            return False
+        try:
+            ast.parse(expression, mode="eval")
+        except SyntaxError:
+            return False
+    return True
 
 
 def _type_issues(
@@ -107,19 +118,31 @@ def _type_issues(
         *([node.args.vararg] if node.args.vararg is not None else []),
         *([node.args.kwarg] if node.args.kwarg is not None else []),
     ]
-    issues = [
-        _diagnostic(
-            path,
-            node,
-            symbol,
-            f"public callable parameter '{parameter.arg}' lacks a type hint",
-        )
-        for parameter in parameters
-        if parameter.arg not in {"self", "cls"} and parameter.annotation is None
-    ]
+    issues: list[str] = []
+    for parameter in parameters:
+        if parameter.arg in {"self", "cls"}:
+            continue
+        if parameter.annotation is None:
+            reason = f"public callable parameter '{parameter.arg}' lacks a type hint"
+        elif not _is_valid_type_hint(parameter.annotation):
+            reason = (
+                f"public callable parameter '{parameter.arg}' has an invalid type hint"
+            )
+        else:
+            continue
+        issues.append(_diagnostic(path, node, symbol, reason))
     if node.returns is None:
         issues.append(
             _diagnostic(path, node, symbol, "public callable lacks a return type hint")
+        )
+    elif not _is_valid_type_hint(node.returns):
+        issues.append(
+            _diagnostic(
+                path,
+                node,
+                symbol,
+                "public callable has an invalid return type hint",
+            )
         )
     return issues
 
@@ -512,3 +535,69 @@ def _private(missing):
     return missing
 '''
     assert _audit_text(source) == []
+
+
+def test_auditor_rejects_empty_or_invalid_forward_annotations() -> None:
+    """Reject forward annotations that do not contain a type expression."""
+    source = '''"""Documented module."""
+
+def empty(value: "") -> None:
+    """Accept one value."""
+
+def whitespace(value: "   ") -> None:
+    """Accept one value."""
+
+def invalid(value: "list[") -> None:
+    """Accept one value."""
+
+def invalid_return(value: str) -> ")":
+    """Return one value."""
+
+def empty_return(value: str) -> "":
+    """Return one value."""
+
+def whitespace_return(value: str) -> "   ":
+    """Return one value."""
+
+def valid(value: " Model | None ") -> " list[Model] ":
+    """Preserve valid forward references."""
+
+def explicit_none(value: None) -> None:
+    """Preserve the normal None annotation."""
+'''
+    assert _audit_text(source) == [
+        "sample.py:3:empty: public callable parameter 'value' has an invalid type hint",
+        "sample.py:6:whitespace: public callable parameter 'value' "
+        "has an invalid type hint",
+        "sample.py:9:invalid: public callable parameter 'value' "
+        "has an invalid type hint",
+        "sample.py:12:invalid_return: public callable has an invalid return type hint",
+        "sample.py:15:empty_return: public callable has an invalid return type hint",
+        "sample.py:18:whitespace_return: public callable has an invalid "
+        "return type hint",
+    ]
+
+
+def test_auditor_types_every_direct_magic_method() -> None:
+    """Treat every directly defined magic method as public protocol surface."""
+    source = '''"""Documented module."""
+
+class Protocol:
+    """Provide representative protocol hooks."""
+
+    def __bool__(self):
+        return True
+
+    def __future_protocol__(self, value):
+        return value
+
+    def _private(self, value):
+        return value
+'''
+    assert _audit_text(source) == [
+        "sample.py:6:Protocol.__bool__: public callable lacks a return type hint",
+        "sample.py:9:Protocol.__future_protocol__: public callable lacks a "
+        "return type hint",
+        "sample.py:9:Protocol.__future_protocol__: public callable parameter 'value' "
+        "lacks a type hint",
+    ]
