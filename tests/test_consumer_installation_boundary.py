@@ -13,10 +13,10 @@ from tests.consumer_project.process import PROJECT_ROOT, run_consumer
 @pytest.mark.parametrize(
     ("settings_module", "expected"),
     [
-        ("settings_base", [False, False, 0]),
-        ("settings_filesystem", [False, False, 0]),
-        ("settings_cache", [False, False, 0]),
-        ("settings_database", [True, False, 0]),
+        ("settings_base", [False, False, 2]),
+        ("settings_filesystem", [False, False, 2]),
+        ("settings_cache", [False, False, 2]),
+        ("settings_database", [True, False, 2]),
         ("settings_admin", [True, True, 1]),
     ],
 )

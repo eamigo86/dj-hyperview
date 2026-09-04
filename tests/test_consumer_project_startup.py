@@ -105,7 +105,7 @@ def test_consumer_starts_cleanly_through_public_package_apis() -> None:
         "cache_disabled": True,
         "checks": [],
         "legacy_loaded": False,
-        "patterns": 0,
+        "patterns": 2,
         "sources": 0,
     }
 
