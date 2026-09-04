@@ -1,0 +1,11 @@
+site_name: dj-hyperview
+site_description: Django infrastructure for serving consumer-owned Hyperview UI
+site_url: https://eamigo86.github.io/dj-hyperview/
+repo_url: https://github.com/eamigo86/dj-hyperview
+repo_name: eamigo86/dj-hyperview
+docs_dir: docs
+site_dir: site
+nav:
+  - Home: index.md
+  - Installation: installation.md
+  - Configuration: configuration.md
