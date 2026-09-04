@@ -23,7 +23,9 @@ class ResolvedTemplate:
 class TemplateSource(Protocol):
     """A backend that may resolve a canonical template name."""
 
-    def resolve(self, name: str) -> ResolvedTemplate | None: ...
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Resolve a canonical name or report a source-local miss."""
+        ...
 
 
 def canonicalize_template_name(name: str) -> str:

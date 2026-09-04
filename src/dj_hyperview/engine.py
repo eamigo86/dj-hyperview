@@ -61,11 +61,13 @@ class HyperviewEngine:
         )
 
     def get_template(self, name: str):
+        """Compile one named consumer template with rendered validation."""
         return _ValidatedTemplate(
             self.backend.get_template(name), self.validation, self.resolver
         )
 
     def select_template(self, names: Sequence[str]):
+        """Compile the first available template from an ordered candidate list."""
         chain = []
         for name in names:
             try:
@@ -75,6 +77,7 @@ class HyperviewEngine:
         raise TemplateDoesNotExist(", ".join(names), chain=chain)
 
     def render(self, name: str | Sequence[str], context=None, request=None) -> str:
+        """Render a named template or ordered template selection."""
         with template_snapshot(self.resolver):
             template = (
                 self.get_template(name)

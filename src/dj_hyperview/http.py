@@ -44,6 +44,7 @@ class HyperviewTemplateResponse(TemplateResponse):
 
     @property
     def rendered_content(self):
+        """Render and validate the configured consumer template content."""
         if (
             self.using is not None
             or not isinstance(self.template_name, (str, list, tuple))

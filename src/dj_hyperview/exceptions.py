@@ -1,3 +1,5 @@
+"""Stable public exceptions raised by the package."""
+
 from collections.abc import Sequence
 
 from django.core.exceptions import ImproperlyConfigured
@@ -8,6 +10,8 @@ class HyperviewError(Exception):
 
 
 class HyperviewConfigurationError(HyperviewError, ImproperlyConfigured):
+    """The configured Hyperview settings are invalid."""
+
     def __init__(self, issues: Sequence[str]) -> None:
         self.issues = tuple(issues)
         super().__init__(f"Invalid HYPERVIEW configuration: {'; '.join(issues)}")

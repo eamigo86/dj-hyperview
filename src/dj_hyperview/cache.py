@@ -38,6 +38,7 @@ class CacheEntry:
 
     @property
     def is_miss(self) -> bool:
+        """Report whether this entry represents a cached source miss."""
         return self.template is None
 
 
@@ -113,6 +114,7 @@ class TemplateCache:
 
     @classmethod
     def from_settings(cls, namespace: str) -> "TemplateCache":
+        """Create a template cache from current package settings."""
         config = get_settings().cache
         return cls(
             namespace,
@@ -122,6 +124,7 @@ class TemplateCache:
         )
 
     def key(self, source: str, name: str, revision: str) -> str:
+        """Return the backend-safe key for one cached template identity."""
         return template_cache_key(self.namespace, source, name, revision)
 
     def _store(self, key: str, value: object, timeout: int | None) -> None:
@@ -260,6 +263,7 @@ class TemplateCache:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def get(self, source: str, name: str, revision: str) -> CacheEntry | None:
+        """Read one exact raw-template cache entry."""
         payload = _without_untrusted_exception(
             lambda: self.backend.get(self.key(source, name, revision), _ABSENT)
         )
@@ -270,6 +274,7 @@ class TemplateCache:
         return self._decode(payload, source, name, revision)
 
     def set(self, template: ResolvedTemplate) -> None:
+        """Store one resolved raw template."""
         payload = json.dumps(
             {"version": 1, "state": "template", "template": asdict(template)},
             ensure_ascii=False,
@@ -282,6 +287,7 @@ class TemplateCache:
         )
 
     def set_miss(self, source: str, name: str, revision: str) -> None:
+        """Store an explicit miss for one raw-template identity."""
         payload = json.dumps(
             {
                 "version": 1,
@@ -316,6 +322,7 @@ class TemplateCache:
         template: ResolvedTemplate,
         generation: str | None = None,
     ) -> None:
+        """Store the latest resolved raw result for a configured source."""
         payload = json.dumps(
             {
                 "version": 1,
@@ -332,6 +339,7 @@ class TemplateCache:
     def set_resolved_miss(
         self, source: str, name: str, generation: str | None = None
     ) -> None:
+        """Store a latest-result miss for a configured source."""
         payload = json.dumps(
             {"version": 1, "state": "source-miss", "source": source, "name": name},
             ensure_ascii=False,

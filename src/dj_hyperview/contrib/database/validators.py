@@ -1,3 +1,5 @@
+"""Migration-safe validators for stored Hyperview templates."""
+
 from dataclasses import replace
 
 from django.core.exceptions import ValidationError

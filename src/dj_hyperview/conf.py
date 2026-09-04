@@ -1,3 +1,5 @@
+"""Typed package settings loaded from Django configuration."""
+
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, fields
 from pathlib import Path
@@ -11,12 +13,16 @@ Schema = str | Path | Callable[[str], None] | None
 
 @dataclass(frozen=True, slots=True)
 class SourceSettings:
+    """Configuration for one ordered template source."""
+
     backend: str
     options: Mapping[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True, slots=True)
 class CacheSettings:
+    """Configuration for optional raw-template caching."""
+
     alias: str = "default"
     ttl: int = 300
     negative_ttl: int = 15
@@ -26,6 +32,8 @@ class CacheSettings:
 
 @dataclass(frozen=True, slots=True)
 class ValidationSettings:
+    """Configuration for safe source and rendered HXML validation."""
+
     mode: str = "publish_and_render"
     schema: Schema = None
     max_bytes: int = 1_000_000
@@ -35,6 +43,8 @@ class ValidationSettings:
 
 @dataclass(frozen=True, slots=True)
 class HyperviewSettings:
+    """Complete normalized package configuration."""
+
     template_dirs: tuple[Path, ...] = ()
     sources: tuple[SourceSettings, ...] = ()
     cache: CacheSettings = field(default_factory=CacheSettings)
@@ -52,6 +62,7 @@ def _section(raw: Mapping[str, Any], defaults: Any) -> dict[str, Any]:
 
 
 def get_settings() -> HyperviewSettings:
+    """Validate and return current normalized Hyperview settings."""
     from .checks import check_hyperview_settings
     from .exceptions import HyperviewConfigurationError
 
