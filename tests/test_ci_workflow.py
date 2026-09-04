@@ -1,7 +1,6 @@
 """Continuous-integration workflow contract tests."""
 
 import re
-import shlex
 from collections.abc import Callable
 from pathlib import Path
 
@@ -38,13 +37,13 @@ def test_workflow_audit_accepts_the_active_contract() -> None:
             lambda text: text.replace(
                 "uv sync --locked\n", "uv sync --locked --all-groups\n", 1
             ),
-            "quality: default sync must not install optional groups",
+            "quality: run contract is not approved",
         ),
         (
             lambda text: text.replace(
                 "          uv lock --check\n", "          # uv lock --check\n", 1
             ),
-            "quality: active uv lock --check command is required",
+            "quality: run contract is not approved",
         ),
     ],
 )
@@ -64,7 +63,7 @@ def test_workflow_audit_rejects_fail_open_mutations(
                 "run: true && uv sync --locked --all-groups",
                 1,
             ),
-            "quality: uv sync must be a direct approved command",
+            "quality: run contract is not approved",
         ),
         (
             lambda text: text.replace(
@@ -72,7 +71,7 @@ def test_workflow_audit_rejects_fail_open_mutations(
                 "run: command uv sync --locked --all-groups",
                 1,
             ),
-            "quality: uv sync must be a direct approved command",
+            "quality: run contract is not approved",
         ),
         (
             lambda text: text.replace(
@@ -82,7 +81,7 @@ def test_workflow_audit_rejects_fail_open_mutations(
                 "          sync_all\n",
                 1,
             ),
-            "quality: uv sync must be a direct approved command",
+            "quality: run contract is not approved",
         ),
         (
             lambda text: text.replace(
@@ -90,7 +89,7 @@ def test_workflow_audit_rejects_fail_open_mutations(
                 "run: bash -c 'uv sync --locked --all-groups'",
                 1,
             ),
-            "quality: uv sync must be a direct approved command",
+            "quality: run contract is not approved",
         ),
         (
             lambda text: (
@@ -99,11 +98,27 @@ def test_workflow_audit_rejects_fail_open_mutations(
                 "    steps:\n"
                 "      - run: uv sync --locked --all-groups\n"
             ),
-            "extra: default sync must not install optional groups",
+            "extra: run contract is not approved",
         ),
         (
             lambda text: text.replace("uv lock --check", "uv lock --check || true", 1),
-            "quality: uv lock --check must be a direct blocking command",
+            "quality: run contract is not approved",
+        ),
+        (
+            lambda text: (
+                text + "\n  metadata:\n"
+                "    runs-on: ubuntu-latest\n"
+                "    steps:\n"
+                "      - run: uv run python -m tools.package_guard --help\n"
+            ),
+            "metadata: run contract is not approved",
+        ),
+        (
+            lambda text: (
+                text + "\n  delegated:\n"
+                "    uses: example/repository/.github/workflows/ci.yml@main\n"
+            ),
+            "delegated: run contract is not approved",
         ),
     ],
 )
@@ -115,28 +130,40 @@ def test_workflow_audit_rejects_ambiguous_command_grammar(
 
 
 @pytest.mark.parametrize(
-    "mutate",
+    "replacement",
     [
-        lambda text: text.replace(
-            "        run: uv sync --locked\n",
-            "        run: |\n"
-            "          # uv sync --all-groups is intentionally forbidden\n"
-            "          uv sync --locked\n",
-            1,
+        "run: |\n          UV=uv\n          $UV sync --locked --all-groups",
+        (
+            "run: |\n"
+            "          COMMAND='uv sync --locked --all-groups'\n"
+            "          $COMMAND"
         ),
-        lambda text: (
-            text + "\n  metadata:\n"
-            "    runs-on: ubuntu-latest\n"
-            "    steps:\n"
-            "      - run: uv run python -m tools.package_guard --help\n"
+        (
+            "run: |\n"
+            "          shopt -s expand_aliases\n"
+            "          alias sync_all='uv sync --locked --all-groups'\n"
+            "          sync_all"
         ),
     ],
 )
-def test_workflow_audit_accepts_direct_commands_and_innocuous_comments(
-    mutate: Callable[[str], str],
-) -> None:
-    """Direct multiline commands and irrelevant jobs remain supported."""
-    assert _audit_workflow(mutate(WORKFLOW.read_text())) == []
+def test_workflow_audit_rejects_shell_indirection(replacement: str) -> None:
+    """Variables and aliases cannot hide an unapproved dependency sync."""
+    mutated = WORKFLOW.read_text().replace("run: uv sync --locked", replacement, 1)
+
+    assert _audit_workflow(mutated) == ["quality: run contract is not approved"]
+
+
+def test_workflow_audit_accepts_innocuous_full_line_comments() -> None:
+    """Full-line comments do not change an approved command contract."""
+    mutated = WORKFLOW.read_text().replace(
+        "        run: uv sync --locked\n",
+        "        run: |\n"
+        "          # uv sync --all-groups is intentionally forbidden\n"
+        "          uv sync --locked\n",
+        1,
+    )
+
+    assert _audit_workflow(mutated) == []
 
 
 def _workflow(text: str | None = None) -> dict[str, object]:
@@ -163,53 +190,100 @@ def _run_script(job: dict[str, object]) -> str:
     return "\n".join(step["run"] for step in job["steps"] if "run" in step)
 
 
-def _active_commands(job: dict[str, object]) -> list[list[str]]:
-    """Parse active, top-level shell commands from a workflow job."""
-    commands = []
-    for step in job["steps"]:
-        for line in step.get("run", "").splitlines():
-            lexer = shlex.shlex(line, posix=True, punctuation_chars=";&|(){}")
-            lexer.whitespace_split = True
-            lexer.commenters = "#"
-            tokens = list(lexer)
-            if tokens:
-                commands.append(tokens)
-    return commands
-
-
-def _installs_optional_groups(command: list[str]) -> bool:
-    """Return whether a normal sync command installs optional groups."""
-    if command[:2] != ["uv", "sync"]:
-        return False
-    return "--all-groups" in command or any(
-        argument == "--group=redis"
-        or (
-            argument == "--group"
-            and index + 1 < len(command)
-            and command[index + 1] == "redis"
-        )
-        for index, argument in enumerate(command)
+def _normalize_run(script: object) -> str | None:
+    """Normalize blanks and harmless full-line comments in a run script."""
+    if not isinstance(script, str):
+        return None
+    return "\n".join(
+        stripped
+        for line in script.splitlines()
+        if (stripped := line.strip()) and not stripped.startswith("#")
     )
 
 
-def _contains_uv(command: list[str], subcommand: str) -> bool:
-    """Return whether tokens contain a uv subcommand at any position."""
-    source = " ".join(command)
-    return (
-        re.search(rf"(?:^|\s)uv\s+{re.escape(subcommand)}(?:\s|$)", source) is not None
-    )
+APPROVED_RUN_CONTRACT = {
+    "quality": (
+        "uv sync --locked",
+        "uv lock --check\nuv run ruff check .\nuv run ruff format --check .",
+        (
+            "PYTHONPATH=.:src uv run python -m django check --settings=tests.settings\n"
+            "PYTHONPATH=.:src uv run python -m django check "
+            "--settings=tests.settings_database\n"
+            "PYTHONPATH=.:src uv run python -m django check "
+            "--settings=tests.settings_database_admin\n"
+            "PYTHONPATH=.:src uv run python -m django makemigrations "
+            "dj_hyperview_database --check --dry-run "
+            "--settings=tests.settings_database"
+        ),
+        (
+            "uv run pytest -q tests/test_dependency_policy.py "
+            "tests/test_package_boundary.py\n"
+            "uv run pytest -q tests/test_public_api_quality.py"
+        ),
+    ),
+    "compatibility": (
+        (
+            "uv run --locked --python ${{ matrix.python }} "
+            "--with Django==${{ matrix.django }} python -m tools.test_matrix "
+            "--django-version ${{ matrix.django }}"
+        ),
+    ),
+    "redis": (
+        "uv sync --locked --group redis",
+        (
+            "uv run --locked --group redis python -m tools.test_matrix --redis "
+            "--django-version 6.1.1"
+        ),
+    ),
+    "artifacts": (
+        "uv sync --locked",
+        "uv build\nuv run python -m tools.package_guard dist/*.whl",
+        (
+            'smoke_dir="$(mktemp -d)"\n'
+            'uv venv "$smoke_dir/venv" --python 3.12\n'
+            'uv pip install --python "$smoke_dir/venv/bin/python" dist/*.whl\n'
+            "(\n"
+            'cd "$smoke_dir"\n'
+            "unset PYTHONPATH\n"
+            '"$smoke_dir/venv/bin/python" -I -c \'from pathlib import Path; '
+            "import dj_hyperview; assert Path(dj_hyperview.__file__).resolve()."
+            'is_relative_to(Path.cwd() / "venv")\'\n'
+            ")"
+        ),
+        "uv run zensical build --clean --strict -f zensical.yml",
+    ),
+}
 
 
-def _approved_sync(job: dict[str, object]) -> list[str]:
-    """Return the sole direct sync command permitted for a job."""
-    services = job.get("services", {})
-    if (
-        job.get("if") == "${{ inputs.redis == true }}"
-        and isinstance(services, dict)
-        and "redis" in services
-    ):
-        return ["uv", "sync", "--locked", "--group", "redis"]
-    return ["uv", "sync", "--locked"]
+def _run_contract(job: dict[str, object]) -> tuple[str, ...] | None:
+    """Return normalized run steps or reject malformed workflow structure."""
+    steps = job.get("steps")
+    if not isinstance(steps, list):
+        return None
+    scripts = []
+    for step in steps:
+        if not isinstance(step, dict):
+            return None
+        if "run" not in step:
+            continue
+        script = _normalize_run(step["run"])
+        if script is None:
+            return None
+        scripts.append(script)
+    return tuple(scripts)
+
+
+@pytest.mark.parametrize(
+    "job",
+    [
+        {"steps": "not-a-list"},
+        {"steps": ["not-a-step"]},
+        {"steps": [{"run": ["not", "a", "script"]}]},
+    ],
+)
+def test_run_contract_rejects_malformed_step_shapes(job: dict[str, object]) -> None:
+    """Malformed workflow step structures fail the closed run contract."""
+    assert _run_contract(job) is None
 
 
 def _audit_workflow(text: str) -> list[str]:
@@ -224,32 +298,12 @@ def _audit_workflow(text: str) -> list[str]:
         if permissions.get("contents") != "read" or "write" in permissions.values():
             violations.append(f"{name}: effective permissions must remain read-only")
 
-    valid_lock = False
-    invalid_lock = False
     for name, job in jobs.items():
-        commands = _active_commands(job)
-        for command in commands:
-            if _contains_uv(command, "sync") and command != _approved_sync(job):
-                if command[:2] == ["uv", "sync"] and _installs_optional_groups(command):
-                    message = f"{name}: default sync must not install optional groups"
-                else:
-                    message = f"{name}: uv sync must be a direct approved command"
-                if message not in violations:
-                    violations.append(message)
-
-            if _contains_uv(command, "lock"):
-                if name == "quality" and command == ["uv", "lock", "--check"]:
-                    valid_lock = True
-                else:
-                    invalid_lock = True
-                    message = (
-                        f"{name}: uv lock --check must be a direct blocking command"
-                    )
-                    if message not in violations:
-                        violations.append(message)
-
-    if not valid_lock and not invalid_lock:
-        violations.append("quality: active uv lock --check command is required")
+        if (
+            name not in APPROVED_RUN_CONTRACT
+            or _run_contract(job) != APPROVED_RUN_CONTRACT[name]
+        ):
+            violations.append(f"{name}: run contract is not approved")
     return violations
 
 
