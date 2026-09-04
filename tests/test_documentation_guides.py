@@ -69,6 +69,8 @@ def test_filesystem_guide_uses_the_public_resolver_contract() -> None:
     assert "TemplateResolver.from_settings().resolve" in page
     assert '"TEMPLATE_DIRS"' in page
     assert '"CACHE"' not in page
+    assert "include/extends" in page
+    assert "Includes and extensions" not in page
     assert len(blocks) >= 2
     for block in blocks:
         compile(block, "docs/filesystem.md", "exec")

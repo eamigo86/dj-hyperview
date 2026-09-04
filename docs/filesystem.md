@@ -37,7 +37,7 @@ origin = resolved.origin
 ```
 
 An empty file is a valid hit. If all sources miss, resolution raises
-`TemplateNotFound`. Includes and extensions use the same resolver, directory
+`TemplateNotFound`. Django include/extends tags use the same resolver, directory
 order, and canonical names as the root template.
 
 ## Keep names inside the roots
