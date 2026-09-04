@@ -29,7 +29,11 @@ def validate_contract_document(
         ContractValidationError: If schema validation or reference integrity
             fails.
     """
-    if not schema.validate(document):
+    try:
+        schema_valid = schema.validate(document)
+    except etree.LxmlError:
+        schema_valid = False
+    if not schema_valid:
         raise ContractValidationError("schema validation failed")
 
     identifiers = Counter(str(value) for value in document.xpath("//@id"))
@@ -61,11 +65,35 @@ def validate_contract_response(
     if response.charset.lower() != "utf-8":
         raise ContractValidationError("HTTP encoding mismatch")
 
-    parser = etree.XMLParser(resolve_entities=False, load_dtd=False, no_network=True)
+    try:
+        response.content.decode("utf-8", errors="strict")
+    except UnicodeDecodeError:
+        encoding_valid = False
+    else:
+        encoding_valid = True
+    if not encoding_valid:
+        raise ContractValidationError("HTTP encoding mismatch")
+
+    parser = etree.XMLParser(
+        resolve_entities=False,
+        load_dtd=False,
+        no_network=True,
+        recover=False,
+    )
     try:
         document = etree.fromstring(response.content, parser=parser)
-    except etree.XMLSyntaxError:
+    except etree.LxmlError:
+        document = None
+    if document is None:
         raise ContractValidationError("HTTP body parsing failed") from None
+
+    document_info = document.getroottree().docinfo
+    declared_encoding = (document_info.encoding or "UTF-8").replace("-", "")
+    if declared_encoding.casefold() != "utf8":
+        raise ContractValidationError("HTTP encoding mismatch")
+    if document_info.doctype:
+        raise ContractValidationError("HTTP XML declarations forbidden")
+
     validate_contract_document(document, schema=schema)
     root = etree.QName(document)
     if root.namespace != _HYPERVIEW_NAMESPACE or root.localname != expected_root:
