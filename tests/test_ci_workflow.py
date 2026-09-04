@@ -98,7 +98,7 @@ def test_workflow_audit_rejects_fail_open_mutations(
                 "    steps:\n"
                 "      - run: uv sync --locked --all-groups\n"
             ),
-            "extra: run contract is not approved",
+            "extra: execution shape is not approved",
         ),
         (
             lambda text: text.replace("uv lock --check", "uv lock --check || true", 1),
@@ -111,14 +111,14 @@ def test_workflow_audit_rejects_fail_open_mutations(
                 "    steps:\n"
                 "      - run: uv run python -m tools.package_guard --help\n"
             ),
-            "metadata: run contract is not approved",
+            "metadata: execution shape is not approved",
         ),
         (
             lambda text: (
                 text + "\n  delegated:\n"
                 "    uses: example/repository/.github/workflows/ci.yml@main\n"
             ),
-            "delegated: run contract is not approved",
+            "delegated: execution shape is not approved",
         ),
     ],
 )
@@ -153,6 +153,53 @@ def test_workflow_audit_rejects_shell_indirection(replacement: str) -> None:
     assert _audit_workflow(mutated) == ["quality: run contract is not approved"]
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "        continue-on-error: true\n",
+        "        if: false\n",
+        "        shell: bash {0}\n",
+        "        working-directory: scripts\n",
+        "        env:\n          CI: false\n",
+        "        uses: example/action@main\n",
+    ],
+)
+def test_workflow_audit_rejects_step_execution_controls(mutation: str) -> None:
+    """A gate cannot change failure, condition, or shell semantics."""
+    mutated = WORKFLOW.read_text().replace(
+        "      - name: Check dependency and style drift\n",
+        "      - name: Check dependency and style drift\n" + mutation,
+        1,
+    )
+
+    assert _audit_workflow(mutated) == ["quality: execution shape is not approved"]
+
+
+@pytest.mark.parametrize(
+    "mutation", ["    if: false\n", "    continue-on-error: true\n"]
+)
+def test_workflow_audit_rejects_job_execution_controls(mutation: str) -> None:
+    """The quality job must remain blocking and unconditional."""
+    mutated = WORKFLOW.read_text().replace("  quality:\n", "  quality:\n" + mutation, 1)
+
+    assert _audit_workflow(mutated) == ["quality: execution shape is not approved"]
+
+
+def test_workflow_audit_rejects_changed_redis_condition() -> None:
+    """The Redis job keeps its exact reviewed opt-in condition."""
+    mutated = WORKFLOW.read_text().replace(
+        "if: ${{ inputs.redis == true }}", "if: ${{ always() }}", 1
+    )
+
+    assert _audit_workflow(mutated) == ["redis: execution shape is not approved"]
+
+
+@pytest.mark.parametrize("candidate", ["", "[]", "{}"])
+def test_workflow_audit_rejects_non_mapping_candidates(candidate: str) -> None:
+    """Supplied non-workflows never fall back or leak parser-shaped errors."""
+    assert _audit_workflow(candidate) == ["workflow: mapping contract is not approved"]
+
+
 def test_workflow_audit_accepts_innocuous_full_line_comments() -> None:
     """Full-line comments do not change an approved command contract."""
     mutated = WORKFLOW.read_text().replace(
@@ -166,7 +213,7 @@ def test_workflow_audit_accepts_innocuous_full_line_comments() -> None:
     assert _audit_workflow(mutated) == []
 
 
-def _workflow(text: str | None = None) -> dict[str, object]:
+def _workflow(text: str | None = None) -> object:
     """Load CI YAML without coercing its on key to a boolean.
 
     Args:
@@ -175,7 +222,8 @@ def _workflow(text: str | None = None) -> dict[str, object]:
     Returns:
         The workflow mapping with scalar values kept as strings.
     """
-    return yaml.load(text or WORKFLOW.read_text(), Loader=yaml.BaseLoader)
+    source = WORKFLOW.read_text() if text is None else text
+    return yaml.load(source, Loader=yaml.BaseLoader)
 
 
 def _run_script(job: dict[str, object]) -> str:
@@ -254,6 +302,48 @@ APPROVED_RUN_CONTRACT = {
     ),
 }
 
+APPROVED_JOB_KEYS = {
+    "quality": {"runs-on", "timeout-minutes", "steps"},
+    "compatibility": {"runs-on", "timeout-minutes", "strategy", "steps"},
+    "redis": {"if", "needs", "runs-on", "timeout-minutes", "env", "services", "steps"},
+    "artifacts": {"needs", "runs-on", "timeout-minutes", "steps"},
+}
+
+APPROVED_STEP_KEYS = {
+    "quality": (
+        {"uses"},
+        {"uses", "with"},
+        {"uses", "with"},
+        {"name", "run"},
+        {"name", "run"},
+        {"name", "run"},
+        {"name", "run"},
+    ),
+    "compatibility": (
+        {"uses"},
+        {"uses", "with"},
+        {"uses", "with"},
+        {"name", "run"},
+    ),
+    "redis": (
+        {"uses"},
+        {"uses", "with"},
+        {"uses", "with"},
+        {"run"},
+        {"name", "run"},
+    ),
+    "artifacts": (
+        {"uses"},
+        {"uses", "with"},
+        {"uses", "with"},
+        {"run"},
+        {"name", "run"},
+        {"name", "run"},
+        {"name", "run"},
+        {"name", "uses", "with"},
+    ),
+}
+
 
 def _run_contract(job: dict[str, object]) -> tuple[str, ...] | None:
     """Return normalized run steps or reject malformed workflow structure."""
@@ -273,6 +363,20 @@ def _run_contract(job: dict[str, object]) -> tuple[str, ...] | None:
     return tuple(scripts)
 
 
+def _execution_shape_is_approved(name: str, job: dict[str, object]) -> bool:
+    """Return whether job and step keys match the reviewed execution shape."""
+    if name not in APPROVED_JOB_KEYS:
+        return False
+    if set(job) - {"permissions"} != APPROVED_JOB_KEYS[name]:
+        return False
+    if name == "redis" and job.get("if") != "${{ inputs.redis == true }}":
+        return False
+    steps = job.get("steps")
+    if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
+        return False
+    return tuple(set(step) for step in steps) == APPROVED_STEP_KEYS[name]
+
+
 @pytest.mark.parametrize(
     "job",
     [
@@ -289,17 +393,29 @@ def test_run_contract_rejects_malformed_step_shapes(job: dict[str, object]) -> N
 def _audit_workflow(text: str) -> list[str]:
     """Return deterministic safety violations in CI workflow source."""
     workflow = _workflow(text)
-    global_permissions = workflow["permissions"]
-    jobs = workflow["jobs"]
+    if not isinstance(workflow, dict):
+        return ["workflow: mapping contract is not approved"]
+    global_permissions = workflow.get("permissions")
+    jobs = workflow.get("jobs")
+    if not isinstance(global_permissions, dict) or not isinstance(jobs, dict):
+        return ["workflow: mapping contract is not approved"]
     violations = []
 
     for name, job in jobs.items():
+        if not isinstance(name, str) or not isinstance(job, dict):
+            violations.append(f"{name}: execution shape is not approved")
+            continue
         permissions = job.get("permissions", global_permissions)
-        if permissions.get("contents") != "read" or "write" in permissions.values():
+        if not isinstance(permissions, dict) or (
+            permissions.get("contents") != "read" or "write" in permissions.values()
+        ):
             violations.append(f"{name}: effective permissions must remain read-only")
 
     for name, job in jobs.items():
-        if (
+        shape_approved = _execution_shape_is_approved(name, job)
+        if not shape_approved:
+            violations.append(f"{name}: execution shape is not approved")
+        elif (
             name not in APPROVED_RUN_CONTRACT
             or _run_contract(job) != APPROVED_RUN_CONTRACT[name]
         ):
