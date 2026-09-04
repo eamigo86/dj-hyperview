@@ -36,6 +36,7 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
     ]
     assert metadata["tool"]["dj-hyperview"] == {
         "dependency-audit-date": "2026-09-04",
+        "supported-python": ["3.12", "3.13", "3.14"],
         "supported-django": ["5.2.17", "6.1.1"],
     }
     manifest = (ROOT / "pyproject.toml").read_text()
