@@ -11,7 +11,11 @@ from dj_hyperview import (
     HyperviewResponse,
     HyperviewTemplateResponse,
     HyperviewTemplateView,
+    InvalidTemplateName,
+    SourceUnavailable,
+    TemplateNotFound,
     TemplateResolver,
+    TemplateValidationError,
 )
 
 _FULL_TEMPLATE = "screens/full.xml"
@@ -124,3 +128,53 @@ def consumer_form(
         request,
     )
     return HyperviewResponse(content, status=201, headers=headers)
+
+
+_SOURCE_ERROR_BODY = "<view><text>request failed</text></view>"
+
+
+def _source_error_response(error: Exception) -> HyperviewResponse:
+    if isinstance(error, InvalidTemplateName):
+        status, code = 400, "invalid_template_name"
+    elif isinstance(error, TemplateNotFound):
+        status, code = 404, "template_not_found"
+    elif isinstance(error, TemplateValidationError):
+        status, code = 422, error.code
+    else:
+        status, code = 503, "source_unavailable"
+    return HyperviewResponse(
+        _SOURCE_ERROR_BODY, status=status, headers={"X-Hyperview-Error": code}
+    )
+
+
+@require_GET
+def consumer_source(request: HttpRequest) -> HyperviewResponse:
+    """Render a named document through the configured public source stack.
+
+    Args:
+        request: Incoming request containing a template query parameter.
+
+    Returns:
+        Rendered document with safe source metadata or a redacted error response.
+    """
+    try:
+        resolver = TemplateResolver.from_settings()
+        resolved = resolver.resolve(request.GET.get("template", ""))
+        content = HyperviewEngine(resolver).render_hxml(
+            resolved.name, {"label": request.GET.get("label", "")}, request
+        )
+    except (
+        InvalidTemplateName,
+        SourceUnavailable,
+        TemplateNotFound,
+        TemplateValidationError,
+    ) as error:
+        return _source_error_response(error)
+    return HyperviewResponse(
+        content,
+        headers={
+            "X-Hyperview-Template": resolved.name,
+            "X-Hyperview-Source": resolved.source,
+            "X-Hyperview-Revision": resolved.revision,
+        },
+    )

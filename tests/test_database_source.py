@@ -22,6 +22,23 @@ DATABASE_APPS = ["dj_hyperview", "dj_hyperview.contrib.database"]
 DATABASE_BACKEND = "dj_hyperview.contrib.database.sources.DatabaseSource"
 
 
+def _assert_redacted_source_error(
+    error: SourceUnavailable,
+    *,
+    source: str,
+    reason: str,
+    secrets: tuple[str, ...] = (),
+) -> None:
+    assert error.source == source
+    assert error.reason == reason
+    assert str(error) == f"Template source unavailable: {source} ({reason})"
+    assert error.__cause__ is None
+    assert error.__context__ is None
+    for secret in secrets:
+        assert secret not in str(error)
+        assert secret not in repr(error)
+
+
 class RecordingRouter:
     def __init__(self):
         self.reads = []
@@ -76,6 +93,26 @@ def test_database_source_requires_installed_contrib_without_leaking_context():
     assert error.__context__ is None
 
 
+def test_redaction_contract_ignores_external_traceback_filenames() -> None:
+    """Redaction checks inspect exception data rather than checkout paths."""
+    scope: dict[str, object] = {
+        "error": SourceUnavailable("database", "app unavailable")
+    }
+    try:
+        exec(
+            compile("raise error", "/private/tmp/consumer_probe.py", "exec"),
+            scope,
+        )
+    except SourceUnavailable as error:
+        assert "/private/tmp" in "".join(traceback.format_exception(error))
+        _assert_redacted_source_error(
+            error,
+            source="database",
+            reason="app unavailable",
+            secrets=("private registry",),
+        )
+
+
 @pytest.mark.parametrize(
     "failure", [AppRegistryNotReady("private registry"), LookupError("private model")]
 )
@@ -86,13 +123,12 @@ def test_registry_failures_are_stable_and_redacted(failure):
         with pytest.raises(SourceUnavailable) as captured:
             module.DatabaseSource().resolve("screen.xml")
 
-    error = captured.value
-    rendered = "".join(traceback.format_exception(error))
-    assert str(error) == "Template source unavailable: database (app unavailable)"
-    assert error.__cause__ is None
-    assert error.__context__ is None
-    assert "private" not in repr(error)
-    assert "private" not in rendered
+    _assert_redacted_source_error(
+        captured.value,
+        source="database",
+        reason="app unavailable",
+        secrets=("private registry", "private model"),
+    )
 
 
 @pytest.mark.parametrize("content", ["<view>stored</view>", ""])
@@ -218,13 +254,12 @@ def test_database_infrastructure_failures_are_stable_and_redacted(using, reason)
         with pytest.raises(SourceUnavailable) as captured:
             source.resolve(sensitive_name)
 
-    error = captured.value
-    rendered = "".join(traceback.format_exception(error))
-    assert str(error) == f"Template source unavailable: database ({reason})"
-    assert error.__cause__ is None
-    assert error.__context__ is None
-    assert sensitive_name not in repr(error)
-    assert sensitive_name not in rendered
+    _assert_redacted_source_error(
+        captured.value,
+        source="database",
+        reason=reason,
+        secrets=(sensitive_name,),
+    )
 
 
 def test_programming_errors_are_not_converted_to_source_failures(database_model):
