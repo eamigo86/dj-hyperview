@@ -5,6 +5,8 @@ from __future__ import annotations
 import ast
 from pathlib import Path
 
+import pytest
+
 PACKAGE_ROOT = Path(__file__).parents[1] / "src" / "dj_hyperview"
 _DEFINITION = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 _DOCUMENTABLE = (ast.Module, *_DEFINITION)
@@ -260,7 +262,7 @@ def _argument_entry(line: str) -> tuple[str | None, bool]:
 def _section_body(lines: list[str], header: int) -> list[tuple[int, str]]:
     body: list[tuple[int, str]] = []
     for number, line in enumerate(lines[header + 1 :], start=1):
-        if line in _GOOGLE_SECTION_HEADERS or line.startswith((":type ", ":rtype:")):
+        if line in _GOOGLE_SECTION_HEADERS:
             break
         body.append((number, line))
     return body
@@ -459,6 +461,14 @@ def _returns_issues(
     return issues
 
 
+def _is_sphinx_field(line: str, prefix: str) -> bool:
+    return line.startswith(prefix) and (
+        len(line) == len(prefix)
+        or line[len(prefix)] == ":"
+        or line[len(prefix)].isspace()
+    )
+
+
 def _rest_type_issues(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     path: str,
@@ -467,17 +477,13 @@ def _rest_type_issues(
 ) -> list[str]:
     stripped = [line.strip() for line in docstring.splitlines()]
     issues: list[str] = []
-    if any(line.startswith(":type ") and ":" in line[6:] for line in stripped):
+    if any(_is_sphinx_field(line, ":type") for line in stripped):
         issues.append(
-            _diagnostic(
-                path, node, symbol, "docstring repeats a parameter type with :type"
-            )
+            _diagnostic(path, node, symbol, "docstring uses forbidden :type field")
         )
-    if any(line.startswith(":rtype:") for line in stripped):
+    if any(_is_sphinx_field(line, ":rtype") for line in stripped):
         issues.append(
-            _diagnostic(
-                path, node, symbol, "docstring repeats a return type with :rtype"
-            )
+            _diagnostic(path, node, symbol, "docstring uses forbidden :rtype field")
         )
     return issues
 
@@ -1838,8 +1844,10 @@ def rest(value: str) -> str:
 '''
     assert _audit_text(source) == [
         "sample.py:2:google: Args section repeats the type for parameter 'value'",
-        "sample.py:9:rest: docstring repeats a parameter type with :type",
-        "sample.py:9:rest: docstring repeats a return type with :rtype",
+        "sample.py:9:rest: Returns section line 3 has invalid indentation",
+        "sample.py:9:rest: Returns section line 4 has invalid indentation",
+        "sample.py:9:rest: docstring uses forbidden :rtype field",
+        "sample.py:9:rest: docstring uses forbidden :type field",
     ]
 
 
@@ -2243,3 +2251,102 @@ def public() -> None:
     raise RuntimeError
 '''
     assert _audit_text(source) == []
+
+
+@pytest.mark.parametrize(
+    ("section", "snippet"),
+    (
+        (
+            "Args",
+            '''def public(value: str) -> None:
+    """Process one value.
+
+    Args:
+        value: Value to process.
+    :type value
+    """
+''',
+        ),
+        (
+            "Returns",
+            '''def public() -> str:
+    """Return one value.
+
+    Returns:
+        Rendered value.
+    :type value
+    """
+    return "value"
+''',
+        ),
+        (
+            "Raises",
+            '''def public() -> None:
+    """Fail.
+
+    Raises:
+        ValueError: If validation fails.
+    :type value
+    """
+    raise ValueError
+''',
+        ),
+    ),
+)
+def test_malformed_sphinx_type_fields_remain_inside_google_sections(
+    section: str, snippet: str
+) -> None:
+    """Reject a malformed type field instead of treating it as a boundary."""
+    source = '"""Documented module."""\n' + snippet
+    assert _audit_text(source) == [
+        f"sample.py:2:public: {section} section line 2 has invalid indentation",
+        "sample.py:2:public: docstring uses forbidden :type field",
+    ]
+
+
+def test_malformed_rtype_and_top_level_text_cannot_escape_sections() -> None:
+    """Reject malformed return fields and arbitrary top-level section prose."""
+    malformed_rtype = '''"""Documented module."""
+def public() -> str:
+    """Return one value.
+
+    Returns:
+        Rendered value.
+    :rtype str
+    """
+    return "value"
+'''
+    assert _audit_text(malformed_rtype) == [
+        "sample.py:2:public: Returns section line 2 has invalid indentation",
+        "sample.py:2:public: docstring uses forbidden :rtype field",
+    ]
+
+    arbitrary = '''"""Documented module."""
+def public(value: str) -> None:
+    """Process one value.
+
+    Args:
+        value: Value to process.
+    Arbitrary top-level prose.
+    """
+'''
+    assert _audit_text(arbitrary) == [
+        "sample.py:2:public: Args section line 2 has invalid indentation"
+    ]
+
+
+def test_only_known_google_headers_end_a_section() -> None:
+    """Accept the explicit semantic set of well-formed section boundaries."""
+    for header in (
+        "Args:",
+        "Attributes:",
+        "Examples:",
+        "Notes:",
+        "Raises:",
+        "Returns:",
+        "Warnings:",
+        "Yields:",
+    ):
+        assert _section_body(
+            ["Args:", "    value: Description.", header, "    ignored"], 0
+        ) == [(1, "    value: Description.")]
