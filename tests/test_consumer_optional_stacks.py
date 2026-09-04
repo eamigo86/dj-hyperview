@@ -14,6 +14,7 @@ def test_capability_settings_are_explicit_and_separate() -> None:
     database = import_module("tests.consumer_project.settings_database")
     cache = import_module("tests.consumer_project.settings_cache")
     admin = import_module("tests.consumer_project.settings_admin")
+    admin_postcommit = import_module("tests.consumer_project.settings_admin_postcommit")
 
     assert "dj_hyperview.contrib.database" in database.INSTALLED_APPS
     assert "django.contrib.admin" not in database.INSTALLED_APPS
@@ -22,6 +23,8 @@ def test_capability_settings_are_explicit_and_separate() -> None:
     assert cache.HYPERVIEW["CACHE"]["ALIAS"] == "default"
     assert "django.contrib.admin" in admin.INSTALLED_APPS
     assert admin.ROOT_URLCONF == "tests.consumer_project.urls_admin"
+    assert admin_postcommit.HYPERVIEW["CACHE"]["ALIAS"] == "default"
+    assert "django.contrib.admin" in admin_postcommit.INSTALLED_APPS
 
 
 def test_database_source_precedes_filesystem_and_migration_reverses(
