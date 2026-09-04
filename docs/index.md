@@ -26,6 +26,10 @@ Choose the next guide for your source:
 
 - [Use filesystem sources](filesystem.md) for the smallest deployment.
 - [Publish through the database](database-admin.md) when editors need admin.
+- [Configure cache consistency](cache-consistency.md) only when caching is needed.
+- [Harden names and XML](security.md) before accepting authored templates.
+- [Test a consumer integration](testing.md) across supported Django versions.
+- [Release and roll back](release-rollback.md) with reproducible gates.
 
 The [development documentation](development/README.md) records architecture,
 decisions, task history, and release gates.

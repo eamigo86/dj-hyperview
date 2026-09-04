@@ -12,6 +12,10 @@ DOCS = (
     "configuration.md",
     "filesystem.md",
     "database-admin.md",
+    "cache-consistency.md",
+    "security.md",
+    "testing.md",
+    "release-rollback.md",
 )
 
 
@@ -36,6 +40,10 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
         {"Configuration": "configuration.md"},
         {"Filesystem sources": "filesystem.md"},
         {"Database and admin": "database-admin.md"},
+        {"Cache consistency": "cache-consistency.md"},
+        {"Security": "security.md"},
+        {"Testing": "testing.md"},
+        {"Release and rollback": "release-rollback.md"},
     ]
     assert [target for item in config["nav"] for target in item.values()] == list(DOCS)
 

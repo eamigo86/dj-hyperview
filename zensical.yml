@@ -11,3 +11,7 @@ nav:
   - Configuration: configuration.md
   - Filesystem sources: filesystem.md
   - Database and admin: database-admin.md
+  - Cache consistency: cache-consistency.md
+  - Security: security.md
+  - Testing: testing.md
+  - Release and rollback: release-rollback.md
