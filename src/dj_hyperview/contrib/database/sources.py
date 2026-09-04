@@ -37,14 +37,14 @@ def _get_active(manager: Any, model: type[Any], name: str) -> Any:
 
 
 class DatabaseSource:
-    """Resolve raw templates from the optional database application.
-
-    Args:
-        using: Explicit configured database alias. When omitted, Django's router
-            selects the database and resolver caching is disabled.
-    """
+    """Resolve raw templates from the optional database application."""
 
     def __init__(self, *, using: str | None = None) -> None:
+        """Initialize a database source.
+
+        Args:
+            using: Explicit database alias, or None to defer to Django routing.
+        """
         self.using = using
         self._dj_hyperview_cacheable = using is not None
 

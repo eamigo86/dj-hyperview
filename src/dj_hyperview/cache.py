@@ -112,6 +112,18 @@ class TemplateCache:
         ttl: int = 300,
         negative_ttl: int = 15,
     ) -> None:
+        """Initialize a raw-template cache boundary.
+
+        Args:
+            namespace: Namespace isolating this consumer's entries.
+            alias: Configured Django cache alias.
+            ttl: Lifetime for cached template content.
+            negative_ttl: Lifetime for cached source misses.
+
+        Raises:
+            ValueError: If the namespace or a timeout is invalid.
+            SourceUnavailable: If the configured backend cannot be initialized.
+        """
         if not isinstance(namespace, str) or not namespace:
             raise ValueError("Cache namespace must be a non-empty string")
         _validate_timeout(ttl, 1, "TTL")

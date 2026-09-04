@@ -23,6 +23,11 @@ class HyperviewRequestDetails:
     version: str | None = None
 
     def __bool__(self) -> bool:
+        """Return whether the request is from a Hyperview client.
+
+        Returns:
+            Whether verified Hyperview request metadata is present.
+        """
         return self.is_hyperview
 
 
@@ -63,6 +68,11 @@ class HyperviewMiddleware:
             [HttpRequest], HttpResponseBase | Awaitable[HttpResponseBase]
         ],
     ) -> None:
+        """Initialize request detection middleware.
+
+        Args:
+            get_response: Downstream sync or async response callable.
+        """
         self.get_response = get_response
         self.async_mode = iscoroutinefunction(get_response)
         if self.async_mode:
@@ -71,11 +81,27 @@ class HyperviewMiddleware:
     def __call__(
         self, request: HttpRequest
     ) -> HttpResponseBase | Awaitable[HttpResponseBase]:
+        """Attach request metadata and invoke the downstream callable.
+
+        Args:
+            request: Incoming Django request.
+
+        Returns:
+            The downstream response or awaitable response.
+        """
         if self.async_mode:
             return self.__acall__(request)
         _attach_hyperview(request)
         return self.get_response(request)
 
     async def __acall__(self, request: HttpRequest) -> HttpResponseBase:
+        """Attach request metadata and await the downstream callable.
+
+        Args:
+            request: Incoming Django request.
+
+        Returns:
+            The awaited downstream response.
+        """
         _attach_hyperview(request)
         return await self.get_response(request)

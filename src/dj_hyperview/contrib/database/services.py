@@ -42,6 +42,7 @@ class PublicationConflict(HyperviewError):
     """A template publication could not satisfy its revision contract."""
 
     def __init__(self) -> None:
+        """Initialize a redacted publication conflict."""
         super().__init__("Template publication conflict")
 
 

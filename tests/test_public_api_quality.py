@@ -584,10 +584,7 @@ def _audit_text(source: str, path: str = "sample.py") -> list[str]:
                 if not isinstance(method, (ast.FunctionDef, ast.AsyncFunctionDef)):
                     continue
                 symbol = f"{node.name}.{method.name}"
-                if (
-                    not method.name.startswith("_")
-                    and ast.get_docstring(method) is None
-                ):
+                if _is_public_method(method.name) and ast.get_docstring(method) is None:
                     issues.append(
                         _diagnostic(
                             path, method, symbol, "public method lacks a docstring"
@@ -932,13 +929,16 @@ class Public:
     assert _audit_text(source) == [
         "sample.py:3:fetch: public callable lacks a return type hint",
         "sample.py:9:Public.__init__: public callable lacks a return type hint",
+        "sample.py:9:Public.__init__: public method lacks a docstring",
         "sample.py:13:Public.build: public callable lacks a return type hint",
         "sample.py:17:Public.create: public callable lacks a return type hint",
         "sample.py:21:Public.name: public callable lacks a return type hint",
         "sample.py:25:Public.name: public callable lacks a return type hint",
         "sample.py:25:Public.name: public callable parameter 'value' lacks a type hint",
         "sample.py:28:Public.__str__: public callable lacks a return type hint",
+        "sample.py:28:Public.__str__: public method lacks a docstring",
         "sample.py:31:Public.__call__: public callable lacks a return type hint",
+        "sample.py:31:Public.__call__: public method lacks a docstring",
     ]
 
 
@@ -1038,10 +1038,46 @@ class Protocol:
 '''
     assert _audit_text(source) == [
         "sample.py:6:Protocol.__bool__: public callable lacks a return type hint",
+        "sample.py:6:Protocol.__bool__: public method lacks a docstring",
         "sample.py:9:Protocol.__future_protocol__: public callable lacks a "
         "return type hint",
         "sample.py:9:Protocol.__future_protocol__: public callable parameter 'value' "
         "lacks a type hint",
+        "sample.py:9:Protocol.__future_protocol__: public method lacks a docstring",
+    ]
+
+
+def test_auditor_requires_docstrings_for_every_direct_magic_method() -> None:
+    """Treat typed magic methods as documented public protocol surface."""
+    source = '''"""Documented module."""
+
+class Protocol:
+    """Provide representative protocol hooks."""
+
+    def __bool__(self) -> bool:
+        return True
+
+    def __repr__(self) -> str:
+        return "Protocol()"
+
+    def __iter__(self) -> Iterator[object]:
+        return iter(())
+
+    def __enter__(self) -> "Protocol":
+        return self
+
+    def __future_protocol__(self, value: int) -> int:
+        return value
+
+    def _private(self, value):
+        return value
+'''
+    assert _audit_text(source) == [
+        "sample.py:6:Protocol.__bool__: public method lacks a docstring",
+        "sample.py:9:Protocol.__repr__: public method lacks a docstring",
+        "sample.py:12:Protocol.__iter__: public method lacks a docstring",
+        "sample.py:15:Protocol.__enter__: public method lacks a docstring",
+        "sample.py:18:Protocol.__future_protocol__: public method lacks a docstring",
     ]
 
 

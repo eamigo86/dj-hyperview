@@ -42,6 +42,12 @@ class HyperviewEngine:
         *,
         validation: ValidationSettings | None = None,
     ) -> None:
+        """Initialize a dedicated Hyperview template engine.
+
+        Args:
+            resolver: Ordered template resolver, or None to load current settings.
+            validation: Validation policy, or None to load current settings.
+        """
         settings = get_settings()
         self.resolver = resolver or TemplateResolver.from_settings()
         self.validation = validation or settings.validation

@@ -120,16 +120,7 @@ def _source_cacheable(source: object) -> bool:
 
 
 class TemplateResolver:
-    """Return the first template found by an ordered source collection.
-
-    Args:
-        sources: Ordered raw-template sources.
-        cache: Optional raw-template cache.
-        failure_mode: Cache failure policy, either bypass or raise.
-
-    Raises:
-        ValueError: If the cache policy or source identity count is invalid.
-    """
+    """Return the first template found by an ordered source collection."""
 
     def __init__(
         self,
@@ -139,6 +130,17 @@ class TemplateResolver:
         failure_mode: str = "bypass",
         _source_ids: Iterable[str | None] | None = None,
     ) -> None:
+        """Initialize an ordered template resolver.
+
+        Args:
+            sources: Ordered raw-template sources.
+            cache: Optional raw-template cache.
+            failure_mode: Cache failure policy, either bypass or raise.
+            _source_ids: Precomputed source identities for internal construction.
+
+        Raises:
+            ValueError: If the cache policy or source identity count is invalid.
+        """
         self.sources = tuple(sources)
         if failure_mode not in {"bypass", "raise"}:
             raise ValueError("Cache failure mode must be 'bypass' or 'raise'")

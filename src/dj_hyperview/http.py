@@ -24,6 +24,13 @@ class HyperviewResponse(HttpResponse):
         content_type: str | None = HYPERVIEW_MEDIA_TYPE,
         **kwargs: Any,
     ) -> None:
+        """Initialize a Hyperview media response.
+
+        Args:
+            content: Response body content.
+            content_type: Explicit response media type.
+            **kwargs: Additional Django response options.
+        """
         super().__init__(content, content_type=content_type, **kwargs)
 
 
@@ -41,6 +48,18 @@ class HyperviewTemplateResponse(TemplateResponse):
         using: str | None = None,
         headers: Mapping[str, str] | None = None,
     ) -> None:
+        """Initialize a lazy Hyperview template response.
+
+        Args:
+            request: Request associated with template rendering.
+            template: Template name, ordered names, or compiled template.
+            context: Optional template context.
+            content_type: Explicit response media type.
+            status: Optional HTTP status.
+            charset: Optional response charset.
+            using: Optional Django template-engine alias.
+            headers: Optional response headers.
+        """
         super().__init__(
             request=request,
             template=template,

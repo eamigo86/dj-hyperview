@@ -78,6 +78,12 @@ class ResolverOrigin(Origin):
     """A Django origin carrying resolved source content."""
 
     def __init__(self, resolved: ResolvedTemplate, loader: "ResolverLoader") -> None:
+        """Initialize an origin from resolved template metadata.
+
+        Args:
+            resolved: Resolved raw template metadata.
+            loader: Loader that produced the origin.
+        """
         super().__init__(resolved.origin, resolved.name, loader)
         self.resolved = resolved
 
@@ -91,6 +97,13 @@ class ResolverLoader(Loader):
         resolver: TemplateResolver,
         validation: ValidationSettings,
     ) -> None:
+        """Initialize a resolver-backed Django loader.
+
+        Args:
+            engine: Owning Django template engine.
+            resolver: Ordered raw-template resolver.
+            validation: Validation policy for loaded source.
+        """
         super().__init__(engine)
         self.resolver = resolver
         self.validation = validation

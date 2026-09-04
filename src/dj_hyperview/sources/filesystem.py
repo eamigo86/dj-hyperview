@@ -21,6 +21,11 @@ class FileSystemSource:
     """Resolve UTF-8 templates below configured directories."""
 
     def __init__(self, template_dirs: Iterable[str | Path] | None = None) -> None:
+        """Initialize a filesystem source.
+
+        Args:
+            template_dirs: Ordered template roots, or None to load settings.
+        """
         if template_dirs is None:
             from dj_hyperview.conf import get_settings
 
