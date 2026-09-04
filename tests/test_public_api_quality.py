@@ -8,6 +8,17 @@ from pathlib import Path
 PACKAGE_ROOT = Path(__file__).parents[1] / "src" / "dj_hyperview"
 _DEFINITION = (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 _DOCUMENTABLE = (ast.Module, *_DEFINITION)
+_GOOGLE_SECTION_HEADERS = {
+    "Args:",
+    "Attributes:",
+    "Examples:",
+    "Keyword Args:",
+    "Notes:",
+    "Raises:",
+    "Returns:",
+    "Warnings:",
+    "Yields:",
+}
 
 
 def _diagnostic(path: str, node: ast.AST, symbol: str, reason: str) -> str:
@@ -246,6 +257,15 @@ def _argument_entry(line: str) -> tuple[str | None, bool]:
     return label, True
 
 
+def _section_body(lines: list[str], header: int) -> list[tuple[int, str]]:
+    body: list[tuple[int, str]] = []
+    for number, line in enumerate(lines[header + 1 :], start=1):
+        if line in _GOOGLE_SECTION_HEADERS or line.startswith((":type ", ":rtype:")):
+            break
+        body.append((number, line))
+    return body
+
+
 def _function_args_issues(
     node: ast.FunctionDef | ast.AsyncFunctionDef,
     path: str,
@@ -264,17 +284,65 @@ def _function_args_issues(
     issues: list[str] = []
     if len(headers) > 1:
         issues.append(_diagnostic(path, node, symbol, "Args section is duplicated"))
-    body: list[str] = []
-    for line in lines[headers[0] + 1 :]:
-        if line and not line.startswith(" "):
-            break
-        body.append(line)
-    if not any(line.strip() for line in body):
+    body = _section_body(lines, headers[0])
+    if not any(line.strip() for _, line in body):
         issues.append(_diagnostic(path, node, symbol, "Args section is empty"))
     documented: list[str] = []
-    for line in body:
+    current: str | None = None
+    has_description = False
+
+    def finish_entry() -> None:
+        if current is not None and not has_description:
+            issues.append(
+                _diagnostic(
+                    path,
+                    node,
+                    symbol,
+                    f"Args section parameter '{current}' has no description",
+                )
+            )
+
+    for number, line in body:
+        if not line.strip():
+            continue
+        indentation = len(line) - len(line.lstrip())
+        if indentation >= 8:
+            if current is None:
+                issues.append(
+                    _diagnostic(
+                        path,
+                        node,
+                        symbol,
+                        f"Args section line {number} is an orphan continuation",
+                    )
+                )
+            else:
+                has_description = True
+            continue
+        if indentation != 4:
+            issues.append(
+                _diagnostic(
+                    path,
+                    node,
+                    symbol,
+                    f"Args section line {number} has invalid indentation",
+                )
+            )
+            continue
+
+        finish_entry()
+        current = None
+        has_description = False
         label, is_entry = _argument_entry(line)
         if not is_entry:
+            issues.append(
+                _diagnostic(
+                    path,
+                    node,
+                    symbol,
+                    f"Args section line {number} has an invalid parameter entry",
+                )
+            )
             continue
         if label is None:
             issues.append(
@@ -289,6 +357,8 @@ def _function_args_issues(
             documented.append(label)
             content = line[4:]
             separator, _ = _entry_separator(content)
+            has_description = bool(content[separator + 1 :].strip())
+            current = label
             declaration = content[:separator] if separator is not None else content
             if declaration.endswith(")") and " (" in declaration:
                 issues.append(
@@ -299,6 +369,7 @@ def _function_args_issues(
                         f"Args section repeats the type for parameter '{label}'",
                     )
                 )
+    finish_entry()
     for name in sorted(set(documented)):
         if documented.count(name) > 1:
             issues.append(
@@ -349,18 +420,25 @@ def _returns_issues(
                 "Returns section is not allowed for a no-value return",
             )
         ]
-    body: list[str] = []
-    for line in lines[headers[0] + 1 :]:
-        if line and not line.startswith(" "):
-            break
-        body.append(line)
-    entry = next((line for line in body if line.strip()), None)
-    if entry is None:
+    body = _section_body(lines, headers[0])
+    content = [(number, line) for number, line in body if line.strip()]
+    if not content:
         return [_diagnostic(path, node, symbol, "Returns section is empty")]
-    if not entry.startswith("    ") or entry.startswith("     "):
-        return [
-            _diagnostic(path, node, symbol, "Returns section has invalid indentation")
-        ]
+    issues = []
+    for index, (number, line) in enumerate(content):
+        indentation = len(line) - len(line.lstrip())
+        if (index == 0 and indentation != 4) or indentation < 4:
+            issues.append(
+                _diagnostic(
+                    path,
+                    node,
+                    symbol,
+                    f"Returns section line {number} has invalid indentation",
+                )
+            )
+    if issues:
+        return issues
+    entry = content[0][1]
     prose = entry[4:]
     separator, balanced = _entry_separator(prose)
     if separator is not None and balanced:
@@ -370,15 +448,15 @@ def _returns_issues(
         except SyntaxError:
             expression = None
         if expression is not None and _is_valid_type_hint(expression):
-            return [
+            issues.append(
                 _diagnostic(
                     path,
                     node,
                     symbol,
                     "Returns section repeats the return type",
                 )
-            ]
-    return []
+            )
+    return issues
 
 
 def _rest_type_issues(
@@ -465,66 +543,94 @@ def _raises_issues(
             for label in sorted(expected)
         ]
 
-    body: list[str] = []
-    for line in lines[headers[0] + 1 :]:
-        if line and not line.startswith(" "):
-            break
-        body.append(line)
-    if not any(line.strip() for line in body):
+    body = _section_body(lines, headers[0])
+    if not any(line.strip() for _, line in body):
         return [_diagnostic(path, node, symbol, "Raises section is empty")]
 
+    issues: list[str] = []
     documented: list[str] = []
-    has_entry = False
-    for line in body:
+    current: str | None = None
+    has_description = False
+
+    def finish_entry() -> None:
+        if current is not None and not has_description:
+            issues.append(
+                _diagnostic(
+                    path,
+                    node,
+                    symbol,
+                    f"Raises section exception '{current}' has no description",
+                )
+            )
+
+    for number, line in body:
         if not line.strip():
             continue
-        if not line.startswith("    ") or (line.startswith("     ") and not has_entry):
-            return [
-                _diagnostic(
-                    path, node, symbol, "Raises section has invalid indentation"
+        indentation = len(line) - len(line.lstrip())
+        if indentation >= 8:
+            if current is None:
+                issues.append(
+                    _diagnostic(
+                        path,
+                        node,
+                        symbol,
+                        f"Raises section line {number} is an orphan continuation",
+                    )
                 )
-            ]
-        if line.startswith("     "):
+            else:
+                has_description = True
             continue
+        if indentation != 4:
+            issues.append(
+                _diagnostic(
+                    path,
+                    node,
+                    symbol,
+                    f"Raises section line {number} has invalid indentation",
+                )
+            )
+            continue
+
+        finish_entry()
+        current = None
+        has_description = False
         declaration, separator, description = line[4:].partition(":")
         try:
             exception = ast.parse(declaration.strip(), mode="eval").body
         except SyntaxError:
             exception = None
-        if (
-            not separator
-            or not description.strip()
-            or exception is None
-            or not _is_type_reference(exception)
-        ):
-            return [
+        if not separator or exception is None or not _is_type_reference(exception):
+            issues.append(
                 _diagnostic(
                     path, node, symbol, "Raises section has an invalid exception entry"
                 )
-            ]
-        documented.append(declaration.strip())
-        has_entry = True
+            )
+            continue
+        current = declaration.strip()
+        documented.append(current)
+        has_description = bool(description.strip())
+    finish_entry()
 
+    if issues:
+        return issues
     for label in sorted(set(documented)):
         if documented.count(label) > 1:
-            return [
+            issues.append(
                 _diagnostic(
                     path,
                     node,
                     symbol,
                     f"Raises section documents exception '{label}' more than once",
                 )
-            ]
+            )
+    if issues:
+        return issues
     documented_leaves = {label.rsplit(".", 1)[-1] for label in documented}
-    return [
-        _diagnostic(
-            path,
-            node,
-            symbol,
-            f"Raises section missing exception '{label}'",
-        )
+    issues.extend(
+        _diagnostic(path, node, symbol, f"Raises section missing exception '{label}'")
         for label in sorted(expected - documented_leaves)
-    ]
+    )
+    return issues
 
 
 def _has_bound_receiver(node: ast.FunctionDef | ast.AsyncFunctionDef) -> bool:
@@ -1788,7 +1894,7 @@ def public() -> str:
     """
 '''
     assert _audit_text(shallow) == [
-        "sample.py:2:public: Returns section has invalid indentation"
+        "sample.py:2:public: Returns section line 1 has invalid indentation"
     ]
 
 
@@ -1932,7 +2038,7 @@ def test_raises_section_rejects_invalid_google_structure() -> None:
         ),
         (
             '"""Fail.\n\n    Raises:\n      ValueError: Too shallow.\n    """',
-            "Raises section has invalid indentation",
+            "Raises section line 1 has invalid indentation",
         ),
         (
             '"""Fail.\n\n    Raises:\n        ValueError: First.\n'
@@ -1941,7 +2047,7 @@ def test_raises_section_rejects_invalid_google_structure() -> None:
         ),
         (
             '"""Fail.\n\n    Raises:\n        ValueError:\n    """',
-            "Raises section has an invalid exception entry",
+            "Raises section exception 'ValueError' has no description",
         ),
     )
     for docstring, reason in cases:
@@ -1971,5 +2077,169 @@ def indirect() -> None:
         RuntimeError: If the called operation fails.
     """
     operation()
+'''
+    assert _audit_text(source) == []
+
+
+def test_args_section_requires_structured_nonempty_descriptions() -> None:
+    """Reject empty entries, orphan continuations, and shallow indentation."""
+    empty = '''"""Documented module."""
+def public(value: str) -> None:
+    """Process one value.
+
+    Args:
+        value:
+    """
+'''
+    assert _audit_text(empty) == [
+        "sample.py:2:public: Args section parameter 'value' has no description"
+    ]
+
+    for indentation in ("    ", "      ", "          "):
+        shallow = f'''"""Documented module."""
+def public(value: str) -> None:
+    """Process one value.
+
+    Args:
+        value: Primary description.
+{indentation}Shallow continuation.
+    """
+'''
+        assert _audit_text(shallow) == [
+            "sample.py:2:public: Args section line 2 has invalid indentation"
+        ]
+
+    orphan = '''"""Documented module."""
+def public(value: str) -> None:
+    """Process one value.
+
+    Args:
+            Orphan continuation.
+    """
+'''
+    assert _audit_text(orphan) == [
+        "sample.py:2:public: Args section line 1 is an orphan continuation",
+        "sample.py:2:public: Args section missing parameter 'value'",
+    ]
+
+
+def test_args_section_accepts_blank_and_deep_multiline_descriptions() -> None:
+    """Accept valid multiline prose without treating colons as entries."""
+    source = '''"""Documented module."""
+def public(value: str, other: str) -> None:
+    """Process two values.
+
+    Args:
+        value:
+
+            Deep continuation: supplies the description.
+        other: Inline description.
+            Continuation: remains prose.
+
+    Returns:
+        This header ends Args and is invalid for a no-value return.
+    """
+'''
+    assert _audit_text(source) == [
+        "sample.py:2:public: Returns section is not allowed for a no-value return"
+    ]
+
+
+def test_returns_section_validates_every_description_line() -> None:
+    """Reject shallow Returns continuations and accept structured prose."""
+    for indentation in ("    ", "      "):
+        shallow = f'''"""Documented module."""
+def public() -> str:
+    """Return one value.
+
+    Returns:
+        Primary description.
+{indentation}Shallow continuation.
+    """
+    return "value"
+'''
+        assert _audit_text(shallow) == [
+            "sample.py:2:public: Returns section line 2 has invalid indentation"
+        ]
+
+    valid = '''"""Documented module."""
+def public() -> str:
+    """Return one value.
+
+    Returns:
+        Primary description.
+
+          Six-space continuation is valid.
+            Deep continuation: remains prose.
+        Another prose line.
+
+    Raises:
+        RuntimeError: This header ends Returns.
+    """
+    raise RuntimeError
+'''
+    assert _audit_text(valid) == []
+
+
+def test_raises_section_requires_structured_nonempty_descriptions() -> None:
+    """Reject empty entries, orphan continuations, and shallow indentation."""
+    empty = '''"""Documented module."""
+def public() -> None:
+    """Fail.
+
+    Raises:
+        ValueError:
+    """
+    raise ValueError
+'''
+    assert _audit_text(empty) == [
+        "sample.py:2:public: Raises section exception 'ValueError' has no description"
+    ]
+
+    for indentation in ("    ", "      ", "          "):
+        shallow = f'''"""Documented module."""
+def public() -> None:
+    """Fail.
+
+    Raises:
+        ValueError: Primary description.
+{indentation}Shallow continuation.
+    """
+    raise ValueError
+'''
+        assert _audit_text(shallow) == [
+            "sample.py:2:public: Raises section line 2 has invalid indentation"
+        ]
+
+    orphan = '''"""Documented module."""
+def public() -> None:
+    """Fail.
+
+    Raises:
+            Orphan continuation: not an entry.
+    """
+    raise ValueError
+'''
+    assert _audit_text(orphan) == [
+        "sample.py:2:public: Raises section line 1 is an orphan continuation",
+    ]
+
+
+def test_raises_section_accepts_blank_and_deep_multiline_descriptions() -> None:
+    """Accept valid multiline exception prose containing colons."""
+    source = '''"""Documented module."""
+def public() -> None:
+    """Fail.
+
+    Raises:
+        ValueError:
+
+            Deep continuation: supplies the description.
+        RuntimeError: Inline description.
+            Continuation: remains prose.
+    """
+    if condition():
+        raise ValueError
+    raise RuntimeError
 '''
     assert _audit_text(source) == []
