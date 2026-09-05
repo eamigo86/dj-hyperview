@@ -13,6 +13,7 @@ from .cache import _BACKEND_FAILURE, _resolve_cache_alias
 
 SETTING = "settings.HYPERVIEW"
 DATABASE_SOURCE = "dj_hyperview.contrib.database.sources.DatabaseSource"
+FILESYSTEM_SOURCE = "dj_hyperview.sources.FileSystemSource"
 
 
 def _error(code: str, path: str, requirement: str) -> Error:
@@ -81,6 +82,55 @@ def _check_sources(value: Any) -> list[CheckMessage]:
         if not isinstance(options, Mapping):
             errors.append(_error("E003", f"{path}.OPTIONS", "must be a mapping"))
     return errors
+
+
+def _source_consistency_warnings(raw: Mapping[str, Any]) -> list[CheckMessage]:
+    template_dirs = raw.get("TEMPLATE_DIRS", ())
+    sources = raw.get("SOURCES", ())
+    if not _sequence(sources):
+        return []
+
+    filesystem_sources = [
+        source
+        for source in sources
+        if isinstance(source, Mapping) and source.get("BACKEND") == FILESYSTEM_SOURCE
+    ]
+    warnings = []
+    valid_template_dirs = (
+        _sequence(template_dirs)
+        and bool(template_dirs)
+        and not _check_template_dirs(template_dirs)
+    )
+    if valid_template_dirs and not filesystem_sources:
+        warnings.append(
+            Warning(
+                "TEMPLATE_DIRS is configured but no FileSystemSource consumes it.",
+                hint="Add the built-in FileSystemSource or remove TEMPLATE_DIRS.",
+                obj=SETTING,
+                id="dj_hyperview.W002",
+            )
+        )
+
+    source_without_roots = False
+    for source in filesystem_sources:
+        options = source.get("OPTIONS", {})
+        if not isinstance(options, Mapping):
+            continue
+        roots = options.get("template_dirs", template_dirs)
+        if _sequence(roots) and not roots:
+            source_without_roots = True
+    if source_without_roots:
+        warnings.append(
+            Warning(
+                "FileSystemSource is configured without any template roots.",
+                hint=(
+                    "Set TEMPLATE_DIRS or provide OPTIONS.template_dirs for the source."
+                ),
+                obj=SETTING,
+                id="dj_hyperview.W003",
+            )
+        )
+    return warnings
 
 
 def _check_cache(value: Any) -> list[CheckMessage]:
@@ -172,6 +222,7 @@ def check_hyperview_settings(
     return [
         *_check_template_dirs(raw.get("TEMPLATE_DIRS", ())),
         *_check_sources(raw.get("SOURCES", ())),
+        *_source_consistency_warnings(raw),
         *cache_errors,
         *_check_validation(raw.get("VALIDATION", {})),
     ]

@@ -2,7 +2,8 @@
 
 from collections.abc import Sequence
 
-from django.core.exceptions import ImproperlyConfigured
+from django.core.exceptions import ImproperlyConfigured, SuspiciousOperation
+from django.template import TemplateDoesNotExist
 
 
 class HyperviewError(Exception):
@@ -30,7 +31,7 @@ class HyperviewConfigurationError(HyperviewError, ImproperlyConfigured):
         return f"Invalid HYPERVIEW configuration: {'; '.join(self.issues)}"
 
 
-class InvalidTemplateName(HyperviewError, ValueError):
+class InvalidTemplateName(HyperviewError, ValueError, SuspiciousOperation):
     """A template name cannot be resolved safely."""
 
     def __init__(self, name: object) -> None:
@@ -50,8 +51,16 @@ class InvalidTemplateName(HyperviewError, ValueError):
         """
         return "Invalid template name"
 
+    def __repr__(self) -> str:
+        """Return a redacted diagnostic representation.
 
-class TemplateNotFound(HyperviewError, LookupError):
+        Returns:
+            Safe exception representation without the rejected name.
+        """
+        return f"{type(self).__name__}()"
+
+
+class TemplateNotFound(HyperviewError, TemplateDoesNotExist, LookupError):
     """No configured source could resolve a template."""
 
     def __init__(self, name: str) -> None:

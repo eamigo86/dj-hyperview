@@ -25,6 +25,14 @@ TEMPLATES = [
         },
     }
 ]
+HYPERVIEW_SOURCES = {
+    "SOURCES": [
+        {
+            "BACKEND": "tests.stubs.TemplateSource",
+            "OPTIONS": {"content": "<view>{{ title }}</view>"},
+        }
+    ]
+}
 
 
 @override_settings(DEFAULT_CHARSET="iso-8859-1")
@@ -58,7 +66,11 @@ def test_hyperview_response_preserves_explicit_content_type_and_charset():
     assert response.headers["Content-Type"] == "application/xml"
 
 
-@override_settings(TEMPLATES=TEMPLATES, DEFAULT_CHARSET="iso-8859-1")
+@override_settings(
+    TEMPLATES=TEMPLATES,
+    HYPERVIEW=HYPERVIEW_SOURCES,
+    DEFAULT_CHARSET="iso-8859-1",
+)
 def test_template_response_preserves_lazy_render_contract():
     request = RequestFactory().get("/screen")
     response = HyperviewTemplateResponse(
@@ -96,7 +108,27 @@ def test_template_response_defers_missing_template_error_until_render():
     assert response.is_rendered is False
 
 
-@override_settings(TEMPLATES=TEMPLATES)
+@override_settings(TEMPLATES=TEMPLATES, HYPERVIEW={})
+def test_template_response_requires_explicit_django_engine_without_sources():
+    """Implicit response rendering never changes engines with configuration."""
+    package_response = HyperviewTemplateResponse(
+        RequestFactory().get("/screen"),
+        "screen.xml",
+        {"title": "package"},
+    )
+    django_response = HyperviewTemplateResponse(
+        RequestFactory().get("/screen"),
+        "screen.xml",
+        {"title": "django"},
+        using="django",
+    )
+
+    with pytest.raises(TemplateDoesNotExist):
+        package_response.render()
+    assert django_response.render().content == b"<view>django</view>"
+
+
+@override_settings(TEMPLATES=TEMPLATES, HYPERVIEW=HYPERVIEW_SOURCES)
 def test_template_view_renders_consumer_template_and_context():
     view = HyperviewTemplateView.as_view(
         template_name="screen.xml",
@@ -116,7 +148,7 @@ def test_template_view_renders_consumer_template_and_context():
     assert response.headers["Content-Type"] == f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
 
 
-@override_settings(TEMPLATES=TEMPLATES)
+@override_settings(TEMPLATES=TEMPLATES, HYPERVIEW=HYPERVIEW_SOURCES)
 def test_template_view_forwards_response_status_and_headers():
     class AcceptedView(HyperviewTemplateView):
         template_name = "screen.xml"

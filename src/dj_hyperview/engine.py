@@ -1,16 +1,35 @@
 """Dedicated Django template engine for Hyperview markup."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from typing import Any
 
+from django.conf import settings as django_settings
 from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
 from django.template.backends.django import DjangoTemplates
 
 from .conf import ValidationSettings, get_settings
+from .exceptions import TemplateNotFound
 from .loaders import template_snapshot
 from .resolver import TemplateResolver
 from .validation import validate_rendered_hxml
+
+DJANGO_TEMPLATES_BACKEND = "django.template.backends.django.DjangoTemplates"
+
+
+def _consumer_django_template_options() -> dict[str, Any]:
+    for configured in getattr(django_settings, "TEMPLATES", ()):
+        if not isinstance(configured, Mapping):
+            continue
+        if configured.get("BACKEND") != DJANGO_TEMPLATES_BACKEND:
+            continue
+        options = configured.get("OPTIONS", {})
+        if not isinstance(options, Mapping):
+            return {}
+        inherited = dict(options)
+        inherited.pop("loaders", None)
+        return inherited
+    return {}
 
 
 class _ValidatedTemplate:
@@ -53,20 +72,20 @@ class HyperviewEngine:
         settings = get_settings()
         self.resolver = resolver or TemplateResolver.from_settings()
         self.validation = validation or settings.validation
+        options = _consumer_django_template_options()
+        options["loaders"] = [
+            (
+                "dj_hyperview.loaders.ResolverLoader",
+                self.resolver,
+                self.validation,
+            )
+        ]
         self.backend = DjangoTemplates(
             {
                 "NAME": "dj_hyperview",
                 "DIRS": [],
                 "APP_DIRS": False,
-                "OPTIONS": {
-                    "loaders": [
-                        (
-                            "dj_hyperview.loaders.ResolverLoader",
-                            self.resolver,
-                            self.validation,
-                        )
-                    ]
-                },
+                "OPTIONS": options,
             }
         )
 
@@ -78,10 +97,15 @@ class HyperviewEngine:
 
         Returns:
             The compiled template with rendered validation.
+
+        Raises:
+            TemplateNotFound: If the named template does not exist.
         """
-        return _ValidatedTemplate(
-            self.backend.get_template(name), self.validation, self.resolver
-        )
+        try:
+            template = self.backend.get_template(name)
+        except TemplateDoesNotExist as error:
+            raise TemplateNotFound(name) from error
+        return _ValidatedTemplate(template, self.validation, self.resolver)
 
     def select_template(self, names: Sequence[str]) -> _ValidatedTemplate:
         """Compile the first available template from an ordered candidate list.
@@ -93,15 +117,14 @@ class HyperviewEngine:
             The first available compiled template.
 
         Raises:
-            TemplateDoesNotExist: If no candidate template exists.
+            TemplateNotFound: If no candidate template exists.
         """
-        chain = []
         for name in names:
             try:
                 return self.get_template(name)
-            except TemplateDoesNotExist as error:
-                chain.append(error)
-        raise TemplateDoesNotExist(", ".join(names), chain=chain)
+            except TemplateDoesNotExist:
+                continue
+        raise TemplateNotFound(", ".join(names))
 
     def render(
         self,

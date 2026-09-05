@@ -8,7 +8,6 @@ from django.http import HttpRequest, HttpResponse
 from django.template.backends.django import Template
 from django.template.response import TemplateResponse
 
-from .conf import get_settings
 from .engine import HyperviewEngine, _ValidatedTemplate
 from .validation import validate_rendered_hxml
 
@@ -121,7 +120,6 @@ class HyperviewTemplateResponse(TemplateResponse):
         if (
             self.using is not None
             or not isinstance(self.template_name, (str, list, tuple))
-            or not get_settings().sources
         ):
             return validate_rendered_hxml(super().rendered_content)
         context = self.resolve_context(self.context_data)

@@ -41,7 +41,7 @@ def test_complete_valid_settings_pass_checks(tmp_path) -> None:
     schema.touch()
     value = {
         "TEMPLATE_DIRS": [tmp_path],
-        "SOURCES": [{"BACKEND": "tests.stubs.TemplateSource"}],
+        "SOURCES": [{"BACKEND": "dj_hyperview.sources.FileSystemSource"}],
         "CACHE": {"ALIAS": "screens"},
         "VALIDATION": {"SCHEMA": schema},
     }
@@ -50,6 +50,28 @@ def test_complete_valid_settings_pass_checks(tmp_path) -> None:
         value["VALIDATION"]["SCHEMA"] = configured_schema
         with override_settings(HYPERVIEW=value, CACHES=caches):
             assert check_hyperview_settings() == []
+
+
+def test_source_and_template_directory_mismatches_emit_warnings(tmp_path) -> None:
+    """Checks expose inert roots and filesystem sources without roots."""
+    filesystem = "dj_hyperview.sources.FileSystemSource"
+    cases = [
+        ({"TEMPLATE_DIRS": [tmp_path]}, "W002"),
+        ({"SOURCES": [{"BACKEND": filesystem}]}, "W003"),
+    ]
+
+    for configured, expected in cases:
+        with override_settings(HYPERVIEW=configured):
+            messages = check_hyperview_settings()
+        assert [message.id.rsplit(".", 1)[-1] for message in messages] == [expected]
+
+    configured = {
+        "SOURCES": [
+            {"BACKEND": filesystem, "OPTIONS": {"template_dirs": [tmp_path]}}
+        ]
+    }
+    with override_settings(HYPERVIEW=configured):
+        assert check_hyperview_settings() == []
 
 
 @pytest.mark.parametrize(

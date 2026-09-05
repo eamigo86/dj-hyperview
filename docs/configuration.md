@@ -60,6 +60,20 @@ There is no package-wide list for third-party options; unknown keyword
 arguments fail during source initialization. See [Filesystem](filesystem.md)
 and [Database and admin](database-admin.md) for backend-specific behavior.
 
+## Template engine behavior
+
+Named templates use dj-hyperview's dedicated resolver-backed template engine
+by default. That engine copies template-language options, such as context
+processors and `string_if_invalid`, from the first configured DjangoTemplates backend.
+It deliberately replaces that backend's loaders so template lookup
+still follows `HYPERVIEW["SOURCES"]` and never falls through to unrelated
+Django template directories.
+
+The response path does not switch engines when `SOURCES` is empty. An empty
+source list therefore produces a normal missing-template result. To opt out and
+select a consumer Django engine explicitly, pass its alias, for example
+`using="django"`, to `HyperviewTemplateResponse`.
+
 Continue with [Filesystem](filesystem.md), [Database and admin](database-admin.md),
 [Cache consistency](cache-consistency.md), [Security](security.md),
 [Testing](testing.md), [Release and rollback](release-rollback.md), or the

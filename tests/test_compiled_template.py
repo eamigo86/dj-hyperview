@@ -138,7 +138,7 @@ def test_compiled_template_honors_publish_only_mode():
     ("sources", "using"),
     [
         (STUB_SOURCES, None),
-        ([], None),
+        ([], "django"),
         (STUB_SOURCES, "django"),
     ],
 )

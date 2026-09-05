@@ -164,6 +164,15 @@ def test_configuration_documents_every_builtin_source_option() -> None:
     assert "source caching" in page
 
 
+def test_configuration_documents_deterministic_template_engine_selection() -> None:
+    """Consumers can predict which Django template engine renders HXML."""
+    page = _documentation_pages()["configuration.md"]
+
+    assert "first configured DjangoTemplates backend" in page
+    assert '`using="django"`' in page
+    assert "does not switch engines" in page
+
+
 def test_quickstart_and_reference_cover_the_supported_public_path() -> None:
     """The first-use path and public exports stay visible and complete."""
     pages = _documentation_pages()

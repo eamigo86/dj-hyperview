@@ -34,7 +34,7 @@ def test_public_engine_render_rejects_malformed_hxml():
     assert_malformed(lambda: engine.render("screen.xml"))
 
 
-@pytest.mark.parametrize("using", [None, "django"])
+@pytest.mark.parametrize("using", ["django"])
 @override_settings(TEMPLATES=MALFORMED_TEMPLATES, HYPERVIEW={})
 def test_template_response_validates_django_fallbacks(using):
     response = HyperviewTemplateResponse(

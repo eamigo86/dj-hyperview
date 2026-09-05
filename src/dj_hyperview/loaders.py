@@ -9,7 +9,7 @@ from django.template import Engine, Origin
 from django.template.loaders.base import Loader
 
 from .conf import ValidationSettings
-from .exceptions import TemplateNotFound
+from .exceptions import InvalidTemplateName, TemplateNotFound
 from .resolver import TemplateResolver
 from .sources import ResolvedTemplate
 from .validation import validate_template_source
@@ -136,7 +136,7 @@ class ResolverLoader(Loader):
         """
         try:
             resolved = self._resolve(template_name)
-        except TemplateNotFound:
+        except (InvalidTemplateName, TemplateNotFound):
             return
         yield ResolverOrigin(resolved, self)
 

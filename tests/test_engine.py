@@ -3,11 +3,12 @@ from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
 import pytest
+from django.core.exceptions import SuspiciousOperation
 from django.template import TemplateDoesNotExist
 from django.test import RequestFactory, override_settings
 
 from dj_hyperview.engine import HyperviewEngine, render_template
-from dj_hyperview.exceptions import TemplateValidationError
+from dj_hyperview.exceptions import TemplateNotFound, TemplateValidationError
 from dj_hyperview.http import HyperviewTemplateResponse
 from dj_hyperview.loaders import ResolverLoader
 from dj_hyperview.resolver import TemplateResolver
@@ -70,6 +71,60 @@ def test_engine_reports_every_selected_name_after_all_miss():
 
     with pytest.raises(TemplateDoesNotExist, match="first.xml, second.xml"):
         engine.render(["first.xml", "second.xml"])
+
+
+def test_engine_skips_an_invalid_candidate_and_uses_the_next_template() -> None:
+    """Unsafe candidates do not abort an otherwise valid ordered selection."""
+    engine = HyperviewEngine(
+        TemplateResolver([MemorySource({"screen.xml": "<view>safe</view>"})])
+    )
+
+    assert engine.render(["../private.xml", "screen.xml"]) == "<view>safe</view>"
+    assert issubclass(TemplateNotFound, TemplateDoesNotExist)
+    from dj_hyperview.exceptions import InvalidTemplateName
+
+    assert issubclass(InvalidTemplateName, SuspiciousOperation)
+
+
+@override_settings(
+    TEMPLATES=[
+        {
+            "BACKEND": "django.template.backends.django.DjangoTemplates",
+            "OPTIONS": {
+                "context_processors": [
+                    "django.template.context_processors.request"
+                ],
+                "string_if_invalid": "INVALID",
+            },
+        }
+    ]
+)
+def test_engine_inherits_consumer_django_template_options() -> None:
+    """Resolver-backed rendering preserves consumer Django engine semantics."""
+    engine = HyperviewEngine(
+        TemplateResolver(
+            [
+                MemorySource(
+                    {"screen.xml": "<view>{{ request.path }}|{{ missing }}</view>"}
+                )
+            ]
+        )
+    )
+
+    assert engine.render(
+        "screen.xml", request=RequestFactory().get("/configured/")
+    ) == "<view>/configured/|INVALID</view>"
+
+
+def test_engine_entry_points_raise_the_package_not_found_specialization() -> None:
+    """Every package engine entry point exposes one catchable miss type."""
+    engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
+
+    with pytest.raises(TemplateNotFound) as captured:
+        engine.get_template("missing.xml")
+    assert captured.value.chain == []
+    with pytest.raises(TemplateNotFound):
+        engine.select_template(["first.xml", "second.xml"])
 
 
 def test_extends_and_include_use_resolver_names_and_precedence():
