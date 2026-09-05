@@ -4,6 +4,10 @@ Enable raw-template caching only when repeated source reads justify another
 stateful dependency. With no `CACHE` section, resolution never initializes a
 Django cache backend.
 
+Do not point `CACHE.ALIAS` at Django's `DummyCache`. That backend intentionally
+stores nothing and cannot satisfy generation or invalidation guarantees. Omit
+the `CACHE` section when caching should be disabled.
+
 ## Opt in
 
 Configure a normal Django cache alias and bind Hyperview to it:

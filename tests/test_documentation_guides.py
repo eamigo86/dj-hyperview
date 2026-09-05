@@ -153,6 +153,7 @@ def test_operational_guides_are_navigable_and_locally_linked() -> None:
 def test_cache_guide_matches_opt_in_and_invalidation_contracts() -> None:
     """Cache guidance uses the public API and states coherence boundaries."""
     page = _read_document("cache-consistency.md")
+    normalized = " ".join(page.split())
     blocks = _python_blocks(page)
     parameter = signature(invalidate_templates).parameters["names"]
 
@@ -162,6 +163,8 @@ def test_cache_guide_matches_opt_in_and_invalidation_contracts() -> None:
     assert "bypass" in page and "raise" in page
     assert "unknown template misses create no cache metadata" in page.lower()
     assert "one non-expiring generation key" in page.lower()
+    assert "DummyCache" in page
+    assert "Omit the `CACHE` section" in normalized
     assert "compiled templates" in page
     assert parameter.kind is Parameter.VAR_POSITIONAL
     assert blocks

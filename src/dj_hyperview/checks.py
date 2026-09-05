@@ -6,6 +6,7 @@ from typing import Any
 
 from django.apps import apps
 from django.conf import settings
+from django.core.cache.backends.dummy import DummyCache
 from django.core.checks import CheckMessage, Error, Warning, register
 from django.utils.module_loading import import_string
 
@@ -148,7 +149,7 @@ def _check_cache(value: Any) -> list[CheckMessage]:
         return [_error("E004", "CACHE", "must be a mapping")]
     errors = []
     alias = value.get("ALIAS", "default")
-    _, alias_error = _resolve_cache_alias(alias)
+    backend, alias_error = _resolve_cache_alias(alias)
     if alias_error == _BACKEND_FAILURE:
         errors.append(
             Warning(
@@ -160,6 +161,18 @@ def _check_cache(value: Any) -> list[CheckMessage]:
         )
     elif alias_error is not None:
         errors.append(_error("E004", "CACHE.ALIAS", "must name a configured cache"))
+    elif isinstance(backend, DummyCache):
+        errors.append(
+            Warning(
+                "CACHE.ALIAS references DummyCache, which cannot store templates.",
+                hint=(
+                    "Remove CACHE to disable Hyperview caching or configure a "
+                    "stateful backend."
+                ),
+                obj=SETTING,
+                id="dj_hyperview.W004",
+            )
+        )
     namespace = value.get("NAMESPACE", "dj-hyperview")
     if not isinstance(namespace, str) or not namespace:
         errors.append(_error("E004", "CACHE.NAMESPACE", "must be a non-empty string"))

@@ -126,7 +126,7 @@ class TemplateCache:
             raise ValueError("Cache namespace must be a non-empty string")
         _validate_timeout(ttl, 1, "TTL")
         _validate_timeout(negative_ttl, 0, "negative TTL")
-        backend, alias_error = _resolve_cache_alias(alias)
+        _, alias_error = _resolve_cache_alias(alias)
         if alias_error is not None:
             source = f"cache:{alias}" if alias_error == _BACKEND_FAILURE else "cache"
             raise SourceUnavailable(source, alias_error)
@@ -134,7 +134,26 @@ class TemplateCache:
         self.alias = alias
         self.ttl = ttl
         self.negative_ttl = negative_ttl
-        self.backend = backend
+
+    @property
+    def backend(self) -> BaseCache:
+        """Return the configured backend for the current execution context.
+
+        Returns:
+            Django's cache backend instance for the current thread or task.
+
+        Raises:
+            SourceUnavailable: If the configured backend cannot be resolved.
+        """
+        backend, alias_error = _resolve_cache_alias(self.alias)
+        if alias_error is not None:
+            source = (
+                f"cache:{self.alias}" if alias_error == _BACKEND_FAILURE else "cache"
+            )
+            raise SourceUnavailable(source, alias_error)
+        if backend is None:  # Defensive narrowing for third-party cache handlers.
+            raise SourceUnavailable("cache", _INVALID_ALIAS)
+        return backend
 
     @classmethod
     def from_settings(cls, namespace: str) -> "TemplateCache":

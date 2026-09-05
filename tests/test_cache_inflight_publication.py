@@ -68,12 +68,24 @@ class ClockBackend:
         self.now += amount
 
 
+@pytest.fixture
+def bind_backend(monkeypatch):
+    """Bind one deterministic backend without changing production cache ownership."""
+
+    def bind(backend):
+        monkeypatch.setattr(
+            "dj_hyperview.cache._resolve_cache_alias", lambda alias: (backend, None)
+        )
+
+    return bind
+
+
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_unknown_template_misses_create_no_permanent_generation_metadata():
+def test_unknown_template_misses_create_no_permanent_generation_metadata(bind_backend):
     """Attacker-controlled misses cannot grow cache metadata."""
     cache = TemplateCache("unknown-no-metadata", alias="screens")
     backend = ClockBackend()
-    cache.backend = backend
+    bind_backend(backend)
     current = resolver(Source({}), cache, "raise")
 
     with pytest.raises(TemplateNotFound):
@@ -83,11 +95,11 @@ def test_unknown_template_misses_create_no_permanent_generation_metadata():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_first_known_template_claims_one_generation_and_publishes_content():
+def test_first_known_template_claims_one_generation_and_publishes_content(bind_backend):
     """A real source hit creates only the reusable generation and raw entry."""
     cache = TemplateCache("known-generation", alias="screens")
     backend = ClockBackend()
-    cache.backend = backend
+    bind_backend(backend)
     source = Source({"screen.xml": "content"})
     current = resolver(source, cache, "raise")
 
@@ -100,11 +112,11 @@ def test_first_known_template_claims_one_generation_and_publishes_content():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_concurrent_rotation_past_our_candidate_is_still_successful():
+def test_concurrent_rotation_past_our_candidate_is_still_successful(bind_backend):
     """Another valid rotation after ours confirms invalidation, not failure."""
     cache = TemplateCache("concurrent-rotation", alias="screens")
     backend = ClockBackend()
-    cache.backend = backend
+    bind_backend(backend)
     current = cache.generation("screen.xml")
     successor = "s" + "f" * 32
     generation_key = cache._generation_key("screen.xml")
@@ -121,11 +133,11 @@ def test_concurrent_rotation_past_our_candidate_is_still_successful():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_deleting_an_already_absent_raw_entry_is_successful():
+def test_deleting_an_already_absent_raw_entry_is_successful(bind_backend):
     """A healthy cache miss from delete is not a backend failure."""
     cache = TemplateCache("delete-absent", alias="screens")
     backend = ClockBackend()
-    cache.backend = backend
+    bind_backend(backend)
 
     cache._delete("missing-key")
 
@@ -152,12 +164,14 @@ def resolver(source, cache, mode="bypass"):
 @pytest.mark.parametrize("old", ["old", None], ids=["content", "negative-miss"])
 @pytest.mark.parametrize("transition", ["eviction", "rotations"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_inflight_writer_cannot_publish_into_reused_generation(old, transition):
+def test_inflight_writer_cannot_publish_into_reused_generation(
+    old, transition, bind_backend
+):
     cache = TemplateCache(
         f"inflight-{old}-{transition}", alias="screens", ttl=10, negative_ttl=5
     )
     backend = ClockBackend()
-    cache.backend = backend
+    bind_backend(backend)
     source = BlockingSource(old)
     current = resolver(source, cache)
 
@@ -208,10 +222,12 @@ def arm_rotation(cache, backend, generation):
 @pytest.mark.parametrize("old", ["old", None], ids=["content", "negative-miss"])
 @pytest.mark.parametrize("mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_resolver_handles_rotation_between_raw_write_and_confirmation(old, mode):
+def test_resolver_handles_rotation_between_raw_write_and_confirmation(
+    old, mode, bind_backend
+):
     cache = TemplateCache(f"publication-{old}-{mode}", alias="screens", ttl=10)
     backend = ClockBackend()
-    cache.backend = backend
+    bind_backend(backend)
     source = Source({"screen.xml": old})
     generation = cache.generation("screen.xml")
     raw_key, _ = arm_rotation(cache, backend, generation)
@@ -230,10 +246,12 @@ def test_resolver_handles_rotation_between_raw_write_and_confirmation(old, mode)
 @pytest.mark.parametrize("operation", ["get", "delete"])
 @pytest.mark.parametrize("effect", ["false", "exception"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(operation, effect):
+def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(
+    operation, effect, bind_backend
+):
     cache = TemplateCache(f"cleanup-{operation}-{effect}", alias="screens", ttl=10)
     backend = ClockBackend()
-    cache.backend = backend
+    bind_backend(backend)
     cache.generation("screen.xml")
     cache.invalidate("screen.xml")
     generation = cache.generation("screen.xml")
@@ -258,10 +276,10 @@ def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(operation, 
 
 @pytest.mark.parametrize("mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_resolver_obeys_policy_when_publication_confirmation_fails(mode):
+def test_resolver_obeys_policy_when_publication_confirmation_fails(mode, bind_backend):
     cache = TemplateCache(f"confirmation-{mode}", alias="screens")
     backend = ClockBackend()
-    cache.backend = backend
+    bind_backend(backend)
     generation = cache.generation("screen.xml")
     raw_key, generation_key = arm_rotation(cache, backend, generation)
     backend.faults[("get", generation_key)] = "exception"

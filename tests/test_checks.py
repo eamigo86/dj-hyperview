@@ -58,6 +58,20 @@ def test_complete_valid_settings_pass_checks(tmp_path) -> None:
             assert check_hyperview_settings() == []
 
 
+@override_settings(
+    CACHES={"disabled": {"BACKEND": "django.core.cache.backends.dummy.DummyCache"}},
+    HYPERVIEW={"CACHE": {"ALIAS": "disabled"}},
+)
+def test_dummy_cache_emits_an_actionable_warning() -> None:
+    """Configured DummyCache cannot satisfy Hyperview cache semantics."""
+    messages = check_hyperview_settings()
+
+    assert [message.id for message in messages] == ["dj_hyperview.W004"]
+    assert messages[0].hint == (
+        "Remove CACHE to disable Hyperview caching or configure a stateful backend."
+    )
+
+
 @pytest.mark.parametrize(
     "schema_content",
     [

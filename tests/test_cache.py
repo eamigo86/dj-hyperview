@@ -1,3 +1,4 @@
+from threading import Thread
 from unittest.mock import patch
 
 import pytest
@@ -127,6 +128,23 @@ def test_cache_uses_validated_django_settings():
     assert cache.alias == "screens"
     assert cache.ttl == 45
     assert cache.negative_ttl == 6
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_reusable_cache_resolves_the_backend_for_each_thread():
+    """Long-lived cache objects never retain Django's thread-local backend."""
+    cache = TemplateCache("thread-safe-binding", alias="screens")
+    main_backend = cache.backend
+    outcome = {}
+
+    thread = Thread(target=lambda: outcome.setdefault("backend", cache.backend))
+    thread.start()
+    thread.join(timeout=3)
+
+    assert not thread.is_alive()
+    assert outcome["backend"] is not main_backend
+    assert cache.backend is main_backend
+    assert "backend" not in cache.__dict__
 
 
 @override_settings(CACHES=LOCMEM_CACHES)

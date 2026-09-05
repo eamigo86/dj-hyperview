@@ -28,6 +28,10 @@ backslashes, empty path segments, control characters, and surrogates are
 rejected. Omitting `CACHE` keeps caching disabled and avoids cache backend
 initialization.
 
+`DummyCache` is not a valid Hyperview cache backend because it cannot preserve
+generation state. To disable caching, omit `CACHE` instead of selecting a dummy
+cache alias.
+
 ## Source backend options
 
 `OPTIONS` is an optional mapping. The resolver passes its entries to the
