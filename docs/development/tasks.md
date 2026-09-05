@@ -379,7 +379,7 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–13 están 
 - **Solución:** tombstones permanentes por vida de namespace/backend.
 - **Evidencia TDD/verificación:** 7 tests RED en parent y GREEN en child; 411 tests, cobertura global 97.91% en Django 5.2.17/6.1.1.
 - **Trazabilidad:** rama local `slice/25-cache-permanent-claims`; commit [`f1e743e`](https://github.com/eamigo86/dj-hyperview/commit/f1e743e).
-- **Componentes/rutas:** [`src/dj_hyperview/cache.py`](../../src/dj_hyperview/cache.py), [`tests/test_cache_permanent_claims.py`](../../tests/test_cache_permanent_claims.py), [`README.md`](../../README.md).
+- **Componentes/rutas:** [`src/dj_hyperview/cache.py`](../../src/dj_hyperview/cache.py), [`tests/test_cache_permanent_claims.py`](../../tests/test_cache_permanent_claims.py), [`README.md`](https://github.com/eamigo86/dj-hyperview/blob/main/README.md).
 
 ---
 

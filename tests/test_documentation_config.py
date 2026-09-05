@@ -1,5 +1,6 @@
 """Documentation-site configuration contract tests."""
 
+import re
 from importlib.metadata import version
 from pathlib import Path
 
@@ -145,6 +146,19 @@ def test_contributing_guide_records_project_quality_contracts() -> None:
     assert "Args" in page and "Returns" in page and "Raises" in page
     assert "backticks" in page
     assert "uv run pytest" in page
+
+
+def test_markdown_links_remain_inside_the_zensical_document_tree() -> None:
+    """Local Markdown targets stay publishable by the strict site build."""
+    docs_root = (ROOT / "docs").resolve()
+
+    for source in docs_root.rglob("*.md"):
+        for target in re.findall(r"\]\(([^)#]+\.md)(?:#[^)]+)?\)", source.read_text()):
+            if target.startswith(("https://", "http://")):
+                continue
+            resolved = (source.parent / target).resolve()
+            assert resolved.is_relative_to(docs_root), (source, target)
+            assert resolved.is_file(), (source, target)
 
 
 def test_documentation_declares_foundation_limits_and_valid_local_links() -> None:
