@@ -935,93 +935,129 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–12 están 
 
 ## Task 13 — Documentación, CI y release
 
-**Estado:** Pendiente; próxima Task 13.1.
+**Estado:** Verificado en
+[077589b](https://github.com/eamigo86/dj-hyperview/commit/077589b), con
+0 CRITICAL en la revisión independiente final.
 
-**Meta:** cerrar el release sólo después de completar los seis children 13.1–13.6, con Tasks 1–12 verificadas.
+**Meta:** cerrar la superficie pública, documentación, compatibilidad alojada y
+entrega PyPI → Pages sin incorporar pantallas ni plantillas runtime.
 
-**Repositorios y publicación:** [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview) y [eamigo86.github.io/dj-hyperview](https://eamigo86.github.io/dj-hyperview/).
+**Repositorios y publicación:** [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview)
+y [eamigo86.github.io/dj-hyperview](https://eamigo86.github.io/dj-hyperview/).
+Los workflows están implementados y verificados estáticamente; el primer run
+hosted requiere el setup externo descrito en
+[Release and rollback](../release-rollback.md).
+
+### Resumen de la cadena
+
+| Subtask | Resultado | Cierre principal |
+|---:|---|---|
+| 13.1 | API pública auditada y reparada | [35e7252](https://github.com/eamigo86/dj-hyperview/commit/35e7252) |
+| 13.2 | Zensical y documentación base | [5396477](https://github.com/eamigo86/dj-hyperview/commit/5396477) |
+| 13.3 | Guías de fuentes y operación | [70833ba](https://github.com/eamigo86/dj-hyperview/commit/70833ba) |
+| 13.4 | CI, Redis, artifacts y contratos fail-closed | [9843e0f](https://github.com/eamigo86/dj-hyperview/commit/9843e0f) |
+| 13.5 | Preview manual sin deploy | [40ee52b](https://github.com/eamigo86/dj-hyperview/commit/40ee52b) |
+| 13.6 | Tag, artifact, PyPI OIDC y Pages | [077589b](https://github.com/eamigo86/dj-hyperview/commit/077589b) |
 
 ### 13.1 Auditoría pública
 
-- **Estado:** Pendiente.
-- **Branch:** `release/01-public-api-audit`.
-- **Parent exacto:** `docs/restore-task-13-chain` HEAD.
-- **Estimación:** 240–360 líneas.
-- **RED:** `tests/test_public_api_quality.py`.
-- **GREEN:** auditor AST global y reparación package-owned Google-style, types y cero backticks.
-- **REFACTOR:** allowlist vacía.
-- **Criterio de aceptación:** API pública completa conforme.
-- **Rollback:** revertir auditor y deuda como una unidad.
+- **Meta:** exigir docstrings Google completas, type hints válidos y cero
+  backticks en toda la superficie pública.
+- **Hecho:** se creó un auditor AST fail-closed para módulos, clases, funciones,
+  métodos, exports, Args, Returns y Raises; se reparó la API sin cambiar su
+  comportamiento.
+- **Problemas:** exports dinámicos/reflexivos, annotations malformadas, métodos
+  magic y límites de secciones Google escapaban a validadores parciales. Se
+  cerraron mediante 19 children exact-parent y probes adversariales.
+- **Evidencia:** [35e7252](https://github.com/eamigo86/dj-hyperview/commit/35e7252);
+  843 tests base + 34 admin por Django, 141 docstrings públicas sin backticks y
+  revisión acumulativa con 0 hallazgos.
 
 ### 13.2 Fundación Zensical
 
-- **Estado:** Pendiente.
-- **Branch:** `release/02-zensical-foundation`.
-- **Parent exacto:** `release/01-public-api-audit` HEAD.
-- **Estimación:** 260–380 líneas.
-- **RED:** `tests/test_docs_configuration.py`.
-- **GREEN:** pin exacto compatible en [`pyproject.toml`](../../pyproject.toml)/lock, `zensical.yml` y `docs/{index,installation,configuration}.md`.
-- **REFACTOR:** navegación y enlaces.
-- **Criterio de aceptación:** URLs verificadas y cero UI bundled.
-- **Rollback:** eliminar tooling y docs base.
+- **Meta:** incorporar tooling documental reproducible y un quick path de
+  instalación/configuración sin UI bundled.
+- **Hecho:** Zensical 0.0.59 quedó fijado en desarrollo, con lock exacto,
+  zensical.yml y guías base de instalación y configuración.
+- **Problemas:** el lock consumía 235 líneas y Zensical no autodetecta el YAML;
+  se separó dependencia/documentación y todos los comandos usan
+  -f zensical.yml.
+- **Evidencia:** [8e21e8e](https://github.com/eamigo86/dj-hyperview/commit/8e21e8e)
+  → [5396477](https://github.com/eamigo86/dj-hyperview/commit/5396477);
+  846 tests base + 34 admin por Django y config parseada sin build.
 
 ### 13.3 Guías del paquete
 
-- **Estado:** Pendiente.
-- **Branch:** `release/03-package-guides`.
-- **Parent exacto:** `release/02-zensical-foundation` HEAD.
-- **Estimación:** 260–380 líneas.
-- **RED:** `tests/test_docs_examples.py`.
-- **GREEN:** guías filesystem, DB/admin, cache, seguridad, testing, release y rollback, incluidos refresh poscommit e invalidación manual bulk/SQL.
-- **REFACTOR:** snippets ejecutables.
-- **Criterio de aceptación:** ejemplos reproducibles y alineados con APIs públicas.
-- **Rollback:** eliminar sólo las guías.
+- **Meta:** documentar filesystem, DB/admin, caché, seguridad, testing,
+  release y rollback contra APIs reales.
+- **Hecho:** se agregaron seis guías navegables con snippets verificados,
+  invalidación poscommit y operación bulk/SQL explícita.
+- **Problemas:** el volumen exigió separar fuentes y operación; además se
+  corrigieron la promesa Render→Resolve y la terminología include/extends.
+- **Evidencia:** [777f8f5](https://github.com/eamigo86/dj-hyperview/commit/777f8f5)
+  → [70833ba](https://github.com/eamigo86/dj-hyperview/commit/70833ba)
+  → [a8220c3](https://github.com/eamigo86/dj-hyperview/commit/a8220c3);
+  853 tests base + 34 admin por Django.
 
-### 13.4 CI y documentación sin deploy
+### 13.4 CI y artifacts sin deploy
 
-- **Estado:** Pendiente.
-- **Branch:** `release/04-ci-docs-validation`.
-- **Parent exacto:** `release/03-package-guides` HEAD.
-- **Estimación:** 330–395 líneas.
-- **RED:** `tests/test_ci_workflow_policy.py`.
-- **GREEN:** `.github/workflows/ci.yml` con Python 3.12–3.14 × Django 5.2.17/6.1.1, una celda Redis, ≥95% branches, Ruff/checks/migrations/lock/name, wheel install/content y Zensical build en PR/main con artifacts ordinarios.
-- **REFACTOR:** SHAs y permisos read-only.
-- **Criterio de aceptación:** cero deploy.
-- **Rollback:** quitar el workflow.
+- **Meta:** ejecutar matriz Python 3.12–3.14 × Django 5.2/6.1, Redis opt-in,
+  coverage, calidad, wheel smoke y Zensical hosted sin privilegios de deploy.
+- **Hecho:** ci.yml reutilizable ejecuta los gates, construye una sola vez,
+  prueba el wheel fuera del checkout y sube un candidate inmutable; la
+  instalación normal no incluye Redis.
+- **Problemas:** validadores iniciales de substrings permitían wrappers,
+  variables, continue-on-error, overrides globales y pérdida de tipos YAML.
+  Se reemplazaron por fixtures semánticas completas y firmas kind+tag+value.
+- **Evidencia:** [0828bfc](https://github.com/eamigo86/dj-hyperview/commit/0828bfc)
+  → [78b7e78](https://github.com/eamigo86/dj-hyperview/commit/78b7e78)
+  → [11c54d4](https://github.com/eamigo86/dj-hyperview/commit/11c54d4)
+  → [d951906](https://github.com/eamigo86/dj-hyperview/commit/d951906)
+  → [9d44371](https://github.com/eamigo86/dj-hyperview/commit/9d44371)
+  → [7bef254](https://github.com/eamigo86/dj-hyperview/commit/7bef254)
+  → [469ce02](https://github.com/eamigo86/dj-hyperview/commit/469ce02)
+  → [9843e0f](https://github.com/eamigo86/dj-hyperview/commit/9843e0f);
+  907 tests base + 34 admin por Django.
 
 ### 13.5 Preview manual
 
-- **Estado:** Pendiente.
-- **Branch:** `release/05-manual-docs-preview`.
-- **Parent exacto:** `release/04-ci-docs-validation` HEAD.
-- **Estimación:** 180–260 líneas.
-- **RED:** `tests/test_docs_preview_workflow.py`.
-- **GREEN:** workflow `workflow_dispatch` que construye Zensical y sube un artifact ordinario.
-- **REFACTOR:** concurrency y retention.
-- **Criterio de aceptación:** sin Pages environment, permiso write ni deploy action.
-- **Rollback:** eliminar el workflow.
+- **Meta:** permitir revisar el sitio generado sin publicar ni tocar Pages.
+- **Hecho:** docs-preview.yml sólo responde a workflow_dispatch, conserva
+  permisos read-only, construye Zensical en hosted CI y sube site como artifact
+  ordinario.
+- **Problemas:** el contrato debía distinguir la clave on sin borrar tipos
+  escalares; se reutilizó el patrón de firma de nodos typed.
+- **Evidencia:** [40ee52b](https://github.com/eamigo86/dj-hyperview/commit/40ee52b);
+  931 tests base + 34 admin por Django, 0 CRITICAL y ningún build local.
 
 ### 13.6 PyPI y después Pages
 
-- **Estado:** Pendiente.
-- **Branch:** `release/06-publish-pages`.
-- **Parent exacto:** `release/05-manual-docs-preview` HEAD.
-- **Estimación:** 320–395 líneas.
-- **RED:** `tests/test_release_workflow_policy.py`.
-- **GREEN:** workflow de tag versionado que valida/construye package+docs, publica PyPI y sólo tras éxito despliega el artifact Pages con permisos mínimos por job.
-- **REFACTOR:** environments y concurrency.
-- **Criterio de aceptación:** PR/main/manual jamás despliegan y cualquier fallo previo bloquea Pages.
-- **Rollback:** deshabilitar deploy sin afectar CI.
+- **Meta:** aceptar sólo tags válidos, publicar exactamente el candidate
+  verificado y desplegar Pages únicamente después de PyPI.
+- **Hecho:** release.yml valida PEP 440 canónico antes de CI, reutiliza el build,
+  separa checksums de dist, publica con Trusted Publishing y entrega el Pages
+  artifact sin reconstruir. packaging 26.3 es dependencia directa locked.
+- **Problemas:** el workflow protegido requirió autorización explícita; el gate
+  inicial aceptaba versiones inválidas y el runbook describía OIDC de forma
+  ambigua. Tests RED cerraron ambos defectos.
+- **Evidencia:** [e0744ab](https://github.com/eamigo86/dj-hyperview/commit/e0744ab)
+  → [1affd94](https://github.com/eamigo86/dj-hyperview/commit/1affd94)
+  → [956790a](https://github.com/eamigo86/dj-hyperview/commit/956790a)
+  → [077589b](https://github.com/eamigo86/dj-hyperview/commit/077589b);
+  987 tests base + 34 admin por Django y 217 gates contractuales acumulados.
 
 ### Criterios de cierre
 
-- [x] Tasks 1–12 verificadas.
-- [ ] Los seis children 13.1–13.6 verificados en cadena exact-parent.
-- [ ] Checkout limpio reproduce todos los gates.
-- [ ] Wheel sin UI/XML/HXML runtime.
-- [ ] Zensical build validado en CI.
-- [ ] Release PyPI exitoso antes de Pages.
-- [ ] [Estado](status.md) y [decisiones](decisions.md) actualizados.
+- [x] Tasks 1–13 verificadas en cadena exact-parent.
+- [x] Cobertura total y branches por encima de 95% en Django 5.2/6.1.
+- [x] Wheel guard impide UI/XML/HXML runtime.
+- [x] Zensical, wheel y Redis están declarados sólo para ejecución hosted.
+- [x] PyPI debe finalizar antes de Pages y OIDC es job-local.
+- [x] Estado, roadmap y decisiones reflejan el cierre.
+- [x] Warning residual documentado: quoted "on" produce un falso positivo
+  conservador de YAML 1.1, nunca un bypass.
+- [ ] Pendiente externo: configurar Trusted Publisher, environments y Pages
+  antes del primer tag; esto no reabre Task 13.
 
 ---
 

@@ -28,5 +28,7 @@ backslashes, empty path segments, control characters, and surrogates are
 rejected. Omitting `CACHE` keeps caching disabled and avoids cache backend
 initialization.
 
-The optional database source, admin publication, cache operation, and security
-guides belong to Task 13.3. Return to the [documentation home](index.md).
+Continue with [Filesystem](filesystem.md), [Database and admin](database-admin.md),
+[Cache consistency](cache-consistency.md), [Security](security.md),
+[Testing](testing.md), and [Release and rollback](release-rollback.md). Return
+to the [documentation home](index.md).

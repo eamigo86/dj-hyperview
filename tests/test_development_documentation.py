@@ -38,3 +38,53 @@ def test_status_separates_verified_code_from_external_setup() -> None:
     assert 'quoted "on"' in status
     assert "no se ejecutaron builds locales" in status.lower()
     assert "no se publicó" in status.lower()
+
+
+def test_task13_ledger_records_each_verified_subtask() -> None:
+    """Task 13 retains goals, outcomes, problems, and evidence."""
+    tasks = (DEVELOPMENT / "tasks.md").read_text()
+    task13 = tasks.split("## Task 13 —", 1)[1].split("## Post-MVP", 1)[0]
+
+    assert "**Estado:** Verificado" in task13
+    for subtask in ("13.1", "13.2", "13.3", "13.4", "13.5", "13.6"):
+        assert f"### {subtask} " in task13
+    for field in ("**Meta:**", "**Hecho:**", "**Problemas:", "**Evidencia:"):
+        assert task13.count(field) >= 6
+    for commit in (
+        "35e7252",
+        "5396477",
+        "70833ba",
+        "9843e0f",
+        "40ee52b",
+        "077589b",
+    ):
+        assert commit in task13
+    assert "**Estado:** Pendiente" not in task13
+    assert "quoted" in task13 and '"on"' in task13
+
+
+def test_decisions_and_public_configuration_match_the_release() -> None:
+    """Decisions and public links describe the completed release design."""
+    decisions = (DEVELOPMENT / "decisions.md").read_text()
+    configuration = (ROOT / "docs" / "configuration.md").read_text()
+
+    for decision in (
+        "zensical.yml",
+        "contrato YAML semántico",
+        "build-once",
+        "Trusted Publishing",
+        "PyPI",
+        "Pages",
+    ):
+        assert decision in decisions
+    assert "Antes de Task 13.6" not in decisions
+    assert "belong to Task 13.3" not in configuration
+    for guide in (
+        "filesystem.md",
+        "database-admin.md",
+        "cache-consistency.md",
+        "security.md",
+        "testing.md",
+        "release-rollback.md",
+    ):
+        assert f"]({guide})" in configuration

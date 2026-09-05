@@ -14,10 +14,10 @@ Este ledger resume las decisiones vigentes. “Aceptada” significa que guía l
 | ADR-008 | Aceptada | Servicios validados para publish/rename/delete con revisión optimista y locks. | Centralizan invariantes, multi-DB y conflictos seguros para admin/consumidores. | `save()` directo sigue la semántica Django; se recomienda el servicio cuando se necesita contrato fuerte. |
 | ADR-009 | Aceptada | `QuerySet.update()` controlado en v1; hooks automáticos bulk quedan post-MVP. | `bulk_create/update`, expresiones y conflictos requieren semántica adicional para no invalidar de más o dos veces. | Bulk y SQL externo deben llamar servicios o agendar invalidación explícita poscommit. |
 | ADR-010 | Aceptada | “Real-time” significa visible en la siguiente petición después del commit. | Es exactamente lo requerido para refrescar una pantalla Hyperview sin ampliar el producto. | No hay WebSockets, push ni cancelación de requests en vuelo. |
-| ADR-011 | Aceptada | Matriz Python 3.12–3.14 × Django 5.2/6.1 definida por `tools/test_matrix.py`; Redis sólo por opt-in. | Cubre LTS y versión moderna con comandos portables y sin exigir servicios al flujo local. | Las seis celdas y Redis real aumentan costo y quedan en CI Task 13.4. |
+| ADR-011 | Aceptada | Matriz Python 3.12–3.14 × Django 5.2/6.1 definida por `tools/test_matrix.py`; Redis sólo por opt-in. | Cubre LTS y versión moderna con comandos portables y sin exigir servicios al flujo local. | Las seis celdas y Redis real sólo se ejecutan en CI hosted y permanecen opt-in fuera de release. |
 | ADR-012 | Aceptada | TDD estricto, cobertura de ramas ≥95% y Feature Branch Chain con work units ≤400. | Conserva trazabilidad RED/GREEN y revisión/rollback manejables. | Más commits y gates, pero reduce riesgo de cambios opacos. |
 | ADR-013 | Aceptada | Docstrings Google-style completas en superficie pública, type hints obligatorios y cero backticks dentro de docstrings. | Contrato documental homogéneo sin duplicar tipos. | Exige auditoría final de APIs heredadas además de lint. |
-| ADR-014 | Aceptada | Zensical se prepara en 13.2, PR/main validan en 13.4, el preview 13.5 sólo sube artifact y Pages se despliega en 13.6 después de PyPI. | Evita que documentación pública describa una versión que todavía no existe en PyPI. | Pipeline de seis children con dependencias y permisos explícitos. |
+| ADR-014 | Aceptada | Zensical usa zensical.yml explícito; CI valida y construye, el preview sólo sube artifact y Pages se despliega después de PyPI. | Evita que documentación pública describa una versión que todavía no existe en PyPI. | Pipeline de seis children con dependencias y permisos explícitos. |
 | ADR-015 | Aceptada | El proyecto legacy es sólo referencia de lectura. | El entregable es el paquete reusable, no una modernización del prototipo. | El trabajo histórico realizado allí no cuenta como Tasks 9–10 y no se continúa. |
 | ADR-016 | Aceptada | Tasks 9–10 usan `tests/consumer_project/` dentro de [`tests/`](../../tests/) en el [repo del paquete](https://github.com/eamigo86/dj-hyperview). | Produce tests deterministas y distribuibles sin acoplarse al dominio legacy. | Modela instalación/settings/URLs y aceptación HTTP completa con dominios genéricos. |
 | ADR-017 | Aceptada | Las 40 filas experimentales legacy no se leen, copian, migran ni convierten en fixtures obligatorios. | Son datos de una prueba, no requisitos del producto. | Sólo sirven como contexto humano de referencia; no participan en tests ni gates. |
@@ -26,12 +26,17 @@ Este ledger resume las decisiones vigentes. “Aceptada” significa que guía l
 | ADR-020 | Aceptada | Compatibilidad Django se demuestra con conducta pública y deprecations como errores, sin shim runtime preventivo. | Evita código especulativo y detecta APIs obsoletas de forma fail-closed. | Un shim sólo se añade ante un fallo reproducible de comportamiento soportado. |
 | ADR-021 | Aceptada | El validador Hyperview test-only exige UTF-8 estricto, rechaza DTD/entities y combina XSD enfocado con integridad `xs:ID`/`xs:IDREF`. | Los flags seguros del parser evitan expansión, pero no bastan para prohibir declaraciones ni referencias colgantes. | Es un gate de compatibilidad bajo tests, no lógica runtime ni schema upstream completo. |
 
-## Decisiones pendientes
+| ADR-022 | Aceptada | Zensical 0.0.59 se fija en desarrollo y toda invocación selecciona zensical.yml con -f. | Coincide con el patrón probado del autor y evita depender de autodiscovery. | El cambio de formato o versión exige actualizar lock, tests y workflows. |
+| ADR-023 | Aceptada | Los workflows se comparan con un contrato YAML semántico typed y legible. | Parsers parciales de shell y BaseLoader solo dejaron bypasses de permisos, comandos y tipos. | Todo cambio semántico requiere revisar workflow y fixture; quoted on genera un falso positivo conservador. |
+| ADR-024 | Aceptada | CI realiza build-once, smoke fuera del checkout y artifact inmutable; los builds locales están prohibidos. | PyPI y Pages deben consumir exactamente lo que pasó calidad y compatibilidad. | La ejecución real de wheel, Redis y Zensical depende del runner hosted. |
+| ADR-025 | Aceptada | El tag PEP 440 canónico se valida antes de CI; Trusted Publishing publica PyPI y Pages corre sólo después, con OIDC job-local. | Evita tags ambiguos, secretos persistentes, rebuilds y documentación adelantada al paquete. | Requiere configurar los environments pypi y github-pages antes del primer release. |
+
+## Acciones externas pendientes
 
 | Tema | Qué debe decidirse | Cuándo |
 |---|---|---|
-| Publicación | Entornos/secrets de PyPI y protección de GitHub Pages | Antes de Task 13.6 |
-| Caché en producción | Sizing, aislamiento y política de eviction del backend compartido | En guía operativa de Task 13.3 |
+| Publicación | Configurar Trusted Publisher, environments y Pages source | Antes del primer tag |
+| Caché en producción | Sizing, aislamiento y política de eviction del backend compartido | Antes de habilitar caché compartida |
 
 ## Relación con el plan
 
