@@ -19,61 +19,6 @@ SHARED_CACHES = {
 }
 
 
-def token_sequence(*values):
-    return iter(values)
-
-
-@override_settings(CACHES=LOCMEM_CACHES)
-def test_rotation_retries_claimed_candidates_without_namespace_reuse():
-    cache = TemplateCache("claimed-rotation", alias="screens")
-    cache.generation("screen.xml")
-    claimed, new = "s" + "e" * 32, "s" + "f" * 32
-    cache.backend.set(
-        cache._claim_key("screen.xml", claimed),
-        cache._claim_value("screen.xml", claimed, "successor"),
-        timeout=None,
-    )
-    with patch.object(
-        cache, "_candidate", side_effect=token_sequence(claimed, claimed, new)
-    ):
-        cache.invalidate("screen.xml")
-    assert cache.generation("screen.xml") == new
-
-
-@override_settings(CACHES=LOCMEM_CACHES)
-def test_generation_eviction_rejects_retained_historical_claim():
-    source = Source({"screen.xml": "old"})
-    current = resolver(source, "claimed-eviction")
-    assert current.resolve("screen.xml").content == "old"
-    old = current.cache.generation("screen.xml")
-    source.values["screen.xml"] = "new"
-    current.cache.backend.delete(
-        current.cache.key("@generation", "screen.xml", "@token")
-    )
-    with patch.object(
-        current.cache, "_candidate", side_effect=token_sequence(old, "r" + "e" * 32)
-    ):
-        assert resolver(source, "claimed-eviction").resolve("screen.xml").content == (
-            "new"
-        )
-
-
-@override_settings(CACHES=LOCMEM_CACHES)
-def test_candidate_exhaustion_raises_without_rotating():
-    cache = TemplateCache("claim-exhaustion", alias="screens")
-    old = cache.generation("screen.xml")
-    claimed = "s" + "e" * 32
-    cache.backend.set(
-        cache._claim_key("screen.xml", claimed),
-        cache._claim_value("screen.xml", claimed, "successor"),
-        timeout=None,
-    )
-    with patch.object(cache, "_candidate", return_value=claimed):
-        with pytest.raises(SourceUnavailable, match="backend failure"):
-            cache.invalidate("screen.xml")
-    assert cache.generation("screen.xml") == old
-
-
 @pytest.mark.parametrize("old", ["old", None], ids=["content", "negative-miss"])
 @pytest.mark.parametrize("failure", ["false", "exception"])
 @override_settings(CACHES=SHARED_CACHES)
@@ -109,8 +54,7 @@ def test_bypass_invalidation_failure_never_reports_success(old, failure):
         _source_ids=["source:test"],
     )
     if old is None:
-        with pytest.raises(TemplateNotFound):
-            reader.resolve("screen.xml")
+        assert reader.resolve("screen.xml").content == "new"
     else:
         assert reader.resolve("screen.xml").content == "old"
 

@@ -178,7 +178,7 @@ class TemplateCache:
 
     def _delete(self, key: str) -> None:
         result = _without_untrusted_exception(lambda: self.backend.delete(key))
-        if result is not True:
+        if result is not True and result is not False:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def _generation_key(self, name: str) -> str:
@@ -256,6 +256,31 @@ class TemplateCache:
             raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
         return token
 
+    def _peek_generation(self, name: str) -> str | None:
+        token = _without_untrusted_exception(
+            lambda: self.backend.get(self._generation_key(name), _ABSENT)
+        )
+        if token is _FAILURE:
+            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+        if token is _ABSENT:
+            return None
+        if not self._valid_generation(token):
+            raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
+        return token
+
+    def _initialize_generation(self, name: str) -> tuple[str, bool]:
+        candidate = self._candidate(name, None)
+        added = _without_untrusted_exception(
+            lambda: self.backend.add(
+                self._generation_key(name), candidate, timeout=None
+            )
+        )
+        if added is True:
+            return candidate, True
+        if added is False:
+            return self._read_generation(name), False
+        raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+
     @staticmethod
     def _valid_generation(token: object) -> bool:
         return (
@@ -282,28 +307,8 @@ class TemplateCache:
         Raises:
             SourceUnavailable: If the backend or generation payload is invalid.
         """
-        key = self._generation_key(name)
-        token = _without_untrusted_exception(lambda: self.backend.get(key, _ABSENT))
-        if token is _ABSENT:
-            candidate = self._claim_generation(name, None)
-            added = _without_untrusted_exception(
-                lambda: self.backend.add(key, candidate, timeout=None)
-            )
-            token = (
-                candidate
-                if added is True
-                else _without_untrusted_exception(
-                    lambda: self.backend.get(key, _ABSENT)
-                )
-                if added is False
-                else _FAILURE
-            )
-        if token is _FAILURE:
-            raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
-        if not self._valid_generation(token):
-            raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
-        self._read_claim(name, token)
-        return token
+        token = self._peek_generation(name)
+        return self._initialize_generation(name)[0] if token is None else token
 
     def invalidate(self, name: str) -> None:
         """Rotate a template generation without deleting backend-specific keys.
@@ -315,10 +320,10 @@ class TemplateCache:
             SourceUnavailable: If generation rotation cannot be confirmed.
         """
         current = self.generation(name)
-        candidate = self._claim_generation(name, current)
+        candidate = self._candidate(name, current)
         self._store(self._generation_key(name), candidate, None)
         confirmed = self._read_generation(name)
-        if confirmed != candidate:
+        if confirmed == current:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
 
     def get(self, source: str, name: str, revision: str) -> CacheEntry | None:
@@ -474,7 +479,7 @@ class TemplateCache:
         try:
             current = self._read_generation(name)
         except SourceUnavailable:
-            self._preserve_claim_and_delete(name, generation, key)
+            self._discard_replaced_publication(key)
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure") from None
         if current != generation:
             clean = self._discard_replaced_publication(key)

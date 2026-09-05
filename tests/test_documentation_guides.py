@@ -160,7 +160,8 @@ def test_cache_guide_matches_opt_in_and_invalidation_contracts() -> None:
     for key in ("ALIAS", "NAMESPACE", "TTL", "NEGATIVE_TTL", "FAILURE_MODE"):
         assert f'"{key}"' in page
     assert "bypass" in page and "raise" in page
-    assert "non-expiring tombstone" in page
+    assert "unknown template misses create no cache metadata" in page.lower()
+    assert "one non-expiring generation key" in page.lower()
     assert "compiled templates" in page
     assert parameter.kind is Parameter.VAR_POSITIONAL
     assert blocks

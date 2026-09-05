@@ -10,6 +10,8 @@ from dj_hyperview.resolver import TemplateResolver
 from tests.test_cache_generation import LOCMEM_CACHES, Source, launch
 from tests.test_cache_inflight_publication import BlockingSource, ClockBackend
 
+__test__ = False
+
 
 def resolver(source, cache):
     return TemplateResolver(

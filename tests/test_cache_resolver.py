@@ -75,7 +75,8 @@ def test_resolver_cache_operation_failure_obeys_policy(
     if failure_mode == "raise":
         with pytest.raises(SourceUnavailable, match="cache:screens"):
             resolver.resolve("screen.xml")
-        assert winner.calls == []
+        expected_winner_calls = ["screen.xml"] if operation == "set_miss" else []
+        assert winner.calls == expected_winner_calls
     else:
         expected = "winner" if operation == "set_miss" else "source"
         assert resolver.resolve("screen.xml").content == expected

@@ -57,7 +57,9 @@ Invalidation is a shared fail-closed barrier even when reads use `bypass`. A
 multi-name call validates all names first, but rotations are not atomic; retry
 the whole requested set after a reported failure.
 
-Each claimed generation leaves a shared non-expiring tombstone. This prevents
-token reuse while old raw entries survive, at the cost of one small marker per
-candidate until the namespace or backend is retired. External eviction of both
-generation metadata and tombstones is outside the generic-cache guarantee.
+Unknown template misses create no cache metadata. The first successful lookup
+through a cacheable source creates one non-expiring generation key; later
+invalidations rotate that same key with a new random token. Raw content and
+negative entries remain bounded by their configured TTLs. If the generation key
+is externally evicted, the next successful source lookup establishes a fresh
+generation and old raw entries remain unreachable.

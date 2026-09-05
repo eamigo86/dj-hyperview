@@ -111,6 +111,7 @@ try:
 except TemplateNotFound:
     first_miss = True
 (root / "missing.xml").write_text("<view>created</view>", encoding="utf-8")
+cached_miss = False
 try:
     resolver.resolve("missing.xml")
 except TemplateNotFound:
@@ -129,5 +130,5 @@ print(json.dumps({
     assert json.loads(result.stdout) == {
         "content": ["<view>old</view>", "<view>old</view>", "<view>new</view>"],
         "empty": ["", "", "<view>filled</view>"],
-        "miss": [True, True, "<view>created</view>"],
+        "miss": [True, False, "<view>created</view>"],
     }

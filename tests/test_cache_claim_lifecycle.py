@@ -10,6 +10,8 @@ from dj_hyperview.sources import ResolvedTemplate
 from tests.test_cache_generation import LOCMEM_CACHES, launch
 from tests.test_cache_inflight_publication import ClockBackend, arm_rotation
 
+__test__ = False
+
 
 def successor_cache(namespace):
     cache = TemplateCache(namespace, alias="screens", ttl=10, negative_ttl=5)

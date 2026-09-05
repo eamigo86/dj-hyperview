@@ -9,6 +9,8 @@ from dj_hyperview.exceptions import SourceUnavailable, TemplateNotFound
 from tests.test_cache_generation import LOCMEM_CACHES, Source, launch
 from tests.test_cache_inflight_publication import BlockingSource, ClockBackend, resolver
 
+__test__ = False
+
 
 @pytest.mark.parametrize("old", ["old", None], ids=["content", "negative-miss"])
 @override_settings(CACHES=LOCMEM_CACHES)

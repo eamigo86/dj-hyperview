@@ -243,7 +243,7 @@ print(json.dumps({
     assert data["database"][:4] == [200, "<view>database</view>", "database", "7"]
     assert data["database"][4] == "database:precedence.xml"
     assert data["fallback"] == [200, "<view><text>fallback</text></view>", "filesystem"]
-    assert data["cache"][:6] == ["<view>old</view>"] * 2 + [404, 404, 422, 422]
+    assert data["cache"][:6] == ["<view>old</view>"] * 2 + [404, 200, 422, 422]
     assert data["cache"][6] == [
         "<view>new</view>",
         "<view>created</view>",

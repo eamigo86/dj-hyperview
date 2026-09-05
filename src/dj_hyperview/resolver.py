@@ -223,24 +223,52 @@ class TemplateResolver:
             TemplateNotFound: If every configured source misses.
         """
         canonical = canonicalize_template_name(name)
-        generation = self._generation(canonical)
+        generation, initialize = self._generation(canonical)
+        initial_results: list[tuple[str, ResolvedTemplate | None]] = []
         for source, source_id in zip(self.sources, self._source_ids, strict=True):
-            resolved = self._resolve_source(source, source_id, canonical, generation)
+            if initialize:
+                resolved = source.resolve(canonical)
+                if source_id is not None:
+                    initial_results.append((source_id, resolved))
+            else:
+                resolved = self._resolve_source(
+                    source, source_id, canonical, generation
+                )
             if resolved is not None:
+                if initialize:
+                    self._publish_initial(canonical, initial_results)
                 return resolved
         raise TemplateNotFound(canonical)
 
-    def _generation(self, name: str) -> str | None:
+    def _generation(self, name: str) -> tuple[str | None, bool]:
         if self.cache is None or not any(
             source_id is not None for source_id in self._source_ids
         ):
-            return None
+            return None, False
         try:
-            return self.cache.generation(name)
+            generation = self.cache._peek_generation(name)
         except SourceUnavailable:
             if self.failure_mode == "raise":
                 raise
-            return None
+            return None, False
+        return generation, generation is None
+
+    def _publish_initial(
+        self,
+        name: str,
+        results: list[tuple[str, ResolvedTemplate | None]],
+    ) -> None:
+        try:
+            generation, created = self.cache._initialize_generation(name)
+            if created:
+                for source_id, resolved in results:
+                    if resolved is None:
+                        self.cache.set_resolved_miss(source_id, name, generation)
+                    else:
+                        self.cache.set_resolved(source_id, name, resolved, generation)
+        except SourceUnavailable:
+            if self.failure_mode == "raise":
+                raise
 
     def _resolve_source(
         self,

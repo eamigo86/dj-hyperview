@@ -68,6 +68,68 @@ class ClockBackend:
         self.now += amount
 
 
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_unknown_template_misses_create_no_permanent_generation_metadata():
+    """Attacker-controlled misses cannot grow cache metadata."""
+    cache = TemplateCache("unknown-no-metadata", alias="screens")
+    backend = ClockBackend()
+    cache.backend = backend
+    current = resolver(Source({}), cache, "raise")
+
+    with pytest.raises(TemplateNotFound):
+        current.resolve("unknown.xml")
+
+    assert backend.values == {}
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_first_known_template_claims_one_generation_and_publishes_content():
+    """A real source hit creates only the reusable generation and raw entry."""
+    cache = TemplateCache("known-generation", alias="screens")
+    backend = ClockBackend()
+    cache.backend = backend
+    source = Source({"screen.xml": "content"})
+    current = resolver(source, cache, "raise")
+
+    assert current.resolve("screen.xml").content == "content"
+    assert current.resolve("screen.xml").content == "content"
+
+    assert source.calls == ["screen.xml"]
+    assert len(backend.values) == 2
+    assert not any("generation-claim" in key for key in backend.values)
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_concurrent_rotation_past_our_candidate_is_still_successful():
+    """Another valid rotation after ours confirms invalidation, not failure."""
+    cache = TemplateCache("concurrent-rotation", alias="screens")
+    backend = ClockBackend()
+    cache.backend = backend
+    current = cache.generation("screen.xml")
+    successor = "s" + "f" * 32
+    generation_key = cache._generation_key("screen.xml")
+
+    def supersede(key):
+        if key == generation_key:
+            backend._put(key, successor, None)
+
+    backend.after_set = supersede
+    cache.invalidate("screen.xml")
+
+    assert current != successor
+    assert cache.generation("screen.xml") == successor
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_deleting_an_already_absent_raw_entry_is_successful():
+    """A healthy cache miss from delete is not a backend failure."""
+    cache = TemplateCache("delete-absent", alias="screens")
+    backend = ClockBackend()
+    cache.backend = backend
+
+    cache._delete("missing-key")
+
+
 class BlockingSource:
     def __init__(self, value):
         self.value, self.started, self.release = value, Event(), Event()
@@ -128,45 +190,6 @@ def test_inflight_writer_cannot_publish_into_reused_generation(old, transition):
     assert resolver(source, cache).resolve("screen.xml").content == "new"
 
 
-@override_settings(CACHES=LOCMEM_CACHES)
-def test_root_and_successor_claims_remain_permanent_across_rotations():
-    cache = TemplateCache("claim-lifecycle", alias="screens", ttl=10, negative_ttl=5)
-    backend = ClockBackend()
-    cache.backend = backend
-    with patch("dj_hyperview.cache.secrets.token_hex", return_value="a" * 32):
-        old = cache.generation("screen.xml")
-    assert old.startswith("r")
-    assert backend.expiry(cache._claim_key("screen.xml", old)) is None
-
-    backend.advance(4)
-    with patch("dj_hyperview.cache.secrets.token_hex", return_value="b" * 32):
-        cache.invalidate("screen.xml")
-    new = cache.generation("screen.xml")
-    assert new.startswith("s")
-    assert backend.expiry(cache._claim_key("screen.xml", old)) is None
-    assert backend.expiry(cache._claim_key("screen.xml", new)) is None
-
-    with patch("dj_hyperview.cache.secrets.token_hex", return_value="c" * 32):
-        cache.invalidate("screen.xml")
-    assert backend.expiry(cache._claim_key("screen.xml", old)) is None
-    assert backend.expiry(cache._claim_key("screen.xml", new)) is None
-
-
-@pytest.mark.parametrize("effect", ["false", "exception"])
-@override_settings(CACHES=LOCMEM_CACHES)
-def test_failed_rotation_keeps_its_unused_candidate_tombstone(effect):
-    cache = TemplateCache(f"failed-candidate-{effect}", alias="screens", ttl=10)
-    backend = ClockBackend()
-    cache.backend = backend
-    current, candidate = cache.generation("screen.xml"), "s" + "f" * 32
-    backend.faults[("set", cache._generation_key("screen.xml"))] = effect
-    with patch.object(cache, "_candidate", return_value=candidate):
-        with pytest.raises(SourceUnavailable, match="backend failure"):
-            cache.invalidate("screen.xml")
-    assert cache.generation("screen.xml") == current
-    assert backend.expiry(cache._claim_key("screen.xml", candidate)) is None
-
-
 def arm_rotation(cache, backend, generation):
     raw_key = cache.key(
         "source:test", "screen.xml", cache._resolved_revision(generation)
@@ -177,11 +200,6 @@ def arm_rotation(cache, backend, generation):
     def rotate(key):
         if key == raw_key:
             backend._put(generation_key, successor, None)
-            backend._put(
-                cache._claim_key("screen.xml", successor),
-                cache._claim_value("screen.xml", successor, "successor"),
-                None,
-            )
 
     backend.after_set = rotate
     return raw_key, generation_key
@@ -220,15 +238,18 @@ def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(operation, 
     cache.invalidate("screen.xml")
     generation = cache.generation("screen.xml")
     raw_key, generation_key = arm_rotation(cache, backend, generation)
-    claim_key = cache._claim_key("screen.xml", generation)
     fault_key = {"get": generation_key, "delete": raw_key}[operation]
     backend.faults[(operation, fault_key)] = effect
     template = ResolvedTemplate("screen.xml", "old", "memory:x", "memory", "old")
 
-    with pytest.raises(SourceUnavailable, match="backend failure"):
+    reason = (
+        "generation changed"
+        if operation == "delete" and effect == "false"
+        else "backend failure"
+    )
+    with pytest.raises(SourceUnavailable, match=reason):
         cache.set_resolved("source:test", "screen.xml", template, generation)
     backend.faults.clear()
-    assert backend.expiry(claim_key) is None
     if operation == "delete":
         assert backend.get(raw_key, "absent") != "absent"
     else:
