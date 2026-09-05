@@ -171,4 +171,18 @@ def test_testing_and_release_guides_use_reproducible_commands() -> None:
     build_lines = [line for line in release.splitlines() if "zensical build" in line]
     assert build_lines
     assert all("-f zensical.yml" in line for line in build_lines)
+    assert all("--strict" in line for line in build_lines)
     assert "CI" in release and "rollback" in release.lower()
+
+
+def test_release_guide_documents_trusted_environments_and_recovery() -> None:
+    """Release operators get an ordered, token-free publish and rollback path."""
+    release = _read_document("release-rollback.md")
+
+    assert "PyPI Trusted Publisher" in release
+    assert "`pypi`" in release and "`github-pages`" in release
+    assert "API token" in release and "not" in release
+    assert "v0.1.0" in release
+    assert "yank" in release.lower()
+    assert "PyPI succeeds" in release
+    assert "GitHub Release" in release

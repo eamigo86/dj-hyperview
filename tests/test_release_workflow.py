@@ -18,6 +18,9 @@ PINS = {
     "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "actions/upload-pages-artifact": "fc324d3547104276b827a68afc52ff2a11cc49c9",
+    "actions/configure-pages": "45bfe0192ca1faeb007ade9deae92b16b8254a0d",
+    "actions/deploy-pages": "368f82528645a54fb793d4d04e342629a3f51346",
+    "pypa/gh-action-pypi-publish": "dc37677b2e1c63e2034f94d8a5b11f265b73ba33",
 }
 
 
@@ -37,7 +40,7 @@ def test_release_starts_only_for_version_tags_and_is_read_only() -> None:
 
     assert workflow["on"] == {"push": {"tags": ["v*.*.*"]}}
     assert workflow["permissions"] == {"contents": "read"}
-    assert set(workflow["jobs"]) == {"metadata", "ci", "stage"}
+    assert set(workflow["jobs"]) == {"metadata", "ci", "stage", "pypi", "pages"}
 
 
 def test_release_validates_metadata_before_one_reusable_ci_build() -> None:
@@ -80,14 +83,88 @@ def test_stage_consumes_one_candidate_and_separates_immutable_artifacts() -> Non
     }
     assert "test -f candidate/site/index.html" in script
     assert "*.whl" in script and "*.tar.gz" in script
-    assert "sha256sum > candidate/dist/SHA256SUMS" in script
+    assert "sha256sum > candidate/SHA256SUMS" in script
     assert distributions["with"] == {
         "name": "release-distributions-${{ github.sha }}",
-        "path": "candidate/dist/",
+        "path": "candidate/dist/\ncandidate/SHA256SUMS\n",
         "if-no-files-found": "error",
         "retention-days": "30",
     }
     assert pages["with"] == {"path": "candidate/site/"}
+
+
+def test_pypi_uses_only_oidc_and_the_immutable_distribution() -> None:
+    """Trusted Publishing consumes the staged distribution without secrets."""
+    job = load_workflow(WORKFLOW.read_text())["jobs"]["pypi"]
+    publish_action = (
+        "pypa/gh-action-pypi-publish@" + PINS["pypa/gh-action-pypi-publish"]
+    )
+
+    assert job["needs"] == "stage"
+    assert job["environment"] == {"name": "pypi"}
+    assert job["permissions"] == {"contents": "read", "id-token": "write"}
+    assert job["steps"] == [
+        {
+            "uses": f"actions/download-artifact@{PINS['actions/download-artifact']}",
+            "with": {
+                "name": "release-distributions-${{ github.sha }}",
+                "path": "candidate",
+            },
+        },
+        {
+            "name": "Publish with PyPI Trusted Publishing",
+            "uses": publish_action,
+            "with": {"packages-dir": "candidate/dist/"},
+        },
+    ]
+    assert "secrets" not in job
+
+
+def test_pages_deploys_only_after_successful_pypi_publication() -> None:
+    """Pages deploys the prebuilt artifact only after the PyPI job succeeds."""
+    job = load_workflow(WORKFLOW.read_text())["jobs"]["pages"]
+
+    assert job["needs"] == "pypi"
+    assert job["environment"] == {
+        "name": "github-pages",
+        "url": "${{ steps.deployment.outputs.page_url }}",
+    }
+    assert job["permissions"] == {
+        "contents": "read",
+        "pages": "write",
+        "id-token": "write",
+    }
+    assert job["steps"] == [
+        {"uses": f"actions/configure-pages@{PINS['actions/configure-pages']}"},
+        {
+            "name": "Deploy published documentation",
+            "id": "deployment",
+            "uses": f"actions/deploy-pages@{PINS['actions/deploy-pages']}",
+        },
+    ]
+    assert all("run" not in step for step in job["steps"])
+
+
+@pytest.mark.parametrize(
+    "mutate",
+    [
+        lambda text: text.replace("needs: stage", "needs: ci", 1),
+        lambda text: text.replace("name: pypi", "name: production", 1),
+        lambda text: text.replace("id-token: write", "id-token: read", 1),
+        lambda text: text.replace("needs: pypi", "needs: stage", 1),
+        lambda text: text.replace("pages: write", "pages: read", 1),
+        lambda text: text.replace(
+            "packages-dir: candidate/dist/", "password: secret", 1
+        ),
+        lambda text: text.replace("actions/deploy-pages", "actions/upload-artifact", 1),
+        lambda text: text.replace("contents: read", "contents: write", 4),
+    ],
+)
+def test_release_audit_rejects_publish_and_deploy_drift(
+    mutate: Callable[[str], str],
+) -> None:
+    """Identity, OIDC, ordering, actions, and permissions fail closed."""
+    assert _audit(mutate(WORKFLOW.read_text())) == [VIOLATION]
 
 
 @pytest.mark.parametrize(
