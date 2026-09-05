@@ -264,6 +264,66 @@ def test_workflow_audit_accepts_semantically_empty_yaml_changes() -> None:
     assert _audit_workflow(mutated) == []
 
 
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("default: false", 'default: "false"'),
+        ("fail-fast: false", 'fail-fast: "false"'),
+        ("timeout-minutes: 15", 'timeout-minutes: "15"'),
+        ('python: ["3.12", "3.13", "3.14"]', 'python: [3.12, "3.13", "3.14"]'),
+    ],
+)
+def test_workflow_audit_preserves_yaml_scalar_types(old: str, new: str) -> None:
+    """Boolean and numeric scalar tags cannot become quoted strings."""
+    mutated = WORKFLOW.read_text().replace(old, new, 1)
+
+    assert _audit_workflow(mutated) == ["workflow: semantic contract is not approved"]
+
+
+def test_workflow_audit_ignores_scalar_quoting_style() -> None:
+    """Equivalent string quoting remains outside executable semantics."""
+    mutated = WORKFLOW.read_text().replace(
+        'python-version: "3.12"', "python-version: '3.12'", 1
+    )
+
+    assert _audit_workflow(mutated) == []
+
+
+def test_workflow_audit_ignores_mapping_key_order() -> None:
+    """Reordering mapping entries does not change YAML semantics."""
+    mutated = WORKFLOW.read_text().replace(
+        "    runs-on: ubuntu-latest\n    timeout-minutes: 15\n",
+        "    timeout-minutes: 15\n    runs-on: ubuntu-latest\n",
+        1,
+    )
+
+    assert _audit_workflow(mutated) == []
+
+
+def test_workflow_audit_preserves_sequence_order() -> None:
+    """Reordering an execution dependency remains a semantic change."""
+    mutated = WORKFLOW.read_text().replace(
+        "needs: [quality, compatibility]", "needs: [compatibility, quality]", 1
+    )
+
+    assert _audit_workflow(mutated) == ["workflow: semantic contract is not approved"]
+
+
+def test_workflow_audit_normalizes_unexpected_yaml_nodes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unexpected composed nodes fail closed through a stable diagnostic."""
+    monkeypatch.setattr(
+        yaml,
+        "compose",
+        lambda *args, **kwargs: yaml.Node("!unexpected", "value", None, None),
+    )
+
+    assert _audit_workflow(WORKFLOW.read_text()) == [
+        "workflow: tagged contract is not approved"
+    ]
+
+
 def test_workflow_audit_accepts_innocuous_full_line_comments() -> None:
     """Full-line comments do not change an approved command contract."""
     mutated = WORKFLOW.read_text().replace(
@@ -323,6 +383,43 @@ def _semantic_workflow(value: object) -> object:
     if isinstance(value, list):
         return [_semantic_workflow(item) for item in value]
     return value
+
+
+def _tagged_node_signature(
+    node: yaml.Node, *, normalize_run: bool = False
+) -> tuple[object, ...]:
+    """Represent YAML structure, tags, and values without mapping order."""
+    if isinstance(node, yaml.ScalarNode):
+        value = _normalize_run(node.value) if normalize_run else node.value
+        return ("scalar", node.tag, value)
+    if isinstance(node, yaml.SequenceNode):
+        return (
+            "sequence",
+            node.tag,
+            tuple(_tagged_node_signature(item) for item in node.value),
+        )
+    if isinstance(node, yaml.MappingNode):
+        pairs = (
+            (
+                _tagged_node_signature(key),
+                _tagged_node_signature(
+                    value,
+                    normalize_run=isinstance(key, yaml.ScalarNode)
+                    and key.value == "run",
+                ),
+            )
+            for key, value in node.value
+        )
+        return ("mapping", node.tag, tuple(sorted(pairs, key=repr)))
+    raise TypeError("unsupported YAML node")
+
+
+def _tagged_workflow_signature(text: str) -> tuple[object, ...]:
+    """Compose source into a canonical signature retaining scalar tags."""
+    node = yaml.compose(text, Loader=yaml.SafeLoader)
+    if node is None:
+        raise TypeError("missing YAML node")
+    return _tagged_node_signature(node)
 
 
 APPROVED_RUN_CONTRACT = {
@@ -499,8 +596,19 @@ def _audit_workflow(text: str) -> list[str]:
             violations.append(f"{name}: run contract is not approved")
     if violations:
         return violations
-    contract = _workflow(WORKFLOW_CONTRACT.read_text())
-    if _semantic_workflow(workflow) != _semantic_workflow(contract):
+    contract_text = WORKFLOW_CONTRACT.read_text()
+    contract = _workflow(contract_text)
+    try:
+        tagged_matches = _tagged_workflow_signature(text) == _tagged_workflow_signature(
+            contract_text
+        )
+    except yaml.YAMLError:
+        return ["workflow: source is not valid YAML"]
+    except TypeError:
+        return ["workflow: tagged contract is not approved"]
+    if not tagged_matches or _semantic_workflow(workflow) != _semantic_workflow(
+        contract
+    ):
         return ["workflow: semantic contract is not approved"]
     return []
 
