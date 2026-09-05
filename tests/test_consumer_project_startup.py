@@ -88,7 +88,7 @@ def test_consumer_settings_use_minimal_public_package_contract() -> None:
     """The consumer installs the public app with no optional infrastructure."""
     consumer_settings = import_module("tests.consumer_project.settings_base")
 
-    assert consumer_settings.INSTALLED_APPS == ["dj_hyperview.apps.DjHyperviewConfig"]
+    assert consumer_settings.INSTALLED_APPS == ["dj_hyperview"]
     assert consumer_settings.HYPERVIEW == {}
     assert consumer_settings.ROOT_URLCONF == "tests.consumer_project.urls"
     assert "DATABASES" not in vars(consumer_settings)

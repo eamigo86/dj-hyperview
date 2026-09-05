@@ -9,7 +9,7 @@ Install dj-hyperview, then add its Django application:
 
 ```python
 INSTALLED_APPS = [
-    "dj_hyperview.apps.DjHyperviewConfig",
+    "dj_hyperview",
 ]
 ```
 

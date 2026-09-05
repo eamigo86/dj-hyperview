@@ -215,7 +215,15 @@ def test_repository_readme_presents_the_public_package_journey() -> None:
     assert positions == tuple(sorted(positions))
     assert "uv add dj-hyperview" in readme
     assert "pip install dj-hyperview" in readme
-    assert '"dj_hyperview.apps.DjHyperviewConfig"' in readme
+    installation_pages = (
+        readme,
+        (ROOT / "docs" / "installation.md").read_text(),
+        (ROOT / "docs" / "quickstart.md").read_text(),
+    )
+    assert all('"dj_hyperview"' in page for page in installation_pages)
+    assert all(
+        "dj_hyperview.apps.DjHyperviewConfig" not in page for page in installation_pages
+    )
     assert "https://pypi.org/project/dj-hyperview/" in readme
     assert "https://eamigo86.github.io/dj-hyperview/" in readme
     assert "does not ship application screens" in readme

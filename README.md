@@ -54,7 +54,7 @@ Register the base Django application:
 ```python
 INSTALLED_APPS = [
     # Your project applications.
-    "dj_hyperview.apps.DjHyperviewConfig",
+    "dj_hyperview",
 ]
 ```
 
@@ -134,7 +134,7 @@ and run migrations:
 INSTALLED_APPS = [
     # Django applications used by your project.
     "django.contrib.admin",
-    "dj_hyperview.apps.DjHyperviewConfig",
+    "dj_hyperview",
     "dj_hyperview.contrib.database",
 ]
 ```

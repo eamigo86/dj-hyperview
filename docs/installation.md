@@ -14,7 +14,7 @@ Register the package app:
 ```python
 INSTALLED_APPS = [
     # Your project apps.
-    "dj_hyperview.apps.DjHyperviewConfig",
+    "dj_hyperview",
 ]
 ```
 
