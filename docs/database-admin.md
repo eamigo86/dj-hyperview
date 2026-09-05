@@ -4,6 +4,10 @@ Publish validated templates through Django's ORM and optionally edit them with
 the standard admin. Both capabilities remain absent until the contrib app is
 installed.
 
+Stored source is executable Django template code. Anyone allowed to add or
+change a `HyperviewTemplate` must have developer-level trust; XML validation
+does not sandbox template tags, filters, or render-context access.
+
 ## Enable the database source
 
 Add the optional app and source to project settings:

@@ -166,6 +166,7 @@ def test_cache_guide_matches_opt_in_and_invalidation_contracts() -> None:
 def test_security_guide_matches_name_and_xml_validation_contracts() -> None:
     """Security guidance documents canonical names and fail-closed XML limits."""
     page = _read_document("security.md")
+    database_page = _read_document("database-admin.md")
     blocks = _python_blocks(page)
 
     for key in ("MODE", "SCHEMA", "MAX_BYTES", "MAX_DEPTH", "MAX_NODES"):
@@ -173,6 +174,9 @@ def test_security_guide_matches_name_and_xml_validation_contracts() -> None:
     assert "DTD" in page and "entities" in page
     assert "control characters" in page and "isolated surrogates" in page
     assert "includes, imports, and redefines" in page
+    assert "executable Django template code" in page
+    assert "developer-level trust" in page
+    assert "developer-level trust" in database_page
     assert list(signature(validate_hxml).parameters) == ["document", "config"]
     assert blocks
     for block in blocks:

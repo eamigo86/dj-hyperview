@@ -1,7 +1,11 @@
 # Name and XML security
 
-Treat template names, template source, and render context as separate untrusted
-inputs. dj-hyperview validates all three at their public boundaries.
+Treat template names and render-context values as untrusted input. Template
+source is executable Django template code, not untrusted data: installed tags,
+filters, and objects exposed through the render context can access sensitive
+application state. Grant publication and admin permissions only to people with
+developer-level trust. XML validation limits the rendered document; it does not
+sandbox Django template execution.
 
 ## Use canonical names
 

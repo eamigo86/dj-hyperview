@@ -204,6 +204,8 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
             result = publish_template(
                 obj.name, obj.content, active=obj.active, using=alias
             )
+            if not result.created:
+                raise PublicationConflict
         persisted = (
             self.model._default_manager.using(alias).only("pk").get(name=result.name)
         )

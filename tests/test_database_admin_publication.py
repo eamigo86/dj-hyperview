@@ -76,6 +76,29 @@ def test_admin_create_and_edit_publish_once_with_hidden_revision(admin_client) -
     ]
 
 
+def test_admin_add_never_overwrites_a_concurrently_created_template(
+    admin_client,
+) -> None:
+    """An Add race preserves the row that won the unique-name race."""
+    module = importlib.import_module("dj_hyperview.contrib.database.admin")
+    model = _model()
+    existing = model.objects.create(name="screen.xml", content="<winner />")
+    add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
+
+    with patch.object(module.HyperviewTemplateAdminForm, "validate_unique"):
+        response = admin_client.post(
+            add,
+            _form("screen.xml", "<loser />"),
+            follow=True,
+        )
+
+    existing.refresh_from_db()
+    assert response.status_code == 200
+    assert b"Template changed; reload and retry." in response.content
+    assert model.objects.count() == 1
+    assert (existing.content, existing.revision) == ("<winner />", 1)
+
+
 def test_admin_stale_edit_is_a_redacted_form_error(admin_client) -> None:
     model = _model()
     template = model.objects.create(name="screen.xml", content="<one />")
