@@ -135,6 +135,24 @@ def test_documentation_starts_with_installation_and_configuration_outcomes() -> 
     assert "TemplateResolver" in pages["configuration.md"]
 
 
+def test_configuration_documents_every_builtin_source_option() -> None:
+    """Consumers can discover constructor options for every bundled source."""
+    page = _documentation_pages()["configuration.md"]
+
+    assert "## Source backend options" in page
+    assert "keyword arguments" in page
+    assert "custom backend" in page
+    assert "`FileSystemSource`" in page
+    assert "`template_dirs`" in page
+    assert '`HYPERVIEW["TEMPLATE_DIRS"]`' in page
+    assert "ordered template roots" in page.lower()
+    assert "`DatabaseSource`" in page
+    assert "`using`" in page
+    assert "database alias" in page
+    assert "Django database routing" in page
+    assert "source caching" in page
+
+
 def test_quickstart_and_reference_cover_the_supported_public_path() -> None:
     """The first-use path and public exports stay visible and complete."""
     pages = _documentation_pages()
