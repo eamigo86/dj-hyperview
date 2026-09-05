@@ -8,10 +8,12 @@ from dj_hyperview.exceptions import InvalidTemplateName
 from dj_hyperview.sources import canonicalize_template_name
 
 from ._invalidation import _schedule_invalidation
+from ._mutation_context import batch_delete_primary_keys
 from .models import HyperviewTemplate
 
 _STATE_ATTRIBUTE = "_dj_hyperview_invalidation_state"
 _OBSERVABLE_FIELDS = frozenset({"name", "content", "active", "revision"})
+_BATCH_DELETE = object()
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,6 +88,10 @@ def _capture_delete(
 ) -> None:
     del kwargs
     instance.__dict__.pop(_STATE_ATTRIBUTE, None)
+    batch = batch_delete_primary_keys.get()
+    if batch is not None and instance.pk in batch:
+        instance.__dict__[_STATE_ATTRIBUTE] = _BATCH_DELETE
+        return
     persisted_name = _persisted_name(sender, instance, using)
     name = _canonical_name_or_none(
         instance.name if persisted_name is None else persisted_name

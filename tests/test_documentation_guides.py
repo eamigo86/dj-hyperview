@@ -115,6 +115,7 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
     assert "render-time validation" in page
     assert "no longer canonical" in normalized
     assert "remains recoverable" in normalized
+    assert "one commit-aware invalidation" in normalized
     assert len(blocks) >= 2
     for block in blocks:
         compile(block, "docs/database-admin.md", "exec")

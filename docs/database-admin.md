@@ -106,8 +106,9 @@ rename, and individual delete use the publication services; change and delete
 forms carry a protected revision token to reject stale submissions.
 
 Direct `save()` does not call `full_clean()`. Prefer the services or the admin
-for validated publication. ORM bulk creation and bulk update do not provide an
-automatic publication contract.
+for validated publication. The package QuerySet batches `update()` and `delete()`
+while scheduling one commit-aware invalidation for all canonical affected names.
+`bulk_create()` and raw SQL do not provide an automatic publication contract.
 
 A row imported by raw SQL or an older release can contain a name that is no
 longer canonical. Such a row is never resolved, but it remains recoverable:

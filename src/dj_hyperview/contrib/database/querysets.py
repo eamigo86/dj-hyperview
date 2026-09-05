@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import django
 from django.core import exceptions
-from django.db import models, transaction
+from django.db import connections, models, transaction
 from django.db.models import sql
 from django.db.models.sql.constants import ROW_COUNT
 
@@ -13,6 +13,7 @@ from dj_hyperview.exceptions import InvalidTemplateName
 from dj_hyperview.sources import canonicalize_template_name
 
 from ._invalidation import _schedule_invalidation
+from ._mutation_context import batch_delete_primary_keys
 
 _OBSERVABLE_FIELDS = frozenset({"name", "content", "active", "revision"})
 
@@ -115,17 +116,30 @@ class HyperviewTemplateQuerySet(models.QuerySet):
                 (name for _, name in rows), ignore_invalid=True
             )
             primary_keys = tuple(row_primary_key for row_primary_key, _ in rows)
-            query.clear_where()
-            query.add_q(models.Q(pk__in=primary_keys))
-            updated = _execute_update(query, using)
+            batch_size = connections[using].ops.bulk_batch_size(
+                [primary_key], primary_keys
+            )
+            batch_size = max(batch_size, 1)
+            primary_key_batches = tuple(
+                primary_keys[offset : offset + batch_size]
+                for offset in range(0, len(primary_keys), batch_size)
+            )
+            updated = 0
+            for batch in primary_key_batches:
+                batch_query = query.clone()
+                batch_query.clear_where()
+                batch_query.add_q(models.Q(pk__in=batch))
+                updated += _execute_update(batch_query, using)
             self._result_cache = None
             if not updated:
                 return updated
             new_names = old_names
             if "name" in kwargs:
                 new_names = _canonical_names(
-                    self.model._base_manager.using(using)
-                    .filter(pk__in=primary_keys)
+                    name
+                    for batch in primary_key_batches
+                    for name in self.model._base_manager.using(using)
+                    .filter(pk__in=batch)
                     .order_by(primary_key.name)
                     .values_list("name", flat=True)
                 )
@@ -133,6 +147,49 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             if affected_names:
                 _schedule_invalidation(*affected_names, using=using)
         return updated
+
+    def delete(self) -> tuple[int, dict[str, int]]:
+        """Delete selected rows with one locked invalidation snapshot.
+
+        Returns:
+            Total deleted objects and per-model deletion counts.
+
+        Raises:
+            NotSupportedError: If the QuerySet combines multiple queries.
+            TypeError: If slicing, field-specific distinct, or values are used.
+            DatabaseError: If selection or deletion SQL fails.
+        """
+        self._not_support_combined_queries("delete")
+        if self.query.is_sliced:
+            raise TypeError("Cannot use 'limit' or 'offset' with delete().")
+        if self.query.distinct_fields:
+            raise TypeError("Cannot call delete() after .distinct(*fields).")
+        if self._fields is not None:
+            raise TypeError("Cannot call delete() after .values() or .values_list()")
+
+        using = self.db
+        primary_key = self.model._meta.pk
+        snapshot = self.using(using).all()
+        snapshot.query.distinct = False
+        snapshot.query.distinct_fields = ()
+        with transaction.atomic(using=using):
+            rows = tuple(
+                snapshot.select_for_update()
+                .order_by(primary_key.name)
+                .values_list(primary_key.name, "name")
+            )
+            names = _canonical_names((name for _, name in rows), ignore_invalid=True)
+            token = batch_delete_primary_keys.set(
+                frozenset(row_primary_key for row_primary_key, _ in rows)
+            )
+            try:
+                deleted = models.QuerySet.delete(self.using(using))
+            finally:
+                batch_delete_primary_keys.reset(token)
+            self._result_cache = None
+            if deleted[0] and names:
+                _schedule_invalidation(*names, using=using)
+        return deleted
 
 
 _ManagerBase = models.Manager.from_queryset(HyperviewTemplateQuerySet)

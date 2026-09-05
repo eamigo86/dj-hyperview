@@ -117,6 +117,33 @@ def test_content_update_schedules_names_and_preserves_result(
     schedule.assert_called_once_with("first.xml", "second.xml", using="default")
 
 
+def test_update_chunks_primary_keys_to_the_backend_parameter_limit(
+    queryset_model: type[Model],
+) -> None:
+    """Large updates never emit one unbounded primary-key predicate."""
+    queryset_model.objects.bulk_create(
+        [
+            queryset_model(name=f"screen-{index}.xml", content="<view />")
+            for index in range(5)
+        ]
+    )
+
+    with (
+        patch.object(connection.ops, "bulk_batch_size", return_value=2) as batch_size,
+        patch.object(
+            database_querysets,
+            "_execute_update",
+            wraps=database_querysets._execute_update,
+        ) as execute,
+    ):
+        updated = queryset_model.objects.update(active=False)
+
+    assert updated == 5
+    batch_size.assert_called_once()
+    assert execute.call_count == 3
+    assert queryset_model.objects.filter(active=False).count() == 5
+
+
 @override_settings(CACHES=CACHES, HYPERVIEW=HYPERVIEW)
 def test_content_update_makes_cached_result_observe_committed_content(
     queryset_model: type[Model],

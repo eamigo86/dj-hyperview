@@ -11,6 +11,7 @@ from django.db.models import Model
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
+from dj_hyperview.contrib.database import signals as database_signals
 from dj_hyperview.contrib.database.apps import DjHyperviewDatabaseConfig
 from dj_hyperview.contrib.database.signals import _connect_signal_handlers
 from dj_hyperview.exceptions import InvalidTemplateName, TemplateNotFound
@@ -216,6 +217,38 @@ def test_instance_delete_schedules_its_name(signal_model: type[Model]) -> None:
         template.delete()
 
     schedule.assert_called_once_with("screen.xml", using="default")
+
+
+def test_queryset_delete_uses_one_snapshot_and_one_invalidation(
+    signal_model: type[Model],
+) -> None:
+    """Bulk deletion avoids per-row lookups and post-commit callbacks."""
+    signal_model.objects.bulk_create(
+        [
+            signal_model(name=f"screen-{index}.xml", content="<view />")
+            for index in range(3)
+        ]
+    )
+
+    with (
+        patch.object(
+            database_signals,
+            "_persisted_name",
+            wraps=database_signals._persisted_name,
+        ) as persisted_name,
+        patch.object(database_signals, "_schedule_invalidation") as per_row,
+        patch(
+            "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+        ) as batch,
+    ):
+        deleted, _ = signal_model.objects.all().delete()
+
+    assert deleted == 3
+    persisted_name.assert_not_called()
+    per_row.assert_not_called()
+    batch.assert_called_once_with(
+        "screen-0.xml", "screen-1.xml", "screen-2.xml", using="default"
+    )
 
 
 def test_already_deleted_instance_preserves_fallback_invalidation(
@@ -428,11 +461,7 @@ def test_queryset_delete_callbacks_follow_replica_commit_and_rollback(
             dual_signal_model.objects.using("replica").all().delete()
             invalidate.assert_not_called()
 
-    assert invalidate.call_count == 2
-    assert {item.args for item in invalidate.call_args_list} == {
-        ("first.xml",),
-        ("second.xml",),
-    }
+    invalidate.assert_called_once_with("first.xml", "second.xml")
 
 
 @pytest.mark.parametrize(

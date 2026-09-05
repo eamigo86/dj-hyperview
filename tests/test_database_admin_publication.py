@@ -217,7 +217,7 @@ def test_admin_can_delete_an_invalid_legacy_name(admin_client) -> None:
     assert model._base_manager.count() == 0
 
 
-def test_admin_bulk_delete_remains_signal_backed(admin_client) -> None:
+def test_admin_bulk_delete_uses_one_batch_invalidation(admin_client) -> None:
     model = _model()
     rows = [
         model.objects.create(name=f"{name}.xml", content="<view />")
@@ -229,15 +229,14 @@ def test_admin_bulk_delete_remains_signal_backed(admin_client) -> None:
         "_selected_action": [str(row.pk) for row in rows],
         "post": "yes",
     }
-    with patch(SCHEDULE) as schedule:
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
         response = admin_client.post(changelist, data)
 
     assert response.status_code == 302
     assert model.objects.count() == 0
-    assert {item.args for item in schedule.call_args_list} == {
-        ("one.xml",),
-        ("two.xml",),
-    }
+    schedule.assert_called_once_with("one.xml", "two.xml", using="default")
 
 
 def test_admin_transaction_outcomes_preserve_database_truth(admin_client) -> None:
