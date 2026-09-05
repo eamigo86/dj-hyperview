@@ -25,6 +25,8 @@ class _ValidatedTemplate:
         self.validation = validation
 
     def __getattr__(self, name):
+        if name.startswith("_"):
+            raise AttributeError(name)
         return getattr(self._template, name)
 
     def render(self, context=None, request=None) -> str:

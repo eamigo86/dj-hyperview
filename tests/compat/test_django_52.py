@@ -35,7 +35,9 @@ def test_django_52_renders_the_public_consumer_contract(client: Client) -> None:
 
     assert django.get_version() == "5.2.17"
     assert response.status_code == 201
-    assert response.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert response.headers["Content-Type"] == (
+        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
+    )
     assert response.content.decode() == (
         "<view><header>primary-layout</header>"
         "<text>primary: 5.2 &amp; &lt;supported&gt;</text></view>"

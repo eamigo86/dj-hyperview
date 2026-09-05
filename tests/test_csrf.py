@@ -3,7 +3,7 @@ from xml.etree import ElementTree
 from django.conf import settings
 from django.http import HttpResponse
 from django.middleware.csrf import CsrfViewMiddleware
-from django.template import RequestContext, Template
+from django.template import Context, RequestContext, Template
 from django.test import RequestFactory, override_settings
 
 from dj_hyperview.templatetags import dj_hyperview as hyperview_tags
@@ -64,3 +64,11 @@ def test_csrf_tag_escapes_untrusted_token_for_xml(monkeypatch):
         '<text-field hide="true" name="csrfmiddlewaretoken" '
         'value="unsafe&quot; &amp; &lt;token&gt;" />'
     )
+
+
+@override_settings(TEMPLATES=TEMPLATES)
+def test_csrf_tag_without_a_request_renders_nothing() -> None:
+    """Programmatic rendering without a request remains valid."""
+    template = Template("{% load dj_hyperview %}{% hv_csrf_token %}")
+
+    assert template.render(Context()) == ""

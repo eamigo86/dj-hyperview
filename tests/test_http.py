@@ -27,6 +27,7 @@ TEMPLATES = [
 ]
 
 
+@override_settings(DEFAULT_CHARSET="iso-8859-1")
 def test_hyperview_response_preserves_http_contract():
     response = HyperviewResponse(
         "<view>Accepted</view>",
@@ -35,9 +36,10 @@ def test_hyperview_response_preserves_http_contract():
     )
 
     assert response.content == b"<view>Accepted</view>"
+    assert response.charset == "utf-8"
     assert response.status_code == 202
     assert response.headers["X-Screen"] == "accepted"
-    assert response.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert response.headers["Content-Type"] == f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
 
 
 def test_hyperview_response_preserves_explicit_content_type_and_charset():
@@ -56,7 +58,7 @@ def test_hyperview_response_preserves_explicit_content_type_and_charset():
     assert response.headers["Content-Type"] == "application/xml"
 
 
-@override_settings(TEMPLATES=TEMPLATES)
+@override_settings(TEMPLATES=TEMPLATES, DEFAULT_CHARSET="iso-8859-1")
 def test_template_response_preserves_lazy_render_contract():
     request = RequestFactory().get("/screen")
     response = HyperviewTemplateResponse(
@@ -75,9 +77,10 @@ def test_template_response_preserves_lazy_render_contract():
 
     assert response.is_rendered is True
     assert response.content == b"<view>A &amp; B</view>"
+    assert response.charset == "utf-8"
     assert response.status_code == 201
     assert response.headers["X-Screen"] == "created"
-    assert response.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert response.headers["Content-Type"] == f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
 
 
 @override_settings(TEMPLATES=TEMPLATES)
@@ -110,7 +113,7 @@ def test_template_view_renders_consumer_template_and_context():
     response.render()
 
     assert response.content == b"<view>Consumer screen</view>"
-    assert response.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert response.headers["Content-Type"] == f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
 
 
 @override_settings(TEMPLATES=TEMPLATES)

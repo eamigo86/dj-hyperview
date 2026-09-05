@@ -110,7 +110,9 @@ def test_versioned_request_escapes_context_and_accepts_real_csrf() -> None:
         ".//text-field[@name='csrfmiddlewaretoken']"
     )
 
-    assert fragment.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert fragment.headers["Content-Type"] == (
+        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
+    )
     assert fragment.charset == "utf-8"
     assert fragment.content == (
         b"<view><text>Caf\xc3\xa9 &amp; &lt;unsafe&gt;</text></view>"
@@ -130,7 +132,9 @@ def test_versioned_request_escapes_context_and_accepts_real_csrf() -> None:
     )
     assert rejected.status_code == 403
     assert accepted.status_code == 201
-    assert accepted.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert accepted.headers["Content-Type"] == (
+        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
+    )
     assert accepted.charset == "utf-8"
     assert b"Caf\xc3\xa9 &amp; &lt;accepted&gt;" in accepted.content
 
@@ -155,7 +159,10 @@ def test_http_contract_rejects_invalid_protocol_boundaries(
     if case == "media":
         response = HttpResponse(content, content_type="application/xml")
     elif case == "encoding":
-        response = HyperviewResponse(content, charset="iso-8859-1")
+        response = HttpResponse(
+            content,
+            content_type=f"{HYPERVIEW_MEDIA_TYPE}; charset=iso-8859-1",
+        )
     elif case == "xml":
         response = HyperviewResponse(f'<view xmlns="{NAMESPACE}">'.encode())
     elif case == "shape":

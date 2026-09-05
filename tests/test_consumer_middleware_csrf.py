@@ -102,7 +102,9 @@ def test_form_tag_supplies_real_token_and_valid_post_is_escaped() -> None:
     )
 
     assert response.status_code == 201
-    assert response.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert response.headers["Content-Type"] == (
+        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
+    )
     assert response.headers["X-Consumer-Hyperview"] == "true"
     confirmed = ElementTree.fromstring(response.content)
     assert confirmed.findtext("text") == "accepted: Café & <confirmed>"

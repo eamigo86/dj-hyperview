@@ -25,7 +25,9 @@ def test_full_document_preserves_context_and_http_metadata(client: Client) -> No
     response = client.get("/documents/full/", {"title": "Café & <consumer>"})
 
     assert response.status_code == 201
-    assert response.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert response.headers["Content-Type"] == (
+        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
+    )
     assert response.headers["X-Consumer-Document"] == "full"
     assert response.charset == "utf-8"
     assert response.template_name == ["screens/full.xml"]
@@ -44,7 +46,9 @@ def test_fragment_uses_public_engine_response_and_canonical_name(
     response = client.get("/documents/fragment/", {"label": "Niño & <fragment>"})
 
     assert response.status_code == 206
-    assert response.headers["Content-Type"] == HYPERVIEW_MEDIA_TYPE
+    assert response.headers["Content-Type"] == (
+        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
+    )
     assert response.headers["X-Consumer-Document"] == "fragment"
     assert response.headers["X-Hyperview-Template"] == "fragments/item.xml"
     assert response.content.decode() == (

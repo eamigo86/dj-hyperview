@@ -1,3 +1,4 @@
+import copy
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
 
@@ -204,3 +205,16 @@ def test_engine_contract_is_exported_from_package_root():
     assert dj_hyperview.HyperviewEngine is HyperviewEngine
     assert dj_hyperview.ResolverLoader is ResolverLoader
     assert dj_hyperview.render_template is render_template
+
+
+def test_uninitialized_validated_template_can_be_copied_without_recursion() -> None:
+    """Python copy protocols do not recurse through an absent wrapped template."""
+    template_type = type(
+        HyperviewEngine(
+            TemplateResolver([MemorySource({"screen.xml": "<view />"})])
+        ).get_template("screen.xml")
+    )
+    uninitialized = object.__new__(template_type)
+
+    assert isinstance(copy.copy(uninitialized), template_type)
+    assert isinstance(copy.deepcopy(uninitialized), template_type)

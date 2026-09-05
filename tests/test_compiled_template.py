@@ -159,6 +159,25 @@ def test_template_response_validates_once_for_every_engine_selection(sources, us
     assert schema.calls == 1
 
 
+def test_template_response_does_not_revalidate_a_compiled_hyperview_template():
+    """A validated compiled template crosses the response boundary once."""
+    schema = SchemaCounter()
+    validation = ValidationSettings(schema=schema)
+    with override_settings(HYPERVIEW={"VALIDATION": {"SCHEMA": schema}}):
+        engine = HyperviewEngine(
+            TemplateResolver([TemplateSource(content="<view />")]),
+            validation=validation,
+        )
+        response = HyperviewTemplateResponse(
+            RequestFactory().get("/screen"),
+            engine.get_template("screen.xml"),
+        )
+        response.render()
+
+    assert response.content == b"<view />"
+    assert schema.calls == 1
+
+
 @pytest.mark.parametrize("marker", ["<!DOCTYPE view", "<!ENTITY xxe"])
 def test_processing_instruction_data_is_not_an_active_declaration(marker):
     document = f"<view><?safe {marker}?></view>"

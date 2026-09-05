@@ -19,7 +19,15 @@ class HyperviewConfigurationError(HyperviewError, ImproperlyConfigured):
             issues: Stable configuration issue descriptions.
         """
         self.issues = tuple(issues)
-        super().__init__(f"Invalid HYPERVIEW configuration: {'; '.join(issues)}")
+        super().__init__(self.issues)
+
+    def __str__(self) -> str:
+        """Return the stable combined configuration message.
+
+        Returns:
+            Safe configuration issue text.
+        """
+        return f"Invalid HYPERVIEW configuration: {'; '.join(self.issues)}"
 
 
 class InvalidTemplateName(HyperviewError, ValueError):
@@ -32,7 +40,15 @@ class InvalidTemplateName(HyperviewError, ValueError):
             name: Rejected name retained for programmatic inspection.
         """
         self.name = name
-        super().__init__("Invalid template name")
+        super().__init__(name)
+
+    def __str__(self) -> str:
+        """Return a redacted invalid-name message.
+
+        Returns:
+            Safe error text without the rejected name.
+        """
+        return "Invalid template name"
 
 
 class TemplateNotFound(HyperviewError, LookupError):
@@ -45,7 +61,15 @@ class TemplateNotFound(HyperviewError, LookupError):
             name: Canonical template name that was not resolved.
         """
         self.name = name
-        super().__init__(f"Template not found: {name}")
+        super().__init__(name)
+
+    def __str__(self) -> str:
+        """Return the stable final-miss message.
+
+        Returns:
+            Missing-template error text.
+        """
+        return f"Template not found: {self.name}"
 
 
 class TemplateValidationError(HyperviewError, ValueError):
@@ -60,7 +84,15 @@ class TemplateValidationError(HyperviewError, ValueError):
         """
         self.code = code
         self.message = message
-        super().__init__(f"HXML validation failed [{code}]: {message}")
+        super().__init__(code, message)
+
+    def __str__(self) -> str:
+        """Return the stable validation failure message.
+
+        Returns:
+            Validation code and safe explanation.
+        """
+        return f"HXML validation failed [{self.code}]: {self.message}"
 
 
 class SourceUnavailable(HyperviewError):
@@ -75,4 +107,12 @@ class SourceUnavailable(HyperviewError):
         """
         self.source = source
         self.reason = reason
-        super().__init__(f"Template source unavailable: {source} ({reason})")
+        super().__init__(source, reason)
+
+    def __str__(self) -> str:
+        """Return the stable source availability message.
+
+        Returns:
+            Redacted source identity and failure reason.
+        """
+        return f"Template source unavailable: {self.source} ({self.reason})"
