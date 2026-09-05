@@ -1,6 +1,11 @@
+from concurrent.futures import ThreadPoolExecutor
+from time import sleep
+
 import pytest
 from django.test import RequestFactory, override_settings
+from django.test.signals import setting_changed
 
+import dj_hyperview.validation as validation_module
 from dj_hyperview.conf import ValidationSettings
 from dj_hyperview.engine import HyperviewEngine, render_template
 from dj_hyperview.exceptions import TemplateValidationError
@@ -130,6 +135,91 @@ def test_validate_hxml_applies_a_consumer_xsd(tmp_path):
         "schema", lambda: validate_hxml("<screen />", config=config)
     )
     assert error.message == "document does not match schema"
+
+
+def test_schema_size_is_independent_from_the_document_byte_limit(tmp_path) -> None:
+    """A strict screen limit does not reject a larger valid schema."""
+    schema = tmp_path / "screen.xsd"
+    padded = XSD.replace(
+        '<xs:element name="view"',
+        f"<!-- {'padding' * 100} -->\n<xs:element name=\"view\"",
+    )
+    schema.write_text(padded, encoding="utf-8")
+    document = "<view>ok</view>"
+
+    assert validate_hxml(
+        document, config=ValidationSettings(schema=schema, max_bytes=len(document))
+    ) == document
+
+
+def test_schema_compilation_is_cached_and_cleared_on_setting_change(
+    tmp_path, monkeypatch
+) -> None:
+    """Repeated documents reuse XSD compilation until configuration changes."""
+    schema = tmp_path / "screen.xsd"
+    schema.write_text(XSD, encoding="utf-8")
+    original = validation_module.etree.XMLSchema
+    compile_calls = 0
+
+    def counting_compiler(root):
+        nonlocal compile_calls
+        compile_calls += 1
+        return original(root)
+
+    monkeypatch.setattr(validation_module.etree, "XMLSchema", counting_compiler)
+    config = ValidationSettings(schema=schema)
+
+    validate_hxml("<view>first</view>", config=config)
+    validate_hxml("<view>second</view>", config=config)
+    assert compile_calls == 1
+
+    setting_changed.send(sender=object, setting="HYPERVIEW", value={}, enter=True)
+    validate_hxml("<view>third</view>", config=config)
+    assert compile_calls == 2
+
+
+def test_schema_compilation_is_single_flight_across_threads(
+    tmp_path, monkeypatch
+) -> None:
+    """Concurrent first use compiles one validator for a schema revision."""
+    schema = tmp_path / "concurrent.xsd"
+    schema.write_text(XSD, encoding="utf-8")
+    original = validation_module.etree.XMLSchema
+    compile_calls = 0
+
+    def slow_compiler(root):
+        nonlocal compile_calls
+        compile_calls += 1
+        sleep(0.01)
+        return original(root)
+
+    monkeypatch.setattr(validation_module.etree, "XMLSchema", slow_compiler)
+    config = ValidationSettings(schema=schema)
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(
+            pool.map(
+                lambda value: validate_hxml(f"<view>{value}</view>", config=config),
+                range(8),
+            )
+        )
+
+    assert len(results) == 8
+    assert compile_calls == 1
+
+
+def test_schema_cache_refreshes_after_a_file_revision_change(tmp_path) -> None:
+    """A new schema fingerprint cannot reuse the previous compiled validator."""
+    schema = tmp_path / "mutable.xsd"
+    schema.write_text(XSD, encoding="utf-8")
+    config = ValidationSettings(schema=schema)
+    validate_hxml("<view>first</view>", config=config)
+
+    schema.write_text(XSD.replace('name="view"', 'name="screen"'), encoding="utf-8")
+
+    assert validate_hxml("<screen>second</screen>", config=config) == (
+        "<screen>second</screen>"
+    )
 
 
 @pytest.mark.parametrize("location", ["../outside.xsd", "https://example.com/a.xsd"])

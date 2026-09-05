@@ -41,7 +41,10 @@ def test_invalid_settings_return_actionable_checks(value, expected) -> None:
 
 def test_complete_valid_settings_pass_checks(tmp_path) -> None:
     schema = tmp_path / "schema.xsd"
-    schema.touch()
+    schema.write_text(
+        '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" />',
+        encoding="utf-8",
+    )
     value = {
         "TEMPLATE_DIRS": [tmp_path],
         "SOURCES": [{"BACKEND": "dj_hyperview.sources.FileSystemSource"}],
@@ -53,6 +56,36 @@ def test_complete_valid_settings_pass_checks(tmp_path) -> None:
         value["VALIDATION"]["SCHEMA"] = configured_schema
         with override_settings(HYPERVIEW=value, CACHES=caches):
             assert check_hyperview_settings() == []
+
+
+@pytest.mark.parametrize(
+    "schema_content",
+    [
+        "<xs:schema>",
+        (
+            '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">'
+            '<xs:include schemaLocation="core.xsd" />'
+            "</xs:schema>"
+        ),
+        (
+            '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">'
+            '<xs:element name="view"><xs:complexType>'
+            '<xs:assert test="true()" />'
+            "</xs:complexType></xs:element></xs:schema>"
+        ),
+    ],
+)
+def test_schema_configuration_is_compiled_by_system_checks(
+    tmp_path, schema_content
+) -> None:
+    """Invalid, composed, and unsupported schemas fail before first request."""
+    schema = tmp_path / "screen.xsd"
+    schema.write_text(schema_content, encoding="utf-8")
+
+    with override_settings(HYPERVIEW={"VALIDATION": {"SCHEMA": schema}}):
+        messages = check_hyperview_settings()
+
+    assert [message.id for message in messages] == ["dj_hyperview.E008"]
 
 
 def test_source_and_template_directory_mismatches_emit_warnings(tmp_path) -> None:

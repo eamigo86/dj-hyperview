@@ -3,7 +3,11 @@
 import codecs
 import re
 from pathlib import Path
+from threading import RLock
+from typing import Any
 
+from django.dispatch import receiver
+from django.test.signals import setting_changed
 from django.utils.module_loading import import_string
 from django.utils.safestring import SafeData, mark_safe
 from lxml import etree
@@ -19,10 +23,24 @@ XML_ENCODING = re.compile(
     r"^\s*<\?xml\b[^>]*\bencoding\s*=\s*(['\"])([^'\"]+)\1",
     re.IGNORECASE,
 )
+_SCHEMA_CACHE: dict[Path, tuple[tuple[int, int], etree.XMLSchema]] = {}
+_SCHEMA_LOCK = RLock()
 
 
 def _fail(code: str, message: str) -> None:
     raise TemplateValidationError(code, message)
+
+
+@receiver(
+    setting_changed,
+    dispatch_uid="dj_hyperview.clear_compiled_schema_cache",
+    weak=False,
+)
+def _clear_compiled_schema_cache(*, setting: str, **kwargs: Any) -> None:
+    del kwargs
+    if setting == "HYPERVIEW":
+        with _SCHEMA_LOCK:
+            _SCHEMA_CACHE.clear()
 
 
 def _parser() -> etree.XMLParser:
@@ -102,7 +120,7 @@ def _contains_forbidden_declaration(document: str) -> bool:
     return False
 
 
-def _guard_document(document: str, config: ValidationSettings) -> bytes:
+def _encode_utf8(document: str) -> bytes:
     declaration = XML_ENCODING.match(document)
     if declaration is not None:
         try:
@@ -114,9 +132,20 @@ def _guard_document(document: str, config: ValidationSettings) -> bytes:
                 "invalid_encoding", "XML declaration must use UTF-8"
             ) from None
     try:
-        encoded = document.encode()
+        return document.encode()
     except UnicodeEncodeError as error:
         raise TemplateValidationError("malformed_xml", "invalid XML") from error
+
+
+def _guard_declarations(document: str) -> bytes:
+    encoded = _encode_utf8(document)
+    if _contains_forbidden_declaration(document):
+        _fail("forbidden_declaration", FORBIDDEN_MESSAGE)
+    return encoded
+
+
+def _guard_document(document: str, config: ValidationSettings) -> bytes:
+    encoded = _encode_utf8(document)
     if len(encoded) > config.max_bytes:
         _fail("max_bytes", "document exceeds MAX_BYTES")
     if _contains_forbidden_declaration(document):
@@ -177,6 +206,45 @@ def _schema_callable(schema):
     return None
 
 
+def _compile_schema(schema: str | Path) -> etree.XMLSchema:
+    try:
+        path = Path(schema).resolve()
+        metadata = path.stat()
+    except (OSError, TypeError) as error:
+        raise TemplateValidationError("schema_invalid", "invalid schema") from error
+    fingerprint = (metadata.st_mtime_ns, metadata.st_size)
+
+    with _SCHEMA_LOCK:
+        cached = _SCHEMA_CACHE.get(path)
+        if cached is not None and cached[0] == fingerprint:
+            return cached[1]
+        try:
+            schema_document = path.read_text(encoding="utf-8")
+            schema_root = etree.fromstring(
+                _guard_declarations(schema_document), parser=_parser()
+            )
+        except TemplateValidationError:
+            raise
+        except (OSError, UnicodeError, etree.XMLSyntaxError) as error:
+            raise TemplateValidationError("schema_invalid", "invalid schema") from error
+
+        references = {
+            f"{XSD_NAMESPACE}include",
+            f"{XSD_NAMESPACE}import",
+            f"{XSD_NAMESPACE}redefine",
+        }
+        if any(element.tag in references for element in schema_root.iter()):
+            _fail(
+                "forbidden_schema_reference", "external schema references are forbidden"
+            )
+        try:
+            compiled = etree.XMLSchema(schema_root)
+        except etree.XMLSchemaParseError as error:
+            raise TemplateValidationError("schema_invalid", "invalid schema") from error
+        _SCHEMA_CACHE[path] = (fingerprint, compiled)
+        return compiled
+
+
 def _validate_schema(root, document: str, config: ValidationSettings) -> None:
     schema = config.schema
     validator = _schema_callable(schema)
@@ -190,24 +258,7 @@ def _validate_schema(root, document: str, config: ValidationSettings) -> None:
         return
 
     try:
-        schema_document = Path(schema).read_text(encoding="utf-8")
-        schema_root = etree.fromstring(
-            _guard_document(schema_document, config), parser=_parser()
-        )
-    except (OSError, UnicodeError, etree.XMLSyntaxError) as error:
-        raise TemplateValidationError("schema_invalid", "invalid schema") from error
-
-    references = {
-        f"{XSD_NAMESPACE}include",
-        f"{XSD_NAMESPACE}import",
-        f"{XSD_NAMESPACE}redefine",
-    }
-    if any(element.tag in references for element in schema_root.iter()):
-        _fail("forbidden_schema_reference", "external schema references are forbidden")
-    try:
-        etree.XMLSchema(schema_root).assertValid(root)
-    except etree.XMLSchemaParseError as error:
-        raise TemplateValidationError("schema_invalid", "invalid schema") from error
+        _compile_schema(schema).assertValid(root)
     except etree.DocumentInvalid as error:
         raise TemplateValidationError("schema", SCHEMA_MESSAGE) from error
 

@@ -38,7 +38,8 @@ are forbidden because they could cross the local schema boundary.
 The configured schema must be a single-file XSD 1.0 document. The upstream
 Hyperview schema uses external composition and XSD 1.1 features, so it must be
 flattened and downgraded before use with lxml. `MAX_DEPTH` cannot exceed the
-libxml2 safety ceiling of 256.
+libxml2 safety ceiling of 256. File schemas are compiled once per file revision
+and reused across validations.
 
 ## Render a Hyperview CSRF field
 

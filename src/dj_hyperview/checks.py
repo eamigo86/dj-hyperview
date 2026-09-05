@@ -184,9 +184,19 @@ def _schema(value: Any) -> bool:
     if value is None or callable(value):
         return True
     try:
-        return Path(value).is_file() or _importable(value)
+        is_file = Path(value).is_file()
     except (OSError, TypeError):
         return False
+    if not is_file:
+        return _importable(value)
+    from .exceptions import TemplateValidationError
+    from .validation import _compile_schema
+
+    try:
+        _compile_schema(value)
+    except TemplateValidationError:
+        return False
+    return True
 
 
 def _check_validation(value: Any) -> list[CheckMessage]:

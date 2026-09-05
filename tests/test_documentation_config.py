@@ -135,6 +135,13 @@ def test_documentation_starts_with_installation_and_configuration_outcomes() -> 
     assert "TemplateResolver" in pages["configuration.md"]
 
 
+def test_readme_states_the_supported_schema_format() -> None:
+    """The project overview prevents copying an incompatible upstream XSD."""
+    readme = (ROOT / "README.md").read_text()
+
+    assert "single-file XSD 1.0" in readme
+
+
 def test_hyperview_manifest_link_targets_the_public_repository() -> None:
     """The compatibility manifest remains reachable from the hosted site."""
     page = _documentation_pages()["hyperview-0.110.0.md"]

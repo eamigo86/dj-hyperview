@@ -25,11 +25,14 @@ screens into the package.
 - **Django-native HTTP integration** — use lazy template responses, class-based
   views, request metadata, content negotiation, and standard CSRF protection.
 - **Fail-closed validation** — enforce canonical names, UTF-8, XML safety,
-  consumer-provided XSD rules, and configurable resource limits.
+  consumer-provided single-file XSD 1.0 rules, and configurable resource limits.
 
 > dj-hyperview does not ship application screens, runtime XML or HXML files,
 > mobile components, Redis, or a required database app. Those choices remain
 > under the consumer project's control.
+
+The upstream Hyperview schema uses composition and XSD 1.1 features. Flatten
+and downgrade it before configuring it as the package validation schema.
 
 ## Requirements
 
