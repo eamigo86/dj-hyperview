@@ -145,9 +145,7 @@ def test_rename_validation_error_rolls_back_without_invalidation(
         patch(SCHEDULE) as schedule,
         pytest.raises(ValidationError),
     ):
-        rename_template(
-            "old.xml", "new.xml", content="<!DOCTYPE view><view />"
-        )
+        rename_template("old.xml", "new.xml", content="<!DOCTYPE view><view />")
 
     stored = mutation_model.objects.get()
     assert (stored.name, stored.content, stored.revision) == ("old.xml", "<old />", 1)

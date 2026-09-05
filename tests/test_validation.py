@@ -74,10 +74,7 @@ def test_libxml_depth_ceiling_uses_the_public_max_depth_code(max_depth) -> None:
 @pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
 def test_non_utf8_xml_declarations_are_rejected(validator) -> None:
     """The XML declaration cannot contradict the UTF-8 HTTP contract."""
-    document = (
-        '<?xml version="1.0" encoding="ISO-8859-1"?>'
-        "<view>café</view>"
-    )
+    document = '<?xml version="1.0" encoding="ISO-8859-1"?><view>café</view>'
 
     error = assert_validation_error("invalid_encoding", lambda: validator(document))
 
@@ -142,14 +139,17 @@ def test_schema_size_is_independent_from_the_document_byte_limit(tmp_path) -> No
     schema = tmp_path / "screen.xsd"
     padded = XSD.replace(
         '<xs:element name="view"',
-        f"<!-- {'padding' * 100} -->\n<xs:element name=\"view\"",
+        f'<!-- {"padding" * 100} -->\n<xs:element name="view"',
     )
     schema.write_text(padded, encoding="utf-8")
     document = "<view>ok</view>"
 
-    assert validate_hxml(
-        document, config=ValidationSettings(schema=schema, max_bytes=len(document))
-    ) == document
+    assert (
+        validate_hxml(
+            document, config=ValidationSettings(schema=schema, max_bytes=len(document))
+        )
+        == document
+    )
 
 
 def test_schema_compilation_is_cached_and_cleared_on_setting_change(

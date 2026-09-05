@@ -117,9 +117,8 @@ class HyperviewTemplateResponse(TemplateResponse):
         """
         if isinstance(self.template_name, _ValidatedTemplate):
             return super().rendered_content
-        if (
-            self.using is not None
-            or not isinstance(self.template_name, (str, list, tuple))
+        if self.using is not None or not isinstance(
+            self.template_name, (str, list, tuple)
         ):
             return validate_rendered_hxml(super().rendered_content)
         context = self.resolve_context(self.context_data)

@@ -91,9 +91,7 @@ def test_engine_skips_an_invalid_candidate_and_uses_the_next_template() -> None:
         {
             "BACKEND": "django.template.backends.django.DjangoTemplates",
             "OPTIONS": {
-                "context_processors": [
-                    "django.template.context_processors.request"
-                ],
+                "context_processors": ["django.template.context_processors.request"],
                 "string_if_invalid": "INVALID",
             },
         }
@@ -111,9 +109,10 @@ def test_engine_inherits_consumer_django_template_options() -> None:
         )
     )
 
-    assert engine.render(
-        "screen.xml", request=RequestFactory().get("/configured/")
-    ) == "<view>/configured/|INVALID</view>"
+    assert (
+        engine.render("screen.xml", request=RequestFactory().get("/configured/"))
+        == "<view>/configured/|INVALID</view>"
+    )
 
 
 def test_engine_entry_points_raise_the_package_not_found_specialization() -> None:

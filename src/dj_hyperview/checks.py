@@ -29,9 +29,7 @@ def _sequence(value: Any) -> bool:
     return isinstance(value, Sequence) and not isinstance(value, (str, bytes))
 
 
-def _check_template_dirs(
-    value: Any, path: str = "TEMPLATE_DIRS"
-) -> list[CheckMessage]:
+def _check_template_dirs(value: Any, path: str = "TEMPLATE_DIRS") -> list[CheckMessage]:
     if not _sequence(value):
         return [_error("E002", path, "must be a sequence")]
     errors = []

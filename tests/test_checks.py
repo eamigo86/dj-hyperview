@@ -102,9 +102,7 @@ def test_source_and_template_directory_mismatches_emit_warnings(tmp_path) -> Non
         assert [message.id.rsplit(".", 1)[-1] for message in messages] == [expected]
 
     configured = {
-        "SOURCES": [
-            {"BACKEND": filesystem, "OPTIONS": {"template_dirs": [tmp_path]}}
-        ]
+        "SOURCES": [{"BACKEND": filesystem, "OPTIONS": {"template_dirs": [tmp_path]}}]
     }
     with override_settings(HYPERVIEW=configured):
         assert check_hyperview_settings() == []
