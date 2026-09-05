@@ -1,6 +1,6 @@
 [project]
 name = "dj-hyperview"
-version = "0.1.0a4"
+version = "0.1.0a5"
 description = "Django infrastructure for server-driven Hyperview interfaces"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
