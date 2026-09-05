@@ -43,6 +43,10 @@ def test_status_separates_verified_code_from_external_setup() -> None:
 def test_task13_ledger_records_each_verified_subtask() -> None:
     """Task 13 retains goals, outcomes, problems, and evidence."""
     tasks = (DEVELOPMENT / "tasks.md").read_text()
+    assert "Tasks 1–13 están completas y verificadas" in tasks
+    assert "| 13 | **Verificado** |" in tasks
+    assert "Tasks 1–12 están completas" not in tasks
+    assert "Task 13 permanece pendiente" not in tasks
     task13 = tasks.split("## Task 13 —", 1)[1].split("## Post-MVP", 1)[0]
 
     assert "**Estado:** Verificado" in task13

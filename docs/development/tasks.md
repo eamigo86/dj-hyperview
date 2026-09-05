@@ -1,6 +1,6 @@
 # Tareas de implementación
 
-Este documento registra el trabajo verificable del paquete. Tasks 1–12 están completas y verificadas hasta `84fc76d`; Task 13 permanece pendiente dentro del mismo repositorio. El proyecto legacy permanece read-only y no participa en la implementación ni en los gates.
+Este documento registra el trabajo verificable del paquete. Tasks 1–13 están completas y verificadas hasta [077589b](https://github.com/eamigo86/dj-hyperview/commit/077589b). El proyecto legacy permanece read-only y no participa en la implementación ni en los gates.
 
 ## Convenciones de trazabilidad
 
@@ -19,7 +19,7 @@ Este documento registra el trabajo verificable del paquete. Tasks 1–12 están 
 | 10 | **Verificado** | Aceptación HTTP end-to-end sobre ese consumidor |
 | 11 | **Verificado** | Dependencias, lock y matriz del paquete |
 | 12 | **Verificado** | Contrato HXML/HTTP test-only con Hyperview 0.110.0 |
-| 13 | **Pendiente** | Documentación Zensical, CI, release, PyPI y Pages |
+| 13 | **Verificado** | Documentación Zensical, CI, release, PyPI y Pages |
 
 ---
 
