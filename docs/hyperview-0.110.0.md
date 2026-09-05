@@ -6,7 +6,7 @@ test-only contract for Hyperview 0.110.0. The contract covers the official
 fragments, form behaviors and references, Django CSRF, the Hyperview media type,
 and UTF-8 output.
 
-The [version manifest](../tests/contracts/hyperview/0.110.0/manifest.json)
+The [version manifest](https://github.com/eamigo86/dj-hyperview/blob/main/tests/contracts/hyperview/0.110.0/manifest.json)
 pins the official
 [Hyperview 0.110.0 npm release](https://www.npmjs.com/package/hyperview/v/0.110.0),
 the [official Hyperview repository](https://github.com/Instawork/hyperview),

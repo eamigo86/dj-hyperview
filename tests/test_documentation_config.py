@@ -135,6 +135,17 @@ def test_documentation_starts_with_installation_and_configuration_outcomes() -> 
     assert "TemplateResolver" in pages["configuration.md"]
 
 
+def test_hyperview_manifest_link_targets_the_public_repository() -> None:
+    """The compatibility manifest remains reachable from the hosted site."""
+    page = _documentation_pages()["hyperview-0.110.0.md"]
+
+    assert (
+        "https://github.com/eamigo86/dj-hyperview/blob/main/"
+        "tests/contracts/hyperview/0.110.0/manifest.json"
+    ) in page
+    assert "../tests/contracts/hyperview/0.110.0/manifest.json" not in page
+
+
 def test_configuration_documents_every_builtin_source_option() -> None:
     """Consumers can discover constructor options for every bundled source."""
     page = _documentation_pages()["configuration.md"]

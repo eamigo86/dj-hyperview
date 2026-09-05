@@ -125,7 +125,9 @@ def test_stage_consumes_one_candidate_and_separates_immutable_artifacts() -> Non
     }
     assert "test -f candidate/site/index.html" in script
     assert "*.whl" in script and "*.tar.gz" in script
-    assert "sha256sum > candidate/SHA256SUMS" in script
+    assert "(cd candidate/dist" in script
+    assert "sha256sum *.whl *.tar.gz > ../SHA256SUMS" in script
+    assert "sha256sum > candidate/SHA256SUMS" not in script
     assert distributions["with"] == {
         "name": "release-distributions-${{ github.sha }}",
         "path": "candidate/dist/\ncandidate/SHA256SUMS\n",
@@ -263,7 +265,7 @@ def test_release_audit_rejects_publish_and_deploy_drift(
         ),
         _move_setup_uv_after_gate,
         lambda text: text.replace("release-candidate-${{ github.sha }}", "latest", 1),
-        lambda text: text.replace("sha256sum >", "sha256sum || true >", 1),
+        lambda text: text.replace("sha256sum *.whl", "sha256sum || true *.whl", 1),
         lambda text: text.replace("path: candidate/site/", "path: candidate/dist/", 1),
         lambda text: text.replace(
             f"actions/checkout@{PINS['actions/checkout']}",
