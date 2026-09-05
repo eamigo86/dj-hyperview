@@ -22,6 +22,7 @@ from .sources import (
 
 _PATH_TYPES = (PurePosixPath, PureWindowsPath, PosixPath, WindowsPath)
 _MISSING_CACHE_MARKER = object()
+_MISSING_CACHE_SAFETY_HOOK = object()
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -116,6 +117,23 @@ def _source_cacheable(source: object) -> bool:
         return False
     if value is _MISSING_CACHE_MARKER:
         return static_marker is _MISSING_CACHE_MARKER
+    return type(value) is bool and value
+
+
+def _source_cache_safe(source: object) -> bool:
+    try:
+        static_hook = getattr_static(
+            source, "_dj_hyperview_cache_safe", _MISSING_CACHE_SAFETY_HOOK
+        )
+    except Exception:
+        return False
+    if static_hook is _MISSING_CACHE_SAFETY_HOOK:
+        return True
+    try:
+        hook = source._dj_hyperview_cache_safe  # type: ignore[attr-defined]
+        value = hook()
+    except Exception:
+        return False
     return type(value) is bool and value
 
 
@@ -226,16 +244,18 @@ class TemplateResolver:
         generation, initialize = self._generation(canonical)
         initial_results: list[tuple[str, ResolvedTemplate | None]] = []
         for source, source_id in zip(self.sources, self._source_ids, strict=True):
+            publish_initial = False
             if initialize:
+                publish_initial = source_id is not None and _source_cache_safe(source)
                 resolved = source.resolve(canonical)
-                if source_id is not None:
+                if publish_initial:
                     initial_results.append((source_id, resolved))
             else:
                 resolved = self._resolve_source(
                     source, source_id, canonical, generation
                 )
             if resolved is not None:
-                if initialize:
+                if initialize and publish_initial:
                     self._publish_initial(canonical, initial_results)
                 return resolved
         raise TemplateNotFound(canonical)
@@ -291,6 +311,8 @@ class TemplateResolver:
             return entry.template
 
         resolved = source.resolve(name)
+        if not _source_cache_safe(source):
+            return resolved
         try:
             if resolved is None:
                 self.cache.set_resolved_miss(source_id, name, generation)

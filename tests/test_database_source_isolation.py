@@ -4,7 +4,7 @@ from unittest.mock import patch
 import pytest
 from django.apps import apps
 from django.core.cache import caches
-from django.db import connections
+from django.db import connections, transaction
 from django.test import override_settings
 
 from dj_hyperview.cache import TemplateCache, invalidate_templates
@@ -141,6 +141,36 @@ def test_private_source_marker_disables_generic_resolver_cache() -> None:
     assert (first.content, second.content) == ("first", "second")
     assert source.calls == 2
     assert cache_get.call_count == 0
+
+
+@pytest.mark.django_db(transaction=True, databases=ALIASES)
+@pytest.mark.parametrize("exists", [True, False], ids=["content", "miss"])
+def test_atomic_database_snapshots_never_publish_to_shared_cache(
+    dual_database_model, exists: bool
+) -> None:
+    """Transaction-scoped database snapshots cannot populate shared cache state."""
+    if exists:
+        dual_database_model.objects.using("default").create(
+            name="screen.xml", content="snapshot", revision=1
+        )
+    configured = database_config(f"atomic-snapshot-{exists}", "default")
+
+    with override_settings(CACHES=LOCMEM_CACHES, HYPERVIEW=configured):
+        caches["screens"].clear()
+        resolver = TemplateResolver.from_settings()
+        assert resolver.cache is not None
+        source_id = resolver._source_ids[0]
+        assert source_id is not None
+        generation = resolver.cache.generation("screen.xml")
+
+        with transaction.atomic(using="default"):
+            if exists:
+                assert resolver.resolve("screen.xml").content == "snapshot"
+            else:
+                with pytest.raises(TemplateNotFound):
+                    resolver.resolve("screen.xml")
+
+        assert resolver.cache.get_resolved(source_id, "screen.xml", generation) is None
 
 
 @pytest.mark.django_db(transaction=True, databases=ALIASES)

@@ -41,6 +41,12 @@ revision, and generation keep entries isolated.
 fail. `raise` reports `SourceUnavailable` instead. Neither mode hides a real
 source failure.
 
+An explicitly bound `DatabaseSource` never publishes a source read while its
+database connection is inside a transaction. Existing cache hits remain
+available, but an older transaction snapshot cannot pin stale content under a
+newer generation. Applications using `ATOMIC_REQUESTS` therefore fall back to
+database reads for cache misses without sharing those snapshot-local results.
+
 ## Invalidate after publication
 
 Database services and model signals schedule invalidation after commit. For a

@@ -4,7 +4,7 @@ from typing import Any
 
 from django.apps import apps
 from django.core.exceptions import AppRegistryNotReady
-from django.db import DatabaseError
+from django.db import DatabaseError, connections
 from django.utils.connection import ConnectionDoesNotExist
 
 from dj_hyperview.exceptions import SourceUnavailable
@@ -47,6 +47,12 @@ class DatabaseSource:
         """
         self.using = using
         self._dj_hyperview_cacheable = using is not None
+
+    def _dj_hyperview_cache_safe(self) -> bool:
+        if self.using is None:
+            return False
+        connection = connections[self.using]
+        return connection.get_autocommit() and not connection.in_atomic_block
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
         """Resolve one active exact-name database template.

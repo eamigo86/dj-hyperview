@@ -165,6 +165,8 @@ def test_cache_guide_matches_opt_in_and_invalidation_contracts() -> None:
     assert "one non-expiring generation key" in page.lower()
     assert "DummyCache" in page
     assert "Omit the `CACHE` section" in normalized
+    assert "older transaction snapshot" in normalized
+    assert "ATOMIC_REQUESTS" in page
     assert "compiled templates" in page
     assert parameter.kind is Parameter.VAR_POSITIONAL
     assert blocks
