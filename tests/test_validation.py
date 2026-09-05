@@ -6,7 +6,12 @@ from dj_hyperview.engine import HyperviewEngine, render_template
 from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.http import HyperviewTemplateResponse
 from dj_hyperview.resolver import TemplateResolver
-from dj_hyperview.validation import validate_hxml
+from dj_hyperview.validation import (
+    _contains_forbidden_declaration,
+    validate_hxml,
+    validate_rendered_hxml,
+    validate_template_source,
+)
 
 from .stubs import TemplateSource
 
@@ -32,6 +37,53 @@ def test_validate_hxml_rejects_malformed_xml_with_a_stable_error():
     error = assert_validation_error("malformed_xml", lambda: validate_hxml("<view>"))
 
     assert str(error) == "HXML validation failed [malformed_xml]: invalid XML"
+
+
+def test_declaration_scan_has_a_constant_time_common_path() -> None:
+    """Documents without declaration literals avoid the block-aware scan."""
+
+    class TrackedDocument(str):
+        startswith_calls = 0
+
+        def startswith(self, *args, **kwargs):
+            self.startswith_calls += 1
+            return super().startswith(*args, **kwargs)
+
+    document = TrackedDocument(f"<view>{'content' * 10_000}</view>")
+
+    assert _contains_forbidden_declaration(document) is False
+    assert document.startswith_calls == 0
+
+
+@pytest.mark.parametrize("max_depth", [256, 1_000])
+def test_libxml_depth_ceiling_uses_the_public_max_depth_code(max_depth) -> None:
+    """Parser-level depth rejection is reported as the configured limit."""
+    document = "<view>" * 257 + "</view>" * 257
+
+    assert_validation_error(
+        "max_depth",
+        lambda: validate_hxml(document, config=ValidationSettings(max_depth=max_depth)),
+    )
+
+
+@pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
+def test_non_utf8_xml_declarations_are_rejected(validator) -> None:
+    """The XML declaration cannot contradict the UTF-8 HTTP contract."""
+    document = (
+        '<?xml version="1.0" encoding="ISO-8859-1"?>'
+        "<view>café</view>"
+    )
+
+    error = assert_validation_error("invalid_encoding", lambda: validator(document))
+
+    assert error.__cause__ is None
+
+
+def test_render_validation_strips_template_whitespace_before_xml_declaration() -> None:
+    """Django load tags may precede a declaration without breaking the response."""
+    document = '\n\t<?xml version="1.0" encoding="UTF-8"?><view />'
+
+    assert validate_rendered_hxml(document).startswith("<?xml")
 
 
 @pytest.mark.parametrize(

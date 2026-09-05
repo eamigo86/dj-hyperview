@@ -79,6 +79,31 @@ def test_declaration_text_is_allowed_in_django_comments(comment):
     assert engine.render("screen.xml") == "<view><text>ok</text></view>"
 
 
+def test_multiline_django_comment_syntax_cannot_hide_a_declaration() -> None:
+    """The source guard mirrors Django's single-line comment lexer."""
+    source = "{#\n<!DOCTYPE view [<!ENTITY x 'unsafe'>]>\n#}<view>&x;</view>"
+
+    with pytest.raises(TemplateValidationError) as captured:
+        validate_template_source(source)
+
+    assert captured.value.code == "forbidden_declaration"
+
+
+def test_csrf_tag_can_precede_an_xml_declaration_on_its_own_line() -> None:
+    """Post-render normalization removes whitespace emitted by a load tag."""
+    source = (
+        "{% load dj_hyperview %}\n"
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<view>{% hv_csrf_token %}</view>"
+    )
+    engine = HyperviewEngine(TemplateResolver([TemplateSource(content=source)]))
+
+    rendered = engine.render("screen.xml", request=RequestFactory().get("/form/"))
+
+    assert rendered.startswith("<?xml")
+    assert 'name="csrfmiddlewaretoken"' in rendered
+
+
 @pytest.mark.parametrize(
     "source",
     [

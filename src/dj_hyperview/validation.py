@@ -1,8 +1,11 @@
 """Safe validation for rendered Hyperview XML."""
 
+import codecs
+import re
 from pathlib import Path
 
 from django.utils.module_loading import import_string
+from django.utils.safestring import SafeData, mark_safe
 from lxml import etree
 
 from .conf import ValidationSettings, get_settings
@@ -11,7 +14,11 @@ from .exceptions import TemplateValidationError
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 SCHEMA_MESSAGE = "document does not match schema"
 XSD_NAMESPACE = "{http://www.w3.org/2001/XMLSchema}"
-IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"), ("{#", "#}"))
+IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"))
+XML_ENCODING = re.compile(
+    r"^\s*<\?xml\b[^>]*\bencoding\s*=\s*(['\"])([^'\"]+)\1",
+    re.IGNORECASE,
+)
 
 
 def _fail(code: str, message: str) -> None:
@@ -20,6 +27,7 @@ def _fail(code: str, message: str) -> None:
 
 def _parser() -> etree.XMLParser:
     return etree.XMLParser(
+        encoding="utf-8",
         resolve_entities=False,
         no_network=True,
         load_dtd=False,
@@ -52,7 +60,28 @@ def _django_comment_end(document: str, index: int) -> int | None:
     return len(document)
 
 
+def _inline_django_comment_end(document: str, index: int) -> int | None:
+    if not document.startswith("{#", index):
+        return None
+    end = document.find("#}", index + 2)
+    if end < 0:
+        return None
+    newline_positions = [
+        position
+        for position in (
+            document.find("\n", index + 2),
+            document.find("\r", index + 2),
+        )
+        if position >= 0
+    ]
+    if newline_positions and min(newline_positions) < end:
+        return None
+    return end + 2
+
+
 def _contains_forbidden_declaration(document: str) -> bool:
+    if "<!DOCTYPE" not in document and "<!ENTITY" not in document:
+        return False
     index = 0
     while index < len(document):
         for opening, closing in IGNORED_BLOCKS:
@@ -61,7 +90,9 @@ def _contains_forbidden_declaration(document: str) -> bool:
                 index = len(document) if end < 0 else end + len(closing)
                 break
         else:
-            comment_end = _django_comment_end(document, index)
+            comment_end = _inline_django_comment_end(document, index)
+            if comment_end is None:
+                comment_end = _django_comment_end(document, index)
             if comment_end is not None:
                 index = comment_end
             elif document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
@@ -72,6 +103,16 @@ def _contains_forbidden_declaration(document: str) -> bool:
 
 
 def _guard_document(document: str, config: ValidationSettings) -> bytes:
+    declaration = XML_ENCODING.match(document)
+    if declaration is not None:
+        try:
+            encoding = codecs.lookup(declaration.group(2)).name
+        except LookupError:
+            encoding = None
+        if encoding != "utf-8":
+            raise TemplateValidationError(
+                "invalid_encoding", "XML declaration must use UTF-8"
+            ) from None
     try:
         encoded = document.encode()
     except UnicodeEncodeError as error:
@@ -103,7 +144,13 @@ def _parse(document: str, config: ValidationSettings):
     encoded = _guard_document(document, config)
     try:
         root = etree.fromstring(encoded, parser=_parser())
-    except (UnicodeError, etree.XMLSyntaxError) as error:
+    except etree.XMLSyntaxError as error:
+        if "Excessive depth" in str(error):
+            raise TemplateValidationError(
+                "max_depth", "document exceeds MAX_DEPTH"
+            ) from error
+        raise TemplateValidationError("malformed_xml", "invalid XML") from error
+    except UnicodeError as error:
         raise TemplateValidationError("malformed_xml", "invalid XML") from error
 
     nodes = 0
@@ -195,6 +242,8 @@ def validate_rendered_hxml(
         The rendered document after applying the configured policy.
     """
     resolved = config or get_settings().validation
+    stripped = document.lstrip()
+    document = mark_safe(stripped) if isinstance(document, SafeData) else stripped
     if resolved.mode in {"render", "publish_and_render"}:
         return validate_hxml(document, config=resolved)
     return document

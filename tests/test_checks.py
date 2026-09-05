@@ -28,6 +28,7 @@ def test_minimal_installation_requires_no_optional_services() -> None:
         ({"VALIDATION": {"MODE": "sometimes"}}, ["E007"]),
         ({"VALIDATION": {"SCHEMA": object()}}, ["E008"]),
         ({"VALIDATION": {"MAX_BYTES": -1}}, ["E009"]),
+        ({"VALIDATION": {"MAX_DEPTH": 257}}, ["E009"]),
     ],
 )
 def test_invalid_settings_return_actionable_checks(value, expected) -> None:

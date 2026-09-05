@@ -180,6 +180,10 @@ def test_security_guide_matches_name_and_xml_validation_contracts() -> None:
     assert "executable Django template code" in page
     assert "developer-level trust" in page
     assert "developer-level trust" in database_page
+    assert "hv_csrf_token" in page
+    assert "load dj_hyperview" in page
+    assert "XML declaration" in page
+    assert "single-file XSD 1.0" in page
     assert list(signature(validate_hxml).parameters) == ["document", "config"]
     assert blocks
     for block in blocks:

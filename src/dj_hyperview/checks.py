@@ -205,6 +205,10 @@ def _check_validation(value: Any) -> list[CheckMessage]:
             errors.append(
                 _error("E009", f"VALIDATION.{name}", "must be a positive integer")
             )
+        elif name == "MAX_DEPTH" and current > 256:
+            errors.append(
+                _error("E009", "VALIDATION.MAX_DEPTH", "must be no greater than 256")
+            )
     return errors
 
 
