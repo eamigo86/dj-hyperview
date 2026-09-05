@@ -232,15 +232,36 @@ def test_resolver_handles_rotation_between_raw_write_and_confirmation(
     generation = cache.generation("screen.xml")
     raw_key, _ = arm_rotation(cache, backend, generation)
 
-    if mode == "raise":
-        with pytest.raises(SourceUnavailable, match="generation changed"):
-            resolver(source, cache, mode).resolve("screen.xml")
-    elif old is None:
+    if old is None:
         with pytest.raises(TemplateNotFound):
             resolver(source, cache, mode).resolve("screen.xml")
     else:
         assert resolver(source, cache, mode).resolve("screen.xml").content == "old"
     assert backend.get(raw_key, "absent") == "absent"
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_cache_reports_cleanly_superseded_and_current_publications(bind_backend):
+    """A clean generation race is an outcome, not a cache failure."""
+    cache = TemplateCache("publication-outcome", alias="screens")
+    backend = ClockBackend()
+    bind_backend(backend)
+    generation = cache.generation("screen.xml")
+    raw_key, _ = arm_rotation(cache, backend, generation)
+    template = ResolvedTemplate(
+        "screen.xml", "authoritative", "memory:x", "memory", "1"
+    )
+
+    assert (
+        cache.set_resolved("source:test", "screen.xml", template, generation) is False
+    )
+    assert backend.get(raw_key, "absent") == "absent"
+    assert (
+        cache.set_resolved(
+            "source:test", "screen.xml", template, cache.generation("screen.xml")
+        )
+        is True
+    )
 
 
 @pytest.mark.parametrize("operation", ["get", "delete"])
@@ -260,13 +281,14 @@ def test_unconfirmable_publication_fails_closed_and_attempts_cleanup(
     backend.faults[(operation, fault_key)] = effect
     template = ResolvedTemplate("screen.xml", "old", "memory:x", "memory", "old")
 
-    reason = (
-        "generation changed"
-        if operation == "delete" and effect == "false"
-        else "backend failure"
-    )
-    with pytest.raises(SourceUnavailable, match=reason):
-        cache.set_resolved("source:test", "screen.xml", template, generation)
+    if operation == "delete" and effect == "false":
+        assert (
+            cache.set_resolved("source:test", "screen.xml", template, generation)
+            is False
+        )
+    else:
+        with pytest.raises(SourceUnavailable, match="backend failure"):
+            cache.set_resolved("source:test", "screen.xml", template, generation)
     backend.faults.clear()
     if operation == "delete":
         assert backend.get(raw_key, "absent") != "absent"

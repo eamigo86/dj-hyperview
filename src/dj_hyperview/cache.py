@@ -381,7 +381,7 @@ class TemplateCache:
         name: str,
         template: ResolvedTemplate,
         generation: str | None = None,
-    ) -> None:
+    ) -> bool:
         """Store the latest resolved raw result for a configured source.
 
         Args:
@@ -389,6 +389,9 @@ class TemplateCache:
             name: Canonical template name.
             template: Resolved raw template to cache.
             generation: Optional shared generation token.
+
+        Returns:
+            Whether the entry was published under the current generation.
         """
         payload = json.dumps(
             {
@@ -401,24 +404,27 @@ class TemplateCache:
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        self._set_resolved(source, name, payload, self.ttl, generation)
+        return self._set_resolved(source, name, payload, self.ttl, generation)
 
     def set_resolved_miss(
         self, source: str, name: str, generation: str | None = None
-    ) -> None:
+    ) -> bool:
         """Store a latest-result miss for a configured source.
 
         Args:
             source: Stable source identity.
             name: Canonical template name.
             generation: Optional shared generation token.
+
+        Returns:
+            Whether the miss was published under the current generation.
         """
         payload = json.dumps(
             {"version": 1, "state": "source-miss", "source": source, "name": name},
             ensure_ascii=False,
             separators=(",", ":"),
         )
-        self._set_resolved(source, name, payload, self.negative_ttl, generation)
+        return self._set_resolved(source, name, payload, self.negative_ttl, generation)
 
     @staticmethod
     def _resolved_revision(generation: str | None) -> str:
@@ -431,13 +437,14 @@ class TemplateCache:
         payload: str,
         timeout: int,
         generation: str | None,
-    ) -> None:
+    ) -> bool:
         key = self.key(source, name, self._resolved_revision(generation))
         self._store(key, payload, timeout)
-        if generation is not None:
-            self._confirm_publication(name, generation, key)
+        if generation is None:
+            return True
+        return self._confirm_publication(name, generation, key)
 
-    def _confirm_publication(self, name: str, generation: str, key: str) -> None:
+    def _confirm_publication(self, name: str, generation: str, key: str) -> bool:
         try:
             current = self._read_generation(name)
         except SourceUnavailable:
@@ -445,8 +452,10 @@ class TemplateCache:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure") from None
         if current != generation:
             clean = self._discard_replaced_publication(key)
-            reason = "generation changed" if clean else "backend failure"
-            raise SourceUnavailable(f"cache:{self.alias}", reason)
+            if not clean:
+                raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
+            return False
+        return True
 
     def _discard_replaced_publication(self, key: str) -> bool:
         try:
