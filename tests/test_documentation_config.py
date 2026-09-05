@@ -172,6 +172,41 @@ def test_configuration_documents_every_builtin_source_option() -> None:
     assert "single string or Path" in page
 
 
+def test_configuration_documents_every_setting_contract() -> None:
+    """Every supported setting exposes its type, default, and semantics."""
+    page = _documentation_pages()["configuration.md"]
+
+    assert "## Settings reference" in page
+    assert "| Setting | Type | Default | Meaning |" in page
+    for setting in (
+        "`HYPERVIEW`",
+        "`TEMPLATE_DIRS`",
+        "`SOURCES`",
+        "`SOURCES[].BACKEND`",
+        "`SOURCES[].OPTIONS`",
+        "`CACHE`",
+        "`CACHE.ALIAS`",
+        "`CACHE.NAMESPACE`",
+        "`CACHE.TTL`",
+        "`CACHE.NEGATIVE_TTL`",
+        "`CACHE.FAILURE_MODE`",
+        "`VALIDATION`",
+        "`VALIDATION.MODE`",
+        "`VALIDATION.SCHEMA`",
+        "`VALIDATION.MAX_BYTES`",
+        "`VALIDATION.MAX_DEPTH`",
+        "`VALIDATION.MAX_NODES`",
+    ):
+        assert f"| {setting} |" in page
+
+    assert "300 seconds" in page
+    assert "15 seconds" in page
+    assert "`bypass` or `raise`" in page
+    assert "`publish`, `render`, or `publish_and_render`" in page
+    assert "filesystem path, callable, or dotted callable path" in page
+    assert "maximum of 256" in page
+
+
 def test_configuration_documents_deterministic_template_engine_selection() -> None:
     """Consumers can predict which Django template engine renders HXML."""
     page = _documentation_pages()["configuration.md"]

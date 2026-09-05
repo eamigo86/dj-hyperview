@@ -32,6 +32,36 @@ initialization.
 generation state. To disable caching, omit `CACHE` instead of selecting a dummy
 cache alias.
 
+## Settings reference
+
+All keys are optional except the fields inside each configured source. Cache
+defaults apply only when `CACHE` is a non-empty mapping; omitting it or using an
+empty mapping disables Hyperview caching.
+
+| Setting | Type | Default | Meaning |
+| --- | --- | --- | --- |
+| `HYPERVIEW` | Mapping | `{}` | Package configuration in Django settings. An absent or empty mapping configures no sources and no cache. |
+| `TEMPLATE_DIRS` | Sequence of strings or `Path` objects | `()` | Ordered project-owned roots inherited by `FileSystemSource` instances that do not override `template_dirs`. Each root must be an existing directory. |
+| `SOURCES` | Sequence of mappings | `()` | Ordered source definitions. The first source that resolves a canonical template name wins. An empty sequence resolves no templates. |
+| `SOURCES[].BACKEND` | Dotted import path | Required | Importable source class for one entry. Built-in paths are shown below. |
+| `SOURCES[].OPTIONS` | Mapping | `{}` | Keyword arguments passed to that source class constructor. Supported keys are backend-specific. |
+| `CACHE` | Mapping | Omitted (disabled) | Enables raw-source and source-miss caching when non-empty. It does not cache compiled templates. |
+| `CACHE.ALIAS` | String | `"default"` | Configured stateful Django cache alias. `DummyCache` is unsupported. |
+| `CACHE.NAMESPACE` | Non-empty string | `"dj-hyperview"` | Prefix domain that isolates all Hyperview cache keys. Change it to abandon previously published cache state. |
+| `CACHE.TTL` | Integer greater than or equal to 1 | 300 seconds | Lifetime of successful raw-template and resolved-source entries. Generation keys do not expire. |
+| `CACHE.NEGATIVE_TTL` | Integer greater than or equal to 0 | 15 seconds | Lifetime of explicit source misses. Zero disables effective negative-entry retention. |
+| `CACHE.FAILURE_MODE` | `bypass` or `raise` | `"bypass"` | `bypass` falls back to authoritative sources after ordinary cache failures; `raise` reports `SourceUnavailable`. Invalidation remains fail-closed in both modes. |
+| `VALIDATION` | Mapping | `{}` | Source-safety and final rendered-document validation policy. |
+| `VALIDATION.MODE` | `publish`, `render`, or `publish_and_render` | `"publish_and_render"` | `publish` performs mandatory raw-source safety checks and skips final XML/schema validation. `render` and `publish_and_render` also validate the final rendered document; the latter is the explicit combined default policy. |
+| `VALIDATION.SCHEMA` | `None`, filesystem path, callable, or dotted callable path | `None` | Optional final-document validator. A path must identify a local single-file XSD 1.0 schema. A callable receives the rendered string and rejects it by returning `False` or raising. |
+| `VALIDATION.MAX_BYTES` | Positive integer | 1,000,000 bytes | Maximum UTF-8 size accepted for raw source and the final rendered document. |
+| `VALIDATION.MAX_DEPTH` | Positive integer | 64 levels | Maximum final XML element depth, with an absolute maximum of 256 imposed by the parser safety ceiling. |
+| `VALIDATION.MAX_NODES` | Positive integer | 20,000 nodes | Maximum number of elements in the final parsed XML document. |
+
+Raw-source size, encoding, and forbidden-declaration checks cannot be disabled
+by `VALIDATION.MODE`. Final parsing, depth, node, and schema checks run only for
+`render` and `publish_and_render`.
+
 ## Source backend options
 
 `OPTIONS` is an optional mapping. The resolver passes its entries to the
