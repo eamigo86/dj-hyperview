@@ -23,7 +23,6 @@ DOCS = (
     "testing.md",
     "contributing.md",
     "release-rollback.md",
-    "development/README.md",
 )
 
 
@@ -95,7 +94,6 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
                 {"Testing integrations": "testing.md"},
                 {"Contributing": "contributing.md"},
                 {"Release and rollback": "release-rollback.md"},
-                {"Implementation record": "development/README.md"},
             ]
         },
     ]
@@ -159,6 +157,23 @@ def test_markdown_links_remain_inside_the_zensical_document_tree() -> None:
             resolved = (source.parent / target).resolve()
             assert resolved.is_relative_to(docs_root), (source, target)
             assert resolved.is_file(), (source, target)
+
+
+def test_development_plan_stays_local_and_outside_public_navigation() -> None:
+    """The private development record is ignored and never linked publicly."""
+    config = yaml.safe_load((ROOT / "zensical.yml").read_text())
+    public_pages = "\n".join(
+        (
+            (ROOT / "README.md").read_text(),
+            (ROOT / "docs" / "index.md").read_text(),
+            (ROOT / "docs" / "contributing.md").read_text(),
+        )
+    )
+
+    assert "development/README.md" not in _navigation_targets(config["nav"])
+    assert "docs/development/" not in public_pages
+    assert "development/README.md" not in public_pages
+    assert "/docs/development/" in (ROOT / ".gitignore").read_text().splitlines()
 
 
 def test_documentation_declares_foundation_limits_and_valid_local_links() -> None:

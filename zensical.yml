@@ -72,7 +72,6 @@ nav:
       - Testing integrations: testing.md
       - Contributing: contributing.md
       - Release and rollback: release-rollback.md
-      - Implementation record: development/README.md
 
 extra:
   social:

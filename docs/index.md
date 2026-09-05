@@ -35,6 +35,3 @@ Choose the next guide for your source:
 Use the [public Python API reference](api-reference.md) when integrating package
 objects directly. Contributors should begin with the
 [contributing guide](contributing.md).
-
-The [development documentation](development/README.md) records architecture,
-decisions, task history, and release gates.
