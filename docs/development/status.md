@@ -9,6 +9,8 @@ enlace al README fuera de `docs/`. PyPI y Pages no llegaron a ejecutarse. El
 enlace quedó corregido con una regresión permanente en 338d5f0.
 No se ejecutaron builds locales.
 No se publicó ningún paquete ni se desplegó la documentación.
+El segundo run `v0.1.0a2` se detuvo en `ruff format --check`; el archivo se
+normalizó y el gate completo quedó incorporado a la verificación local.
 
 ## Snapshot
 
@@ -16,12 +18,12 @@ No se publicó ningún paquete ni se desplegó la documentación.
 |---|---|
 | Repositorio | [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview) |
 | Rama verificada | fix/01-release-docs-link |
-| HEAD verificado | 338d5f0 — enlaces Markdown publicables por Zensical |
-| Versión declarada | 0.1.0a2 |
+| HEAD verificado | 64c77f9 — recuperación v0.1.0a2 previa al format gate |
+| Versión declarada | 0.1.0a3 |
 | Python | 3.12–3.14 |
 | Django | 5.2.17 y 6.1.1 |
 | Tasks válidas | 1–13 verificadas |
-| Próxima acción | Publicar el tag nuevo e inmutable v0.1.0a2 |
+| Próxima acción | Publicar el tag nuevo e inmutable v0.1.0a3 |
 
 ## Resultado entregado
 
@@ -57,9 +59,9 @@ bypass ni cambia el workflow aprobado.
 ## Configuración externa completada
 
 El **PyPI Trusted Publisher**, el environment `pypi`, GitHub Pages mediante
-Actions y el environment `github-pages` ya existen. El tag `v0.1.0a1` permanece
-como evidencia inmutable del run fallido y no se reutilizará. La corrección se
-publicará con `v0.1.0a2`.
+Actions y el environment `github-pages` ya existen. Los tags `v0.1.0a1` y
+`v0.1.0a2` permanecen como evidencia inmutable de los runs fallidos y no se
+reutilizarán. La corrección se publicará con `v0.1.0a3`.
 
 OIDC existe sólo en los jobs PyPI y Pages; únicamente Pages recibe
 pages: write. CI, metadata y staging permanecen read-only.
@@ -74,11 +76,12 @@ pages: write. CI, metadata y staging permanecen read-only.
   los hooks automáticos permanecen post-MVP.
 - El cliente mobile no se ejecutó ni se extendió; el contrato es HXML/HTTP
   test-only contra Hyperview 0.110.0.
-- Build, smoke test y Redis ya pasaron en GitHub Actions; Trusted Publishing y
-  Pages siguen pendientes porque el run `v0.1.0a1` se detuvo antes de esos jobs.
+- Build, smoke test y Redis pasaron en `v0.1.0a1`; la matriz volvió a pasar en
+  `v0.1.0a2`. Trusted Publishing y Pages siguen pendientes porque ambos runs se
+  detuvieron antes de esos jobs.
 
 ## Próximo paso
 
 Seguir [Release and rollback](../release-rollback.md), publicar el tag nuevo
-`v0.1.0a2` y observar Trusted Publishing y Pages. El historial por subtask está
+`v0.1.0a3` y observar Trusted Publishing y Pages. El historial por subtask está
 en [tasks.md](tasks.md); el trabajo posterior en [roadmap.md](roadmap.md).
