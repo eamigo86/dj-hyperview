@@ -21,8 +21,10 @@ from dj_hyperview.contrib.database.services import (
     PublicationConflict,
     PublicationResult,
     delete_template,
+    publish_template,
     rename_template,
 )
+from dj_hyperview.contrib.database.sources import DatabaseSource
 from dj_hyperview.exceptions import InvalidTemplateName, SourceUnavailable
 
 ALIASES = ("default", "replica")
@@ -246,6 +248,34 @@ def test_case_equivalent_target_does_not_mask_unrelated_integrity_error(
 
     stored = mutation_model.objects.get()
     assert (stored.name, stored.revision) == ("screen.xml", 1)
+
+
+def test_case_variants_remain_distinct_under_case_insensitive_collation(
+    mutation_model: type[Model],
+) -> None:
+    """Package identity stays byte-exact when the database collation does not."""
+    connection = connections["default"]
+    if connection.vendor != "sqlite":
+        pytest.skip("SQLite NOCASE regression")
+    name_field = mutation_model._meta.get_field("name")
+    original_collation = name_field.db_collation
+    with connection.schema_editor() as editor:
+        editor.delete_model(mutation_model)
+    name_field.db_collation = "nocase"
+    try:
+        with connection.schema_editor() as editor:
+            editor.create_model(mutation_model)
+    finally:
+        name_field.db_collation = original_collation
+
+    upper = publish_template("Home.xml", "<upper />", using="default")
+    lower = publish_template("home.xml", "<lower />", using="default")
+    source = DatabaseSource(using="default")
+
+    assert (upper.created, lower.created) == (True, True)
+    assert mutation_model.objects.count() == 2
+    assert source.resolve("Home.xml").content == "<upper />"
+    assert source.resolve("home.xml").content == "<lower />"
 
 
 @pytest.mark.parametrize("primary_type", [IntegrityError, DatabaseError])

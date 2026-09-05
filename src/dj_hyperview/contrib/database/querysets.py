@@ -12,6 +12,7 @@ from django.db.models.sql.constants import ROW_COUNT
 from dj_hyperview.exceptions import InvalidTemplateName
 from dj_hyperview.sources import canonicalize_template_name
 
+from ._identity import template_name_identity
 from ._invalidation import _schedule_invalidation
 from ._mutation_context import batch_delete_primary_keys
 
@@ -69,6 +70,45 @@ def _execute_update(query: sql.UpdateQuery, using: str) -> int:
 
 class HyperviewTemplateQuerySet(models.QuerySet):
     """QuerySet that keeps raw-template cache invalidation commit-aware."""
+
+    def bulk_create(
+        self,
+        objs: Iterable[models.Model],
+        batch_size: int | None = None,
+        ignore_conflicts: bool = False,
+        update_conflicts: bool = False,
+        update_fields: list[str] | None = None,
+        unique_fields: list[str] | None = None,
+    ) -> list[models.Model]:
+        """Create rows with portable identities for their stored names.
+
+        Args:
+            objs: Unsaved template instances.
+            batch_size: Maximum rows per insert statement.
+            ignore_conflicts: Whether supported constraint conflicts are ignored.
+            update_conflicts: Whether supported conflicts update selected fields.
+            update_fields: Fields updated for conflict handling.
+            unique_fields: Fields identifying conflicts.
+
+        Returns:
+            The created template instances.
+
+        Raises:
+            ValueError: If Django rejects the bulk operation options.
+            DatabaseError: If persistence fails.
+        """
+        prepared = list(objs)
+        for template in prepared:
+            template.name_identity = template_name_identity(template.name)
+        return models.QuerySet.bulk_create(
+            self,
+            prepared,
+            batch_size=batch_size,
+            ignore_conflicts=ignore_conflicts,
+            update_conflicts=update_conflicts,
+            update_fields=update_fields,
+            unique_fields=unique_fields,
+        )
 
     def update(self, **kwargs: Any) -> int:
         """Update selected rows and invalidate every affected template name.
@@ -135,14 +175,34 @@ class HyperviewTemplateQuerySet(models.QuerySet):
                 return updated
             new_names = old_names
             if "name" in kwargs:
-                new_names = _canonical_names(
-                    name
+                renamed_rows = tuple(
+                    (row_primary_key, name)
                     for batch in primary_key_batches
-                    for name in self.model._base_manager.using(using)
+                    for row_primary_key, name in self.model._base_manager.using(using)
                     .filter(pk__in=batch)
                     .order_by(primary_key.name)
-                    .values_list("name", flat=True)
+                    .values_list(primary_key.name, "name")
                 )
+                new_names = _canonical_names(name for _, name in renamed_rows)
+                renamed_by_primary_key = dict(renamed_rows)
+                for batch in primary_key_batches:
+                    identity = models.Case(
+                        *(
+                            models.When(
+                                pk=row_primary_key,
+                                then=models.Value(
+                                    template_name_identity(
+                                        renamed_by_primary_key[row_primary_key]
+                                    )
+                                ),
+                            )
+                            for row_primary_key in batch
+                        ),
+                        output_field=models.CharField(max_length=64),
+                    )
+                    self.model._base_manager.using(using).filter(pk__in=batch).update(
+                        name_identity=identity
+                    )
             affected_names = tuple(dict.fromkeys((*old_names, *new_names)))
             if affected_names:
                 _schedule_invalidation(*affected_names, using=using)

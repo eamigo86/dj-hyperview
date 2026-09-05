@@ -12,6 +12,7 @@ from dj_hyperview.exceptions import HyperviewError, SourceUnavailable
 from dj_hyperview.sources import canonicalize_template_name
 
 from ._config import _database_alias_is_configured
+from ._identity import template_name_identity
 
 SOURCE = "database"
 
@@ -115,6 +116,7 @@ def publish_template(
         Exception: If an unclassified database write error is reraised.
     """
     canonical = canonicalize_template_name(name)
+    identity = template_name_identity(canonical)
     if expected_revision is not None and (
         type(expected_revision) is not int or expected_revision < 1
     ):
@@ -131,8 +133,10 @@ def publish_template(
     with transaction.atomic(using=alias):
         manager = model._default_manager.using(alias)
         try:
-            template = manager.select_for_update().get(name=canonical)
+            template = manager.select_for_update().get(name_identity=identity)
         except model.DoesNotExist:
+            template = None
+        if template is not None and template.name != canonical:
             template = None
         if template is None:
             if expected_revision is not None:
@@ -153,7 +157,7 @@ def publish_template(
                 with transaction.atomic(using=alias):
                     template.save(using=alias)
             except IntegrityError:
-                conflict = manager.filter(name=canonical).exists()
+                conflict = manager.filter(name_identity=identity).exists()
                 if not conflict:
                     raise
         else:
@@ -200,6 +204,8 @@ def rename_template(
     """
     current = canonicalize_template_name(current_name)
     target = canonicalize_template_name(new_name)
+    current_identity = template_name_identity(current)
+    target_identity = template_name_identity(target)
     _validate_expected_revision(expected_revision)
     model, alias = _mutation_target(using)
     conflict = False
@@ -208,8 +214,10 @@ def rename_template(
     with transaction.atomic(using=alias):
         manager = model._default_manager.using(alias)
         try:
-            template = manager.select_for_update().get(name=current)
+            template = manager.select_for_update().get(name_identity=current_identity)
         except model.DoesNotExist:
+            template = None
+        if template is not None and template.name != current:
             template = None
         if template is None:
             raise PublicationConflict
@@ -227,13 +235,15 @@ def rename_template(
                 template.save(using=alias, force_update=True)
         except IntegrityError:
             competing_target = _proof_exists(
-                manager.filter(name=target).exclude(pk=template.pk)
+                manager.filter(name_identity=target_identity).exclude(pk=template.pk)
             )
             if competing_target is None or not competing_target:
                 raise
             conflict = True
         except DatabaseError:
-            source_exists = _proof_exists(manager.filter(pk=template.pk, name=current))
+            source_exists = _proof_exists(
+                manager.filter(pk=template.pk, name_identity=current_identity)
+            )
             if source_exists is None or source_exists:
                 raise
             conflict = True
@@ -270,13 +280,16 @@ def delete_template(
         DatabaseError: If database access fails.
     """
     canonical = canonicalize_template_name(name)
+    identity = template_name_identity(canonical)
     _validate_expected_revision(expected_revision)
     model, alias = _mutation_target(using)
     with transaction.atomic(using=alias):
         manager = model._default_manager.using(alias)
         try:
-            template = manager.select_for_update().get(name=canonical)
+            template = manager.select_for_update().get(name_identity=identity)
         except model.DoesNotExist:
+            template = None
+        if template is not None and template.name != canonical:
             template = None
         if template is None:
             if expected_revision is None:

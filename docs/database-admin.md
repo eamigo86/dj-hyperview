@@ -43,6 +43,10 @@ An explicit `using` alias is stable and cacheable. Omitting it delegates to the
 Django write/read router and intentionally disables source caching because the
 selected database can vary per request.
 
+Stored names use a separate SHA-256 identity, so lookup and uniqueness remain
+byte-exact even when the database column's default collation is
+case-insensitive. `Home.xml` and `home.xml` are therefore distinct templates.
+
 ## Publish through the service boundary
 
 The public services validate names and content, lock existing rows, increment

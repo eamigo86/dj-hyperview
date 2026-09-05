@@ -12,6 +12,7 @@ from dj_hyperview.exceptions import SourceUnavailable
 from dj_hyperview.sources import ResolvedTemplate, canonicalize_template_name
 
 from ._config import _database_alias_is_configured
+from ._identity import template_name_identity
 
 APP_LABEL = "dj_hyperview_database"
 MODEL_NAME = "HyperviewTemplate"
@@ -30,11 +31,12 @@ def _template_model() -> type[Any] | None:
 
 def _get_active(manager: Any, model: type[Any], name: str) -> Any:
     try:
-        return manager.get(name=name, active=True)
+        template = manager.get(name_identity=template_name_identity(name), active=True)
     except model.DoesNotExist:
         return None
     except (ConnectionDoesNotExist, Error):
         return _QUERY_FAILED
+    return template if template.name == name else _QUERY_FAILED
 
 
 class DatabaseSource:

@@ -116,6 +116,8 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
     assert "no longer canonical" in normalized
     assert "remains recoverable" in normalized
     assert "one commit-aware invalidation" in normalized
+    assert "byte-exact" in page
+    assert "case-insensitive" in page
     assert len(blocks) >= 2
     for block in blocks:
         compile(block, "docs/database-admin.md", "exec")

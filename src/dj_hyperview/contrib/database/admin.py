@@ -12,6 +12,7 @@ from django.utils.datastructures import MultiValueDict
 
 from dj_hyperview.exceptions import InvalidTemplateName
 
+from ._identity import template_name_identity
 from .models import HyperviewTemplate
 from .services import (
     PublicationConflict,
@@ -111,6 +112,32 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
         if not revision_matches:
             raise forms.ValidationError(_CONFLICT_MESSAGE, code="publication_conflict")
         return cleaned
+
+    def clean_name(self) -> str:
+        """Reject another row with the same byte-exact name identity.
+
+        Returns:
+            Validated canonical template name.
+
+        Raises:
+            ValidationError: If another row already owns the exact name.
+        """
+        name = cast(str, self.cleaned_data["name"])
+        alias = (
+            self.instance._state.db
+            or router.db_for_write(self._meta.model)
+            or DEFAULT_DB_ALIAS
+        )
+        matches = self._meta.model._default_manager.using(alias).filter(
+            name_identity=template_name_identity(name)
+        )
+        if self.instance.pk is not None:
+            matches = matches.exclude(pk=self.instance.pk)
+        if matches.exists():
+            raise forms.ValidationError(
+                "A template with this name already exists.", code="unique"
+            )
+        return name
 
     class Meta:
         """Configure the model and editable admin fields."""
@@ -212,7 +239,9 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
             if not result.created:
                 raise PublicationConflict
         persisted = (
-            self.model._default_manager.using(alias).only("pk").get(name=result.name)
+            self.model._default_manager.using(alias)
+            .only("pk")
+            .get(name_identity=template_name_identity(result.name))
         )
         obj.pk = persisted.pk
         obj.refresh_from_db(using=alias)

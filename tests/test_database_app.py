@@ -91,7 +91,10 @@ def test_template_model_fields_defaults_meta_and_string():
     template = model(name="screens/home.xml", content="<view />")
 
     assert fields["name"].max_length == 255
-    assert fields["name"].unique is True
+    assert fields["name"].unique is False
+    assert fields["name_identity"].max_length == 64
+    assert fields["name_identity"].unique is True
+    assert fields["name_identity"].editable is False
     assert fields["content"].blank is False
     assert template.active is True
     assert template.revision == 1
