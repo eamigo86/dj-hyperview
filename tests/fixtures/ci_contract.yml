@@ -1,0 +1,143 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+  workflow_call:
+    inputs:
+      redis:
+        description: Run live Redis acceptance
+        type: boolean
+        default: false
+  workflow_dispatch:
+    inputs:
+      redis:
+        description: Run live Redis acceptance
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
+      - name: Sync exact development environment
+        run: uv sync --locked
+      - name: Check dependency and style drift
+        run: |
+          uv lock --check
+          uv run ruff check .
+          uv run ruff format --check .
+      - name: Check Django profiles and migrations
+        run: |
+          PYTHONPATH=.:src uv run python -m django check --settings=tests.settings
+          PYTHONPATH=.:src uv run python -m django check --settings=tests.settings_database
+          PYTHONPATH=.:src uv run python -m django check --settings=tests.settings_database_admin
+          PYTHONPATH=.:src uv run python -m django makemigrations dj_hyperview_database --check --dry-run --settings=tests.settings_database
+      - name: Check public and package boundaries
+        run: |
+          uv run pytest -q tests/test_dependency_policy.py tests/test_package_boundary.py
+          uv run pytest -q tests/test_public_api_quality.py
+
+  compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13", "3.14"]
+        django: ["5.2.17", "6.1.1"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
+      - name: Run aggregate branch coverage
+        run: >-
+          uv run --locked --python ${{ matrix.python }}
+          --with Django==${{ matrix.django }}
+          python -m tools.test_matrix
+          --django-version ${{ matrix.django }}
+
+  redis:
+    if: ${{ inputs.redis == true }}
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DJHV_REDIS_URL: redis://127.0.0.1:6379/15
+    services:
+      redis:
+        image: redis:8.2.9-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
+      - run: uv sync --locked --group redis
+      - name: Run live Redis acceptance
+        run: >-
+          uv run --locked --group redis python -m tools.test_matrix --redis
+          --django-version 6.1.1
+
+  artifacts:
+    needs: [quality, compatibility]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
+      - run: uv sync --locked
+      - name: Build and inspect distributions
+        run: |
+          uv build
+          uv run python -m tools.package_guard dist/*.whl
+      - name: Smoke installed wheel outside checkout
+        run: |
+          smoke_dir="$(mktemp -d)"
+          uv venv "$smoke_dir/venv" --python 3.12
+          uv pip install --python "$smoke_dir/venv/bin/python" dist/*.whl
+          (
+            cd "$smoke_dir"
+            unset PYTHONPATH
+            "$smoke_dir/venv/bin/python" -I -c 'from pathlib import Path; import dj_hyperview; assert Path(dj_hyperview.__file__).resolve().is_relative_to(Path.cwd() / "venv")'
+          )
+      - name: Build strict documentation
+        run: uv run zensical build --clean --strict -f zensical.yml
+      - name: Upload immutable candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: |
+            dist/*
+            site/
+          if-no-files-found: error
+          retention-days: 7

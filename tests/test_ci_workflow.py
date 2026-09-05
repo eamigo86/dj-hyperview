@@ -9,6 +9,7 @@ import yaml
 
 ROOT = Path(__file__).parents[1]
 WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+WORKFLOW_CONTRACT = ROOT / "tests" / "fixtures" / "ci_contract.yml"
 ACTION_PINS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",
@@ -200,6 +201,69 @@ def test_workflow_audit_rejects_non_mapping_candidates(candidate: str) -> None:
     assert _audit_workflow(candidate) == ["workflow: mapping contract is not approved"]
 
 
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "defaults:\n  run:\n    shell: bash {0}\n",
+        "env:\n  PATH: /unreviewed/bin\n",
+    ],
+)
+def test_workflow_audit_rejects_top_level_execution_controls(
+    mutation: str,
+) -> None:
+    """Global execution controls cannot escape the reviewed contract."""
+    mutated = mutation + WORKFLOW.read_text()
+
+    assert _audit_workflow(mutated) == ["workflow: semantic contract is not approved"]
+
+
+def test_workflow_audit_binds_every_action_to_the_reviewed_reference() -> None:
+    """An arbitrary action stays forbidden even with an immutable reference."""
+    mutated = WORKFLOW.read_text().replace(
+        f"actions/checkout@{ACTION_PINS['actions/checkout']}",
+        f"example/evil@{'a' * 40}",
+        1,
+    )
+
+    assert _audit_workflow(mutated) == ["workflow: semantic contract is not approved"]
+
+
+@pytest.mark.parametrize(
+    ("candidate", "expected"),
+    [
+        ("jobs: [", "workflow: source is not valid YAML"),
+        ("jobs: []", "workflow: mapping contract is not approved"),
+        (
+            "permissions: {contents: read}\njobs:\n  quality: []\n",
+            "quality: execution shape is not approved",
+        ),
+        (
+            "permissions: {contents: read}\njobs:\n  quality:\n    steps: {}\n",
+            "quality: execution shape is not approved",
+        ),
+    ],
+)
+def test_workflow_audit_normalizes_malformed_structures(
+    candidate: str, expected: str
+) -> None:
+    """Malformed YAML and execution structures return stable violations."""
+    assert _audit_workflow(candidate) == [expected]
+
+
+def test_workflow_audit_rejects_arbitrary_semantic_changes() -> None:
+    """Unreviewed metadata changes require an explicit contract update."""
+    mutated = WORKFLOW.read_text().replace("name: CI", "name: Unreviewed", 1)
+
+    assert _audit_workflow(mutated) == ["workflow: semantic contract is not approved"]
+
+
+def test_workflow_audit_accepts_semantically_empty_yaml_changes() -> None:
+    """Comments and blank lines do not change the parsed workflow contract."""
+    mutated = "# reviewed workflow\n\n" + WORKFLOW.read_text() + "\n# end\n"
+
+    assert _audit_workflow(mutated) == []
+
+
 def test_workflow_audit_accepts_innocuous_full_line_comments() -> None:
     """Full-line comments do not change an approved command contract."""
     mutated = WORKFLOW.read_text().replace(
@@ -247,6 +311,18 @@ def _normalize_run(script: object) -> str | None:
         for line in script.splitlines()
         if (stripped := line.strip()) and not stripped.startswith("#")
     )
+
+
+def _semantic_workflow(value: object) -> object:
+    """Normalize non-executable formatting while preserving YAML semantics."""
+    if isinstance(value, dict):
+        return {
+            key: _normalize_run(item) if key == "run" else _semantic_workflow(item)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_semantic_workflow(item) for item in value]
+    return value
 
 
 APPROVED_RUN_CONTRACT = {
@@ -392,7 +468,10 @@ def test_run_contract_rejects_malformed_step_shapes(job: dict[str, object]) -> N
 
 def _audit_workflow(text: str) -> list[str]:
     """Return deterministic safety violations in CI workflow source."""
-    workflow = _workflow(text)
+    try:
+        workflow = _workflow(text)
+    except yaml.YAMLError:
+        return ["workflow: source is not valid YAML"]
     if not isinstance(workflow, dict):
         return ["workflow: mapping contract is not approved"]
     global_permissions = workflow.get("permissions")
@@ -410,8 +489,6 @@ def _audit_workflow(text: str) -> list[str]:
             permissions.get("contents") != "read" or "write" in permissions.values()
         ):
             violations.append(f"{name}: effective permissions must remain read-only")
-
-    for name, job in jobs.items():
         shape_approved = _execution_shape_is_approved(name, job)
         if not shape_approved:
             violations.append(f"{name}: execution shape is not approved")
@@ -420,7 +497,12 @@ def _audit_workflow(text: str) -> list[str]:
             or _run_contract(job) != APPROVED_RUN_CONTRACT[name]
         ):
             violations.append(f"{name}: run contract is not approved")
-    return violations
+    if violations:
+        return violations
+    contract = _workflow(WORKFLOW_CONTRACT.read_text())
+    if _semantic_workflow(workflow) != _semantic_workflow(contract):
+        return ["workflow: semantic contract is not approved"]
+    return []
 
 
 def test_ci_is_reusable_and_defaults_to_read_only_permissions() -> None:
