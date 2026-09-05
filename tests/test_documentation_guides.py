@@ -47,10 +47,29 @@ def _python_blocks(text: str) -> list[str]:
     return re.findall(r"```python\n(.*?)```", text, flags=re.DOTALL)
 
 
+def _navigation_targets(items: list[dict[str, object]]) -> list[str]:
+    """Return leaf documentation paths from nested navigation.
+
+    Args:
+        items: Nested navigation entries.
+
+    Returns:
+        Documentation paths in navigation order.
+    """
+    targets: list[str] = []
+    for item in items:
+        for value in item.values():
+            if isinstance(value, str):
+                targets.append(value)
+            elif isinstance(value, list):
+                targets.extend(_navigation_targets(value))
+    return targets
+
+
 def test_source_guides_are_navigable_and_match_the_landing_outcome() -> None:
     """The landing page promises resolution and links both source guides."""
     config = yaml.safe_load((ROOT / "zensical.yml").read_text())
-    targets = [target for item in config["nav"] for target in item.values()]
+    targets = _navigation_targets(config["nav"])
     index = _read_document("index.md")
 
     assert all(guide in targets for guide in SOURCE_GUIDES)
@@ -112,7 +131,7 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
 def test_operational_guides_are_navigable_and_locally_linked() -> None:
     """Every operational outcome is reachable through portable local links."""
     config = yaml.safe_load((ROOT / "zensical.yml").read_text())
-    targets = [target for item in config["nav"] for target in item.values()]
+    targets = _navigation_targets(config["nav"])
     index = _read_document("index.md")
 
     assert all(guide in targets for guide in OPERATIONAL_GUIDES)

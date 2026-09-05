@@ -30,5 +30,6 @@ initialization.
 
 Continue with [Filesystem](filesystem.md), [Database and admin](database-admin.md),
 [Cache consistency](cache-consistency.md), [Security](security.md),
-[Testing](testing.md), and [Release and rollback](release-rollback.md). Return
-to the [documentation home](index.md).
+[Testing](testing.md), [Release and rollback](release-rollback.md), or the
+[public Python API](api-reference.md). Return to the
+[documentation home](index.md).

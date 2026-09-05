@@ -5,23 +5,49 @@ from pathlib import Path
 
 import yaml
 
+from dj_hyperview import __all__ as public_api
+
 ROOT = Path(__file__).parents[1]
 DOCS = (
     "index.md",
     "installation.md",
+    "quickstart.md",
     "configuration.md",
+    "hyperview-0.110.0.md",
     "filesystem.md",
     "database-admin.md",
     "cache-consistency.md",
     "security.md",
+    "api-reference.md",
     "testing.md",
+    "contributing.md",
     "release-rollback.md",
+    "development/README.md",
 )
 
 
 def _documentation_pages() -> dict[str, str]:
     """Read every public documentation foundation page."""
     return {name: (ROOT / "docs" / name).read_text() for name in DOCS}
+
+
+def _navigation_targets(items: list[dict[str, object]]) -> list[str]:
+    """Return ordered leaf targets from nested Zensical navigation.
+
+    Args:
+        items: Nested navigation entries.
+
+    Returns:
+        Documentation paths in navigation order.
+    """
+    targets: list[str] = []
+    for item in items:
+        for value in item.values():
+            if isinstance(value, str):
+                targets.append(value)
+            elif isinstance(value, list):
+                targets.extend(_navigation_targets(value))
+    return targets
 
 
 def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> None:
@@ -34,18 +60,48 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
     assert config["repo_url"] == "https://github.com/eamigo86/dj-hyperview"
     assert config["docs_dir"] == "docs"
     assert config["site_dir"] == "site"
+    assert config["site_author"] == "Ernesto Perez Amigo"
+    assert config["edit_uri"] == "edit/main/docs/"
+    assert config["theme"]["name"] == "material"
+    assert config["theme"]["variant"] == "classic"
+    assert {
+        "navigation.tabs",
+        "navigation.sections",
+        "navigation.path",
+        "content.code.copy",
+    } <= set(config["theme"]["features"])
     assert config["nav"] == [
         {"Home": "index.md"},
-        {"Installation": "installation.md"},
-        {"Configuration": "configuration.md"},
-        {"Filesystem sources": "filesystem.md"},
-        {"Database and admin": "database-admin.md"},
-        {"Cache consistency": "cache-consistency.md"},
-        {"Security": "security.md"},
-        {"Testing": "testing.md"},
-        {"Release and rollback": "release-rollback.md"},
+        {
+            "Getting Started": [
+                {"Installation": "installation.md"},
+                {"Quick Start": "quickstart.md"},
+                {"Configuration": "configuration.md"},
+                {"Hyperview compatibility": "hyperview-0.110.0.md"},
+            ]
+        },
+        {
+            "User Guide": [
+                {"Filesystem sources": "filesystem.md"},
+                {"Database and admin": "database-admin.md"},
+                {"Cache consistency": "cache-consistency.md"},
+                {"Security": "security.md"},
+            ]
+        },
+        {"API Reference": [{"Public Python API": "api-reference.md"}]},
+        {
+            "Development": [
+                {"Testing integrations": "testing.md"},
+                {"Contributing": "contributing.md"},
+                {"Release and rollback": "release-rollback.md"},
+                {"Implementation record": "development/README.md"},
+            ]
+        },
     ]
-    assert [target for item in config["nav"] for target in item.values()] == list(DOCS)
+    assert _navigation_targets(config["nav"]) == list(DOCS)
+    assert len(_navigation_targets(config["nav"])) == len(
+        set(_navigation_targets(config["nav"]))
+    )
 
 
 def test_documentation_starts_with_installation_and_configuration_outcomes() -> None:
@@ -60,6 +116,35 @@ def test_documentation_starts_with_installation_and_configuration_outcomes() -> 
     assert "Django 5.2" in pages["installation.md"]
     assert "HYPERVIEW" in pages["configuration.md"]
     assert "TemplateResolver" in pages["configuration.md"]
+
+
+def test_quickstart_and_reference_cover_the_supported_public_path() -> None:
+    """The first-use path and public exports stay visible and complete."""
+    pages = _documentation_pages()
+    quickstart = pages["quickstart.md"]
+    reference = pages["api-reference.md"]
+
+    assert quickstart.startswith("# Quick Start\n")
+    assert "screens/home.xml" in quickstart
+    assert "HyperviewTemplateView" in quickstart
+    assert "path(" in quickstart
+    assert "application/vnd.hyperview+xml" in quickstart
+    assert reference.startswith("# API Reference\n")
+    for symbol in public_api:
+        assert f"`{symbol}`" in reference
+
+
+def test_contributing_guide_records_project_quality_contracts() -> None:
+    """Contributors see the testing and public documentation conventions."""
+    page = _documentation_pages()["contributing.md"]
+
+    assert "Strict TDD" in page
+    assert "95%" in page
+    assert "Google-style" in page
+    assert "type hints" in page
+    assert "Args" in page and "Returns" in page and "Raises" in page
+    assert "backticks" in page
+    assert "uv run pytest" in page
 
 
 def test_documentation_declares_foundation_limits_and_valid_local_links() -> None:

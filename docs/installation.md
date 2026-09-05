@@ -21,5 +21,5 @@ INSTALLED_APPS = [
 The base app performs no database, cache, or network access during startup.
 Database-backed templates and admin integration remain optional.
 
-Continue with [template configuration](configuration.md), or return to the
-[documentation home](index.md).
+Continue with the [Quick Start](quickstart.md) to serve a filesystem-backed
+screen, or open the complete [configuration reference](configuration.md).

@@ -6,8 +6,9 @@ application screens into the package.
 ## Start here
 
 1. [Install dj-hyperview](installation.md).
-2. [Configure template resolution](configuration.md).
-3. Resolve a canonical template name through the public package API.
+2. [Serve your first screen](quickstart.md).
+3. [Configure template resolution](configuration.md) for your deployment.
+4. Resolve a canonical template name through the public package API.
 
 The package owns resolution, validation, raw-template caching, HTTP responses,
 and optional database publication. Your Django project owns every screen,
@@ -30,6 +31,10 @@ Choose the next guide for your source:
 - [Harden names and XML](security.md) before accepting authored templates.
 - [Test a consumer integration](testing.md) across supported Django versions.
 - [Release and roll back](release-rollback.md) with reproducible gates.
+
+Use the [public Python API reference](api-reference.md) when integrating package
+objects directly. Contributors should begin with the
+[contributing guide](contributing.md).
 
 The [development documentation](development/README.md) records architecture,
 decisions, task history, and release gates.
