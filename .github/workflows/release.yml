@@ -1,0 +1,54 @@
+name: Release
+on:
+  push:
+    tags: ["v*.*.*"]
+permissions:
+  contents: read
+jobs:
+  metadata:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Match tag to project version
+        run: python -m tools.check_release_tag "${GITHUB_REF_NAME}"
+
+  ci:
+    needs: metadata
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yml
+    with:
+      redis: true
+  stage:
+    needs: ci
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - name: Download exact release candidate
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-candidate-${{ github.sha }}
+          path: candidate
+      - name: Validate layout and checksum distributions
+        run: |
+          test -f candidate/site/index.html
+          test "$(find candidate/dist -maxdepth 1 -type f -name '*.whl' | wc -l)" -eq 1
+          test "$(find candidate/dist -maxdepth 1 -type f -name '*.tar.gz' | wc -l)" -eq 1
+          find candidate/dist -maxdepth 1 -type f \( -name '*.whl' -o -name '*.tar.gz' \) -print0 | sort -z | xargs -0 sha256sum > candidate/dist/SHA256SUMS
+      - name: Upload immutable distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-distributions-${{ github.sha }}
+          path: candidate/dist/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Upload Pages candidate
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9
+        with:
+          path: candidate/site/
