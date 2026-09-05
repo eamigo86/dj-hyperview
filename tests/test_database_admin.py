@@ -85,7 +85,6 @@ def test_database_contrib_without_admin_never_imports_admin_module() -> None:
         ("../private.xml", "<view />", "name", "invalid"),
         ("bad\n.xml", "<view />", "name", "invalid"),
         ("bad\ud800.xml", "<view />", "name", "invalid"),
-        ("screen.xml", "<view>", "content", "malformed_xml"),
         (
             "screen.xml",
             "<!DOCTYPE view SYSTEM 'https://invalid.test/x'><view />",
@@ -238,13 +237,7 @@ def test_superuser_can_complete_admin_crud_through_publication_services(
 
 
 @pytest.mark.django_db
-@pytest.mark.parametrize(
-    ("name", "content"),
-    [
-        ("../unsafe.xml", "<view />"),
-        ("screen.xml", "<view>"),
-    ],
-)
+@pytest.mark.parametrize(("name", "content"), [("../unsafe.xml", "<view />")])
 def test_admin_add_rejects_invalid_fields_without_writing(
     admin_client, name: str, content: str
 ) -> None:

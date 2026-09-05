@@ -7,7 +7,13 @@ from unittest.mock import patch
 import pytest
 from django.apps import apps
 from django.core.exceptions import ValidationError
-from django.db import DatabaseError, IntegrityError, connections, transaction
+from django.db import (
+    DatabaseError,
+    IntegrityError,
+    InterfaceError,
+    connections,
+    transaction,
+)
 from django.db.models import Model, QuerySet
 from django.test import override_settings
 
@@ -249,7 +255,7 @@ def test_rename_proof_failure_preserves_primary_database_error(
     primary_type: type[DatabaseError],
 ) -> None:
     primary = primary_type("primary write failure")
-    secondary = DatabaseError("secondary proof failure")
+    secondary = InterfaceError("secondary proof failure")
     mutation_model.objects.create(name="old.xml", content="<old />")
 
     def fail_save(instance: Model, *args: object, **kwargs: object) -> None:

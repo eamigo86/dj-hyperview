@@ -302,4 +302,4 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
 
     def _conflict_response(self, request: HttpRequest) -> HttpResponseRedirect:
         self.message_user(request, _CONFLICT_MESSAGE, level=messages.ERROR)
-        return HttpResponseRedirect(request.path)
+        return HttpResponseRedirect(request.get_full_path())

@@ -126,17 +126,20 @@ def test_observable_field_update_schedules_current_name(
     schedule.assert_called_once_with("screen.xml", using="default")
 
 
-def test_irrelevant_and_raw_saves_do_not_schedule(signal_model: type[Model]) -> None:
+def test_irrelevant_save_skips_but_raw_save_schedules(
+    signal_model: type[Model],
+) -> None:
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 
     with patch(
         "dj_hyperview.contrib.database.signals._schedule_invalidation"
     ) as schedule:
         template.save(update_fields={"updated_at"})
+        schedule.assert_not_called()
         template.content = "<raw />"
         template.save_base(raw=True, using="default", update_fields={"content"})
 
-    schedule.assert_not_called()
+    schedule.assert_called_once_with("screen.xml", using="default")
 
 
 def test_unsafe_new_name_fails_before_database_access(

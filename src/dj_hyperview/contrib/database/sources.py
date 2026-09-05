@@ -4,7 +4,8 @@ from typing import Any
 
 from django.apps import apps
 from django.core.exceptions import AppRegistryNotReady
-from django.db import DatabaseError, connections
+from django.db import connections
+from django.db.utils import Error
 from django.utils.connection import ConnectionDoesNotExist
 
 from dj_hyperview.exceptions import SourceUnavailable
@@ -32,7 +33,7 @@ def _get_active(manager: Any, model: type[Any], name: str) -> Any:
         return manager.get(name=name, active=True)
     except model.DoesNotExist:
         return None
-    except (ConnectionDoesNotExist, DatabaseError):
+    except (ConnectionDoesNotExist, Error):
         return _QUERY_FAILED
 
 

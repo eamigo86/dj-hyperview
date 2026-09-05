@@ -43,11 +43,9 @@ def _capture_save(
     update_fields: frozenset[str] | None,
     **kwargs: object,
 ) -> None:
-    del kwargs
+    del kwargs, raw
     instance.__dict__.pop(_STATE_ATTRIBUTE, None)
-    if raw or (
-        update_fields is not None and _OBSERVABLE_FIELDS.isdisjoint(update_fields)
-    ):
+    if update_fields is not None and _OBSERVABLE_FIELDS.isdisjoint(update_fields):
         return
 
     old_name = _persisted_name(sender, instance, using)

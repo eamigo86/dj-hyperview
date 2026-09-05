@@ -121,6 +121,30 @@ def test_admin_stale_edit_is_a_redacted_form_error(admin_client) -> None:
     assert b"Template changed; reload and retry." in raced.content
 
 
+@pytest.mark.parametrize("operation", ["change", "delete"])
+def test_conflict_redirect_preserves_admin_query_context(
+    admin_client, operation: str
+) -> None:
+    """Conflict redirects retain popup and filtered-changelist state."""
+    module = importlib.import_module("dj_hyperview.contrib.database.admin")
+    template = _model().objects.create(name="screen.xml", content="<old />")
+    _, change, delete = _urls(template)
+    query = "?_popup=1&_changelist_filters=active__exact%3D1"
+    url = (change if operation == "change" else delete) + query
+    data = (
+        _form("screen.xml", "<lost />", 1)
+        if operation == "change"
+        else {"post": "yes", "expected_revision": "1"}
+    )
+    service = "rename_template" if operation == "change" else "delete_template"
+
+    with patch.object(module, service, side_effect=PublicationConflict):
+        response = admin_client.post(url, data)
+
+    assert response.status_code == 302
+    assert response.headers["Location"] == url
+
+
 def test_admin_delete_rejects_stale_revision_and_then_deletes(admin_client) -> None:
     model = _model()
     template = model.objects.create(name="screen.xml", content="<view />")

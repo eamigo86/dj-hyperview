@@ -5,7 +5,7 @@ from unittest.mock import patch
 import pytest
 from django.apps import apps
 from django.core.exceptions import AppRegistryNotReady
-from django.db import connection
+from django.db import InterfaceError, connection
 from django.test import override_settings
 
 from dj_hyperview.checks import check_hyperview_settings
@@ -271,3 +271,21 @@ def test_programming_errors_are_not_converted_to_source_failures(database_model)
             database_source_class()().resolve("screen.xml")
 
     assert captured.value is failure
+
+
+def test_interface_errors_become_redacted_source_failures(database_model) -> None:
+    """Closed pooled connections preserve the public source error contract."""
+    manager = database_model._default_manager
+
+    with patch.object(
+        manager, "get", side_effect=InterfaceError("private connection state")
+    ):
+        with pytest.raises(SourceUnavailable) as captured:
+            database_source_class()().resolve("screen.xml")
+
+    _assert_redacted_source_error(
+        captured.value,
+        source="database",
+        reason="query failed",
+        secrets=("private connection state",),
+    )

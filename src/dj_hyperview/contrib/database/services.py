@@ -6,6 +6,7 @@ from typing import Any
 from django.apps import apps
 from django.core.exceptions import AppRegistryNotReady
 from django.db import DatabaseError, IntegrityError, router, transaction
+from django.db.utils import Error
 
 from dj_hyperview.exceptions import HyperviewError, SourceUnavailable
 from dj_hyperview.sources import canonicalize_template_name
@@ -79,7 +80,7 @@ def _validate_expected_revision(expected_revision: int | None) -> None:
 def _proof_exists(queryset: Any) -> bool | None:
     try:
         return queryset.exists()
-    except DatabaseError:
+    except Error:
         return None
 
 
