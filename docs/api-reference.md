@@ -38,10 +38,11 @@ with an underscore remain implementation details.
 
 | Symbol | Purpose |
 | --- | --- |
-| `validate_hxml` | Validate source markup against configured limits. |
+| `validate_template_source` | Validate raw template source safety before compilation. |
+| `validate_hxml` | Validate a final rendered HXML document against configured limits and schema. |
 | `TemplateCache` | Cache raw resolved templates when enabled. |
 | `CacheEntry` | Represent a cache hit or negative entry. |
-| `CACHE_MISS` | Sentinel for an absent cache entry. |
+| `CACHE_MISS` | Represent an explicit cached source miss. A cache lookup returns `None` when no cache entry exists. |
 | `template_cache_key` | Produce a namespaced cache key. |
 | `invalidate_templates` | Invalidate one or more canonical names. |
 

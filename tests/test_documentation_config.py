@@ -197,6 +197,17 @@ def test_quickstart_and_reference_cover_the_supported_public_path() -> None:
         assert f"`{symbol}`" in reference
 
 
+def test_api_reference_distinguishes_validation_and_cache_states() -> None:
+    """Reference wording separates source, rendered, absent, and cached states."""
+    reference = _documentation_pages()["api-reference.md"]
+
+    assert "`validate_template_source`" in reference
+    assert "raw template source" in reference
+    assert "final rendered HXML document" in reference
+    assert "explicit cached source miss" in reference
+    assert "returns `None` when no cache entry exists" in reference
+
+
 def test_contributing_guide_records_project_quality_contracts() -> None:
     """Contributors see the testing and public documentation conventions."""
     page = _documentation_pages()["contributing.md"]

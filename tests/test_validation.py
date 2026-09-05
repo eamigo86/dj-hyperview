@@ -359,4 +359,5 @@ def test_validation_contract_is_exported_from_package_root():
     import dj_hyperview
 
     assert dj_hyperview.TemplateValidationError is TemplateValidationError
+    assert dj_hyperview.validate_template_source is validate_template_source
     assert dj_hyperview.validate_hxml is validate_hxml

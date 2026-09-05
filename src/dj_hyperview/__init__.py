@@ -26,7 +26,7 @@ from .middleware import (
 )
 from .resolver import TemplateResolver, resolve_template
 from .sources import FileSystemSource, ResolvedTemplate, TemplateSource
-from .validation import validate_hxml
+from .validation import validate_hxml, validate_template_source
 from .views import HyperviewTemplateView
 
 __all__ = [
@@ -58,4 +58,5 @@ __all__ = [
     "render_template",
     "template_cache_key",
     "validate_hxml",
+    "validate_template_source",
 ]
