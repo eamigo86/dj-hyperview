@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from django.core.cache import caches
 from django.db import connection, connections, transaction
-from django.db.models import Model
+from django.db.models import Model, QuerySet
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
@@ -169,8 +169,7 @@ def test_unsafe_rename_fails_before_update_sql(signal_model: type[Model]) -> Non
         with pytest.raises(InvalidTemplateName, match="Invalid template name"):
             template.save(update_fields={"name"})
 
-    assert len(queries) == 1
-    assert "UPDATE" not in queries[0]["sql"].upper()
+    assert len(queries) == 0
     schedule.assert_not_called()
     assert signal_model.objects.get(pk=template.pk).name == "safe.xml"
 
@@ -217,6 +216,29 @@ def test_instance_delete_schedules_its_name(signal_model: type[Model]) -> None:
         template.delete()
 
     schedule.assert_called_once_with("screen.xml", using="default")
+
+
+@pytest.mark.parametrize("operation", ["save", "delete"])
+def test_direct_mutations_lock_the_persisted_name_inside_a_transaction(
+    signal_model: type[Model], operation: str
+) -> None:
+    """Direct instance writes cannot race an unlocked persisted-name snapshot."""
+    template = signal_model.objects.create(name="screen.xml", content="<view />")
+    original = QuerySet.select_for_update
+    lock_states: list[bool] = []
+
+    def observe_lock(queryset: QuerySet, *args: object, **kwargs: object) -> QuerySet:
+        lock_states.append(connections[queryset.db].in_atomic_block)
+        return original(queryset, *args, **kwargs)
+
+    with patch.object(QuerySet, "select_for_update", observe_lock):
+        if operation == "save":
+            template.content = "<updated />"
+            template.save(update_fields={"content"})
+        else:
+            template.delete()
+
+    assert lock_states == [True]
 
 
 def test_queryset_delete_uses_one_snapshot_and_one_invalidation(

@@ -368,7 +368,7 @@ def test_database_enforces_unique_name_and_positive_revision(template_table):
 
 
 def test_save_persists_defaults_and_does_not_call_full_clean(template_table):
-    template = template_table(name="../unsafe.xml", content="<view />")
+    template = template_table(name="screen.xml", content="<view />")
 
     with patch.object(template, "full_clean") as full_clean:
         template.save()

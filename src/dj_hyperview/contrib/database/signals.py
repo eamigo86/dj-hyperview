@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 
+from django.db import connections
 from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 
 from dj_hyperview.exceptions import InvalidTemplateName
@@ -37,12 +38,10 @@ def _persisted_name(
 ) -> str | None:
     if instance.pk is None:
         return None
-    name = (
-        sender._default_manager.using(using)
-        .filter(pk=instance.pk)
-        .values_list("name", flat=True)
-        .first()
-    )
+    persisted = sender._default_manager.using(using).filter(pk=instance.pk)
+    if connections[using].in_atomic_block:
+        persisted = persisted.select_for_update()
+    name = persisted.values_list("name", flat=True).first()
     return _canonical_name_or_none(name)
 
 

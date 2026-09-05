@@ -176,7 +176,7 @@ def test_publication_validates_then_saves_once_under_row_lock(
     monkeypatch.setattr(publication_model, "save", save)
 
     assert publish_template("screen.xml", "<new />").revision == 2
-    assert events == ["lock", "clean", "save"]
+    assert events == ["lock", "clean", "save", "lock"]
     assert publication_model.objects.get(pk=template.pk).content == "<new />"
 
 

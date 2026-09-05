@@ -3,7 +3,9 @@
 from typing import Any
 
 from django.core.validators import MinValueValidator
-from django.db import models
+from django.db import DEFAULT_DB_ALIAS, models, router, transaction
+
+from dj_hyperview.sources import canonicalize_template_name
 
 from ._identity import template_name_identity
 from .querysets import HyperviewTemplateManager
@@ -60,7 +62,16 @@ class HyperviewTemplate(models.Model):
         """
         update_fields = kwargs.get("update_fields")
         if self._state.adding or update_fields is None or "name" in update_fields:
+            canonicalize_template_name(self.name)
             self.name_identity = template_name_identity(self.name)
             if update_fields is not None:
                 kwargs["update_fields"] = {*update_fields, "name_identity"}
-        super().save(*args, **kwargs)
+        requested_alias = kwargs.get("using")
+        alias = (
+            requested_alias
+            if requested_alias is not None
+            else router.db_for_write(type(self), instance=self) or DEFAULT_DB_ALIAS
+        )
+        kwargs["using"] = alias
+        with transaction.atomic(using=alias):
+            super().save(*args, **kwargs)
