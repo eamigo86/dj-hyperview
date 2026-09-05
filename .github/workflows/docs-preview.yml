@@ -1,0 +1,31 @@
+name: Documentation preview
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  preview:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
+      - name: Sync exact documentation environment
+        run: uv sync --locked
+      - name: Build strict documentation preview
+        run: uv run zensical build --clean --strict -f zensical.yml
+      - name: Upload documentation preview
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: documentation-preview-${{ github.sha }}
+          path: site/
+          if-no-files-found: error
+          retention-days: 7
