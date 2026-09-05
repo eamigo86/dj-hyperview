@@ -174,6 +174,39 @@ def test_unsafe_rename_fails_before_update_sql(signal_model: type[Model]) -> Non
     assert signal_model.objects.get(pk=template.pk).name == "safe.xml"
 
 
+def test_invalid_legacy_name_can_be_repaired(signal_model: type[Model]) -> None:
+    """A canonical replacement can recover a row created outside normal writes."""
+    signal_model._base_manager.bulk_create(
+        [signal_model(name=r"bad\name.xml", content="<view />")]
+    )
+    template = signal_model._base_manager.get()
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        template.name = "repaired.xml"
+        template.save(update_fields={"name"})
+
+    assert signal_model.objects.get(pk=template.pk).name == "repaired.xml"
+    schedule.assert_called_once_with("repaired.xml", using="default")
+
+
+def test_invalid_legacy_name_can_be_deleted(signal_model: type[Model]) -> None:
+    """An uncanonical persisted name never makes its row immortal."""
+    signal_model._base_manager.bulk_create(
+        [signal_model(name=r"bad\name.xml", content="<view />")]
+    )
+    template = signal_model._base_manager.get()
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        template.delete()
+
+    assert signal_model.objects.count() == 0
+    schedule.assert_not_called()
+
+
 def test_instance_delete_schedules_its_name(signal_model: type[Model]) -> None:
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 

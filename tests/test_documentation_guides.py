@@ -102,6 +102,7 @@ def test_filesystem_guide_uses_the_public_resolver_contract() -> None:
 def test_database_admin_guide_matches_public_services_and_optional_apps() -> None:
     """The database guide describes opt-in apps and exact service signatures."""
     page = _read_document("database-admin.md")
+    normalized = " ".join(page.split())
     blocks = _python_blocks(page)
 
     assert "dj_hyperview.contrib.database" in page
@@ -112,6 +113,8 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
     assert "transaction.on_commit" in page
     assert "multi-root and text-only partials" in page
     assert "render-time validation" in page
+    assert "no longer canonical" in normalized
+    assert "remains recoverable" in normalized
     assert len(blocks) >= 2
     for block in blocks:
         compile(block, "docs/database-admin.md", "exec")

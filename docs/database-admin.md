@@ -108,3 +108,8 @@ forms carry a protected revision token to reject stale submissions.
 Direct `save()` does not call `full_clean()`. Prefer the services or the admin
 for validated publication. ORM bulk creation and bulk update do not provide an
 automatic publication contract.
+
+A row imported by raw SQL or an older release can contain a name that is no
+longer canonical. Such a row is never resolved, but it remains recoverable:
+individual admin deletion works, and a literal canonical `QuerySet.update()` can
+repair its name. New invalid names remain rejected.

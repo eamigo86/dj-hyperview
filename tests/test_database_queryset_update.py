@@ -188,6 +188,30 @@ def test_filtered_zero_and_noop_updates_preserve_queryset_semantics(
     schedule.assert_not_called()
 
 
+def test_queryset_updates_can_disable_and_repair_invalid_legacy_names(
+    queryset_model: type[Model],
+) -> None:
+    """Old invalid names are skipped while replacement names stay strict."""
+    queryset_model._base_manager.bulk_create(
+        [queryset_model(name=r"bad\name.xml", content="<view />")]
+    )
+    template = queryset_model._base_manager.get()
+
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        assert queryset_model.objects.filter(pk=template.pk).update(active=False) == 1
+        schedule.assert_not_called()
+        assert (
+            queryset_model.objects.filter(pk=template.pk).update(name="repaired.xml")
+            == 1
+        )
+
+    repaired = queryset_model.objects.get(pk=template.pk)
+    assert (repaired.name, repaired.active) == ("repaired.xml", False)
+    schedule.assert_called_once_with("repaired.xml", using="default")
+
+
 def test_updates_follow_outer_commit_rollback_and_savepoint(
     queryset_model: type[Model],
 ) -> None:

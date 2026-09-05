@@ -10,6 +10,8 @@ from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
 from django.template.response import TemplateResponse
 from django.utils.datastructures import MultiValueDict
 
+from dj_hyperview.exceptions import InvalidTemplateName
+
 from .models import HyperviewTemplate
 from .services import (
     PublicationConflict,
@@ -228,13 +230,18 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
             DatabaseError: If persistence fails.
             SourceUnavailable: If post-commit invalidation fails.
         """
-        delete_template(
-            obj.name,
-            expected_revision=_submitted_revision(
-                request.POST, using=obj._state.db or DEFAULT_DB_ALIAS
-            ),
-            using=obj._state.db,
-        )
+        alias = obj._state.db or DEFAULT_DB_ALIAS
+        expected_revision = _submitted_revision(request.POST, using=alias)
+        try:
+            delete_template(
+                obj.name,
+                expected_revision=expected_revision,
+                using=obj._state.db,
+            )
+        except InvalidTemplateName:
+            if obj.revision != expected_revision:
+                raise PublicationConflict from None
+            obj.delete(using=alias)
 
     def changeform_view(
         self,

@@ -9,6 +9,7 @@ from django.db import models, transaction
 from django.db.models import sql
 from django.db.models.sql.constants import ROW_COUNT
 
+from dj_hyperview.exceptions import InvalidTemplateName
 from dj_hyperview.sources import canonicalize_template_name
 
 from ._invalidation import _schedule_invalidation
@@ -16,8 +17,17 @@ from ._invalidation import _schedule_invalidation
 _OBSERVABLE_FIELDS = frozenset({"name", "content", "active", "revision"})
 
 
-def _canonical_names(values: Iterable[object]) -> tuple[str, ...]:
-    return tuple(dict.fromkeys(canonicalize_template_name(value) for value in values))
+def _canonical_names(
+    values: Iterable[object], *, ignore_invalid: bool = False
+) -> tuple[str, ...]:
+    names: dict[str, None] = {}
+    for value in values:
+        try:
+            names[canonicalize_template_name(value)] = None
+        except InvalidTemplateName:
+            if not ignore_invalid:
+                raise
+    return tuple(names)
 
 
 def _prepare_update(
@@ -101,7 +111,9 @@ class HyperviewTemplateQuerySet(models.QuerySet):
                 .order_by(primary_key.name)
                 .values_list(primary_key.name, "name")
             )
-            old_names = _canonical_names(name for _, name in rows)
+            old_names = _canonical_names(
+                (name for _, name in rows), ignore_invalid=True
+            )
             primary_keys = tuple(row_primary_key for row_primary_key, _ in rows)
             query.clear_where()
             query.add_q(models.Q(pk__in=primary_keys))
@@ -109,14 +121,17 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             self._result_cache = None
             if not updated:
                 return updated
-            new_names = _canonical_names(
-                self.model._base_manager.using(using)
-                .filter(pk__in=primary_keys)
-                .order_by(primary_key.name)
-                .values_list("name", flat=True)
-            )
+            new_names = old_names
+            if "name" in kwargs:
+                new_names = _canonical_names(
+                    self.model._base_manager.using(using)
+                    .filter(pk__in=primary_keys)
+                    .order_by(primary_key.name)
+                    .values_list("name", flat=True)
+                )
             affected_names = tuple(dict.fromkeys((*old_names, *new_names)))
-            _schedule_invalidation(*affected_names, using=using)
+            if affected_names:
+                _schedule_invalidation(*affected_names, using=using)
         return updated
 
 

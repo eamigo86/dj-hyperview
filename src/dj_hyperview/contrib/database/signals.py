@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 
+from dj_hyperview.exceptions import InvalidTemplateName
 from dj_hyperview.sources import canonicalize_template_name
 
 from ._invalidation import _schedule_invalidation
@@ -19,6 +20,13 @@ class _MutationState:
     names: tuple[str, ...]
 
 
+def _canonical_name_or_none(value: object) -> str | None:
+    try:
+        return canonicalize_template_name(value)
+    except InvalidTemplateName:
+        return None
+
+
 def _persisted_name(
     sender: type[HyperviewTemplate],
     instance: HyperviewTemplate,
@@ -32,7 +40,7 @@ def _persisted_name(
         .values_list("name", flat=True)
         .first()
     )
-    return None if name is None else canonicalize_template_name(name)
+    return _canonical_name_or_none(name)
 
 
 def _capture_save(
@@ -49,13 +57,12 @@ def _capture_save(
         return
 
     old_name = _persisted_name(sender, instance, using)
-    new_name = (
-        old_name
-        if old_name is not None
-        and update_fields is not None
-        and "name" not in update_fields
-        else canonicalize_template_name(instance.name)
-    )
+    if update_fields is not None and "name" not in update_fields:
+        new_name = old_name
+    else:
+        new_name = canonicalize_template_name(instance.name)
+    if new_name is None:
+        return
     names = (new_name,) if old_name in {None, new_name} else (old_name, new_name)
     instance.__dict__[_STATE_ATTRIBUTE] = _MutationState(using, names)
 
@@ -80,10 +87,11 @@ def _capture_delete(
     del kwargs
     instance.__dict__.pop(_STATE_ATTRIBUTE, None)
     persisted_name = _persisted_name(sender, instance, using)
-    name = canonicalize_template_name(
+    name = _canonical_name_or_none(
         instance.name if persisted_name is None else persisted_name
     )
-    instance.__dict__[_STATE_ATTRIBUTE] = _MutationState(using, (name,))
+    if name is not None:
+        instance.__dict__[_STATE_ATTRIBUTE] = _MutationState(using, (name,))
 
 
 def _schedule_delete(

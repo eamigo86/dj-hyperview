@@ -200,6 +200,23 @@ def test_delete_revision_survives_an_overridden_admin_template(
     assert b'name="expected_revision" value="1"' in confirmation.content
 
 
+def test_admin_can_delete_an_invalid_legacy_name(admin_client) -> None:
+    """Legacy rows remain recoverable through the guarded admin delete flow."""
+    model = _model()
+    model._base_manager.bulk_create([model(name=r"bad\name.xml", content="<view />")])
+    template = model._base_manager.get()
+    changelist, _, delete = _urls(template)
+
+    confirmation = admin_client.get(delete)
+    response = admin_client.post(
+        delete, {"post": "yes", "expected_revision": str(template.revision)}
+    )
+
+    assert b'name="expected_revision" value="1"' in confirmation.content
+    assert (response.status_code, response.headers["Location"]) == (302, changelist)
+    assert model._base_manager.count() == 0
+
+
 def test_admin_bulk_delete_remains_signal_backed(admin_client) -> None:
     model = _model()
     rows = [
