@@ -171,3 +171,36 @@ def test_documentation_declares_foundation_limits_and_valid_local_links() -> Non
         for target in DOCS:
             if f"]({target})" in pages[source]:
                 assert (ROOT / "docs" / target).is_file()
+
+
+def test_repository_readme_presents_the_public_package_journey() -> None:
+    """The repository front page mirrors the published package experience."""
+    readme = (ROOT / "README.md").read_text()
+
+    for badge in (
+        "github/actions/workflow/status/eamigo86/dj-hyperview/ci.yml",
+        "pypi/pyversions/dj-hyperview",
+        "pypi/frameworkversions/django/dj-hyperview",
+        "pypi/v/dj-hyperview",
+        "pepy/dt/dj-hyperview",
+        "astral-sh/ruff/main/assets/badge/v2.json",
+    ):
+        assert badge in readme
+
+    headings = (
+        "## Requirements",
+        "## Installation",
+        "## Quick start",
+        "## Configuration",
+        "## Documentation",
+        "## Development",
+    )
+    positions = tuple(readme.index(heading) for heading in headings)
+    assert positions == tuple(sorted(positions))
+    assert "uv add dj-hyperview" in readme
+    assert "pip install dj-hyperview" in readme
+    assert '"dj_hyperview.apps.DjHyperviewConfig"' in readme
+    assert "https://pypi.org/project/dj-hyperview/" in readme
+    assert "https://eamigo86.github.io/dj-hyperview/" in readme
+    assert "does not ship application screens" in readme
+    assert "Every successfully claimed root or successor token" not in readme
