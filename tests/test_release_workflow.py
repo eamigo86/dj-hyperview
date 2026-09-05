@@ -88,6 +88,7 @@ def test_release_validates_metadata_before_one_reusable_ci_build() -> None:
         "needs": "metadata",
         "permissions": {"contents": "read"},
         "uses": "./.github/workflows/ci.yml",
+        "secrets": {"CODECOV_TOKEN": "${{ secrets.CODECOV_TOKEN }}"},
         "with": {"redis": "true"},
     }
     text = WORKFLOW.read_text()

@@ -15,6 +15,7 @@ ACTION_PINS = {
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "astral-sh/setup-uv": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
+    "codecov/codecov-action": "fb8b3582c8e4def4969c97caa2f19720cb33a72f",
 }
 
 
@@ -497,6 +498,7 @@ APPROVED_STEP_KEYS = {
         {"uses", "with"},
         {"uses", "with"},
         {"name", "run"},
+        {"name", "if", "uses", "with"},
     ),
     "redis": (
         {"uses"},
@@ -664,6 +666,39 @@ def test_compatibility_matrix_runs_every_supported_runtime_with_coverage() -> No
     assert "Django==${{ matrix.django }}" in script
     assert "python -m tools.test_matrix" in script
     assert "--django-version ${{ matrix.django }}" in script
+
+
+def test_canonical_compatibility_cell_uploads_one_strict_codecov_report() -> None:
+    """Only the canonical aggregate report is uploaded with repository auth."""
+    workflow = _workflow()
+    job = workflow["jobs"]["compatibility"]
+    upload = next(
+        (
+            step
+            for step in job["steps"]
+            if "codecov/codecov-action" in step.get("uses", "")
+        ),
+        None,
+    )
+
+    assert workflow["on"]["workflow_call"]["secrets"] == {
+        "CODECOV_TOKEN": {
+            "description": "Authenticate coverage uploads to Codecov",
+            "required": "true",
+        }
+    }
+    assert upload == {
+        "name": "Upload canonical coverage to Codecov",
+        "if": "${{ matrix.python == '3.12' && matrix.django == '6.1.1' }}",
+        "uses": ("codecov/codecov-action@" + ACTION_PINS["codecov/codecov-action"]),
+        "with": {
+            "disable_search": "true",
+            "fail_ci_if_error": "true",
+            "files": "./coverage.xml",
+            "token": "${{ secrets.CODECOV_TOKEN }}",
+            "verbose": "true",
+        },
+    }
 
 
 def test_quality_job_checks_lock_style_settings_migrations_and_boundaries() -> None:

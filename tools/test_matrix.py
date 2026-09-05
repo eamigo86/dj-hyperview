@@ -37,6 +37,7 @@ _ADMIN_COVERAGE = (
     "--cov-branch",
     "--cov-append",
     "--cov-report=term-missing:skip-covered",
+    "--cov-report=xml:coverage.xml",
     "--cov-fail-under=95",
 )
 

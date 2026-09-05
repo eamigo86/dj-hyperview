@@ -194,6 +194,7 @@ def test_repository_readme_presents_the_public_package_journey() -> None:
 
     for badge in (
         "github/actions/workflow/status/eamigo86/dj-hyperview/ci.yml",
+        "codecov.io/gh/eamigo86/dj-hyperview/graph/badge.svg",
         "pypi/pyversions/dj-hyperview",
         "pypi/frameworkversions/django/dj-hyperview",
         "pypi/v/dj-hyperview",

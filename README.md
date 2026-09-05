@@ -1,6 +1,7 @@
 # dj-hyperview
 
 ![CI](https://img.shields.io/github/actions/workflow/status/eamigo86/dj-hyperview/ci.yml?branch=main&label=CI)
+[![Codecov](https://codecov.io/gh/eamigo86/dj-hyperview/graph/badge.svg)](https://codecov.io/gh/eamigo86/dj-hyperview)
 ![PyPI - Python Version](https://img.shields.io/pypi/pyversions/dj-hyperview)
 ![Django Versions](https://img.shields.io/pypi/frameworkversions/django/dj-hyperview?label=django&color=0C4B33)
 ![PyPI](https://img.shields.io/pypi/v/dj-hyperview?color=blue)

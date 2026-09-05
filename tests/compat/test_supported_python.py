@@ -46,6 +46,8 @@ def test_coverage_commands_enforce_the_aggregate_after_admin() -> None:
     assert not any(argument.startswith("tests/") for argument in base)
     assert "--cov-append" in admin
     assert "--cov-fail-under=95" in admin
+    assert "--cov-report=xml:coverage.xml" in admin
+    assert "coverage.xml" in (ROOT / ".gitignore").read_text().splitlines()
     assert {
         "tests/test_database_admin.py",
         "tests/test_database_admin_publication.py",
