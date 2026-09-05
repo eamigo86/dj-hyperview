@@ -623,6 +623,7 @@ def test_ci_is_reusable_and_defaults_to_read_only_permissions() -> None:
         "workflow_call",
         "workflow_dispatch",
     }
+    assert workflow["on"]["push"] == {"branches": ["**"]}
     assert workflow["permissions"] == {"contents": "read"}
     assert {"quality", "compatibility"} <= set(workflow["jobs"])
     text = WORKFLOW.read_text()
