@@ -11,6 +11,7 @@ site_dir: site
 theme:
   name: material
   variant: classic
+  custom_dir: docs/overrides
   palette:
     - scheme: default
       primary: light blue
@@ -53,6 +54,9 @@ markdown_extensions:
   - footnotes
   - toc:
       permalink: true
+
+extra_javascript:
+  - javascripts/source-facts.js
 
 nav:
   - Home: index.md

@@ -79,8 +79,31 @@ jobs:
         with:
           packages-dir: candidate/dist/
 
-  pages:
+  github-release:
     needs: pypi
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: release-distributions-${{ github.sha }}
+          path: candidate
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ github.ref_name }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, 'a') || contains(github.ref_name, 'b') || contains(github.ref_name, 'rc') || contains(github.ref_name, 'dev') }}
+          fail_on_unmatched_files: true
+          files: |
+            candidate/dist/*
+            candidate/SHA256SUMS
+
+  pages:
+    needs: github-release
     runs-on: ubuntu-latest
     timeout-minutes: 10
     environment:

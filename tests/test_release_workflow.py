@@ -22,6 +22,7 @@ PINS = {
     "actions/configure-pages": "45bfe0192ca1faeb007ade9deae92b16b8254a0d",
     "actions/deploy-pages": "368f82528645a54fb793d4d04e342629a3f51346",
     "pypa/gh-action-pypi-publish": "dc37677b2e1c63e2034f94d8a5b11f265b73ba33",
+    "softprops/action-gh-release": "efb35369e0ad2afab669f228072c1b0d510eae64",
 }
 
 
@@ -54,7 +55,14 @@ def test_release_starts_only_for_version_tags_and_is_read_only() -> None:
 
     assert workflow["on"] == {"push": {"tags": ["v*.*.*"]}}
     assert workflow["permissions"] == {"contents": "read"}
-    assert set(workflow["jobs"]) == {"metadata", "ci", "stage", "pypi", "pages"}
+    assert set(workflow["jobs"]) == {
+        "metadata",
+        "ci",
+        "stage",
+        "pypi",
+        "github-release",
+        "pages",
+    }
 
 
 def test_release_validates_metadata_before_one_reusable_ci_build() -> None:
@@ -154,11 +162,47 @@ def test_pypi_uses_only_oidc_and_the_immutable_distribution() -> None:
     assert "secrets" not in job
 
 
-def test_pages_deploys_only_after_successful_pypi_publication() -> None:
-    """Pages deploys the prebuilt artifact only after the PyPI job succeeds."""
-    job = load_workflow(WORKFLOW.read_text())["jobs"]["pages"]
+def test_github_release_follows_pypi_and_preserves_prerelease_semantics() -> None:
+    """A tag becomes a GitHub release only after PyPI accepts its artifacts."""
+    job = load_workflow(WORKFLOW.read_text())["jobs"]["github-release"]
 
     assert job["needs"] == "pypi"
+    assert job["permissions"] == {"contents": "write"}
+    assert job["steps"] == [
+        {
+            "uses": f"actions/download-artifact@{PINS['actions/download-artifact']}",
+            "with": {
+                "name": "release-distributions-${{ github.sha }}",
+                "path": "candidate",
+            },
+        },
+        {
+            "name": "Create GitHub release",
+            "uses": (
+                "softprops/action-gh-release@" + PINS["softprops/action-gh-release"]
+            ),
+            "with": {
+                "tag_name": "${{ github.ref_name }}",
+                "name": "Release ${{ github.ref_name }}",
+                "generate_release_notes": "true",
+                "prerelease": (
+                    "${{ contains(github.ref_name, 'a') || "
+                    "contains(github.ref_name, 'b') || "
+                    "contains(github.ref_name, 'rc') || "
+                    "contains(github.ref_name, 'dev') }}"
+                ),
+                "fail_on_unmatched_files": "true",
+                "files": "candidate/dist/*\ncandidate/SHA256SUMS\n",
+            },
+        },
+    ]
+
+
+def test_pages_deploys_only_after_successful_pypi_publication() -> None:
+    """Pages deploys only after package and GitHub publication succeed."""
+    job = load_workflow(WORKFLOW.read_text())["jobs"]["pages"]
+
+    assert job["needs"] == "github-release"
     assert job["environment"] == {
         "name": "github-pages",
         "url": "${{ steps.deployment.outputs.page_url }}",
@@ -186,11 +230,13 @@ def test_pages_deploys_only_after_successful_pypi_publication() -> None:
         lambda text: text.replace("name: pypi", "name: production", 1),
         lambda text: text.replace("id-token: write", "id-token: read", 1),
         lambda text: text.replace("needs: pypi", "needs: stage", 1),
+        lambda text: text.replace("needs: github-release", "needs: pypi", 1),
         lambda text: text.replace("pages: write", "pages: read", 1),
         lambda text: text.replace(
             "packages-dir: candidate/dist/", "password: secret", 1
         ),
         lambda text: text.replace("actions/deploy-pages", "actions/upload-artifact", 1),
+        lambda text: text.replace("softprops/action-gh-release", "example/release", 1),
         lambda text: text.replace("contents: read", "contents: write", 4),
     ],
 )

@@ -2,7 +2,8 @@
 
 Publish one reviewed tag through the hosted release workflow. It validates the
 tag, builds the candidate once through CI, publishes that exact distribution to
-PyPI, and deploys its documentation only after PyPI succeeds.
+PyPI, creates the matching GitHub Release, and deploys its documentation only
+after PyPI succeeds.
 
 ## Configure once
 
@@ -28,8 +29,12 @@ Only Pages receives `pages: write`; validation and staging remain read-only.
    CI with Redis, and builds the distribution and site once.
 4. Staging validates the layout, records SHA-256 checksums, and separates the
    immutable distribution from the Pages artifact.
-5. Trusted Publishing uploads the staged distribution. Pages starts only after
-   PyPI succeeds and deploys the already-built site.
+5. Trusted Publishing uploads the staged distribution. After PyPI succeeds, the
+   workflow creates a GitHub Release with those same files and checksums. Alpha,
+   beta, release-candidate, and development versions remain GitHub prereleases.
+6. Pages starts only after the GitHub Release succeeds and deploys the
+   already-built site. The documentation header reads the newest public release,
+   including prereleases, so it shows the tag that produced the published site.
 
 For a reviewable preview without publishing, run the manual documentation
 preview workflow. The checked-in command remains:
@@ -39,9 +44,6 @@ uv run zensical build --clean --strict -f zensical.yml
 ```
 
 Generated `site/` content is disposable and must not be committed.
-
-The workflow deliberately does not create a GitHub Release. Creating release
-notes is a separate, manual repository decision.
 
 ## Roll back safely
 

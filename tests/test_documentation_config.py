@@ -103,6 +103,24 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
     )
 
 
+def test_repository_header_displays_stable_and_prerelease_versions() -> None:
+    """The repository facts include the newest public GitHub release tag."""
+    config = yaml.safe_load((ROOT / "zensical.yml").read_text())
+    source = (ROOT / "docs" / "overrides" / "partials" / "source.html").read_text()
+    script = (ROOT / "docs" / "javascripts" / "source-facts.js").read_text()
+
+    assert config["theme"]["custom_dir"] == "docs/overrides"
+    assert config["extra_javascript"] == ["javascripts/source-facts.js"]
+    assert "data-dj-hyperview-source" in source
+    assert 'data-md-component="source"' not in source
+    assert "/releases?per_page=1" in script
+    assert "tag_name" in script
+    assert "stargazers_count" in script
+    assert "forks_count" in script
+    assert "textContent" in script
+    assert "innerHTML" not in script
+
+
 def test_documentation_starts_with_installation_and_configuration_outcomes() -> None:
     """The landing page leads directly to both first-use outcomes."""
     pages = _documentation_pages()
@@ -144,6 +162,16 @@ def test_contributing_guide_records_project_quality_contracts() -> None:
     assert "Args" in page and "Returns" in page and "Raises" in page
     assert "backticks" in page
     assert "uv run pytest" in page
+
+
+def test_release_guide_documents_tag_driven_github_releases() -> None:
+    """Release docs preserve tag identity through every hosted publication."""
+    page = _documentation_pages()["release-rollback.md"]
+
+    assert "GitHub Release" in page
+    assert "after PyPI succeeds" in page
+    assert "prerelease" in page
+    assert "does not create a GitHub Release" not in page
 
 
 def test_markdown_links_remain_inside_the_zensical_document_tree() -> None:
