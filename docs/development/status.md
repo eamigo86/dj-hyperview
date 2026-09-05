@@ -1,24 +1,27 @@
-# Estado del proyecto — 2026-09-04
+# Estado del proyecto — 2026-09-05
 
-**MVP package-only cerrado: Tasks 1–13 completadas y verificadas.** El HEAD
-funcional es
+**MVP package-only cerrado: Tasks 1–13 completadas y verificadas.** El cierre
+funcional base permanece en
 [077589b813f20947d2ff350a0af42a6ea1d39307](https://github.com/eamigo86/dj-hyperview/commit/077589b).
-El código prepara publicación PyPI mediante OIDC y Pages posterior, pero todavía
-no se ejecutaron builds locales, no se publicó ningún paquete y no se desplegó
-documentación.
+El primer run alojado `v0.1.0a1` pasó calidad, toda la matriz Django, Redis,
+build y smoke test del wheel, pero el build estricto de Zensical detectó un
+enlace al README fuera de `docs/`. PyPI y Pages no llegaron a ejecutarse. El
+enlace quedó corregido con una regresión permanente en 338d5f0.
+No se ejecutaron builds locales.
+No se publicó ningún paquete ni se desplegó la documentación.
 
 ## Snapshot
 
 | Campo | Valor |
 |---|---|
 | Repositorio | [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview) |
-| Rama verificada | release/06c-version-contract |
-| HEAD verificado | 077589b — validación PEP 440 canónica |
-| Versión declarada | 0.1.0a1 |
+| Rama verificada | fix/01-release-docs-link |
+| HEAD verificado | 338d5f0 — enlaces Markdown publicables por Zensical |
+| Versión declarada | 0.1.0a2 |
 | Python | 3.12–3.14 |
 | Django | 5.2.17 y 6.1.1 |
 | Tasks válidas | 1–13 verificadas |
-| Próxima acción | Configuración externa y primer release revisado |
+| Próxima acción | Publicar el tag nuevo e inmutable v0.1.0a2 |
 
 ## Resultado entregado
 
@@ -51,17 +54,12 @@ El warning restante es conservador: PyYAML SafeLoader interpreta YAML 1.1 y el
 contrato typed rechaza la variante style-equivalent quoted "on". No permite un
 bypass ni cambia el workflow aprobado.
 
-## Configuración externa pendiente
+## Configuración externa completada
 
-Antes del primer release real:
-
-1. Crear en PyPI el **PyPI Trusted Publisher** para el repositorio
-   eamigo86/dj-hyperview, workflow release.yml y environment pypi.
-2. Crear y proteger el environment pypi en GitHub.
-3. Seleccionar **GitHub Actions** como source de **GitHub Pages** y conservar el
-   environment github-pages.
-4. Revisar que el tag canónico coincida con pyproject.toml, por ejemplo
-   v0.1.0a1, y ejecutar la cadena alojada.
+El **PyPI Trusted Publisher**, el environment `pypi`, GitHub Pages mediante
+Actions y el environment `github-pages` ya existen. El tag `v0.1.0a1` permanece
+como evidencia inmutable del run fallido y no se reutilizará. La corrección se
+publicará con `v0.1.0a2`.
 
 OIDC existe sólo en los jobs PyPI y Pages; únicamente Pages recibe
 pages: write. CI, metadata y staging permanecen read-only.
@@ -76,11 +74,11 @@ pages: write. CI, metadata y staging permanecen read-only.
   los hooks automáticos permanecen post-MVP.
 - El cliente mobile no se ejecutó ni se extendió; el contrato es HXML/HTTP
   test-only contra Hyperview 0.110.0.
-- Los builds, Redis hosted, Trusted Publishing y Pages se ejecutarán por primera
-  vez en GitHub Actions.
+- Build, smoke test y Redis ya pasaron en GitHub Actions; Trusted Publishing y
+  Pages siguen pendientes porque el run `v0.1.0a1` se detuvo antes de esos jobs.
 
 ## Próximo paso
 
-Seguir [Release and rollback](../release-rollback.md) para configurar servicios,
-revisar el tag y observar el primer run alojado. El historial por subtask está
+Seguir [Release and rollback](../release-rollback.md), publicar el tag nuevo
+`v0.1.0a2` y observar Trusted Publishing y Pages. El historial por subtask está
 en [tasks.md](tasks.md); el trabajo posterior en [roadmap.md](roadmap.md).

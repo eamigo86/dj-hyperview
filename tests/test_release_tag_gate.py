@@ -2,6 +2,7 @@
 
 import runpy
 import sys
+import tomllib
 from importlib import import_module
 from pathlib import Path
 from types import ModuleType
@@ -11,6 +12,7 @@ import yaml
 
 ROOT = Path(__file__).parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
+STATUS_DOCUMENT = ROOT / "docs" / "development" / "status.md"
 
 
 def test_normal_ci_pushes_exclude_tags() -> None:
@@ -116,7 +118,7 @@ def test_release_tag_module_entrypoint_uses_process_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The module entrypoint validates the tag supplied by the runner."""
-    monkeypatch.setattr(sys, "argv", ["check_release_tag", "v0.1.0a1"])
+    monkeypatch.setattr(sys, "argv", ["check_release_tag", "v0.1.0a2"])
 
     with pytest.raises(SystemExit) as caught:
         runpy.run_path(
@@ -124,6 +126,21 @@ def test_release_tag_module_entrypoint_uses_process_arguments(
         )
 
     assert caught.value.code == 0
+
+
+def test_repository_release_version_is_synchronized() -> None:
+    """Project, lock, and operator status expose one release version."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    project_version = project["project"]["version"]
+    locked_project = next(
+        package for package in lock["package"] if package["name"] == "dj-hyperview"
+    )
+
+    assert locked_project["version"] == project_version
+    assert (
+        f"| Versión declarada | {project_version} |" in STATUS_DOCUMENT.read_text()
+    )
 
 
 def _release_module() -> ModuleType:
