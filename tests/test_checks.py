@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 from django.test import override_settings
 
@@ -72,6 +74,24 @@ def test_source_and_template_directory_mismatches_emit_warnings(tmp_path) -> Non
     }
     with override_settings(HYPERVIEW=configured):
         assert check_hyperview_settings() == []
+
+
+@pytest.mark.parametrize("template_dirs", ["/tmp/hyperview", Path("/tmp/hyperview")])
+def test_filesystem_source_options_reject_scalar_template_roots(template_dirs) -> None:
+    """Checks reject values that FileSystemSource cannot treat as root lists."""
+    configured = {
+        "SOURCES": [
+            {
+                "BACKEND": "dj_hyperview.sources.FileSystemSource",
+                "OPTIONS": {"template_dirs": template_dirs},
+            }
+        ]
+    }
+
+    with override_settings(HYPERVIEW=configured):
+        messages = check_hyperview_settings()
+
+    assert [message.id for message in messages] == ["dj_hyperview.E002"]
 
 
 @pytest.mark.parametrize(

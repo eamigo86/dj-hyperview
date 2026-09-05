@@ -162,6 +162,7 @@ def test_configuration_documents_every_builtin_source_option() -> None:
     assert "database alias" in page
     assert "Django database routing" in page
     assert "source caching" in page
+    assert "single string or Path" in page
 
 
 def test_configuration_documents_deterministic_template_engine_selection() -> None:

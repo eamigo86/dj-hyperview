@@ -39,6 +39,10 @@ support the following options:
 | `FileSystemSource` | `template_dirs` | `HYPERVIEW["TEMPLATE_DIRS"]` | Ordered template roots for this source instance, supplied as an iterable of strings or `Path` objects. Earlier roots win. |
 | `DatabaseSource` | `using` | `None` | A configured Django database alias. A fixed alias permits source caching; omitting it delegates to Django database routing and disables source caching because the selected database can vary. |
 
+`template_dirs` must be a list, tuple, or another iterable of roots. Do not pass
+a single string or Path: scalar paths are rejected instead of being interpreted
+as collections.
+
 For example, one filesystem source can override the global roots:
 
 ```python

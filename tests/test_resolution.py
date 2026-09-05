@@ -7,9 +7,11 @@ import pytest
 from django.test import override_settings
 
 from dj_hyperview.exceptions import (
+    HyperviewConfigurationError,
     InvalidTemplateName,
     SourceUnavailable,
     TemplateNotFound,
+    TemplateValidationError,
 )
 from dj_hyperview.resolver import TemplateResolver, resolve_template
 from dj_hyperview.sources import (
@@ -111,6 +113,64 @@ def test_filesystem_source_returns_none_on_miss(tmp_path):
     assert FileSystemSource([tmp_path]).resolve("missing.xml") is None
 
 
+@pytest.mark.parametrize("template_dirs", ["/tmp/hyperview", b"/tmp/hyperview"])
+def test_filesystem_source_rejects_scalar_template_roots(template_dirs) -> None:
+    """A scalar root cannot be misinterpreted as an iterable of characters."""
+    with pytest.raises(HyperviewConfigurationError, match="template_dirs"):
+        FileSystemSource(template_dirs)
+
+
+def test_filesystem_source_rejects_a_bare_path_root(tmp_path) -> None:
+    """A Path must be wrapped in an ordered roots collection."""
+    with pytest.raises(HyperviewConfigurationError, match="template_dirs"):
+        FileSystemSource(tmp_path)
+
+
+def test_filesystem_source_follows_a_configured_root_symlink_swap(tmp_path) -> None:
+    """Long-lived source instances follow atomic release symlink changes."""
+    first = tmp_path / "release-1"
+    second = tmp_path / "release-2"
+    first.mkdir()
+    second.mkdir()
+    (first / "screen.xml").write_text("<view>first</view>", encoding="utf-8")
+    (second / "screen.xml").write_text("<view>second</view>", encoding="utf-8")
+    current = tmp_path / "current"
+    current.symlink_to(first, target_is_directory=True)
+    source = FileSystemSource([current])
+
+    assert source.resolve("screen.xml").content == "<view>first</view>"
+    current.unlink()
+    current.symlink_to(second, target_is_directory=True)
+
+    assert source.resolve("screen.xml").content == "<view>second</view>"
+
+
+def test_filesystem_source_treats_platform_path_limit_as_a_miss(tmp_path) -> None:
+    """Host filesystem limits cannot leak an absolute path through a raw error."""
+    source = FileSystemSource([tmp_path])
+
+    assert source.resolve(f"{'a' * 300}.xml") is None
+
+
+def test_filesystem_source_treats_a_symlink_loop_as_a_miss(tmp_path) -> None:
+    """A looping entry behaves like an unavailable candidate."""
+    loop = tmp_path / "loop.xml"
+    loop.symlink_to(loop)
+
+    assert FileSystemSource([tmp_path]).resolve("loop.xml") is None
+
+
+def test_filesystem_source_maps_non_utf8_content_to_validation_error(tmp_path) -> None:
+    """Stored bytes must satisfy the source's explicit UTF-8 contract."""
+    (tmp_path / "screen.xml").write_bytes(b"<view>caf\xe9</view>")
+
+    with pytest.raises(TemplateValidationError) as captured:
+        FileSystemSource([tmp_path]).resolve("screen.xml")
+
+    assert captured.value.code == "invalid_encoding"
+    assert captured.value.__cause__ is None
+
+
 def test_empty_template_is_a_hit_before_later_content(tmp_path):
     first, second = tmp_path / "first", tmp_path / "second"
     first.mkdir()
@@ -172,21 +232,42 @@ def test_filesystem_symlink_rejection_redacts_exception_chain(tmp_path, monkeypa
         assert sensitive not in rendered
 
 
-def test_filesystem_source_preserves_path_resolution_errors(tmp_path, monkeypatch):
+def test_filesystem_source_redacts_path_resolution_errors(tmp_path, monkeypatch):
     root = tmp_path / "root"
     root.mkdir()
     source = FileSystemSource([root])
-    failure = OSError("storage unavailable")
+    failure = OSError(f"storage unavailable at {root}")
 
     def fail_resolve(_path):
         raise failure
 
     monkeypatch.setattr(Path, "resolve", fail_resolve)
 
-    with pytest.raises(OSError) as captured:
+    with pytest.raises(SourceUnavailable) as captured:
         source.resolve("screen.xml")
 
-    assert captured.value is failure
+    assert captured.value.source == "filesystem"
+    assert captured.value.reason == "read failed"
+    assert captured.value.__cause__ is None
+    assert str(root) not in str(captured.value)
+
+
+def test_filesystem_source_redacts_file_read_errors(tmp_path, monkeypatch):
+    """File access failures expose only the stable source error contract."""
+    path = tmp_path / "screen.xml"
+    path.write_text("<view />", encoding="utf-8")
+
+    def fail_read(_path):
+        raise PermissionError(f"permission denied: {path}")
+
+    monkeypatch.setattr(Path, "read_bytes", fail_read)
+    with pytest.raises(SourceUnavailable) as captured:
+        FileSystemSource([tmp_path]).resolve("screen.xml")
+
+    assert captured.value.source == "filesystem"
+    assert captured.value.reason == "read failed"
+    assert captured.value.__cause__ is None
+    assert str(path) not in str(captured.value)
 
 
 def test_resolver_preserves_source_unavailable():

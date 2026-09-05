@@ -47,5 +47,12 @@ backslashes, control characters, isolated surrogates, or NUL bytes. Filesystem
 sources also reject symlinks that escape a configured root. Public errors do not
 echo rejected names or filesystem paths.
 
+Long-lived source instances resolve their configured roots for every lookup, so
+atomic root symlink changes are visible without reconstructing the source. A
+missing path, a platform path-length limit, or a symlink loop is treated as a
+normal miss. Other access failures raise the redacted `SourceUnavailable`
+contract, while non-UTF-8 files raise `TemplateValidationError` with the stable
+`invalid_encoding` code.
+
 Add [database publication](database-admin.md) only when project editors need a
 stored source.

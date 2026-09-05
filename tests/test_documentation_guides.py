@@ -89,6 +89,9 @@ def test_filesystem_guide_uses_the_public_resolver_contract() -> None:
     assert '"TEMPLATE_DIRS"' in page
     assert '"CACHE"' not in page
     assert "include/extends" in page
+    assert "root symlink changes" in page
+    assert "invalid_encoding" in page
+    assert "SourceUnavailable" in page
     assert "Includes and extensions" not in page
     assert len(blocks) >= 2
     for block in blocks:

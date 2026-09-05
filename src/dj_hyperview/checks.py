@@ -29,17 +29,19 @@ def _sequence(value: Any) -> bool:
     return isinstance(value, Sequence) and not isinstance(value, (str, bytes))
 
 
-def _check_template_dirs(value: Any) -> list[CheckMessage]:
+def _check_template_dirs(
+    value: Any, path: str = "TEMPLATE_DIRS"
+) -> list[CheckMessage]:
     if not _sequence(value):
-        return [_error("E002", "TEMPLATE_DIRS", "must be a sequence")]
+        return [_error("E002", path, "must be a sequence")]
     errors = []
-    for directory in value:
+    for index, directory in enumerate(value):
         try:
             valid = Path(directory).is_dir()
         except (OSError, TypeError):
             valid = False
         if not valid:
-            errors.append(_error("E002", repr(directory), "must be a directory"))
+            errors.append(_error("E002", f"{path}[{index}]", "must be a directory"))
     return errors
 
 
@@ -63,6 +65,16 @@ def _check_sources(value: Any) -> list[CheckMessage]:
             continue
         backend = source.get("BACKEND")
         options = source.get("OPTIONS", {})
+        if (
+            backend == FILESYSTEM_SOURCE
+            and isinstance(options, Mapping)
+            and "template_dirs" in options
+        ):
+            errors.extend(
+                _check_template_dirs(
+                    options["template_dirs"], f"{path}.OPTIONS.template_dirs"
+                )
+            )
         if backend == DATABASE_SOURCE:
             if not apps.is_installed("dj_hyperview.contrib.database"):
                 errors.append(_error("E010", backend, "requires its contrib app"))
