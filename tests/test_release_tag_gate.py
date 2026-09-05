@@ -117,7 +117,7 @@ def test_release_tag_module_entrypoint_uses_process_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """The module entrypoint validates the tag supplied by the runner."""
-    monkeypatch.setattr(sys, "argv", ["check_release_tag", "v0.1.0a3"])
+    monkeypatch.setattr(sys, "argv", ["check_release_tag", "v0.1.0a4"])
 
     with pytest.raises(SystemExit) as caught:
         runpy.run_path(
