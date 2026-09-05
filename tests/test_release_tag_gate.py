@@ -22,7 +22,11 @@ def test_normal_ci_pushes_exclude_tags() -> None:
 
 @pytest.mark.parametrize(
     ("version", "tag"),
-    [("1.2.3", "v1.2.3"), ("0.1.0a1", "v0.1.0a1")],
+    [
+        ("1.2.3", "v1.2.3"),
+        ("0.1.0a1", "v0.1.0a1"),
+        ("1!2.0.post1+linux.1", "v1!2.0.post1+linux.1"),
+    ],
 )
 def test_release_tag_must_exactly_match_project_version(
     tmp_path: Path, version: str, tag: str
@@ -31,6 +35,33 @@ def test_release_tag_must_exactly_match_project_version(
     project_file = _project_file(tmp_path, version)
 
     assert _release_module().main([tag], project_file=project_file) == 0
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "banana.1.2",
+        "not-a.1.0",
+        "1..2.3",
+        "01.2.3",
+        "1.0-1",
+        "1.0.0+ABC",
+        " 1.2.3",
+        "1.2.3 ",
+    ],
+)
+def test_release_tag_rejects_invalid_or_noncanonical_versions(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+    version: str,
+) -> None:
+    """Invalid and normalized project versions fail before release."""
+    project_file = _project_file(tmp_path, version)
+
+    status = _release_module().main([f"v{version}"], project_file=project_file)
+
+    assert status == 2
+    assert capsys.readouterr().err == "Project version metadata is unavailable.\n"
 
 
 def test_release_tag_mismatch_fails_without_metadata_details(

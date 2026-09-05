@@ -24,6 +24,7 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "coverage[toml]>=7.16,<8",
+    "packaging>=26.3,<27",
     "pytest>=9.1,<10",
     "pytest-cov>=7.1,<8",
     "pytest-django>=4.14,<5",

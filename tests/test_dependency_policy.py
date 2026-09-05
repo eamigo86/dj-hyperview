@@ -8,6 +8,7 @@ LOCKED_DIRECT = {
     "coverage": "7.16.0",
     "django": "6.1.1",
     "lxml": "6.1.3",
+    "packaging": "26.3",
     "pytest": "9.1.1",
     "pytest-cov": "7.1.0",
     "pytest-django": "4.14.0",
@@ -30,6 +31,7 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
     assert metadata["build-system"]["requires"] == ["uv_build>=0.12.9,<0.13"]
     assert metadata["dependency-groups"]["dev"] == [
         "coverage[toml]>=7.16,<8",
+        "packaging>=26.3,<27",
         "pytest>=9.1,<10",
         "pytest-cov>=7.1,<8",
         "pytest-django>=4.14,<5",

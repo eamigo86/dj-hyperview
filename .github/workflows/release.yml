@@ -13,8 +13,11 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
       - name: Match tag to project version
-        run: python -m tools.check_release_tag "${GITHUB_REF_NAME}"
+        run: uv run --locked python -m tools.check_release_tag "${GITHUB_REF_NAME}"
 
   ci:
     needs: metadata

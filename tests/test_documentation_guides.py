@@ -186,3 +186,6 @@ def test_release_guide_documents_trusted_environments_and_recovery() -> None:
     assert "yank" in release.lower()
     assert "PyPI succeeds" in release
     assert "GitHub Release" in release
+    assert "Only the PyPI job receives" not in release
+    assert "PyPI and Pages jobs receive OIDC only within their own jobs" in release
+    assert "Only Pages receives `pages: write`" in release

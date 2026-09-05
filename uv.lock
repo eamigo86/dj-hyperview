@@ -119,6 +119,7 @@ dependencies = [
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
+    { name = "packaging" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-django" },
@@ -139,6 +140,7 @@ requires-dist = [
 [package.metadata.requires-dev]
 dev = [
     { name = "coverage", extras = ["toml"], specifier = ">=7.16,<8" },
+    { name = "packaging", specifier = ">=26.3,<27" },
     { name = "pytest", specifier = ">=9.1,<10" },
     { name = "pytest-cov", specifier = ">=7.1,<8" },
     { name = "pytest-django", specifier = ">=4.14,<5" },

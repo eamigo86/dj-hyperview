@@ -15,6 +15,7 @@ VIOLATION = "release: semantic contract is not approved"
 PINS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",
+    "astral-sh/setup-uv": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
     "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "actions/upload-pages-artifact": "fc324d3547104276b827a68afc52ff2a11cc49c9",
@@ -27,6 +28,19 @@ PINS = {
 def _audit(text: str) -> list[str]:
     """Audit candidate source against the readable release contract."""
     return audit_workflow(text, CONTRACT.read_text(), label="release")
+
+
+def _move_setup_uv_after_gate(text: str) -> str:
+    """Move environment setup after the version gate for one mutation."""
+    setup = """      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+        with:
+          version: "0.12.6"
+"""
+    gate = """      - name: Match tag to project version
+        run: uv run --locked python -m tools.check_release_tag "${GITHUB_REF_NAME}"
+"""
+    assert setup + gate in text
+    return text.replace(setup + gate, gate + setup, 1)
 
 
 def test_release_workflow_matches_the_reviewed_contract() -> None:
@@ -50,7 +64,26 @@ def test_release_validates_metadata_before_one_reusable_ci_build() -> None:
     ci = workflow["jobs"]["ci"]
     commands = [step["run"] for step in metadata["steps"] if "run" in step]
 
-    assert commands == ['python -m tools.check_release_tag "${GITHUB_REF_NAME}"']
+    assert metadata["steps"] == [
+        {"uses": f"actions/checkout@{PINS['actions/checkout']}"},
+        {
+            "uses": f"actions/setup-python@{PINS['actions/setup-python']}",
+            "with": {"python-version": "3.12"},
+        },
+        {
+            "uses": f"astral-sh/setup-uv@{PINS['astral-sh/setup-uv']}",
+            "with": {"version": "0.12.6"},
+        },
+        {
+            "name": "Match tag to project version",
+            "run": (
+                'uv run --locked python -m tools.check_release_tag "${GITHUB_REF_NAME}"'
+            ),
+        },
+    ]
+    assert commands == [
+        'uv run --locked python -m tools.check_release_tag "${GITHUB_REF_NAME}"'
+    ]
     assert ci == {
         "needs": "metadata",
         "permissions": {"contents": "read"},
@@ -175,6 +208,13 @@ def test_release_audit_rejects_publish_and_deploy_drift(
         lambda text: text.replace("redis: true", 'redis: "true"', 1),
         lambda text: text.replace("needs: metadata", "needs: []", 1),
         lambda text: text.replace("tools.check_release_tag", "tools.test_matrix", 1),
+        lambda text: text.replace("uv run --locked python", "python", 1),
+        lambda text: text.replace(
+            f"astral-sh/setup-uv@{PINS['astral-sh/setup-uv']}",
+            f"example/evil@{'a' * 40}",
+            1,
+        ),
+        _move_setup_uv_after_gate,
         lambda text: text.replace("release-candidate-${{ github.sha }}", "latest", 1),
         lambda text: text.replace("sha256sum >", "sha256sum || true >", 1),
         lambda text: text.replace("path: candidate/site/", "path: candidate/dist/", 1),

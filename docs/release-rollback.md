@@ -15,8 +15,8 @@ Before the first release:
 3. Select **GitHub Actions** as the Pages source and retain the
    `github-pages` environment used by GitHub Pages.
 
-Only the PyPI job receives `id-token: write`. The Pages job receives its own
-`pages: write` and `id-token: write`; validation and staging remain read-only.
+PyPI and Pages jobs receive OIDC only within their own jobs.
+Only Pages receives `pages: write`; validation and staging remain read-only.
 
 ## Release order
 

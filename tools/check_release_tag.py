@@ -7,6 +7,8 @@ import tomllib
 from collections.abc import Sequence
 from pathlib import Path
 
+from packaging.version import InvalidVersion, Version
+
 PROJECT_FILE = Path("pyproject.toml")
 
 
@@ -21,7 +23,11 @@ def _project_version(project_file: Path) -> str | None:
     version = project.get("version")
     if not isinstance(version, str) or not version or version.strip() != version:
         return None
-    return version
+    try:
+        parsed = Version(version)
+    except InvalidVersion:
+        return None
+    return version if str(parsed) == version else None
 
 
 def main(
