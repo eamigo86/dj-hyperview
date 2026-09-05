@@ -127,6 +127,9 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     ordering = ("name",)
     readonly_fields = ("revision", "created_at", "updated_at")
+    delete_confirmation_template = (
+        "admin/dj_hyperview_database/hyperviewtemplate/delete_confirmation.html"
+    )
 
     def get_fields(
         self, request: HttpRequest, obj: HyperviewTemplate | None = None
@@ -289,16 +292,10 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         Returns:
             Standard template response augmented after rendering.
         """
-        response = super().render_delete_form(request, context)
         obj = cast(HyperviewTemplate, context["object"])
-        token = forms.HiddenInput().render("expected_revision", obj.revision).encode()
-
-        def inject_revision(rendered: TemplateResponse) -> None:
-            marker = b'<input type="hidden" name="post" value="yes">'
-            rendered.content = rendered.content.replace(marker, marker + token, 1)
-
-        response.add_post_render_callback(inject_revision)
-        return response
+        return super().render_delete_form(
+            request, {**context, "expected_revision": obj.revision}
+        )
 
     def _conflict_response(self, request: HttpRequest) -> HttpResponseRedirect:
         self.message_user(request, _CONFLICT_MESSAGE, level=messages.ERROR)

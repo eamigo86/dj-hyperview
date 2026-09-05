@@ -6,7 +6,9 @@ from unittest.mock import call, patch
 
 import pytest
 from django.apps import apps
+from django.conf import settings
 from django.db import DEFAULT_DB_ALIAS, connections
+from django.test import override_settings
 from django.urls import reverse
 
 from dj_hyperview.contrib.database.services import PublicationConflict
@@ -167,6 +169,35 @@ def test_admin_delete_rejects_stale_revision_and_then_deletes(admin_client) -> N
     current = admin_client.post(delete, {"post": "yes", "expected_revision": "2"})
     assert (current.status_code, current.headers["Location"]) == (302, changelist)
     assert model.objects.count() == 0
+
+
+def test_delete_revision_survives_an_overridden_admin_template(
+    admin_client, tmp_path
+) -> None:
+    """The revision field does not depend on Django's rendered input bytes."""
+    parent = tmp_path / "admin" / "delete_confirmation.html"
+    parent.parent.mkdir()
+    parent.write_text(
+        """{% extends "admin/base_site.html" %}
+{% block content %}
+{% block delete_confirm %}
+<form method="post">{% csrf_token %}
+<input type="hidden" name="post" value="yes" />
+<input type="submit" value="Confirm" />
+</form>
+{% endblock %}
+{% endblock %}
+""",
+        encoding="utf-8",
+    )
+    templates = [{**settings.TEMPLATES[0], "DIRS": [tmp_path]}]
+    template = _model().objects.create(name="screen.xml", content="<view />")
+    _, _, delete = _urls(template)
+
+    with override_settings(TEMPLATES=templates):
+        confirmation = admin_client.get(delete)
+
+    assert b'name="expected_revision" value="1"' in confirmation.content
 
 
 def test_admin_bulk_delete_remains_signal_backed(admin_client) -> None:
