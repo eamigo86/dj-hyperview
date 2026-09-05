@@ -50,6 +50,27 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
     assert "django_hv" not in manifest
 
 
+def test_manifest_and_repository_declare_the_mit_license() -> None:
+    """Modern package metadata and the repository expose the selected license."""
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    license_text = (ROOT / "LICENSE").read_text()
+    readme = (ROOT / "README.md").read_text()
+
+    assert metadata["project"]["license"] == "MIT"
+    assert metadata["project"]["license-files"] == ["LICENSE"]
+    assert license_text.startswith(
+        "MIT License\n\nCopyright (c) 2026 Ernesto Perez Amigo\n"
+    )
+    assert "Permission is hereby granted, free of charge" in license_text
+    assert 'THE SOFTWARE IS PROVIDED "AS IS"' in license_text
+    assert "img.shields.io/pypi/l/dj-hyperview" in readme
+    assert "## License" in readme
+    assert (
+        "[MIT License](https://github.com/eamigo86/dj-hyperview/blob/main/LICENSE)"
+        in readme
+    )
+
+
 def test_versioned_lock_pins_audited_tools_without_legacy_names() -> None:
     """The repository lock fixes audited versions and excludes legacy packages."""
     assert "uv.lock" not in (ROOT / ".gitignore").read_text().splitlines()

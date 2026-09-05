@@ -7,6 +7,7 @@
 ![PyPI](https://img.shields.io/pypi/v/dj-hyperview?color=blue)
 ![Downloads](https://img.shields.io/pepy/dt/dj-hyperview)
 ![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)
+[![License](https://img.shields.io/pypi/l/dj-hyperview)](https://github.com/eamigo86/dj-hyperview/blob/main/LICENSE)
 
 **Server-driven [Hyperview](https://hyperview.org/) UI for Django, with every
 screen owned by your project.** Resolve, render, validate, cache, and publish
@@ -173,3 +174,8 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
+
+## License
+
+dj-hyperview is distributed under the
+[MIT License](https://github.com/eamigo86/dj-hyperview/blob/main/LICENSE).
