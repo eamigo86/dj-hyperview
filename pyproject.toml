@@ -1,6 +1,6 @@
 [project]
 name = "dj-hyperview"
-version = "0.1.0a5"
+version = "0.1.0a6"
 description = "Django infrastructure for server-driven Hyperview interfaces"
 readme = "README.md"
 license = "MIT"
