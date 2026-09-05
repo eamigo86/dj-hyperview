@@ -24,7 +24,7 @@ No se persigue convertir el proyecto legacy en el producto ni extender la librer
 | 10 | Aceptación HTTP end-to-end sobre el consumidor sintético | **Verificado** | 9 |
 | 11 | Dependencias auditadas, lock exacto y matriz reproducible | **Verificado** | 10 |
 | 12 | Contrato HXML/HTTP test-only con Hyperview 0.110.0 | **Verificado** | 11 |
-| 13 | Auditoría final, Zensical, CI, release, PyPI y Pages | **Pendiente** | 11 y 12 |
+| 13 | Auditoría final, Zensical, CI, release, PyPI y Pages | **Verificado** | 11 y 12 |
 
 Para el detalle y la trazabilidad de cada subtask, consultar [tasks.md](tasks.md).
 
@@ -54,7 +54,7 @@ El alcance corregido ya está completado y verificado:
 - La metadata usa rangos compatibles auditados y `uv.lock` versiona la resolución exacta.
 - Django 5.2.17 y 6.1.1 pasan con deprecations como errores y sin shim runtime.
 - `tools/test_matrix.py` define Python 3.12–3.14 × Django 5.2/6.1 y Redis opt-in.
-- La ejecución real de las seis celdas y Redis queda como gate CI de Task 13.4.
+- CI define las seis celdas y Redis opt-in; su primera ejecución hosted ocurre al publicar el repositorio.
 - El cierre independiente obtuvo PASS sin hallazgos.
 
 ### Decisión de alcance para Task 12
@@ -68,7 +68,7 @@ Task 12 valida dentro del repo Python el protocolo contra [`hyperview` 0.110.0](
 - El contrato HXML/HTTP exige UTF-8 estricto, rechaza DTD/entities y valida referencias `xs:ID`/`xs:IDREF`.
 - No se ejecutó un cliente Node/mobile y no se incorporaron plantillas runtime.
 - Detalle mantenible: [compatibilidad Hyperview 0.110.0](../hyperview-0.110.0.md).
-- El cierre independiente obtuvo PASS sin CRITICAL ni WARNING; la siguiente acción es **Task 13.1**.
+- El cierre independiente obtuvo PASS sin CRITICAL ni WARNING.
 
 ## Hitos
 
@@ -86,7 +86,15 @@ Task 12 valida dentro del repo Python el protocolo contra [`hyperview` 0.110.0](
 
 ### Hito D — Publicación
 
-**Pendiente:** Task 13 conserva seis children exact-parent: 13.1 auditoría pública, 13.2 Zensical, 13.3 guías, 13.4 CI/docs sin deploy, 13.5 preview manual y 13.6 PyPI→Pages.
+**Completado y verificado:** Task 13 cerró auditoría pública, Zensical, guías, CI build-once, preview manual y PyPI→Pages. La configuración de los servicios externos se realiza antes del primer tag.
+
+## Configuración externa para publicar
+
+El código del MVP está cerrado. Antes del primer release se debe configurar el
+Trusted Publisher de PyPI y seleccionar GitHub Actions como source de Pages,
+siguiendo [Release and rollback](../release-rollback.md). Esto no reabre Task 13:
+son credenciales federadas y environments del repositorio, no cambios del
+paquete.
 
 ## Reglas de ejecución
 

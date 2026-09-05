@@ -1,37 +1,44 @@
 # Plan de desarrollo de dj-hyperview
 
-Esta carpeta explica qué construye el paquete, qué está verificado y qué falta. El estado correcto al 4 de septiembre de 2026 es: **Tasks 1–12 verificadas en el repositorio del paquete; Task 13 pendiente**.
+**Tasks 1–13 verificadas.** El MVP package-only culmina en
+[077589b](https://github.com/eamigo86/dj-hyperview/commit/077589b):
+la librería, las guías, CI, preview y el flujo PyPI → Pages están implementados
+y pasaron revisión independiente. Antes del primer release sólo queda la
+configuración externa de PyPI y GitHub Pages.
 
-> El proyecto legacy es material de consulta de solo lectura. No es el destino de implementación, no define el contrato público y sus datos no forman parte del paquete.
+> El proyecto legacy es material de consulta de solo lectura. No es el destino
+> de implementación, no define el contrato público y sus datos no forman parte
+> del paquete.
 
 ## Ruta de lectura
 
-1. [Estado actual](status.md): punto exacto, evidencia y riesgos abiertos.
-2. [Roadmap](roadmap.md): secuencia corregida de Tasks 1–13.
-3. [Especificación](specification.md): comportamiento que debe ofrecer la versión inicial.
+1. [Estado actual](status.md): evidencia final, límites y setup externo.
+2. [Roadmap](roadmap.md): secuencia cerrada de Tasks 1–13 y trabajo post-MVP.
+3. [Especificación](specification.md): contrato funcional de la versión inicial.
 4. [Arquitectura](architecture.md): componentes, flujos y límites técnicos.
-5. [Tareas](tasks.md): historial detallado de Tasks 1–12 y criterios futuros.
-6. [Contrato Hyperview 0.110.0](../hyperview-0.110.0.md): alcance validado y límites.
-7. [Decisiones](decisions.md): decisiones de arquitectura y sus tradeoffs.
+5. [Tareas](tasks.md): metas, implementación, problemas y cierres por subtask.
+6. [Contrato Hyperview 0.110.0](../hyperview-0.110.0.md): protocolo validado.
+7. [Decisiones](decisions.md): arquitectura y tradeoffs vigentes.
 
 ## Leyenda de estado
 
 | Estado | Significado |
 |---|---|
-| **Verificado** | Implementado en `dj-hyperview` y aprobado mediante pruebas independientes. |
-| **Implementado, no verificado** | Código existente pendiente de un gate independiente; actualmente no hay Tasks 1–12 en este estado. |
-| **Pendiente** | Trabajo que todavía no forma parte del entregable válido. |
+| **Verificado** | Implementado en dj-hyperview y aprobado mediante pruebas independientes. |
+| **Pendiente externo** | Requiere configuración del servicio, no más código local. |
 | **Post-MVP** | Deliberadamente aplazado para una versión posterior. |
-| **Histórico no válido** | Experimento fuera del repositorio del paquete; aporta aprendizajes, pero no cuenta como avance. |
+| **Histórico no válido** | Experimento externo que no cuenta como avance del paquete. |
 
 ## Fuentes de verdad
 
-- Código y Git del paquete: [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview).
-- HEAD verificado del paquete: [`84fc76d`](https://github.com/eamigo86/dj-hyperview/commit/84fc76d).
-- Esta documentación: vista mantenible del plan corregido.
-- Pruebas del paquete: evidencia ejecutable del contrato.
-- Artefactos SDD históricos de Engram: trazabilidad adicional, no sustituyen el estado corregido de esta carpeta.
+- Repositorio: [eamigo86/dj-hyperview](https://github.com/eamigo86/dj-hyperview).
+- HEAD funcional verificado: [077589b](https://github.com/eamigo86/dj-hyperview/commit/077589b).
+- Esta carpeta: vista mantenible del plan y sus decisiones.
+- Tests y workflows: evidencia ejecutable y contratos fail-closed.
+- Engram: trazabilidad SDD adicional; no reemplaza el estado versionado aquí.
 
 ## Regla de mantenimiento
 
-Al cerrar una Task se debe actualizar, en el mismo work unit, [tasks.md](tasks.md), [status.md](status.md) y cualquier decisión afectada. Una Task sólo cambia a **Verificado** después de una revisión independiente; un experimento en el proyecto legacy nunca cambia ese estado.
+Un cambio sólo queda **Verificado** tras revisión independiente. Debe actualizar
+su test, implementación y documentación en el mismo work unit. El legacy nunca
+cambia el estado del paquete.
