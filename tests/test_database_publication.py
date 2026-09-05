@@ -118,7 +118,7 @@ def test_missing_expected_revision_conflicts_without_write(
     ("name", "content", "error_type"),
     [
         ("../private.xml", "<view />", InvalidTemplateName),
-        ("screen.xml", "<view>", ValidationError),
+        ("screen.xml", "<!DOCTYPE view><view />", ValidationError),
     ],
 )
 def test_invalid_publication_never_persists(

@@ -110,6 +110,8 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
     assert '"using": "default"' in page
     assert 'path("admin/", admin.site.urls)' in page
     assert "transaction.on_commit" in page
+    assert "multi-root and text-only partials" in page
+    assert "render-time validation" in page
     assert len(blocks) >= 2
     for block in blocks:
         compile(block, "docs/database-admin.md", "exec")

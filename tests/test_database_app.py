@@ -145,7 +145,6 @@ def test_name_validator_drops_invalid_name_exception_context():
     [
         ("", "blank"),
         (None, "null"),
-        ("<view>", "malformed_xml"),
         ("<!DOCTYPE view><view />", "forbidden_declaration"),
         (
             "<!ENTITY x SYSTEM 'file:///etc/passwd'><view>&x;</view>",
@@ -185,9 +184,14 @@ def test_full_clean_uses_configured_source_size_limit():
     [
         "<view>{{ value }}</view>",
         '{% extends "base.xml" %}{% block body %}<view />{% endblock %}',
+        "<text>first</text><text>second</text>",
+        "Hello {{ user }}",
+        "<view {{ attrs }}></view>",
+        "<view>",
+        "{% load dj_hyperview %}<view><text>unclosed</view>",
     ],
 )
-def test_full_clean_accepts_safe_static_or_django_template_source(content):
+def test_full_clean_accepts_safe_documents_partials_and_template_source(content):
     template = template_model()(name="screens/home.xml", content=content)
 
     template.full_clean(validate_unique=False, validate_constraints=False)
@@ -309,7 +313,12 @@ def test_modelform_exclude_option_skips_stored_invalid_fields(
     ("fields", "instance", "data", "error_field"),
     [
         (["name"], {"content": "<view />"}, {"name": "bad\n.xml"}, "name"),
-        (["content"], {"name": "screen.xml"}, {"content": "<view>"}, "content"),
+        (
+            ["content"],
+            {"name": "screen.xml"},
+            {"content": "<!DOCTYPE view><view />"},
+            "content",
+        ),
     ],
 )
 def test_modelform_reports_only_included_invalid_field(

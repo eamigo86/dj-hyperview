@@ -48,6 +48,11 @@ selected database can vary per request.
 The public services validate names and content, lock existing rows, increment
 revisions once, and use the selected write database:
 
+Publish-time content validation enforces encoding, size, and forbidden
+declaration safety. It deliberately accepts complete documents as well as
+multi-root and text-only partials containing Django syntax. Structural XML and
+schema guarantees apply to the final composed output during render-time validation.
+
 ```python
 from dj_hyperview.contrib.database.services import (
     delete_template,
