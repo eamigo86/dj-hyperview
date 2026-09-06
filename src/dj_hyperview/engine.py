@@ -1,15 +1,18 @@
 """Dedicated Django template engine for Hyperview markup."""
 
 from collections.abc import Mapping, Sequence
+from functools import lru_cache
 from typing import Any
 
 from django.conf import settings as django_settings
+from django.dispatch import receiver
 from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
 from django.template.backends.django import DjangoTemplates
+from django.test.signals import setting_changed
 from django.utils.module_loading import import_string
 
-from .conf import ValidationSettings, get_settings
+from .conf import _SETTING_DEPENDENCIES, ValidationSettings, get_settings
 from .exceptions import InvalidTemplateName, TemplateNotFound
 from .loaders import template_snapshot
 from .resolver import TemplateResolver
@@ -18,6 +21,7 @@ from .validation import validate_rendered_hxml
 _INHERITED_DJANGO_TEMPLATE_OPTIONS = frozenset(
     {"builtins", "context_processors", "libraries", "string_if_invalid"}
 )
+_ENGINE_SETTING_DEPENDENCIES = _SETTING_DEPENDENCIES | {"TEMPLATES"}
 
 
 def _consumer_django_template_options() -> dict[str, Any]:
@@ -182,6 +186,22 @@ class HyperviewEngine:
         return self.render(name, context, request)
 
 
+@lru_cache(maxsize=1)
+def _default_engine() -> HyperviewEngine:
+    return HyperviewEngine()
+
+
+@receiver(
+    setting_changed,
+    dispatch_uid="dj_hyperview.clear_default_engine",
+    weak=False,
+)
+def _clear_default_engine(*, setting: str, **kwargs: Any) -> None:
+    del kwargs
+    if setting in _ENGINE_SETTING_DEPENDENCIES:
+        _default_engine.cache_clear()
+
+
 def render_template(
     name: str,
     context: dict[str, Any] | None = None,
@@ -197,4 +217,4 @@ def render_template(
     Returns:
         The rendered Hyperview markup.
     """
-    return HyperviewEngine().render_hxml(name, context, request)
+    return _default_engine().render_hxml(name, context, request)

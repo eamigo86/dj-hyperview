@@ -72,9 +72,7 @@ def test_hyperview_response_preserves_explicit_content_type_and_charset():
 
 def test_non_hyperview_response_infers_charset_from_content_type() -> None:
     """Foreign media types retain Django's declared charset semantics."""
-    response = HyperviewResponse(
-        "olá", content_type="text/plain; charset=iso-8859-1"
-    )
+    response = HyperviewResponse("olá", content_type="text/plain; charset=iso-8859-1")
 
     assert response.content == "olá".encode("iso-8859-1")
     assert response.charset == "iso-8859-1"

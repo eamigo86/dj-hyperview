@@ -75,7 +75,7 @@ class HyperviewTemplate(models.Model):
             else router.db_for_write(type(self), instance=self) or DEFAULT_DB_ALIAS
         )
         kwargs["using"] = alias
-        with transaction.atomic(using=alias):
+        with transaction.atomic(using=alias, savepoint=False):
             super().save(*args, **kwargs)
 
     def validate_unique(self, exclude: Collection[str] | None = None) -> None:

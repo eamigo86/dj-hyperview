@@ -1,5 +1,8 @@
+from unittest.mock import patch
+
 import pytest
 from django.test import override_settings
+from django.test.signals import setting_changed
 
 from dj_hyperview import HyperviewConfigurationError
 from dj_hyperview.conf import (
@@ -71,3 +74,50 @@ def test_invalid_settings_raise_stable_error(cache, issues) -> None:
     assert (
         str(captured.value) == f"Invalid HYPERVIEW configuration: {'; '.join(issues)}"
     )
+
+
+@override_settings(
+    HYPERVIEW={
+        "SOURCES": [
+            {"BACKEND": "tests.stubs.TemplateSource", "OPTIONS": {"content": "x"}}
+        ]
+    }
+)
+def test_settings_snapshot_is_cached_and_source_options_are_immutable() -> None:
+    """Repeated reads reuse one validated immutable settings snapshot."""
+    with patch(
+        "dj_hyperview.checks.check_hyperview_settings",
+        wraps=__import__(
+            "dj_hyperview.checks", fromlist=["check_hyperview_settings"]
+        ).check_hyperview_settings,
+    ) as check:
+        first = get_settings()
+        second = get_settings()
+
+    assert first is second
+    assert check.call_count == 1
+    with pytest.raises(TypeError):
+        first.sources[0].options["content"] = "changed"
+
+
+def test_settings_snapshot_is_replaced_when_hyperview_changes() -> None:
+    """Django setting overrides cannot observe a stale normalized snapshot."""
+    with override_settings(HYPERVIEW={}):
+        first = get_settings()
+    with override_settings(HYPERVIEW={"VALIDATION": {"MODE": "render"}, "SOURCES": []}):
+        second = get_settings()
+
+    assert second is not first
+    assert second.validation.mode == "render"
+
+
+@pytest.mark.parametrize("setting", ["CACHES", "DATABASES", "INSTALLED_APPS"])
+@pytest.mark.filterwarnings("ignore:Overriding setting DATABASES can lead")
+@override_settings(HYPERVIEW={})
+def test_settings_snapshot_tracks_check_dependencies(setting: str) -> None:
+    """Settings that affect configuration checks invalidate their cached result."""
+    first = get_settings()
+
+    setting_changed.send(sender=object, setting=setting, value=None, enter=True)
+
+    assert get_settings() is not first

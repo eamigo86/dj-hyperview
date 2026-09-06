@@ -1,11 +1,13 @@
 import copy
 from concurrent.futures import ThreadPoolExecutor
 from threading import Event
+from unittest.mock import patch
 
 import pytest
 from django.core.exceptions import SuspiciousOperation
 from django.template import TemplateDoesNotExist
 from django.test import RequestFactory, override_settings
+from django.test.signals import setting_changed
 
 from dj_hyperview.engine import HyperviewEngine, render_template
 from dj_hyperview.exceptions import (
@@ -299,6 +301,43 @@ def test_render_template_uses_current_hyperview_settings():
     assert render_template("screen.xml", {"title": "Configured"}) == (
         "<view>Configured</view>"
     )
+
+
+@override_settings(
+    HYPERVIEW={
+        "SOURCES": [
+            {
+                "BACKEND": "tests.stubs.TemplateSource",
+                "OPTIONS": {"content": "<view>{{ title }}</view>"},
+            }
+        ]
+    }
+)
+def test_default_render_paths_reuse_engine_until_hyperview_changes() -> None:
+    """Convenience rendering pays engine construction once per settings snapshot."""
+    setting_changed.send(sender=object, setting="HYPERVIEW", value={}, enter=True)
+    with patch("dj_hyperview.engine.HyperviewEngine", wraps=HyperviewEngine) as engine:
+        assert render_template("screen.xml", {"title": "One"}) == "<view>One</view>"
+        response = HyperviewTemplateResponse(
+            RequestFactory().get("/screen"),
+            "screen.xml",
+            {"title": "Two"},
+        )
+        assert response.render().content == b"<view>Two</view>"
+        setting_changed.send(sender=object, setting="OTHER", value=None, enter=True)
+        assert render_template("screen.xml", {"title": "Three"}) == (
+            "<view>Three</view>"
+        )
+        assert engine.call_count == 1
+
+        setting_changed.send(sender=object, setting="TEMPLATES", value=[], enter=True)
+        assert render_template("screen.xml", {"title": "Four"}) == "<view>Four</view>"
+        assert engine.call_count == 2
+
+        setting_changed.send(sender=object, setting="HYPERVIEW", value={}, enter=True)
+        assert render_template("screen.xml", {"title": "Five"}) == "<view>Five</view>"
+
+    assert engine.call_count == 3
 
 
 def test_engine_contract_is_exported_from_package_root():

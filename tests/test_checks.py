@@ -167,6 +167,25 @@ def test_source_and_template_directory_mismatches_emit_warnings(tmp_path) -> Non
         assert check_hyperview_settings() == []
 
 
+def test_global_template_roots_are_probed_once_per_check(
+    tmp_path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Consistency warnings reuse the already computed directory result."""
+    calls: list[Path] = []
+    original = Path.is_dir
+
+    def tracked_is_dir(path: Path) -> bool:
+        calls.append(path)
+        return original(path)
+
+    monkeypatch.setattr(Path, "is_dir", tracked_is_dir)
+    with override_settings(HYPERVIEW={"TEMPLATE_DIRS": [tmp_path]}):
+        messages = check_hyperview_settings()
+
+    assert [message.id for message in messages] == ["dj_hyperview.W002"]
+    assert calls == [tmp_path]
+
+
 @pytest.mark.parametrize("template_dirs", ["/tmp/hyperview", Path("/tmp/hyperview")])
 def test_filesystem_source_options_reject_scalar_template_roots(template_dirs) -> None:
     """Checks reject values that FileSystemSource cannot treat as root lists."""

@@ -236,7 +236,5 @@ def test_cache_namespace_configuration_must_be_a_non_empty_string(namespace):
 
     with override_settings(HYPERVIEW={"CACHE": {"NAMESPACE": namespace}}):
         errors = check_hyperview_settings()
-    namespace_error = next(
-        error for error in errors if error.id == "dj_hyperview.E004"
-    )
+    namespace_error = next(error for error in errors if error.id == "dj_hyperview.E004")
     assert namespace_error.msg == "CACHE.NAMESPACE must be a non-empty string."

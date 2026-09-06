@@ -241,6 +241,22 @@ def test_direct_mutations_lock_the_persisted_name_inside_a_transaction(
     assert lock_states == [True]
 
 
+def test_model_save_avoids_redundant_nested_savepoint(
+    signal_model: type[Model],
+) -> None:
+    """The model keeps its transaction boundary without nested savepoint SQL."""
+    template = signal_model.objects.create(name="screen.xml", content="<view />")
+
+    with transaction.atomic(using="default"):
+        with CaptureQueriesContext(connection) as queries:
+            template.content = "<updated />"
+            template.save(update_fields={"content"})
+
+    sql = [query["sql"].lstrip().upper() for query in queries]
+    assert not any(statement.startswith("SAVEPOINT") for statement in sql)
+    assert not any(statement.startswith("RELEASE SAVEPOINT") for statement in sql)
+
+
 def test_queryset_delete_uses_one_snapshot_and_one_invalidation(
     signal_model: type[Model],
 ) -> None:

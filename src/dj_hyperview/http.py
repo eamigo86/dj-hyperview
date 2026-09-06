@@ -9,7 +9,7 @@ from django.template.backends.django import Template
 from django.template.response import TemplateResponse
 from django.utils.http import parse_header_parameters
 
-from .engine import HyperviewEngine, _ValidatedTemplate
+from .engine import _default_engine, _ValidatedTemplate
 from .exceptions import TemplateValidationError
 from .validation import validate_fragment_hxml, validate_rendered_hxml
 
@@ -125,7 +125,7 @@ class HyperviewTemplateResponse(TemplateResponse):
         ):
             return validate_rendered_hxml(super().rendered_content)
         context = self.resolve_context(self.context_data)
-        return HyperviewEngine().render_hxml(self.template_name, context, self._request)
+        return _default_engine().render_hxml(self.template_name, context, self._request)
 
 
 def _fragment_content(response: HttpResponse) -> str:

@@ -122,7 +122,9 @@ def _check_sources(value: Any) -> list[CheckMessage]:
     return errors
 
 
-def _source_consistency_warnings(raw: Mapping[str, Any]) -> list[CheckMessage]:
+def _source_consistency_warnings(
+    raw: Mapping[str, Any], template_dir_messages: Sequence[CheckMessage]
+) -> list[CheckMessage]:
     template_dirs = raw.get("TEMPLATE_DIRS", ())
     sources = raw.get("SOURCES", ())
     if not _sequence(sources):
@@ -131,17 +133,13 @@ def _source_consistency_warnings(raw: Mapping[str, Any]) -> list[CheckMessage]:
     filesystem_sources = [
         source
         for source in sources
-        if isinstance(source, Mapping)
-        and _is_filesystem_backend(source.get("BACKEND"))
+        if isinstance(source, Mapping) and _is_filesystem_backend(source.get("BACKEND"))
     ]
     warnings = []
     valid_template_dirs = (
         _sequence(template_dirs)
         and bool(template_dirs)
-        and not any(
-            isinstance(message, Error)
-            for message in _check_template_dirs(template_dirs)
-        )
+        and not any(isinstance(message, Error) for message in template_dir_messages)
     )
     if valid_template_dirs and not filesystem_sources:
         warnings.append(
@@ -297,10 +295,11 @@ def check_hyperview_settings(
         if "CACHE" not in raw or (isinstance(cache, Mapping) and not cache)
         else _check_cache(cache)
     )
+    template_dir_messages = _check_template_dirs(raw.get("TEMPLATE_DIRS", ()))
     return [
-        *_check_template_dirs(raw.get("TEMPLATE_DIRS", ())),
+        *template_dir_messages,
         *_check_sources(raw.get("SOURCES", ())),
-        *_source_consistency_warnings(raw),
+        *_source_consistency_warnings(raw, template_dir_messages),
         *cache_errors,
         *_check_validation(raw.get("VALIDATION", {})),
     ]

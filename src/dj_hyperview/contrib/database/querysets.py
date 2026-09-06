@@ -133,9 +133,13 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             raise ValueError("QuerySet.update cannot modify the primary key")
         if _OBSERVABLE_FIELDS.isdisjoint(kwargs):
             return models.QuerySet.update(self, **kwargs)
-        query = _prepare_update(self, kwargs)
-        if "name" in kwargs and type(kwargs["name"]) is str:
-            canonicalize_template_name(kwargs["name"])
+        literal_rename = "name" in kwargs and type(kwargs["name"]) is str
+        update_values = dict(kwargs)
+        literal_name = None
+        if literal_rename:
+            literal_name = canonicalize_template_name(kwargs["name"])
+            update_values["name_identity"] = template_name_identity(literal_name)
+        query = _prepare_update(self, update_values)
         using = self.db
         if self.query.is_empty():
             updated = _execute_update(query, using)
@@ -159,8 +163,9 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             parameter_budget = connections[using].ops.bulk_batch_size(
                 [primary_key], primary_keys
             )
-            reserved_parameters = len(kwargs)
-            parameters_per_row = 3 if "name" in kwargs else 1
+            expression_rename = "name" in kwargs and not literal_rename
+            reserved_parameters = len(update_values)
+            parameters_per_row = 3 if expression_rename else 1
             batch_size = max(
                 1,
                 (parameter_budget - reserved_parameters) // parameters_per_row,
@@ -170,44 +175,44 @@ class HyperviewTemplateQuerySet(models.QuerySet):
                 for offset in range(0, len(primary_keys), batch_size)
             )
             updated = 0
+            resolved_new_names: list[str] = []
             for batch in primary_key_batches:
                 batch_query = query.clone()
                 batch_query.clear_where()
                 batch_query.add_q(models.Q(pk__in=batch))
-                updated += _execute_update(batch_query, using)
-            self._result_cache = None
-            if not updated:
-                return updated
-            new_names = old_names
-            if "name" in kwargs:
+                batch_updated = _execute_update(batch_query, using)
+                updated += batch_updated
+                if not batch_updated or not expression_rename:
+                    continue
                 renamed_rows = tuple(
-                    (row_primary_key, name)
-                    for batch in primary_key_batches
-                    for row_primary_key, name in self.model._base_manager.using(using)
+                    self.model._base_manager.using(using)
                     .filter(pk__in=batch)
                     .order_by(primary_key.name)
                     .values_list(primary_key.name, "name")
                 )
-                new_names = _canonical_names(name for _, name in renamed_rows)
-                renamed_by_primary_key = dict(renamed_rows)
-                for batch in primary_key_batches:
-                    identity = models.Case(
-                        *(
-                            models.When(
-                                pk=row_primary_key,
-                                then=models.Value(
-                                    template_name_identity(
-                                        renamed_by_primary_key[row_primary_key]
-                                    )
-                                ),
-                            )
-                            for row_primary_key in batch
-                        ),
-                        output_field=models.CharField(max_length=64),
-                    )
-                    self.model._base_manager.using(using).filter(pk__in=batch).update(
-                        name_identity=identity
-                    )
+                batch_names = _canonical_names(name for _, name in renamed_rows)
+                resolved_new_names.extend(batch_names)
+                identity = models.Case(
+                    *(
+                        models.When(
+                            pk=row_primary_key,
+                            then=models.Value(template_name_identity(name)),
+                        )
+                        for row_primary_key, name in renamed_rows
+                    ),
+                    output_field=models.CharField(max_length=64),
+                )
+                self.model._base_manager.using(using).filter(pk__in=batch).update(
+                    name_identity=identity
+                )
+            self._result_cache = None
+            if not updated:
+                return updated
+            new_names = old_names
+            if literal_name is not None:
+                new_names = (literal_name,)
+            elif expression_rename:
+                new_names = tuple(dict.fromkeys(resolved_new_names))
             affected_names = tuple(dict.fromkeys((*old_names, *new_names)))
             if affected_names:
                 _schedule_invalidation(*affected_names, using=using)

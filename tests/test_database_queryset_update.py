@@ -243,6 +243,39 @@ def test_rename_schedules_old_and_actual_new_names(queryset_model: type[Model]) 
     )
 
 
+def test_literal_rename_updates_name_and_identity_in_one_statement(
+    queryset_model: type[Model],
+) -> None:
+    """A constant rename needs no read-back or CASE identity update."""
+    template = queryset_model.objects.create(name="old.xml", content="<view />")
+
+    with (
+        patch(
+            "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+        ) as schedule,
+        CaptureQueriesContext(connection) as queries,
+    ):
+        updated = queryset_model.objects.filter(pk=template.pk).update(
+            name="renamed.xml"
+        )
+
+    update_sql = [
+        query["sql"]
+        for query in queries
+        if query["sql"].lstrip().upper().startswith("UPDATE")
+    ]
+    assert updated == 1
+    assert len(update_sql) == 1
+    assert '"name"' in update_sql[0]
+    assert '"name_identity"' in update_sql[0]
+    template.refresh_from_db()
+    assert template.name == "renamed.xml"
+    assert template.name_identity == database_querysets.template_name_identity(
+        "renamed.xml"
+    )
+    schedule.assert_called_once_with("old.xml", "renamed.xml", using="default")
+
+
 def test_filtered_zero_and_noop_updates_preserve_queryset_semantics(
     queryset_model: type[Model],
 ) -> None:
