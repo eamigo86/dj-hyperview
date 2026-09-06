@@ -145,6 +145,20 @@ def test_admin_form_reports_duplicate_name_on_name_field() -> None:
     assert model.objects.count() == 1
 
 
+def test_delete_list_filter_truncates_and_escapes_nested_items() -> None:
+    """The portable admin filter limits output without trusting object labels."""
+    module = importlib.import_module(
+        "dj_hyperview.contrib.database.templatetags.dj_hyperview_admin"
+    )
+
+    rendered = str(module.truncated_unordered_list(["<first>", "second", "third"], 2))
+
+    assert "&lt;first&gt;" in rendered
+    assert "second" in rendered
+    assert "third" not in rendered
+    assert "1 more object" in rendered
+
+
 @pytest.mark.django_db
 def test_admin_client_requires_authentication(client) -> None:
     _, model = _admin_types()

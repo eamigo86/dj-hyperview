@@ -156,6 +156,9 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
     search_fields = ("name",)
     ordering = ("name",)
     readonly_fields = ("revision", "created_at", "updated_at")
+    delete_confirmation_max_display = getattr(
+        admin.ModelAdmin, "delete_confirmation_max_display", None
+    )
     delete_confirmation_template = (
         "admin/dj_hyperview_database/hyperviewtemplate/delete_confirmation.html"
     )
@@ -330,7 +333,15 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         """
         obj = cast(HyperviewTemplate, context["object"])
         return super().render_delete_form(
-            request, {**context, "expected_revision": obj.revision}
+            request,
+            {
+                **context,
+                "escaped_object": context.get("escaped_object", obj),
+                "expected_revision": obj.revision,
+                "delete_confirmation_max_display": (
+                    self.delete_confirmation_max_display
+                ),
+            },
         )
 
     def _conflict_response(self, request: HttpRequest) -> HttpResponseRedirect:

@@ -119,7 +119,6 @@ def test_rename_conflicts_leave_source_and_target_unchanged(
 @pytest.mark.parametrize(
     ("current", "new", "expected", "error"),
     [
-        ("../private.xml", "safe.xml", None, InvalidTemplateName),
         ("safe.xml", "../private.xml", None, InvalidTemplateName),
         ("safe.xml", "new.xml", True, ValueError),
     ],
@@ -136,6 +135,16 @@ def test_rename_validates_all_inputs_before_database_effects(
     ):
         rename_template(current, new, expected_revision=expected)
     atomic.assert_not_called()
+
+
+def test_noncanonical_current_name_is_a_missing_source_conflict(
+    mutation_model: type[Model],
+) -> None:
+    """An unsafe historical source name is data identity, not a path input."""
+    with pytest.raises(PublicationConflict):
+        rename_template("../private.xml", "safe.xml")
+
+    assert mutation_model.objects.count() == 0
 
 
 def test_mutation_boundary_rejects_unknown_alias_and_missing_app() -> None:

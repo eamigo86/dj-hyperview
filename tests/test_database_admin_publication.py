@@ -1,16 +1,21 @@
 """Conflict-safe database admin publication integration tests."""
 
 import importlib
+import json
 from typing import Any
 from unittest.mock import call, patch
 
 import pytest
 from django.apps import apps
 from django.conf import settings
+from django.contrib import admin
+from django.core.management import call_command
 from django.db import DEFAULT_DB_ALIAS, connections
 from django.test import override_settings
 from django.urls import reverse
+from django.utils import translation
 
+from dj_hyperview.contrib.database._identity import template_name_identity
 from dj_hyperview.contrib.database.services import PublicationConflict
 from dj_hyperview.exceptions import SourceUnavailable
 
@@ -48,6 +53,40 @@ def _form(
     if revision is not None:
         data["expected_revision"] = str(revision)
     return data
+
+
+def test_loaddata_preserves_recoverable_legacy_name(tmp_path) -> None:
+    """Raw fixture loading accepts legacy names and restores their identity."""
+    legacy_name = "legacy\\name.xml"
+    fixture = tmp_path / "legacy-template.json"
+    fixture.write_text(
+        json.dumps(
+            [
+                {
+                    "model": "dj_hyperview_database.hyperviewtemplate",
+                    "pk": 9001,
+                    "fields": {
+                        "name": legacy_name,
+                        "name_identity": "stale",
+                        "content": "<view />",
+                        "active": True,
+                        "revision": 1,
+                        "created_at": "2026-01-01T00:00:00Z",
+                        "updated_at": "2026-01-01T00:00:00Z",
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with patch(SCHEDULE) as schedule:
+        call_command("loaddata", fixture, verbosity=0)
+
+    template = _model()._base_manager.get(pk=9001)
+    assert template.name == legacy_name
+    assert template.name_identity == template_name_identity(legacy_name)
+    schedule.assert_not_called()
 
 
 def test_admin_create_and_edit_publish_once_with_hidden_revision(admin_client) -> None:
@@ -178,6 +217,44 @@ def test_admin_delete_rejects_stale_revision_and_then_deletes(admin_client) -> N
     assert model.objects.count() == 0
 
 
+def test_delete_confirmation_uses_django_translation_and_button_contract(
+    admin_client,
+) -> None:
+    """The override preserves Django's translated prompt and cancel semantics."""
+    template = _model().objects.create(name="screen.xml", content="<view />")
+    _, _, delete = _urls(template)
+    message = (
+        "Are you sure you want to delete the %(object_name)s “%(escaped_object)s”? "
+        "All of the following related items will be deleted:"
+    )
+
+    with translation.override("es-ar"):
+        response = admin_client.get(delete)
+        expected = translation.gettext(message) % {
+            "object_name": response.context["object_name"],
+            "escaped_object": response.context["escaped_object"],
+        }
+
+    rendered = response.content.decode()
+    assert expected in rendered
+    assert '<a role="button" href="#" class="button cancel-link">' in rendered
+
+
+def test_delete_confirmation_honors_maximum_display_zero(admin_client) -> None:
+    """A zero display limit hides the related-object list like Django does."""
+    model = _model()
+    template = model.objects.create(name="screen.xml", content="<view />")
+    _, _, delete = _urls(template)
+    registered = admin.site.get_model_admin(model)
+
+    with patch.object(registered, "delete_confirmation_max_display", 0):
+        response = admin_client.get(delete)
+
+    rendered = response.content.decode()
+    assert "<h2>Objects</h2>" not in rendered
+    assert 'id="deleted-objects"' not in rendered
+
+
 def test_delete_revision_survives_an_overridden_admin_template(
     admin_client, tmp_path
 ) -> None:
@@ -222,6 +299,36 @@ def test_admin_can_delete_an_invalid_legacy_name(admin_client) -> None:
     assert b'name="expected_revision" value="1"' in confirmation.content
     assert (response.status_code, response.headers["Location"]) == (302, changelist)
     assert model._base_manager.count() == 0
+
+
+def test_admin_can_rename_an_invalid_legacy_name(admin_client) -> None:
+    """A canonical edit repairs a historical name through the change view."""
+    model = _model()
+    legacy_name = "bad\\name.xml"
+    model._base_manager.bulk_create(
+        [
+            model(
+                name=legacy_name,
+                name_identity=template_name_identity(legacy_name),
+                content="<view />",
+            )
+        ]
+    )
+    template = model._base_manager.get()
+    changelist, change, _ = _urls(template)
+
+    response = admin_client.post(
+        change,
+        _form("repaired.xml", "<repaired />", template.revision),
+    )
+
+    assert (response.status_code, response.headers["Location"]) == (302, changelist)
+    template.refresh_from_db()
+    assert (template.name, template.content, template.revision) == (
+        "repaired.xml",
+        "<repaired />",
+        2,
+    )
 
 
 def test_admin_bulk_delete_uses_one_batch_invalidation(admin_client) -> None:

@@ -182,7 +182,7 @@ def rename_template(
     """Rename one validated database template atomically.
 
     Args:
-        current_name: Canonical name identifying the current template.
+        current_name: Stored name identifying the current template.
         new_name: Canonical name to persist after the mutation.
         content: Replacement source, or None to preserve it.
         active: Replacement activity state, or None to preserve it.
@@ -193,7 +193,7 @@ def rename_template(
         Immutable metadata for the persisted mutation.
 
     Raises:
-        InvalidTemplateName: If either name is unsafe or noncanonical.
+        InvalidTemplateName: If the replacement name is unsafe or noncanonical.
         ValueError: If expected_revision is not a positive integer or None.
         ValidationError: If model field validation rejects the mutation.
         PublicationConflict: If the source is missing, the revision is stale,
@@ -202,7 +202,7 @@ def rename_template(
         DatabaseError: If database access fails.
         Exception: If an unclassified database write error is reraised.
     """
-    current = canonicalize_template_name(current_name)
+    current = current_name
     target = canonicalize_template_name(new_name)
     current_identity = template_name_identity(current)
     target_identity = template_name_identity(target)

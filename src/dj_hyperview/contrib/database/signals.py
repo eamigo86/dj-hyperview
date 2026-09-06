@@ -53,7 +53,7 @@ def _capture_save(
     update_fields: frozenset[str] | None,
     **kwargs: object,
 ) -> None:
-    del kwargs, raw
+    del kwargs
     instance.__dict__.pop(_STATE_ATTRIBUTE, None)
     if instance._state.adding or update_fields is None or "name" in update_fields:
         instance.name_identity = template_name_identity(instance.name)
@@ -63,6 +63,8 @@ def _capture_save(
     old_name = _persisted_name(sender, instance, using)
     if update_fields is not None and "name" not in update_fields:
         new_name = old_name
+    elif raw:
+        new_name = _canonical_name_or_none(instance.name)
     else:
         new_name = canonicalize_template_name(instance.name)
     if new_name is None:
