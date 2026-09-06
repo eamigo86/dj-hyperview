@@ -55,7 +55,8 @@ revisions once, and use the selected write database:
 Publish-time content validation enforces encoding, size, and forbidden
 declaration safety. It deliberately accepts complete documents as well as
 multi-root and text-only partials containing Django syntax. Structural XML and
-schema guarantees apply to the final composed output during render-time validation.
+schema guarantees apply to the final composed output during render-time validation
+when the configured mode is render or publish_and_render.
 
 ```python
 from dj_hyperview.contrib.database.services import (

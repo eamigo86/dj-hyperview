@@ -1,5 +1,8 @@
 """Reusable Django infrastructure for Hyperview interfaces."""
 
+from importlib.metadata import PackageNotFoundError as _PackageNotFoundError
+from importlib.metadata import version as _distribution_version
+
 from .cache import (
     CACHE_MISS,
     CacheEntry,
@@ -36,7 +39,13 @@ from .sources import FileSystemSource, ResolvedTemplate, TemplateSource
 from .validation import validate_fragment_hxml, validate_hxml, validate_template_source
 from .views import HyperviewTemplateView
 
+try:
+    __version__ = _distribution_version("dj-hyperview")
+except _PackageNotFoundError:
+    __version__ = "0.1.0a8"
+
 __all__ = [
+    "__version__",
     "HYPERVIEW_MEDIA_TYPE",
     "HYPERVIEW_FRAGMENT_MEDIA_TYPE",
     "HYPERVIEW_VERSION_HEADER",

@@ -3,6 +3,10 @@
 Import stable public objects from `dj_hyperview`. Modules and names beginning
 with an underscore remain implementation details.
 
+| Symbol | Purpose |
+| --- | --- |
+| `__version__` | Installed `dj-hyperview` distribution version. |
+
 ## Resolution and sources
 
 | Symbol | Purpose |

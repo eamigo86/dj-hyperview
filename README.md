@@ -23,7 +23,8 @@ screens into the package.
 - **Cache consistency** — opt into any Django cache backend, including Redis,
   with source-aware keys and generation-based invalidation.
 - **Django-native HTTP integration** — use lazy template responses, class-based
-  views, request metadata, content negotiation, and standard CSRF protection.
+  views, validated fragment responses, request metadata, content negotiation,
+  and standard CSRF protection.
 - **Fail-closed validation** — enforce canonical names, UTF-8, XML safety,
   consumer-provided single-file XSD 1.0 rules, and configurable resource limits.
 
@@ -156,11 +157,14 @@ backend.
 📚 **[Full documentation](https://eamigo86.github.io/dj-hyperview/)** — including
 [Installation](https://eamigo86.github.io/dj-hyperview/installation/),
 [Quick Start](https://eamigo86.github.io/dj-hyperview/quickstart/),
+[Mobile Getting Started](https://eamigo86.github.io/dj-hyperview/mobile-getting-started/),
 [Configuration](https://eamigo86.github.io/dj-hyperview/configuration/),
 [Filesystem sources](https://eamigo86.github.io/dj-hyperview/filesystem/),
 [Database and admin](https://eamigo86.github.io/dj-hyperview/database-admin/),
 [Cache consistency](https://eamigo86.github.io/dj-hyperview/cache-consistency/),
-[Security](https://eamigo86.github.io/dj-hyperview/security/), and the
+[Security](https://eamigo86.github.io/dj-hyperview/security/),
+[HTTP responses](https://eamigo86.github.io/dj-hyperview/http-responses/),
+[Changelog](https://eamigo86.github.io/dj-hyperview/changelog/), and the
 [public Python API](https://eamigo86.github.io/dj-hyperview/api-reference/).
 
 The package is published at

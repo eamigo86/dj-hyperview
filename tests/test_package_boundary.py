@@ -1,7 +1,11 @@
+import tomllib
+from importlib.metadata import PackageNotFoundError, version
 from pathlib import Path
 from zipfile import ZIP_DEFLATED, ZipFile
 
 from tools.package_guard import main, validate_project, validate_wheel
+
+import dj_hyperview
 
 PROJECT_ROOT = Path(__file__).parents[1]
 
@@ -18,12 +22,20 @@ def write_wheel(path: Path, *, distribution: str, members: dict[str, str]) -> No
 
 def test_project_has_expected_identity_and_no_runtime_markup() -> None:
     assert validate_project(PROJECT_ROOT) == []
+    assert (PROJECT_ROOT / "src" / "dj_hyperview" / "py.typed").is_file()
+    try:
+        expected_version = version("dj-hyperview")
+    except PackageNotFoundError:
+        metadata = tomllib.loads((PROJECT_ROOT / "pyproject.toml").read_text())
+        expected_version = metadata["project"]["version"]
+    assert dj_hyperview.__version__ == expected_version
 
 
 def test_project_reports_wrong_identity_and_runtime_markup(tmp_path: Path) -> None:
     (tmp_path / "pyproject.toml").write_text('[project]\nname = "wrong-name"\n')
     package = tmp_path / "src" / "dj_hyperview"
     package.mkdir(parents=True)
+    (package / "py.typed").touch()
     (package / "screen.hxml").write_text("<doc />")
 
     assert validate_project(tmp_path) == [
@@ -37,10 +49,21 @@ def test_wheel_has_expected_identity_and_no_runtime_markup(tmp_path: Path) -> No
     write_wheel(
         wheel,
         distribution="dj-hyperview",
-        members={"dj_hyperview/__init__.py": ""},
+        members={"dj_hyperview/__init__.py": "", "dj_hyperview/py.typed": ""},
     )
 
     assert validate_wheel(wheel) == []
+
+
+def test_wheel_requires_the_pep_561_marker(tmp_path: Path) -> None:
+    wheel = tmp_path / "dj_hyperview-0.1.0-py3-none-any.whl"
+    write_wheel(
+        wheel,
+        distribution="dj-hyperview",
+        members={"dj_hyperview/__init__.py": ""},
+    )
+
+    assert validate_wheel(wheel) == ["wheel must contain dj_hyperview/py.typed"]
 
 
 def test_wheel_reports_wrong_identity_and_runtime_markup(tmp_path: Path) -> None:
@@ -50,6 +73,7 @@ def test_wheel_reports_wrong_identity_and_runtime_markup(tmp_path: Path) -> None
         distribution="wrong-name",
         members={
             "dj_hyperview/__init__.py": "",
+            "dj_hyperview/py.typed": "",
             "dj_hyperview/screen.XML": "<doc />",
         },
     )
@@ -67,7 +91,7 @@ def test_wheel_cli_returns_failure_and_reports_violations(
     write_wheel(
         wheel,
         distribution="wrong-name",
-        members={"dj_hyperview/__init__.py": ""},
+        members={"dj_hyperview/__init__.py": "", "dj_hyperview/py.typed": ""},
     )
 
     assert main([str(wheel)]) == 1
@@ -81,7 +105,7 @@ def test_wheel_cli_accepts_valid_wheel(tmp_path: Path) -> None:
     write_wheel(
         wheel,
         distribution="dj-hyperview",
-        members={"dj_hyperview/__init__.py": ""},
+        members={"dj_hyperview/__init__.py": "", "dj_hyperview/py.typed": ""},
     )
 
     assert main([str(wheel)]) == 0

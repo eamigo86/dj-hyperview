@@ -138,6 +138,7 @@ def test_repository_release_version_is_synchronized() -> None:
         package for package in lock["package"] if package["name"] == "dj-hyperview"
     )
 
+    assert project_version == "0.1.0a8"
     assert locked_project["version"] == project_version
 
 

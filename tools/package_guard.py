@@ -10,6 +10,7 @@ from zipfile import ZipFile
 
 EXPECTED_DISTRIBUTION = "dj-hyperview"
 EXPECTED_PACKAGE = "dj_hyperview"
+PEP_561_MARKER = "py.typed"
 RUNTIME_MARKUP_SUFFIXES = frozenset({".hxml", ".xml"})
 
 
@@ -32,6 +33,10 @@ def validate_project(root: Path) -> list[str]:
     package_root = root / "src" / EXPECTED_PACKAGE
     if not package_root.is_dir():
         violations.append(f"package must be src/{EXPECTED_PACKAGE}")
+    elif not (package_root / PEP_561_MARKER).is_file():
+        violations.append(
+            f"package must contain src/{EXPECTED_PACKAGE}/{PEP_561_MARKER}"
+        )
 
     package_files = (
         (
@@ -68,6 +73,8 @@ def validate_wheel(path: Path) -> list[str]:
         package_prefix = f"{EXPECTED_PACKAGE}/"
         if not any(name.startswith(package_prefix) for name in names):
             violations.append(f"wheel must contain package {EXPECTED_PACKAGE!r}")
+        elif f"{package_prefix}{PEP_561_MARKER}" not in names:
+            violations.append(f"wheel must contain {EXPECTED_PACKAGE}/{PEP_561_MARKER}")
 
         violations.extend(_runtime_markup_violations(names))
 

@@ -73,3 +73,12 @@ invalidations rotate that same key with a new random token. Raw content and
 negative entries remain bounded by their configured TTLs. If the generation key
 is externally evicted, the next successful source lookup establishes a fresh
 generation and old raw entries remain unreachable.
+
+## Invalidate after a filesystem deploy
+
+A filesystem deploy does not invalidate already cached source content. In-place
+file changes and atomic root symlink swaps remain stale until their TTL expires.
+After every filesystem deploy, call `invalidate_templates` for the affected
+canonical names or rotate `CACHE.NAMESPACE` for the whole release. Namespace
+rotation is simpler for immutable deployments; targeted invalidation avoids a
+cold cache when only a few screens changed.

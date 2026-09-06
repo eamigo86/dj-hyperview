@@ -51,9 +51,13 @@ Long-lived source instances resolve their configured roots for every lookup, so
 atomic root symlink changes are visible without reconstructing the source. A
 missing path, a platform path-length limit, or a symlink loop is treated as a
 normal miss. Missing configured roots also emit the non-blocking
-`dj_hyperview.W006` system-check warning. Other access failures raise the redacted `SourceUnavailable`
-contract, while non-UTF-8 files raise `TemplateValidationError` with the stable
-`invalid_encoding` code.
+`dj_hyperview.W006` system-check warning. Other access failures raise the
+redacted `SourceUnavailable` contract, while non-UTF-8 files raise
+`TemplateValidationError` with the stable `invalid_encoding` code.
+
+Root symlink changes affect uncached lookups immediately. Cached templates stay
+unchanged until their TTL, explicit invalidation, or a cache namespace rotation.
+See [cache consistency](cache-consistency.md) before a filesystem deploy.
 
 Add [database publication](database-admin.md) only when project editors need a
 stored source.

@@ -63,6 +63,7 @@ nav:
   - Getting Started:
       - Installation: installation.md
       - Quick Start: quickstart.md
+      - Mobile Getting Started: mobile-getting-started.md
       - Configuration: configuration.md
       - Hyperview compatibility: hyperview-0.110.0.md
   - User Guide:
@@ -70,12 +71,14 @@ nav:
       - Database and admin: database-admin.md
       - Cache consistency: cache-consistency.md
       - Security: security.md
+      - HTTP responses: http-responses.md
   - API Reference:
       - Public Python API: api-reference.md
   - Development:
       - Testing integrations: testing.md
       - Contributing: contributing.md
       - Release and rollback: release-rollback.md
+      - Changelog: changelog.md
 
 extra:
   social:

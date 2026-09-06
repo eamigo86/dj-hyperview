@@ -29,8 +29,11 @@ Choose the next guide for your source:
 - [Publish through the database](database-admin.md) when editors need admin.
 - [Configure cache consistency](cache-consistency.md) only when caching is needed.
 - [Harden names and XML](security.md) before accepting authored templates.
+- [Return documents and fragments](http-responses.md) with the right client contract.
+- [Create a mobile client](mobile-getting-started.md) without cloning an example app.
 - [Test a consumer integration](testing.md) across supported Django versions.
 - [Release and roll back](release-rollback.md) with reproducible gates.
+- [Review release changes](changelog.md) before upgrading.
 
 Use the [public Python API reference](api-reference.md) when integrating package
 objects directly. Contributors should begin with the

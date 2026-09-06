@@ -20,6 +20,7 @@ OPERATIONAL_GUIDES = (
     "security.md",
     "testing.md",
     "release-rollback.md",
+    "http-responses.md",
 )
 
 
@@ -113,6 +114,7 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
     assert "transaction.on_commit" in page
     assert "multi-root and text-only partials" in page
     assert "render-time validation" in page
+    assert "render or publish_and_render" in normalized
     assert "no longer canonical" in normalized
     assert "remains recoverable" in normalized
     assert "one commit-aware invalidation" in normalized
@@ -174,6 +176,8 @@ def test_cache_guide_matches_opt_in_and_invalidation_contracts() -> None:
     assert "older transaction snapshot" in normalized
     assert "ATOMIC_REQUESTS" in page
     assert "compiled templates" in page
+    assert "filesystem deploy" in page.lower()
+    assert "rotate" in page.lower() and "NAMESPACE" in page
     assert parameter.kind is Parameter.VAR_POSITIONAL
     assert blocks
     for block in blocks:

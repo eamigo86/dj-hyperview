@@ -13,16 +13,19 @@ DOCS = (
     "index.md",
     "installation.md",
     "quickstart.md",
+    "mobile-getting-started.md",
     "configuration.md",
     "hyperview-0.110.0.md",
     "filesystem.md",
     "database-admin.md",
     "cache-consistency.md",
     "security.md",
+    "http-responses.md",
     "api-reference.md",
     "testing.md",
     "contributing.md",
     "release-rollback.md",
+    "changelog.md",
 )
 
 
@@ -87,6 +90,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
             "Getting Started": [
                 {"Installation": "installation.md"},
                 {"Quick Start": "quickstart.md"},
+                {"Mobile Getting Started": "mobile-getting-started.md"},
                 {"Configuration": "configuration.md"},
                 {"Hyperview compatibility": "hyperview-0.110.0.md"},
             ]
@@ -97,6 +101,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
                 {"Database and admin": "database-admin.md"},
                 {"Cache consistency": "cache-consistency.md"},
                 {"Security": "security.md"},
+                {"HTTP responses": "http-responses.md"},
             ]
         },
         {"API Reference": [{"Public Python API": "api-reference.md"}]},
@@ -105,6 +110,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
                 {"Testing integrations": "testing.md"},
                 {"Contributing": "contributing.md"},
                 {"Release and rollback": "release-rollback.md"},
+                {"Changelog": "changelog.md"},
             ]
         },
     ]
@@ -242,6 +248,44 @@ def test_quickstart_and_reference_cover_the_supported_public_path() -> None:
     assert reference.startswith("# API Reference\n")
     for symbol in public_api:
         assert f"`{symbol}`" in reference
+
+
+def test_mobile_getting_started_is_standalone_and_tested() -> None:
+    """Consumers can create an Expo client without cloning Hyperview's repo."""
+    page = _documentation_pages()["mobile-getting-started.md"]
+
+    assert "create-expo-app" in page
+    assert "Hyperview repository" in page
+    assert "do not need to clone" in page.lower()
+    assert "hyperview@0.110.0" in page
+    assert "expo start --go" in page
+    assert "Continue with Google" in page
+    assert "EXPO_PUBLIC_API_URL" in page
+    assert "application/vnd.hyperview_fragment+xml" in page
+    assert "XMLRestrictedElementFound" in page
+
+
+def test_http_response_guide_distinguishes_documents_and_fragments() -> None:
+    """The response guide makes Hyperview's action boundary explicit."""
+    page = _documentation_pages()["http-responses.md"]
+
+    assert "HyperviewTemplateResponse" in page
+    assert "HyperviewFragmentTemplateResponse" in page
+    assert "HyperviewFragmentResponse" in page
+    assert "application/vnd.hyperview+xml" in page
+    assert "application/vnd.hyperview_fragment+xml" in page
+    for root in ("doc", "navigator", "screen", "body"):
+        assert root in page
+
+
+def test_changelog_describes_the_0_1_0a8_release() -> None:
+    """Release notes identify the audited alpha and its compatibility changes."""
+    page = _documentation_pages()["changelog.md"]
+
+    assert "0.1.0a8" in page
+    assert "fragment" in page.lower()
+    assert "Django 5.2" in page
+    assert "Django 6.1" in page
 
 
 def test_api_reference_distinguishes_validation_and_cache_states() -> None:
