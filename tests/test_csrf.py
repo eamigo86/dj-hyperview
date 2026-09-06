@@ -1,5 +1,6 @@
 from xml.etree import ElementTree
 
+import pytest
 from django.conf import settings
 from django.http import HttpResponse
 from django.middleware.csrf import CsrfViewMiddleware
@@ -72,3 +73,12 @@ def test_csrf_tag_without_a_request_renders_nothing() -> None:
     template = Template("{% load dj_hyperview %}{% hv_csrf_token %}")
 
     assert template.render(Context()) == ""
+
+
+@override_settings(TEMPLATES=TEMPLATES, DEBUG=True)
+def test_csrf_tag_without_a_request_warns_in_debug_mode() -> None:
+    """Debug rendering explains why the fail-closed field is missing."""
+    template = Template("{% load dj_hyperview %}{% hv_csrf_token %}")
+
+    with pytest.warns(UserWarning, match="context did not provide a request"):
+        assert template.render(Context()) == ""

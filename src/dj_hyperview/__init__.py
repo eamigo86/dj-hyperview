@@ -16,7 +16,14 @@ from .exceptions import (
     TemplateNotFound,
     TemplateValidationError,
 )
-from .http import HYPERVIEW_MEDIA_TYPE, HyperviewResponse, HyperviewTemplateResponse
+from .http import (
+    HYPERVIEW_FRAGMENT_MEDIA_TYPE,
+    HYPERVIEW_MEDIA_TYPE,
+    HyperviewFragmentResponse,
+    HyperviewFragmentTemplateResponse,
+    HyperviewResponse,
+    HyperviewTemplateResponse,
+)
 from .loaders import ResolverLoader
 from .middleware import (
     HYPERVIEW_VERSION_HEADER,
@@ -26,11 +33,12 @@ from .middleware import (
 )
 from .resolver import TemplateResolver, resolve_template
 from .sources import FileSystemSource, ResolvedTemplate, TemplateSource
-from .validation import validate_hxml, validate_template_source
+from .validation import validate_fragment_hxml, validate_hxml, validate_template_source
 from .views import HyperviewTemplateView
 
 __all__ = [
     "HYPERVIEW_MEDIA_TYPE",
+    "HYPERVIEW_FRAGMENT_MEDIA_TYPE",
     "HYPERVIEW_VERSION_HEADER",
     "CACHE_MISS",
     "CacheEntry",
@@ -41,6 +49,8 @@ __all__ = [
     "HyperviewMiddleware",
     "HyperviewRequestDetails",
     "HyperviewResponse",
+    "HyperviewFragmentResponse",
+    "HyperviewFragmentTemplateResponse",
     "HyperviewTemplateResponse",
     "HyperviewTemplateView",
     "InvalidTemplateName",
@@ -58,5 +68,6 @@ __all__ = [
     "render_template",
     "template_cache_key",
     "validate_hxml",
+    "validate_fragment_hxml",
     "validate_template_source",
 ]

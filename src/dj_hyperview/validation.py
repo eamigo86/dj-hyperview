@@ -18,6 +18,7 @@ from .exceptions import TemplateValidationError
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 SCHEMA_MESSAGE = "document does not match schema"
 XSD_NAMESPACE = "{http://www.w3.org/2001/XMLSchema}"
+RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
 IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"))
 XML_ENCODING = re.compile(
     r"^\s*<\?xml\b[^>]*\bencoding\s*=\s*(['\"])([^'\"]+)\1",
@@ -84,15 +85,8 @@ def _inline_django_comment_end(document: str, index: int) -> int | None:
     end = document.find("#}", index + 2)
     if end < 0:
         return None
-    newline_positions = [
-        position
-        for position in (
-            document.find("\n", index + 2),
-            document.find("\r", index + 2),
-        )
-        if position >= 0
-    ]
-    if newline_positions and min(newline_positions) < end:
+    newline = document.find("\n", index + 2)
+    if 0 <= newline < end:
         return None
     return end + 2
 
@@ -277,6 +271,31 @@ def validate_hxml(document: str, *, config: ValidationSettings | None = None) ->
     root = _parse(document, resolved)
     if resolved.schema is not None:
         _validate_schema(root, document, resolved)
+    return document
+
+
+def validate_fragment_hxml(
+    document: str, *, config: ValidationSettings | None = None
+) -> str:
+    """Validate the XML shape required by a Hyperview fragment response.
+
+    Args:
+        document: Rendered HXML fragment.
+        config: Validation policy and limits.
+
+    Returns:
+        The unchanged validated fragment.
+
+    Raises:
+        TemplateValidationError: If XML is unsafe, malformed, exceeds a limit,
+            or uses a client-owned document root.
+    """
+    root = _parse(document, config or get_settings().validation)
+    if etree.QName(root).localname.casefold() in RESTRICTED_FRAGMENT_ROOTS:
+        _fail(
+            "restricted_fragment_root",
+            "fragment root must not be doc, navigator, screen, or body",
+        )
     return document
 
 

@@ -9,7 +9,12 @@ from django.template.response import ContentNotRenderedError
 from django.test import Client, override_settings
 from django.test.client import RequestFactory
 
-from dj_hyperview import HYPERVIEW_MEDIA_TYPE, HyperviewTemplateResponse
+from dj_hyperview import (
+    HYPERVIEW_FRAGMENT_MEDIA_TYPE,
+    HYPERVIEW_MEDIA_TYPE,
+    HyperviewFragmentTemplateResponse,
+    HyperviewTemplateResponse,
+)
 from tests.consumer_project import settings_filesystem as filesystem
 from tests.consumer_project.views import ConsumerFullDocumentView, consumer_fragment
 
@@ -47,8 +52,9 @@ def test_fragment_uses_public_engine_response_and_canonical_name(
 
     assert response.status_code == 206
     assert response.headers["Content-Type"] == (
-        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
+        f"{HYPERVIEW_FRAGMENT_MEDIA_TYPE}; charset=utf-8"
     )
+    assert isinstance(response, HyperviewFragmentTemplateResponse)
     assert response.headers["X-Consumer-Document"] == "fragment"
     assert response.headers["X-Hyperview-Template"] == "fragments/item.xml"
     assert response.content.decode() == (
@@ -120,6 +126,8 @@ def test_documents_do_not_touch_optional_database_or_cache(
     full = ConsumerFullDocumentView.as_view()(RequestFactory().get("/documents/full/"))
     full.render()
     fragment = consumer_fragment(RequestFactory().get("/documents/fragment/"))
+    assert isinstance(fragment, HyperviewFragmentTemplateResponse)
+    fragment.render()
 
     assert full.status_code == 201
     assert fragment.status_code == 206

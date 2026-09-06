@@ -8,7 +8,11 @@ from django.http import HttpResponse
 from django.test import Client, override_settings
 from lxml import etree
 
-from dj_hyperview import HYPERVIEW_MEDIA_TYPE, HyperviewResponse
+from dj_hyperview import (
+    HYPERVIEW_FRAGMENT_MEDIA_TYPE,
+    HYPERVIEW_MEDIA_TYPE,
+    HyperviewResponse,
+)
 from tests.consumer_project import settings_filesystem as filesystem
 from tests.hyperview_contract import (
     ContractValidationError,
@@ -111,7 +115,7 @@ def test_versioned_request_escapes_context_and_accepts_real_csrf() -> None:
     )
 
     assert fragment.headers["Content-Type"] == (
-        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
+        f"{HYPERVIEW_FRAGMENT_MEDIA_TYPE}; charset=utf-8"
     )
     assert fragment.charset == "utf-8"
     assert fragment.content == (

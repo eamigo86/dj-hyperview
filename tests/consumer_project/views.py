@@ -7,6 +7,7 @@ from django.views.decorators.http import require_GET, require_http_methods
 
 from dj_hyperview import (
     HyperviewEngine,
+    HyperviewFragmentTemplateResponse,
     HyperviewRequestDetails,
     HyperviewResponse,
     HyperviewTemplateResponse,
@@ -71,7 +72,7 @@ class ConsumerFullDocumentView(HyperviewTemplateView):
 
 
 @require_GET
-def consumer_fragment(request: HttpRequest) -> HyperviewResponse:
+def consumer_fragment(request: HttpRequest) -> HyperviewFragmentTemplateResponse:
     """Render a generic fragment with public resolver and engine APIs.
 
     Args:
@@ -83,19 +84,14 @@ def consumer_fragment(request: HttpRequest) -> HyperviewResponse:
     Raises:
         HyperviewError: If the consumer template cannot be resolved or rendered.
     """
-    resolver = TemplateResolver.from_settings()
-    resolved = resolver.resolve(_FRAGMENT_TEMPLATE)
-    content = HyperviewEngine(resolver).render_hxml(
-        resolved.name,
-        {"label": request.GET.get("label", "Fragment")},
+    return HyperviewFragmentTemplateResponse(
         request,
-    )
-    return HyperviewResponse(
-        content,
+        _FRAGMENT_TEMPLATE,
+        {"label": request.GET.get("label", "Fragment")},
         status=206,
         headers={
             "X-Consumer-Document": "fragment",
-            "X-Hyperview-Template": resolved.name,
+            "X-Hyperview-Template": _FRAGMENT_TEMPLATE,
         },
     )
 

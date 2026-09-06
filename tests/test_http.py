@@ -5,8 +5,12 @@ from django.template.response import ContentNotRenderedError
 from django.test import RequestFactory, override_settings
 
 import dj_hyperview
+from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.http import (
+    HYPERVIEW_FRAGMENT_MEDIA_TYPE,
     HYPERVIEW_MEDIA_TYPE,
+    HyperviewFragmentResponse,
+    HyperviewFragmentTemplateResponse,
     HyperviewResponse,
     HyperviewTemplateResponse,
 )
@@ -64,6 +68,76 @@ def test_hyperview_response_preserves_explicit_content_type_and_charset():
     assert response.status_code == 207
     assert response.reason_phrase == "Multi-Status"
     assert response.headers["Content-Type"] == "application/xml"
+
+
+def test_non_hyperview_response_infers_charset_from_content_type() -> None:
+    """Foreign media types retain Django's declared charset semantics."""
+    response = HyperviewResponse(
+        "olá", content_type="text/plain; charset=iso-8859-1"
+    )
+
+    assert response.content == "olá".encode("iso-8859-1")
+    assert response.charset == "iso-8859-1"
+
+
+@pytest.mark.parametrize(
+    "content_type",
+    [
+        f"{HYPERVIEW_MEDIA_TYPE}; charset=iso-8859-1",
+        f'{HYPERVIEW_MEDIA_TYPE}; charset="iso-8859-1"',
+    ],
+)
+def test_hyperview_response_rejects_non_utf8_content_type_charset(
+    content_type: str,
+) -> None:
+    """The media-type parameter cannot silently override the UTF-8 contract."""
+    with pytest.raises(ValueError, match="Hyperview responses require UTF-8"):
+        HyperviewResponse("<view />", content_type=content_type)
+
+
+def test_hyperview_response_parses_quoted_content_type_parameters() -> None:
+    """Quoted response parameters survive standards-based charset parsing."""
+    response = HyperviewResponse(
+        "<view />",
+        content_type=f'{HYPERVIEW_MEDIA_TYPE}; profile="mobile app"; charset="UTF-8"',
+    )
+
+    assert response.headers["Content-Type"] == (
+        f"{HYPERVIEW_MEDIA_TYPE}; profile=mobile app; charset=utf-8"
+    )
+
+
+def test_fragment_response_uses_fragment_media_type_and_utf8() -> None:
+    """Direct fragments expose the Hyperview replacement media contract."""
+    response = HyperviewFragmentResponse("<view><text>Café</text></view>")
+
+    assert response.content == "<view><text>Café</text></view>".encode()
+    assert response.headers["Content-Type"] == (
+        f"{HYPERVIEW_FRAGMENT_MEDIA_TYPE}; charset=utf-8"
+    )
+
+
+@pytest.mark.parametrize("root", ["doc", "navigator", "screen", "body"])
+def test_fragment_response_rejects_document_roots(root: str) -> None:
+    """Replacement fragments cannot contain client-owned document roots."""
+    with pytest.raises(TemplateValidationError) as error:
+        HyperviewFragmentResponse(f"<{root} />")
+
+    assert error.value.code == "restricted_fragment_root"
+
+
+@override_settings(HYPERVIEW=HYPERVIEW_SOURCES)
+def test_fragment_template_response_is_lazy_and_validates_its_root() -> None:
+    """Template fragments remain lazy and enforce the replacement shape."""
+    response = HyperviewFragmentTemplateResponse(
+        RequestFactory().get("/fragment"), "fragment.xml", {"title": "A & B"}
+    )
+
+    assert response.is_rendered is False
+    assert response.render().content == b"<view>A &amp; B</view>"
+    assert response.headers["Content-Type"] == (
+        f"{HYPERVIEW_FRAGMENT_MEDIA_TYPE}; charset=utf-8"
+    )
 
 
 @override_settings(
@@ -178,6 +252,14 @@ def test_template_view_requires_a_consumer_template_name():
 
 def test_http_api_is_available_from_the_package_namespace():
     assert dj_hyperview.HYPERVIEW_MEDIA_TYPE == "application/vnd.hyperview+xml"
+    assert dj_hyperview.HYPERVIEW_FRAGMENT_MEDIA_TYPE == (
+        "application/vnd.hyperview_fragment+xml"
+    )
+    assert dj_hyperview.HyperviewFragmentResponse is HyperviewFragmentResponse
+    assert (
+        dj_hyperview.HyperviewFragmentTemplateResponse
+        is HyperviewFragmentTemplateResponse
+    )
     assert dj_hyperview.HyperviewResponse is HyperviewResponse
     assert dj_hyperview.HyperviewTemplateResponse is HyperviewTemplateResponse
     assert dj_hyperview.HyperviewTemplateView is HyperviewTemplateView

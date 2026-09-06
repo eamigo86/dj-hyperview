@@ -22,8 +22,11 @@ with an underscore remain implementation details.
 | `render_template` | Render one template using current settings. |
 | `HyperviewResponse` | Return explicit Hyperview markup. |
 | `HyperviewTemplateResponse` | Preserve Django's lazy template response. |
+| `HyperviewFragmentResponse` | Return and validate one eager bare fragment. |
+| `HyperviewFragmentTemplateResponse` | Lazily render and validate one bare fragment. |
 | `HyperviewTemplateView` | Serve a named template from a class-based view. |
 | `HYPERVIEW_MEDIA_TYPE` | Canonical Hyperview response media type. |
+| `HYPERVIEW_FRAGMENT_MEDIA_TYPE` | Canonical replacement-fragment media type. |
 
 ## Request detection
 
@@ -40,6 +43,7 @@ with an underscore remain implementation details.
 | --- | --- |
 | `validate_template_source` | Validate raw template source safety before compilation. |
 | `validate_hxml` | Validate a final rendered HXML document against configured limits and schema. |
+| `validate_fragment_hxml` | Validate fragment XML, limits, and client-safe root shape. |
 | `TemplateCache` | Cache raw resolved templates when enabled. |
 | `CacheEntry` | Represent a cache hit or negative entry. |
 | `CACHE_MISS` | Represent an explicit cached source miss. A cache lookup returns `None` when no cache entry exists. |

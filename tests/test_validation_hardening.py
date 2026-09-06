@@ -89,6 +89,14 @@ def test_multiline_django_comment_syntax_cannot_hide_a_declaration() -> None:
     assert captured.value.code == "forbidden_declaration"
 
 
+def test_bare_carriage_return_remains_inside_an_inline_django_comment() -> None:
+    """Declaration scanning mirrors Django's LF-only inline-comment boundary."""
+    source = "{# note\r<!DOCTYPE view> #}<view />"
+    engine = HyperviewEngine(TemplateResolver([TemplateSource(content=source)]))
+
+    assert engine.render("screen.xml") == "<view />"
+
+
 def test_csrf_tag_can_precede_an_xml_declaration_on_its_own_line() -> None:
     """Post-render normalization removes whitespace emitted by a load tag."""
     source = (
