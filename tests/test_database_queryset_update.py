@@ -16,6 +16,7 @@ from django.db import (
     transaction,
 )
 from django.db.models import Case, Count, F, Model, QuerySet, Value, When
+from django.db.models.functions import Concat
 from django.db.models.signals import post_save, pre_save
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
@@ -120,28 +121,77 @@ def test_content_update_schedules_names_and_preserves_result(
 def test_update_chunks_primary_keys_to_the_backend_parameter_limit(
     queryset_model: type[Model],
 ) -> None:
-    """Large updates never emit one unbounded primary-key predicate."""
+    """Update batches reserve placeholders for assigned values."""
     queryset_model.objects.bulk_create(
         [
             queryset_model(name=f"screen-{index}.xml", content="<view />")
-            for index in range(5)
+            for index in range(7)
         ]
     )
+    parameter_counts: list[int] = []
+
+    def enforce_parameter_limit(
+        execute: Callable[..., Any],
+        sql: str,
+        params: tuple[object, ...] | None,
+        many: bool,
+        context: dict[str, object],
+    ) -> Any:
+        if sql.lstrip().upper().startswith("UPDATE"):
+            parameter_counts.append(len(params or ()))
+            assert parameter_counts[-1] <= 7
+        return execute(sql, params, many, context)
 
     with (
-        patch.object(connection.ops, "bulk_batch_size", return_value=2) as batch_size,
-        patch.object(
-            database_querysets,
-            "_execute_update",
-            wraps=database_querysets._execute_update,
-        ) as execute,
+        patch.object(connection.ops, "bulk_batch_size", return_value=7),
+        connection.execute_wrapper(enforce_parameter_limit),
     ):
         updated = queryset_model.objects.update(active=False)
 
-    assert updated == 5
-    batch_size.assert_called_once()
-    assert execute.call_count == 3
-    assert queryset_model.objects.filter(active=False).count() == 5
+    assert updated == 7
+    assert parameter_counts == [7, 2]
+    assert queryset_model.objects.filter(active=False).count() == 7
+
+
+def test_rename_identity_backfill_respects_backend_parameter_limit(
+    queryset_model: type[Model],
+) -> None:
+    """Identity backfill accounts for CASE and primary-key placeholders."""
+    queryset_model.objects.bulk_create(
+        [
+            queryset_model(name=f"screen-{index}.xml", content="<view />")
+            for index in range(4)
+        ]
+    )
+    identity_parameter_counts: list[int] = []
+
+    def enforce_parameter_limit(
+        execute: Callable[..., Any],
+        sql: str,
+        params: tuple[object, ...] | None,
+        many: bool,
+        context: dict[str, object],
+    ) -> Any:
+        if sql.lstrip().upper().startswith("UPDATE"):
+            parameter_count = len(params or ())
+            assert parameter_count <= 10
+            if '"name_identity"' in sql:
+                identity_parameter_counts.append(parameter_count)
+        return execute(sql, params, many, context)
+
+    with (
+        patch.object(connection.ops, "bulk_batch_size", return_value=10),
+        connection.execute_wrapper(enforce_parameter_limit),
+    ):
+        updated = queryset_model.objects.update(
+            name=Concat(Value("renamed-"), F("name"))
+        )
+
+    assert updated == 4
+    assert identity_parameter_counts == [9, 3]
+    assert list(queryset_model.objects.values_list("name", flat=True)) == [
+        f"renamed-screen-{index}.xml" for index in range(4)
+    ]
 
 
 @override_settings(CACHES=CACHES, HYPERVIEW=HYPERVIEW)
@@ -400,6 +450,32 @@ def test_implicit_update_resolves_write_router_before_snapshot(
     )
     assert dual_queryset_model.objects.using("replica").get(pk=replica.pk).content == (
         "<written />"
+    )
+    schedule.assert_called_once_with("replica.xml", using="replica")
+
+
+@override_settings(DATABASE_ROUTERS=[_SplitReadWriteRouter()])
+@pytest.mark.django_db(transaction=True, databases=ALIASES)
+def test_implicit_delete_resolves_write_router_before_snapshot(
+    dual_queryset_model: type[Model],
+) -> None:
+    """Implicit deletes use the write database for snapshot and mutation."""
+    default = dual_queryset_model.objects.using("default").create(
+        name="default.xml", content="<default />"
+    )
+    replica = dual_queryset_model.objects.using("replica").create(
+        id=default.pk, name="replica.xml", content="<replica />"
+    )
+
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        deleted, _ = dual_queryset_model.objects.filter(pk=replica.pk).delete()
+
+    assert deleted == 1
+    assert dual_queryset_model.objects.using("default").filter(pk=default.pk).exists()
+    assert not (
+        dual_queryset_model.objects.using("replica").filter(pk=replica.pk).exists()
     )
     schedule.assert_called_once_with("replica.xml", using="replica")
 

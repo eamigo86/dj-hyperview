@@ -222,6 +222,22 @@ def test_resolver_preserves_database_and_filesystem_precedence(
     )
 
 
+def test_database_identity_divergence_falls_through_to_next_source(
+    database_model, tmp_path
+) -> None:
+    """A damaged database identity behaves as a miss, not an outage."""
+    template = database_model.objects.create(name="screen.xml", content="database")
+    database_model._base_manager.filter(pk=template.pk).update(name="renamed.xml")
+    (tmp_path / "screen.xml").write_text("filesystem", encoding="utf-8")
+
+    resolved = TemplateResolver(
+        [database_source_class()(), FileSystemSource([tmp_path])]
+    ).resolve("screen.xml")
+
+    assert resolved.content == "filesystem"
+    assert resolved.source == "filesystem"
+
+
 def test_configured_source_passes_checks_and_resolver_integration(database_model):
     database_model.objects.create(name="screen.xml", content="configured", revision=3)
     configured = {

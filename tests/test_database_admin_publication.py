@@ -87,10 +87,13 @@ def test_admin_add_never_overwrites_a_concurrently_created_template(
     existing = model.objects.create(name="screen.xml", content="<winner />")
     add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
 
-    with patch.object(
-        module.HyperviewTemplateAdminForm,
-        "clean_name",
-        return_value="screen.xml",
+    with (
+        patch.object(
+            module.HyperviewTemplateAdminForm,
+            "clean_name",
+            return_value="screen.xml",
+        ),
+        patch.object(model, "validate_unique", return_value=None),
     ):
         response = admin_client.post(
             add,

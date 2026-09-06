@@ -36,7 +36,7 @@ def _get_active(manager: Any, model: type[Any], name: str) -> Any:
         return None
     except (ConnectionDoesNotExist, Error):
         return _QUERY_FAILED
-    return template if template.name == name else _QUERY_FAILED
+    return template if template.name == name else None
 
 
 class DatabaseSource:

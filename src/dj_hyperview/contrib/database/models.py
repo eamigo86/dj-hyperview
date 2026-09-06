@@ -1,7 +1,9 @@
 """Database model for optional Hyperview template storage."""
 
+from collections.abc import Collection
 from typing import Any
 
+from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import DEFAULT_DB_ALIAS, models, router, transaction
 
@@ -75,3 +77,34 @@ class HyperviewTemplate(models.Model):
         kwargs["using"] = alias
         with transaction.atomic(using=alias):
             super().save(*args, **kwargs)
+
+    def validate_unique(self, exclude: Collection[str] | None = None) -> None:
+        """Validate byte-exact name uniqueness through the public name field.
+
+        Args:
+            exclude: Model fields omitted from uniqueness validation.
+
+        Raises:
+            ValidationError: If another row owns the exact template name.
+        """
+        excluded = set(exclude or ())
+        if "name" in excluded:
+            excluded.add("name_identity")
+        else:
+            self.name_identity = template_name_identity(self.name)
+            excluded.discard("name_identity")
+
+        try:
+            super().validate_unique(exclude=excluded)
+        except ValidationError as error:
+            errors = dict(error.error_dict)
+            identity_errors = errors.pop("name_identity", ())
+            if identity_errors:
+                errors.setdefault("name", []).extend(
+                    ValidationError(
+                        "A template with this name already exists.",
+                        code=identity_error.code or "unique",
+                    )
+                    for identity_error in identity_errors
+                )
+            raise ValidationError(errors) from None

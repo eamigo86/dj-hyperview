@@ -156,10 +156,15 @@ class HyperviewTemplateQuerySet(models.QuerySet):
                 (name for _, name in rows), ignore_invalid=True
             )
             primary_keys = tuple(row_primary_key for row_primary_key, _ in rows)
-            batch_size = connections[using].ops.bulk_batch_size(
+            parameter_budget = connections[using].ops.bulk_batch_size(
                 [primary_key], primary_keys
             )
-            batch_size = max(batch_size, 1)
+            reserved_parameters = len(kwargs)
+            parameters_per_row = 3 if "name" in kwargs else 1
+            batch_size = max(
+                1,
+                (parameter_budget - reserved_parameters) // parameters_per_row,
+            )
             primary_key_batches = tuple(
                 primary_keys[offset : offset + batch_size]
                 for offset in range(0, len(primary_keys), batch_size)
@@ -227,6 +232,7 @@ class HyperviewTemplateQuerySet(models.QuerySet):
         if self._fields is not None:
             raise TypeError("Cannot call delete() after .values() or .values_list()")
 
+        self._for_write = True
         using = self.db
         primary_key = self.model._meta.pk
         snapshot = self.using(using).all()

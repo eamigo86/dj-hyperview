@@ -357,6 +357,30 @@ def test_sqlite_uniqueness_is_case_sensitive_by_default(template_table):
     }
 
 
+def test_full_clean_reports_duplicate_exact_name_on_public_field(template_table):
+    """Model validation maps byte-exact identity conflicts to name."""
+    template_table.objects.create(name="screen.xml", content="<view />")
+    duplicate = template_table(name="screen.xml", content="<other />")
+
+    with pytest.raises(ValidationError) as captured:
+        duplicate.full_clean()
+
+    assert set(captured.value.error_dict) == {"name"}
+    assert captured.value.error_dict["name"][0].code == "unique"
+
+
+def test_plain_modelform_reports_duplicate_exact_name_before_save(template_table):
+    """Non-admin model forms surface duplicate names without an integrity error."""
+    template_table.objects.create(name="screen.xml", content="<view />")
+    form_class = modelform_factory(template_table, fields=["name", "content"])
+
+    form = form_class({"name": "screen.xml", "content": "<other />"})
+
+    assert form.is_valid() is False
+    assert set(form.errors.as_data()) == {"name"}
+    assert form.errors.as_data()["name"][0].code == "unique"
+
+
 def test_database_enforces_unique_name_and_positive_revision(template_table):
     model = template_table
     model.objects.create(name="screen.xml", content="<view />")
