@@ -1,4 +1,12 @@
+from importlib import import_module
+from types import SimpleNamespace
+
+from dj_hyperview.contrib.database._identity import template_name_identity
 from tests.test_database_app import ROOT, run_isolated
+
+populate_name_identities = import_module(
+    "dj_hyperview.contrib.database.migrations.0003_byte_exact_name_identity"
+).populate_name_identities
 
 
 def test_database_migration_applies_and_reverses(tmp_path):
@@ -63,6 +71,42 @@ def test_name_identity_migration_backfills_case_variants(tmp_path):
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "2 2 True False"
+
+
+def test_identity_migration_matches_the_runtime_identity_corpus() -> None:
+    """The frozen migration and runtime keep one byte-exact identity rule."""
+    rows = [(1, "Home.xml"), (2, "home.xml"), (3, "café.xml"), (4, "\ud800.xml")]
+    updated: dict[int, str] = {}
+
+    class Manager:
+        def using(self, alias: str) -> "Manager":
+            assert alias == "default"
+            return self
+
+        def values_list(self, *fields: str) -> "Manager":
+            assert fields == ("pk", "name")
+            return self
+
+        def iterator(self):
+            return iter(rows)
+
+        def filter(self, *, pk: int) -> "Manager":
+            self.primary_key = pk
+            return self
+
+        def update(self, *, name_identity: str) -> None:
+            updated[self.primary_key] = name_identity
+
+    manager = Manager()
+    model = SimpleNamespace(_base_manager=manager)
+    apps = SimpleNamespace(get_model=lambda *args: model)
+    schema_editor = SimpleNamespace(connection=SimpleNamespace(alias="default"))
+
+    populate_name_identities(apps, schema_editor)
+
+    assert updated == {
+        primary_key: template_name_identity(name) for primary_key, name in rows
+    }
 
 
 def test_package_contains_python_migration_without_runtime_markup():

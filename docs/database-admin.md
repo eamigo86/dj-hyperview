@@ -113,7 +113,9 @@ forms carry a protected revision token to reject stale submissions.
 Direct `save()` does not call `full_clean()`. Prefer the services or the admin
 for validated publication. The package QuerySet batches `update()` and `delete()`
 while scheduling one commit-aware invalidation for all canonical affected names.
-`bulk_create()` and raw SQL do not provide an automatic publication contract.
+`bulk_create()` rejects unsafe names and schedules invalidation, but still bypasses
+content validation and revision semantics. Raw SQL provides no automatic
+publication contract.
 
 A row imported by raw SQL or an older release can contain a name that is no
 longer canonical. Such a row is never resolved, but it remains recoverable:

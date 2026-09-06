@@ -168,7 +168,7 @@ def _parse(document: str, config: ValidationSettings):
     try:
         root = etree.fromstring(encoded, parser=_parser())
     except etree.XMLSyntaxError as error:
-        if "Excessive depth" in str(error):
+        if "depth" in str(error).casefold():
             raise TemplateValidationError(
                 "max_depth", "document exceeds MAX_DEPTH"
             ) from error

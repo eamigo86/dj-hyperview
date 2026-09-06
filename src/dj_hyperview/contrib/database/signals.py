@@ -5,10 +5,9 @@ from dataclasses import dataclass
 from django.db import connections
 from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 
-from dj_hyperview.exceptions import InvalidTemplateName
 from dj_hyperview.sources import canonicalize_template_name
 
-from ._identity import template_name_identity
+from ._identity import _assign_template_name_identity, _canonical_name_or_none
 from ._invalidation import _schedule_invalidation
 from ._mutation_context import batch_delete_primary_keys
 from .models import HyperviewTemplate
@@ -22,13 +21,6 @@ _BATCH_DELETE = object()
 class _MutationState:
     using: str
     names: tuple[str, ...]
-
-
-def _canonical_name_or_none(value: object) -> str | None:
-    try:
-        return canonicalize_template_name(value)
-    except InvalidTemplateName:
-        return None
 
 
 def _persisted_name(
@@ -55,8 +47,8 @@ def _capture_save(
 ) -> None:
     del kwargs
     instance.__dict__.pop(_STATE_ATTRIBUTE, None)
-    if instance._state.adding or update_fields is None or "name" in update_fields:
-        instance.name_identity = template_name_identity(instance.name)
+    if raw:
+        _assign_template_name_identity(instance, update_fields)
     if update_fields is not None and _OBSERVABLE_FIELDS.isdisjoint(update_fields):
         return
 

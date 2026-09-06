@@ -117,16 +117,8 @@ def publish_template(
     """
     canonical = canonicalize_template_name(name)
     identity = template_name_identity(canonical)
-    if expected_revision is not None and (
-        type(expected_revision) is not int or expected_revision < 1
-    ):
-        raise ValueError("expected_revision must be a positive integer or None")
-    if using is not None and not _database_alias_is_configured(using):
-        raise SourceUnavailable(SOURCE, "alias unavailable")
-    model = _template_model()
-    if model is None:
-        raise SourceUnavailable(SOURCE, "app unavailable")
-    alias = _database_alias(model, using)
+    _validate_expected_revision(expected_revision)
+    model, alias = _mutation_target(using)
     conflict = False
     result: PublicationResult
 

@@ -19,10 +19,13 @@ This page records user-visible changes for each published version.
 - Preserved cache-safe source results across mixed source chains.
 - Reported absent source configuration and missing filesystem roots as
   actionable Django system-check warnings.
+- Reused validated settings and the default rendering engine until a dependent
+  Django setting changes.
+- Rejected unsafe `bulk_create()` names and invalidated cache state after bulk
+  writes, including conflict updates.
 
 ### Compatibility
 
 - Tested against Django 5.2 and Django 6.1 on supported Python versions.
 - Fragment update endpoints must return a bare client-safe element. Full HXML
   documents continue to use `application/vnd.hyperview+xml`.
-

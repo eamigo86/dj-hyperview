@@ -5,6 +5,7 @@ import json
 import secrets
 from collections.abc import Callable, Mapping
 from dataclasses import asdict, dataclass
+from typing import cast
 
 from django.conf import settings
 from django.core.cache import caches
@@ -25,7 +26,7 @@ _RESOLVED_FIELDS = {"version", "state", "source", "name", "template"}
 _RESOLVED_MISS_FIELDS = {"version", "state", "source", "name"}
 _RESOLVER_REVISION = "@resolved"
 _GENERATION_DOMAIN = "dj-hyperview:generation:v2"
-_GENERATION_KINDS = {"r": "root", "s": "successor"}
+_GENERATION_PREFIXES = frozenset({"r", "s"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,14 +127,11 @@ class TemplateCache:
             raise ValueError("Cache namespace must be a non-empty string")
         _validate_timeout(ttl, 1, "TTL")
         _validate_timeout(negative_ttl, 0, "negative TTL")
-        _, alias_error = _resolve_cache_alias(alias)
-        if alias_error is not None:
-            source = f"cache:{alias}" if alias_error == _BACKEND_FAILURE else "cache"
-            raise SourceUnavailable(source, alias_error)
         self.namespace = namespace
         self.alias = alias
         self.ttl = ttl
         self.negative_ttl = negative_ttl
+        _ = self.backend
 
     @property
     def backend(self) -> BaseCache:
@@ -151,9 +149,7 @@ class TemplateCache:
                 f"cache:{self.alias}" if alias_error == _BACKEND_FAILURE else "cache"
             )
             raise SourceUnavailable(source, alias_error)
-        if backend is None:  # Defensive narrowing for third-party cache handlers.
-            raise SourceUnavailable("cache", _INVALID_ALIAS)
-        return backend
+        return cast(BaseCache, backend)
 
     @classmethod
     def from_settings(cls, namespace: str) -> "TemplateCache":
@@ -214,13 +210,9 @@ class TemplateCache:
         return prefix + hashlib.sha256(material).hexdigest()[:32]
 
     def _read_generation(self, name: str) -> str:
-        token = _without_untrusted_exception(
-            lambda: self.backend.get(self._generation_key(name), _ABSENT)
-        )
-        if token is _FAILURE or token is _ABSENT:
+        token = self._peek_generation(name)
+        if token is None:
             raise SourceUnavailable(f"cache:{self.alias}", "backend failure")
-        if not self._valid_generation(token):
-            raise SourceUnavailable(f"cache:{self.alias}", "invalid payload")
         return token
 
     def _peek_generation(self, name: str) -> str | None:
@@ -253,7 +245,7 @@ class TemplateCache:
         return (
             type(token) is str
             and len(token) == 33
-            and token[0] in _GENERATION_KINDS
+            and token[0] in _GENERATION_PREFIXES
             and all(character in "0123456789abcdef" for character in token[1:])
         )
 

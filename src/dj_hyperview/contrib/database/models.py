@@ -9,7 +9,7 @@ from django.db import DEFAULT_DB_ALIAS, models, router, transaction
 
 from dj_hyperview.sources import canonicalize_template_name
 
-from ._identity import template_name_identity
+from ._identity import _assign_template_name_identity, template_name_identity
 from .querysets import HyperviewTemplateManager
 from .validators import (
     validate_canonical_template_name,
@@ -65,9 +65,9 @@ class HyperviewTemplate(models.Model):
         update_fields = kwargs.get("update_fields")
         if self._state.adding or update_fields is None or "name" in update_fields:
             canonicalize_template_name(self.name)
-            self.name_identity = template_name_identity(self.name)
-            if update_fields is not None:
-                kwargs["update_fields"] = {*update_fields, "name_identity"}
+            _assign_template_name_identity(self, update_fields)
+        if update_fields is not None and "name" in update_fields:
+            kwargs["update_fields"] = {*update_fields, "name_identity"}
         requested_alias = kwargs.get("using")
         alias = (
             requested_alias

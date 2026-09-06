@@ -218,6 +218,47 @@ def test_content_update_makes_cached_result_observe_committed_content(
         )
 
 
+def test_bulk_create_rejects_noncanonical_names_before_database_access(
+    queryset_model: type[Model],
+) -> None:
+    """Bulk insertion cannot create new inert or unsafe template rows."""
+    with CaptureQueriesContext(connection) as queries:
+        with pytest.raises(InvalidTemplateName, match="Invalid template name"):
+            queryset_model.objects.bulk_create(
+                [queryset_model(name="../private.xml", content="<view />")]
+            )
+
+    assert len(queries) == 0
+    assert queryset_model.objects.count() == 0
+
+
+@override_settings(CACHES=CACHES, HYPERVIEW=HYPERVIEW)
+def test_bulk_upsert_invalidates_cached_template_content(
+    queryset_model: type[Model],
+) -> None:
+    """Conflict-updated rows become visible through the resolver after commit."""
+    caches["screens"].clear()
+    with (
+        patch("dj_hyperview.checks.apps.is_installed", return_value=True),
+        patch(
+            "dj_hyperview.contrib.database.sources._template_model",
+            return_value=queryset_model,
+        ),
+    ):
+        queryset_model.objects.create(name="screen.xml", content="<old />")
+        resolver = TemplateResolver.from_settings()
+        assert resolver.resolve("screen.xml").content == "<old />"
+
+        queryset_model.objects.bulk_create(
+            [queryset_model(name="screen.xml", content="<new />")],
+            update_conflicts=True,
+            update_fields=["content"],
+            unique_fields=["name_identity"],
+        )
+
+        assert resolver.resolve("screen.xml").content == "<new />"
+
+
 def test_rename_schedules_old_and_actual_new_names(queryset_model: type[Model]) -> None:
     first = queryset_model.objects.create(name="first.xml", content="<first />")
     second = queryset_model.objects.create(name="second.xml", content="<second />")

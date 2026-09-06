@@ -12,7 +12,11 @@ from django.db.models.sql.constants import ROW_COUNT
 from dj_hyperview.exceptions import InvalidTemplateName
 from dj_hyperview.sources import canonicalize_template_name
 
-from ._identity import template_name_identity
+from ._identity import (
+    _assign_template_name_identity,
+    _canonical_name_or_none,
+    template_name_identity,
+)
 from ._invalidation import _schedule_invalidation
 from ._mutation_context import batch_delete_primary_keys
 
@@ -24,11 +28,12 @@ def _canonical_names(
 ) -> tuple[str, ...]:
     names: dict[str, None] = {}
     for value in values:
-        try:
-            names[canonicalize_template_name(value)] = None
-        except InvalidTemplateName:
-            if not ignore_invalid:
-                raise
+        canonical = _canonical_name_or_none(value)
+        if canonical is None:
+            if ignore_invalid:
+                continue
+            raise InvalidTemplateName(value)
+        names[canonical] = None
     return tuple(names)
 
 
@@ -99,8 +104,9 @@ class HyperviewTemplateQuerySet(models.QuerySet):
         """
         prepared = list(objs)
         for template in prepared:
-            template.name_identity = template_name_identity(template.name)
-        return models.QuerySet.bulk_create(
+            canonicalize_template_name(template.name)
+            _assign_template_name_identity(template)
+        created = models.QuerySet.bulk_create(
             self,
             prepared,
             batch_size=batch_size,
@@ -109,6 +115,10 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             update_fields=update_fields,
             unique_fields=unique_fields,
         )
+        names = _canonical_names(template.name for template in prepared)
+        if names:
+            _schedule_invalidation(*names, using=self.db)
+        return created
 
     def update(self, **kwargs: Any) -> int:
         """Update selected rows and invalidate every affected template name.
@@ -229,14 +239,6 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             TypeError: If slicing, field-specific distinct, or values are used.
             DatabaseError: If selection or deletion SQL fails.
         """
-        self._not_support_combined_queries("delete")
-        if self.query.is_sliced:
-            raise TypeError("Cannot use 'limit' or 'offset' with delete().")
-        if self.query.distinct_fields:
-            raise TypeError("Cannot call delete() after .distinct(*fields).")
-        if self._fields is not None:
-            raise TypeError("Cannot call delete() after .values() or .values_list()")
-
         self._for_write = True
         using = self.db
         primary_key = self.model._meta.pk

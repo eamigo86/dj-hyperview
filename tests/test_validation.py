@@ -71,6 +71,22 @@ def test_libxml_depth_ceiling_uses_the_public_max_depth_code(max_depth) -> None:
     )
 
 
+def test_parser_depth_wording_variants_keep_the_public_error_code(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Libxml message-prefix changes do not alter the stable package code."""
+
+    def reject_depth(*args: object, **kwargs: object) -> None:
+        del args, kwargs
+        raise validation_module.etree.XMLSyntaxError(
+            "Maximum DEPTH limit reached", 0, 0, 0
+        )
+
+    monkeypatch.setattr(validation_module.etree, "fromstring", reject_depth)
+
+    assert_validation_error("max_depth", lambda: validate_hxml("<view />"))
+
+
 @pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
 def test_non_utf8_xml_declarations_are_rejected(validator) -> None:
     """The XML declaration cannot contradict the UTF-8 HTTP contract."""
