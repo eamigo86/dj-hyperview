@@ -41,7 +41,7 @@ empty mapping disables Hyperview caching.
 | Setting | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `HYPERVIEW` | Mapping | `{}` | Package configuration in Django settings. An absent or empty mapping configures no sources and no cache. |
-| `TEMPLATE_DIRS` | Sequence of strings or `Path` objects | `()` | Ordered project-owned roots inherited by `FileSystemSource` instances that do not override `template_dirs`. Each root must be an existing directory. |
+| `TEMPLATE_DIRS` | List or tuple of strings or `Path` objects | `()` | Ordered project-owned roots inherited by `FileSystemSource` instances that do not override `template_dirs`. Missing roots emit an operational warning and are skipped at runtime. |
 | `SOURCES` | Sequence of mappings | `()` | Ordered source definitions. The first source that resolves a canonical template name wins. An empty sequence resolves no templates. |
 | `SOURCES[].BACKEND` | Dotted import path | Required | Importable source class for one entry. Built-in paths are shown below. |
 | `SOURCES[].OPTIONS` | Mapping | `{}` | Keyword arguments passed to that source class constructor. Supported keys are backend-specific. |
@@ -70,12 +70,13 @@ support the following options:
 
 | Backend | Option | Default | Meaning |
 | --- | --- | --- | --- |
-| `FileSystemSource` | `template_dirs` | `HYPERVIEW["TEMPLATE_DIRS"]` | Ordered template roots for this source instance, supplied as an iterable of strings or `Path` objects. Earlier roots win. |
+| `FileSystemSource` | `template_dirs` | `HYPERVIEW["TEMPLATE_DIRS"]` | Ordered template roots for this source instance, supplied as a list or tuple of strings or `Path` objects. Earlier roots win. |
 | `DatabaseSource` | `using` | `None` | A configured Django database alias. A fixed alias permits source caching; omitting it delegates to Django database routing and disables source caching because the selected database can vary. |
 
-`template_dirs` must be a list, tuple, or another iterable of roots. Do not pass
-a single string or Path: scalar paths are rejected instead of being interpreted
-as collections.
+`template_dirs` must be a list or tuple of roots. Do not pass a single string,
+Path, generator, set, or other iterable: only reusable ordered collections are
+accepted. A root that is temporarily unavailable emits a system-check warning;
+resolution continues through later roots.
 
 For example, one filesystem source can override the global roots:
 
@@ -101,16 +102,20 @@ and [Database and admin](database-admin.md) for backend-specific behavior.
 ## Template engine behavior
 
 Named templates use dj-hyperview's dedicated resolver-backed template engine
-by default. That engine copies template-language options, such as context
-processors and `string_if_invalid`, from the first configured DjangoTemplates backend.
-It deliberately replaces that backend's loaders so template lookup
-still follows `HYPERVIEW["SOURCES"]` and never falls through to unrelated
-Django template directories.
+by default. That engine copies only `context_processors`, `string_if_invalid`,
+`builtins`, and `libraries` from the first configured DjangoTemplates backend
+or subclass. It deliberately isolates security-sensitive options such as
+`autoescape` and replaces the backend's loaders, so template lookup still
+follows `HYPERVIEW["SOURCES"]` and never falls through to unrelated Django
+template directories.
 
 The response path does not switch engines when `SOURCES` is empty. An empty
 source list therefore produces a normal missing-template result. To opt out and
 select a consumer Django engine explicitly, pass its alias, for example
-`using="django"`, to `HyperviewTemplateResponse`.
+`using="django"`, to `HyperviewTemplateResponse`. The `dj_hyperview.W005`
+system check calls out an absent configuration or an explicitly empty source
+list. Temporarily unavailable filesystem roots emit `dj_hyperview.W006` and do
+not prevent later roots from resolving templates.
 
 Continue with [Filesystem](filesystem.md), [Database and admin](database-admin.md),
 [Cache consistency](cache-consistency.md), [Security](security.md),

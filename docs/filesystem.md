@@ -50,7 +50,8 @@ echo rejected names or filesystem paths.
 Long-lived source instances resolve their configured roots for every lookup, so
 atomic root symlink changes are visible without reconstructing the source. A
 missing path, a platform path-length limit, or a symlink loop is treated as a
-normal miss. Other access failures raise the redacted `SourceUnavailable`
+normal miss. Missing configured roots also emit the non-blocking
+`dj_hyperview.W006` system-check warning. Other access failures raise the redacted `SourceUnavailable`
 contract, while non-UTF-8 files raise `TemplateValidationError` with the stable
 `invalid_encoding` code.
 

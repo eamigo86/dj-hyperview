@@ -53,6 +53,15 @@ class UncachedSource:
         return ResolvedTemplate(name, self.content, "memory", "memory", "1")
 
 
+class CacheableMissSource:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    def resolve(self, name: str) -> None:
+        del name
+        self.calls += 1
+
+
 @pytest.fixture
 def dual_database_model(django_db_blocker):
     with override_settings(INSTALLED_APPS=DATABASE_APPS):
@@ -171,6 +180,27 @@ def test_atomic_database_snapshots_never_publish_to_shared_cache(
                     resolver.resolve("screen.xml")
 
         assert resolver.cache.get_resolved(source_id, "screen.xml", generation) is None
+
+
+@pytest.mark.django_db(transaction=True, databases=ALIASES)
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_atomic_database_hit_publishes_earlier_cacheable_miss(
+    dual_database_model,
+) -> None:
+    """Initialization inside atomic retains safe misses before an unsafe DB hit."""
+    dual_database_model.objects.using("default").create(
+        name="screen.xml", content="snapshot", revision=1
+    )
+    missing = CacheableMissSource()
+    database = DatabaseSource(using="default")
+    cache = TemplateCache("atomic-mixed-initialization", alias="screens")
+    resolver = TemplateResolver([missing, database], cache=cache)
+
+    with transaction.atomic(using="default"):
+        assert resolver.resolve("screen.xml").content == "snapshot"
+
+    assert resolver.resolve("screen.xml").content == "snapshot"
+    assert missing.calls == 1
 
 
 @pytest.mark.django_db(transaction=True, databases=ALIASES)

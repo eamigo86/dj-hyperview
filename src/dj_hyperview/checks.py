@@ -11,6 +11,7 @@ from django.core.checks import CheckMessage, Error, Warning, register
 from django.utils.module_loading import import_string
 
 from .cache import _BACKEND_FAILURE, _resolve_cache_alias
+from .sources import FileSystemSource
 
 SETTING = "settings.HYPERVIEW"
 DATABASE_SOURCE = "dj_hyperview.contrib.database.sources.DatabaseSource"
@@ -35,12 +36,28 @@ def _check_template_dirs(value: Any, path: str = "TEMPLATE_DIRS") -> list[CheckM
         return [_error("E002", path, "must be a sequence")]
     errors = []
     for index, directory in enumerate(value):
+        item_path = f"{path}[{index}]"
         try:
-            valid = Path(directory).is_dir()
-        except (OSError, TypeError):
+            directory_path = Path(directory)
+        except TypeError:
+            errors.append(_error("E002", item_path, "must be a path"))
+            continue
+        try:
+            valid = directory_path.is_dir()
+        except OSError:
             valid = False
         if not valid:
-            errors.append(_error("E002", f"{path}[{index}]", "must be a directory"))
+            errors.append(
+                Warning(
+                    f"{item_path} is not currently an available directory.",
+                    hint=(
+                        f"Create or mount {item_path}; unavailable roots are skipped "
+                        "at runtime."
+                    ),
+                    obj=SETTING,
+                    id="dj_hyperview.W006",
+                )
+            )
     return errors
 
 
@@ -51,6 +68,16 @@ def _importable(path: Any) -> bool:
         return callable(import_string(path))
     except Exception:
         return False
+
+
+def _is_filesystem_backend(path: Any) -> bool:
+    if not isinstance(path, str):
+        return False
+    try:
+        backend = import_string(path)
+    except Exception:
+        return False
+    return isinstance(backend, type) and issubclass(backend, FileSystemSource)
 
 
 def _check_sources(value: Any) -> list[CheckMessage]:
@@ -65,7 +92,7 @@ def _check_sources(value: Any) -> list[CheckMessage]:
         backend = source.get("BACKEND")
         options = source.get("OPTIONS", {})
         if (
-            backend == FILESYSTEM_SOURCE
+            _is_filesystem_backend(backend)
             and isinstance(options, Mapping)
             and "template_dirs" in options
         ):
@@ -104,13 +131,17 @@ def _source_consistency_warnings(raw: Mapping[str, Any]) -> list[CheckMessage]:
     filesystem_sources = [
         source
         for source in sources
-        if isinstance(source, Mapping) and source.get("BACKEND") == FILESYSTEM_SOURCE
+        if isinstance(source, Mapping)
+        and _is_filesystem_backend(source.get("BACKEND"))
     ]
     warnings = []
     valid_template_dirs = (
         _sequence(template_dirs)
         and bool(template_dirs)
-        and not _check_template_dirs(template_dirs)
+        and not any(
+            isinstance(message, Error)
+            for message in _check_template_dirs(template_dirs)
+        )
     )
     if valid_template_dirs and not filesystem_sources:
         warnings.append(
@@ -139,6 +170,16 @@ def _source_consistency_warnings(raw: Mapping[str, Any]) -> list[CheckMessage]:
                 ),
                 obj=SETTING,
                 id="dj_hyperview.W003",
+            )
+        )
+    if not sources and (not raw or "SOURCES" in raw):
+        warnings.append(
+            Warning(
+                "No SOURCES configured; HyperviewTemplateResponse resolves no "
+                "templates.",
+                hint="Add a source or pass using='django'.",
+                obj=SETTING,
+                id="dj_hyperview.W005",
             )
         )
     return warnings

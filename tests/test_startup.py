@@ -10,5 +10,7 @@ def test_app_config_registers_hyperview_checks() -> None:
 
 
 @override_settings(HYPERVIEW={})
-def test_registered_check_accepts_minimal_installation() -> None:
-    assert run_checks(tags=["dj_hyperview"]) == []
+def test_registered_check_reports_minimal_empty_resolver() -> None:
+    messages = run_checks(tags=["dj_hyperview"])
+
+    assert [message.id for message in messages] == ["dj_hyperview.W005"]

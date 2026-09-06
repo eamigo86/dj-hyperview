@@ -33,6 +33,14 @@ class RecordingSource:
         )
 
 
+class UncacheableRecordingSource(RecordingSource):
+    _dj_hyperview_cacheable = False
+
+
+class BooleanSafeRecordingSource(RecordingSource):
+    _dj_hyperview_cache_safe = True
+
+
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_resolver_cache_hit_preserves_empty_content_without_source_lookup():
     cache = TemplateCache("empty-hit", alias="screens")
@@ -57,6 +65,34 @@ def test_cached_source_miss_skips_only_that_source():
     assert resolver.resolve("screen.xml").content == "winner"
     assert missing.calls == ["screen.xml"]
     assert winner.calls == ["screen.xml"]
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_initial_cacheable_miss_is_published_before_uncacheable_hit() -> None:
+    """A later uncacheable winner does not discard earlier cache-safe misses."""
+    cache = TemplateCache("mixed-initial-publication", alias="screens")
+    missing = RecordingSource(None, source="filesystem")
+    winner = UncacheableRecordingSource("database", source="database")
+    resolver = TemplateResolver([missing, winner], cache=cache)
+
+    assert resolver.resolve("screen.xml").content == "database"
+    assert resolver.resolve("screen.xml").content == "database"
+
+    assert missing.calls == ["screen.xml"]
+    assert winner.calls == ["screen.xml", "screen.xml"]
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_boolean_cache_safety_marker_is_supported() -> None:
+    """Cache safety markers accept the same bool shape as cacheability markers."""
+    cache = TemplateCache("boolean-cache-safety", alias="screens")
+    source = BooleanSafeRecordingSource("first")
+    resolver = TemplateResolver([source], cache=cache)
+
+    assert resolver.resolve("screen.xml").content == "first"
+    source.content = "second"
+    assert resolver.resolve("screen.xml").content == "first"
+    assert source.calls == ["screen.xml"]
 
 
 @pytest.mark.parametrize("operation", ["get", "set", "set_miss"])
@@ -200,5 +236,7 @@ def test_cache_namespace_configuration_must_be_a_non_empty_string(namespace):
 
     with override_settings(HYPERVIEW={"CACHE": {"NAMESPACE": namespace}}):
         errors = check_hyperview_settings()
-    assert [error.id for error in errors] == ["dj_hyperview.E004"]
-    assert errors[0].msg == "CACHE.NAMESPACE must be a non-empty string."
+    namespace_error = next(
+        error for error in errors if error.id == "dj_hyperview.E004"
+    )
+    assert namespace_error.msg == "CACHE.NAMESPACE must be a non-empty string."

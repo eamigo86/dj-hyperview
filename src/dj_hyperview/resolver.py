@@ -131,7 +131,7 @@ def _source_cache_safe(source: object) -> bool:
         return True
     try:
         hook = source._dj_hyperview_cache_safe  # type: ignore[attr-defined]
-        value = hook()
+        value = hook() if callable(hook) else hook
     except Exception:
         return False
     return type(value) is bool and value
@@ -255,7 +255,7 @@ class TemplateResolver:
                     source, source_id, canonical, generation
                 )
             if resolved is not None:
-                if initialize and publish_initial:
+                if initialize and initial_results:
                     self._publish_initial(canonical, initial_results)
                 return resolved
         raise TemplateNotFound(canonical)

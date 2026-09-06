@@ -66,7 +66,7 @@ all_checks = run_checks()
 print(json.dumps({
     "app": apps.get_app_config("dj_hyperview").name,
     "cache_disabled": resolver.cache is None,
-    "checks": [message.id for message in [*package_checks, *all_checks]],
+    "checks": sorted({message.id for message in [*package_checks, *all_checks]}),
     "legacy_loaded": any(
         name == "django_hv" or name.startswith("django_hv.") for name in sys.modules
     ),
@@ -95,15 +95,15 @@ def test_consumer_settings_use_minimal_public_package_contract() -> None:
     assert "CACHES" not in vars(consumer_settings)
 
 
-def test_consumer_starts_cleanly_through_public_package_apis() -> None:
-    """A clean Django process starts without optional or legacy dependencies."""
+def test_consumer_starts_safely_through_public_package_apis() -> None:
+    """A minimal process starts and reports its intentionally empty resolver."""
     completed = _run_consumer_probe()
 
     assert completed.returncode == 0, completed.stderr
     assert json.loads(completed.stdout) == {
         "app": "dj_hyperview",
         "cache_disabled": True,
-        "checks": [],
+        "checks": ["dj_hyperview.W005"],
         "legacy_loaded": False,
         "patterns": 4,
         "sources": 0,

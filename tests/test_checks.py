@@ -4,18 +4,34 @@ import pytest
 from django.test import override_settings
 
 from dj_hyperview.checks import check_hyperview_settings
+from dj_hyperview.resolver import TemplateResolver
 
 
 @override_settings(HYPERVIEW={})
 def test_minimal_installation_requires_no_optional_services() -> None:
-    assert check_hyperview_settings() == []
+    messages = check_hyperview_settings()
+
+    assert [message.id for message in messages] == ["dj_hyperview.W005"]
+    assert "No SOURCES configured" in messages[0].msg
+
+
+@override_settings(HYPERVIEW={"SOURCES": []})
+def test_explicit_empty_sources_emit_an_actionable_warning() -> None:
+    """An explicitly empty resolver stack reports its response consequence."""
+    messages = check_hyperview_settings()
+
+    assert [message.id for message in messages] == ["dj_hyperview.W005"]
+    assert messages[0].hint == "Add a source or pass using='django'."
 
 
 @pytest.mark.parametrize(
     ("value", "expected"),
     [
         ({"TEMPLATE_DIRS": "hyperview"}, ["E002"]),
-        ({"TEMPLATE_DIRS": [object(), "/missing/dj-hyperview"]}, ["E002"] * 2),
+        (
+            {"TEMPLATE_DIRS": [object(), "/missing/dj-hyperview"]},
+            ["E002", "W006"],
+        ),
         ({"SOURCES": {}}, ["E003"]),
         ({"SOURCES": [None]}, ["E003"]),
         ({"SOURCES": [{"BACKEND": 1, "OPTIONS": []}]}, ["E003"] * 2),
@@ -35,7 +51,11 @@ def test_invalid_settings_return_actionable_checks(value, expected) -> None:
     with override_settings(HYPERVIEW=value):
         errors = check_hyperview_settings()
 
-    assert [error.id.rsplit(".", 1)[-1] for error in errors] == expected
+    assert [
+        error.id.rsplit(".", 1)[-1]
+        for error in errors
+        if error.id != "dj_hyperview.W005"
+    ] == expected
     assert all(error.hint and error.obj == "settings.HYPERVIEW" for error in errors)
 
 
@@ -56,6 +76,29 @@ def test_complete_valid_settings_pass_checks(tmp_path) -> None:
         value["VALIDATION"]["SCHEMA"] = configured_schema
         with override_settings(HYPERVIEW=value, CACHES=caches):
             assert check_hyperview_settings() == []
+
+
+def test_missing_filesystem_root_is_an_operational_warning(tmp_path) -> None:
+    """A temporarily absent earlier root does not block a later mounted root."""
+    missing = tmp_path / "unmounted"
+    available = tmp_path / "available"
+    available.mkdir()
+    (available / "screen.xml").write_text("<view />", encoding="utf-8")
+    configured = {
+        "SOURCES": [
+            {
+                "BACKEND": "dj_hyperview.sources.filesystem.FileSystemSource",
+                "OPTIONS": {"template_dirs": [missing, available]},
+            }
+        ]
+    }
+
+    with override_settings(HYPERVIEW=configured):
+        messages = check_hyperview_settings()
+        resolved = TemplateResolver.from_settings().resolve("screen.xml")
+
+    assert [message.id for message in messages] == ["dj_hyperview.W006"]
+    assert resolved.content == "<view />"
 
 
 @override_settings(
@@ -99,21 +142,23 @@ def test_schema_configuration_is_compiled_by_system_checks(
     with override_settings(HYPERVIEW={"VALIDATION": {"SCHEMA": schema}}):
         messages = check_hyperview_settings()
 
-    assert [message.id for message in messages] == ["dj_hyperview.E008"]
+    assert [
+        message.id for message in messages if message.id != "dj_hyperview.W005"
+    ] == ["dj_hyperview.E008"]
 
 
 def test_source_and_template_directory_mismatches_emit_warnings(tmp_path) -> None:
     """Checks expose inert roots and filesystem sources without roots."""
     filesystem = "dj_hyperview.sources.FileSystemSource"
     cases = [
-        ({"TEMPLATE_DIRS": [tmp_path]}, "W002"),
-        ({"SOURCES": [{"BACKEND": filesystem}]}, "W003"),
+        ({"TEMPLATE_DIRS": [tmp_path]}, ["W002"]),
+        ({"SOURCES": [{"BACKEND": filesystem}]}, ["W003"]),
     ]
 
     for configured, expected in cases:
         with override_settings(HYPERVIEW=configured):
             messages = check_hyperview_settings()
-        assert [message.id.rsplit(".", 1)[-1] for message in messages] == [expected]
+        assert [message.id.rsplit(".", 1)[-1] for message in messages] == expected
 
     configured = {
         "SOURCES": [{"BACKEND": filesystem, "OPTIONS": {"template_dirs": [tmp_path]}}]
