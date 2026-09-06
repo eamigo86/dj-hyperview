@@ -31,6 +31,17 @@ def _documentation_pages() -> dict[str, str]:
     return {name: (ROOT / "docs" / name).read_text() for name in DOCS}
 
 
+def _public_markdown_paths() -> tuple[Path, ...]:
+    """Return public Markdown paths without private development records."""
+    docs_root = ROOT / "docs"
+    private_root = docs_root / "development"
+    return tuple(
+        path
+        for path in sorted(docs_root.rglob("*.md"))
+        if not path.is_relative_to(private_root)
+    )
+
+
 def _navigation_targets(items: list[dict[str, object]]) -> list[str]:
     """Return ordered leaf targets from nested Zensical navigation.
 
@@ -266,11 +277,21 @@ def test_release_guide_documents_tag_driven_github_releases() -> None:
     assert "does not create a GitHub Release" not in page
 
 
+def test_public_markdown_paths_exclude_private_development_notes() -> None:
+    """Public documentation checks ignore local development records."""
+    paths = _public_markdown_paths()
+
+    assert paths
+    assert all(
+        "development" not in path.relative_to(ROOT / "docs").parts for path in paths
+    )
+
+
 def test_markdown_links_remain_inside_the_zensical_document_tree() -> None:
     """Local Markdown targets stay publishable by the strict site build."""
     docs_root = (ROOT / "docs").resolve()
 
-    for source in docs_root.rglob("*.md"):
+    for source in _public_markdown_paths():
         for target in re.findall(r"\]\(([^)#]+\.md)(?:#[^)]+)?\)", source.read_text()):
             if target.startswith(("https://", "http://")):
                 continue
