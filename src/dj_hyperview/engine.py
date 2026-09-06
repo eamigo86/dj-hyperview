@@ -7,28 +7,40 @@ from django.conf import settings as django_settings
 from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
 from django.template.backends.django import DjangoTemplates
+from django.utils.module_loading import import_string
 
 from .conf import ValidationSettings, get_settings
-from .exceptions import TemplateNotFound
+from .exceptions import InvalidTemplateName, TemplateNotFound
 from .loaders import template_snapshot
 from .resolver import TemplateResolver
 from .validation import validate_rendered_hxml
 
-DJANGO_TEMPLATES_BACKEND = "django.template.backends.django.DjangoTemplates"
+_INHERITED_DJANGO_TEMPLATE_OPTIONS = frozenset(
+    {"builtins", "context_processors", "libraries", "string_if_invalid"}
+)
 
 
 def _consumer_django_template_options() -> dict[str, Any]:
     for configured in getattr(django_settings, "TEMPLATES", ()):
         if not isinstance(configured, Mapping):
             continue
-        if configured.get("BACKEND") != DJANGO_TEMPLATES_BACKEND:
+        backend_path = configured.get("BACKEND")
+        try:
+            backend_type = import_string(backend_path)
+        except (ImportError, TypeError, ValueError):
+            continue
+        if not isinstance(backend_type, type) or not issubclass(
+            backend_type, DjangoTemplates
+        ):
             continue
         options = configured.get("OPTIONS", {})
         if not isinstance(options, Mapping):
             return {}
-        inherited = dict(options)
-        inherited.pop("loaders", None)
-        return inherited
+        return {
+            key: value
+            for key, value in options.items()
+            if key in _INHERITED_DJANGO_TEMPLATE_OPTIONS
+        }
     return {}
 
 
@@ -99,6 +111,7 @@ class HyperviewEngine:
             The compiled template with rendered validation.
 
         Raises:
+            InvalidTemplateName: If the name is unsafe.
             TemplateNotFound: If the named template does not exist.
         """
         try:
@@ -122,7 +135,7 @@ class HyperviewEngine:
         for name in names:
             try:
                 return self.get_template(name)
-            except TemplateDoesNotExist:
+            except (InvalidTemplateName, TemplateDoesNotExist):
                 continue
         raise TemplateNotFound(", ".join(names))
 

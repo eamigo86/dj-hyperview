@@ -8,7 +8,11 @@ from django.template import TemplateDoesNotExist
 from django.test import RequestFactory, override_settings
 
 from dj_hyperview.engine import HyperviewEngine, render_template
-from dj_hyperview.exceptions import TemplateNotFound, TemplateValidationError
+from dj_hyperview.exceptions import (
+    InvalidTemplateName,
+    TemplateNotFound,
+    TemplateValidationError,
+)
 from dj_hyperview.http import HyperviewTemplateResponse
 from dj_hyperview.loaders import ResolverLoader
 from dj_hyperview.resolver import TemplateResolver
@@ -81,9 +85,17 @@ def test_engine_skips_an_invalid_candidate_and_uses_the_next_template() -> None:
 
     assert engine.render(["../private.xml", "screen.xml"]) == "<view>safe</view>"
     assert issubclass(TemplateNotFound, TemplateDoesNotExist)
-    from dj_hyperview.exceptions import InvalidTemplateName
-
     assert issubclass(InvalidTemplateName, SuspiciousOperation)
+
+
+def test_engine_rejects_an_invalid_single_name_without_disclosing_it() -> None:
+    """A hostile direct lookup remains a redacted security error."""
+    engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
+
+    with pytest.raises(InvalidTemplateName, match="^Invalid template name$") as error:
+        engine.get_template("../private.xml")
+
+    assert "private" not in str(error.value)
 
 
 @override_settings(
@@ -113,6 +125,42 @@ def test_engine_inherits_consumer_django_template_options() -> None:
         engine.render("screen.xml", request=RequestFactory().get("/configured/"))
         == "<view>/configured/|INVALID</view>"
     )
+
+
+@override_settings(
+    TEMPLATES=[
+        {
+            "BACKEND": "django.template.backends.django.DjangoTemplates",
+            "OPTIONS": {"autoescape": False},
+        }
+    ]
+)
+def test_engine_does_not_inherit_consumer_autoescape_overrides() -> None:
+    """Consumer engine safety overrides cannot disable HXML autoescaping."""
+    engine = HyperviewEngine(
+        TemplateResolver([MemorySource({"screen.xml": "<view>{{ value }}</view>"})])
+    )
+
+    assert engine.render("screen.xml", {"value": "<behavior />"}) == (
+        "<view>&lt;behavior /&gt;</view>"
+    )
+
+
+@override_settings(
+    TEMPLATES=[
+        {
+            "BACKEND": "tests.stubs.CustomDjangoTemplates",
+            "OPTIONS": {"string_if_invalid": "SUBCLASS"},
+        }
+    ]
+)
+def test_engine_inherits_options_from_django_backend_subclasses() -> None:
+    """Custom DjangoTemplates subclasses retain supported consumer options."""
+    engine = HyperviewEngine(
+        TemplateResolver([MemorySource({"screen.xml": "<view>{{ missing }}</view>"})])
+    )
+
+    assert engine.render("screen.xml") == "<view>SUBCLASS</view>"
 
 
 def test_engine_entry_points_raise_the_package_not_found_specialization() -> None:

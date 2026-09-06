@@ -65,6 +65,11 @@ uses stable public codes and messages. Log application context separately rather
 than exposing template content, rejected names, schema paths, or chained parser
 details to clients.
 
+The dedicated Hyperview engine inherits only consumer `context_processors`,
+`string_if_invalid`, `builtins`, and `libraries` options. Security-sensitive
+engine options such as `autoescape` are intentionally isolated, even when the
+consumer backend subclasses Django's `DjangoTemplates` backend.
+
 Call the public validator when accepting content outside the engine:
 
 ```python

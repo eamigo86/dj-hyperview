@@ -1,3 +1,10 @@
+from django.template.backends.django import DjangoTemplates
+
+
+class CustomDjangoTemplates(DjangoTemplates):
+    """Consumer Django backend subclass used by engine configuration tests."""
+
+
 class TemplateSource:
     def __init__(self, *, content=None, revision="stub"):
         self.content = content
