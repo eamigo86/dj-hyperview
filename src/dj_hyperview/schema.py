@@ -73,20 +73,22 @@ def _schema_catalog(schema: Any, *, version: str | None = None) -> dict[str, Any
             if name is not None
         }
         content = getattr(element.type, "content", None)
-        children = (
-            sorted(
-                {
-                    child.name.rsplit("}", 1)[-1]
-                    for child in content.iter_elements()
-                    if child.name is not None
-                }
-            )
-            if content is not None
-            else []
+        declared_children = (
+            tuple(content.iter_elements()) if content is not None else ()
+        )
+        children = sorted(
+            {
+                _catalog_key(child.name, child.target_namespace or "")
+                for child in declared_children
+                if child.name is not None
+            }
         )
         key = _catalog_key(element.name, namespace)
         elements[key] = {
             "attributes": attributes,
+            "allows_custom_children": any(
+                child.name is None for child in declared_children
+            ),
             "children": children,
             "namespace": namespace,
             "parents": [],
@@ -94,9 +96,8 @@ def _schema_catalog(schema: Any, *, version: str | None = None) -> dict[str, Any
 
     for parent, definition in elements.items():
         for child in definition["children"]:
-            candidate = child if child in elements else None
-            if candidate is not None:
-                elements[candidate]["parents"].append(parent)
+            if child in elements:
+                elements[child]["parents"].append(parent)
     for definition in elements.values():
         definition["parents"].sort()
     result: dict[str, Any] = {"elements": dict(sorted(elements.items()))}

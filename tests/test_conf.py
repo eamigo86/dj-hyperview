@@ -1,11 +1,13 @@
 from unittest.mock import patch
 
 import pytest
+from django.conf import settings as django_settings
 from django.test import override_settings
 from django.test.signals import setting_changed
 
 from dj_hyperview import HyperviewConfigurationError
 from dj_hyperview.conf import (
+    AdminSettings,
     CacheSettings,
     HyperviewSettings,
     SourceSettings,
@@ -23,6 +25,10 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
     def schema(document: str) -> None:
         del document
 
+    (tmp_path / "extension.xsd").write_text(
+        '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>',
+        encoding="utf-8",
+    )
     value = {
         "TEMPLATE_DIRS": [tmp_path],
         "SOURCES": [{"BACKEND": "tests.stubs.TemplateSource", "OPTIONS": {"x": 1}}],
@@ -39,9 +45,15 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
             "MAX_DEPTH": 8,
             "MAX_NODES": 100,
         },
+        "ADMIN": {"EDITOR": True},
+        "EXTRA_SCHEMAS": [tmp_path / "extension.xsd"],
     }
     caches = {"screens": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
-    with override_settings(HYPERVIEW=value, CACHES=caches):
+    with override_settings(
+        HYPERVIEW=value,
+        CACHES=caches,
+        INSTALLED_APPS=[*django_settings.INSTALLED_APPS, "django_ace"],
+    ):
         config = get_settings()
 
     assert config == HyperviewSettings(
@@ -49,6 +61,8 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
         sources=(SourceSettings("tests.stubs.TemplateSource", {"x": 1}),),
         cache=CacheSettings("screens", 60, 5, "raise"),
         validation=ValidationSettings("render", schema, 2_000, 8, 100),
+        admin=AdminSettings(editor=True),
+        extra_schemas=(tmp_path / "extension.xsd",),
     )
 
 

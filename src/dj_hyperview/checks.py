@@ -306,6 +306,35 @@ def _check_extra_schemas(value: Any) -> list[CheckMessage]:
     return errors
 
 
+def _check_admin(value: Any) -> list[CheckMessage]:
+    if not isinstance(value, Mapping):
+        return [_error("E014", "ADMIN", "must be a mapping")]
+    editor = value.get("EDITOR", False)
+    if not isinstance(editor, bool):
+        return [_error("E014", "ADMIN.EDITOR", "must be a boolean")]
+    if not editor:
+        return []
+    if find_spec("django_ace") is None:
+        return [
+            Error(
+                "ADMIN.EDITOR requires the optional editor dependency.",
+                hint="Install dj-hyperview[editor] before enabling ADMIN.EDITOR.",
+                obj=SETTING,
+                id="dj_hyperview.E015",
+            )
+        ]
+    if not apps.is_installed("django_ace"):
+        return [
+            Error(
+                "ADMIN.EDITOR requires django_ace in INSTALLED_APPS.",
+                hint="Add django_ace before dj_hyperview in INSTALLED_APPS.",
+                obj=SETTING,
+                id="dj_hyperview.E016",
+            )
+        ]
+    return []
+
+
 @register("dj_hyperview")
 def check_hyperview_settings(
     app_configs: Any = None, **kwargs: Any
@@ -337,4 +366,5 @@ def check_hyperview_settings(
         *cache_errors,
         *_check_validation(raw.get("VALIDATION", {})),
         *_check_extra_schemas(raw.get("EXTRA_SCHEMAS", ())),
+        *_check_admin(raw.get("ADMIN", {})),
     ]

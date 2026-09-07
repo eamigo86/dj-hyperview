@@ -23,6 +23,10 @@ dependencies = [
 schema = [
     "xmlschema>=4.3,<5",
 ]
+editor = [
+    "django-ace>=1.44,<2",
+    "xmlschema>=4.3,<5",
+]
 
 [build-system]
 requires = ["uv_build>=0.12.9,<0.13"]
@@ -31,12 +35,14 @@ build-backend = "uv_build"
 [dependency-groups]
 dev = [
     "coverage[toml]>=7.16,<8",
+    "django-ace>=1.44,<2",
     "packaging>=26.3,<27",
     "pytest>=9.1,<10",
     "pytest-cov>=7.1,<8",
     "pytest-django>=4.14,<5",
     "ruff>=0.16.6,<0.17",
     "uv-build>=0.12.9,<0.13",
+    "xmlschema>=4.3,<5",
     "zensical==0.0.59",
 ]
 redis = ["redis==8.1.0"]

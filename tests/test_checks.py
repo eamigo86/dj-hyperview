@@ -270,3 +270,37 @@ def test_builtin_schema_validator_requires_the_schema_extra() -> None:
     relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
     assert [message.id for message in relevant] == ["dj_hyperview.E013"]
     assert "dj-hyperview[schema]" in relevant[0].hint
+
+
+@pytest.mark.parametrize("admin_config", [True, [], {"EDITOR": "yes"}])
+def test_admin_editor_configuration_requires_a_mapping_and_boolean(
+    admin_config,
+) -> None:
+    """Malformed editor settings fail through stable startup checks."""
+    with override_settings(HYPERVIEW={"ADMIN": admin_config}):
+        messages = check_hyperview_settings()
+
+    assert [
+        message.id for message in messages if message.id != "dj_hyperview.W005"
+    ] == ["dj_hyperview.E014"]
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_enabled_editor_requires_django_ace_in_installed_apps() -> None:
+    """Installing the extra alone does not silently omit django-ace setup."""
+    messages = check_hyperview_settings()
+
+    relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
+    assert [message.id for message in relevant] == ["dj_hyperview.E016"]
+    assert "django_ace" in relevant[0].hint
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_enabled_editor_reports_a_missing_optional_dependency() -> None:
+    """Editor configuration explains which package extra must be installed."""
+    with patch("dj_hyperview.checks.find_spec", return_value=None):
+        messages = check_hyperview_settings()
+
+    relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
+    assert [message.id for message in relevant] == ["dj_hyperview.E015"]
+    assert "dj-hyperview[editor]" in relevant[0].hint

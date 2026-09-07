@@ -49,6 +49,13 @@ class ValidationSettings:
 
 
 @dataclass(frozen=True, slots=True)
+class AdminSettings:
+    """Configuration for optional Django Admin enhancements."""
+
+    editor: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class HyperviewSettings:
     """Complete normalized package configuration."""
 
@@ -56,6 +63,7 @@ class HyperviewSettings:
     sources: tuple[SourceSettings, ...] = ()
     cache: CacheSettings = field(default_factory=CacheSettings)
     validation: ValidationSettings = field(default_factory=ValidationSettings)
+    admin: AdminSettings = field(default_factory=AdminSettings)
     extra_schemas: tuple[Path, ...] = ()
 
 
@@ -94,6 +102,7 @@ def _settings_snapshot() -> HyperviewSettings:
         validation=ValidationSettings(
             **_section(raw.get("VALIDATION", {}), DEFAULTS.validation)
         ),
+        admin=AdminSettings(**_section(raw.get("ADMIN", {}), DEFAULTS.admin)),
         extra_schemas=tuple(Path(path) for path in raw.get("EXTRA_SCHEMAS", ())),
     )
 

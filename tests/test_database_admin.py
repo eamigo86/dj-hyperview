@@ -67,6 +67,59 @@ def test_admin_form_saves_valid_template() -> None:
     )
 
 
+def test_admin_editor_is_opt_in_and_falls_back_to_textarea() -> None:
+    """A basic database-admin installation retains Django's standard textarea."""
+    module, _ = _admin_types()
+
+    form = module.HyperviewTemplateAdminForm()
+
+    assert type(form.fields["content"].widget).__name__ == "Textarea"
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_enabled_admin_editor_uses_local_strict_csp_assets() -> None:
+    """The optional widget exposes local assets and the protected catalog URL."""
+    module, _ = _admin_types()
+
+    form = module.HyperviewTemplateAdminForm()
+    widget = form.fields["content"].widget
+    rendered = str(widget.render("content", "<view />"))
+    media = str(widget.media)
+
+    assert type(widget).__name__ == "HyperviewAceWidget"
+    assert 'data-mode="xml"' in rendered
+    assert 'data-usestrictcsp="true"' in rendered
+    assert 'data-hyperview-catalog-url="/admin/' in rendered
+    assert "Format HXML" in rendered
+    assert "https://" not in media
+    assert "dj_hyperview/admin/hxml_mode.js" in media
+    assert "dj_hyperview/admin/hxml_editor.js" in media
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_schema_catalog_admin_endpoint_requires_authentication_and_permission(
+    client, admin_client, django_user_model
+) -> None:
+    """Completion metadata is available only through the protected model admin."""
+    url = reverse("admin:dj_hyperview_database_hyperviewtemplate_hxml_catalog")
+
+    anonymous = client.get(url)
+    staff = django_user_model.objects.create_user(
+        username="catalog-reader", password="secret", is_staff=True
+    )
+    client.force_login(staff)
+    forbidden = client.get(url)
+    allowed = admin_client.get(url)
+
+    assert anonymous.status_code == 302
+    assert anonymous.headers["Location"].startswith("/admin/login/?next=")
+    assert forbidden.status_code == 403
+    assert allowed.status_code == 200
+    assert allowed.json()["schema_version"] == "0.110.0"
+    assert "view" in allowed.json()["elements"]
+
+
 def test_database_contrib_without_admin_never_imports_admin_module() -> None:
     result = run_isolated(
         "tests.settings_database",
@@ -90,6 +143,12 @@ def test_database_contrib_without_admin_never_imports_admin_module() -> None:
             "<!DOCTYPE view SYSTEM 'https://invalid.test/x'><view />",
             "content",
             "forbidden_declaration",
+        ),
+        (
+            "screen.xml",
+            "{% if enabled %}<view />",
+            "content",
+            "django_syntax",
         ),
     ],
 )

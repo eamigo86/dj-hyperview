@@ -30,6 +30,9 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: "24"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.12"
@@ -38,6 +41,8 @@ jobs:
           version: "0.12.6"
       - name: Sync exact development environment
         run: uv sync --locked
+      - name: Test HXML editor JavaScript
+        run: node --test tests/js/test_hxml_editor.mjs
       - name: Check dependency and style drift
         run: |
           uv lock --check
@@ -144,6 +149,17 @@ jobs:
             unset PYTHONPATH
             "$smoke_dir/venv/bin/python" -I -c 'from pathlib import Path; import dj_hyperview; assert Path(dj_hyperview.__file__).resolve().is_relative_to(Path.cwd() / "venv")'
           )
+      - name: Smoke optional wheel profiles
+        run: |
+          wheel="$(echo dist/*.whl)"
+          schema_dir="$(mktemp -d)"
+          uv venv "$schema_dir/venv" --python 3.12
+          uv pip install --python "$schema_dir/venv/bin/python" "${wheel}[schema]"
+          editor_dir="$(mktemp -d)"
+          uv venv "$editor_dir/venv" --python 3.12
+          uv pip install --python "$editor_dir/venv/bin/python" "${wheel}[editor]"
+          (cd "$schema_dir" && unset PYTHONPATH && "$schema_dir/venv/bin/python" -I -c 'import xmlschema; from dj_hyperview import validate_hyperview_schema; assert xmlschema.__version__')
+          (cd "$editor_dir" && unset PYTHONPATH && "$editor_dir/venv/bin/python" -I -c 'import django_ace; from dj_hyperview.contrib.database.admin_editor import HyperviewAceWidget; assert django_ace and HyperviewAceWidget')
       - name: Build strict documentation
         run: uv run zensical build --clean --strict -f zensical.yml
       - name: Upload immutable candidate

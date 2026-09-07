@@ -1,0 +1,16 @@
+.djhv-editor-actions {
+  align-items: center;
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 0.75rem;
+}
+
+.djhv-editor-status {
+  color: var(--body-quiet-color);
+}
+
+.django-ace-editor,
+.django-ace-toolbar,
+.django-ace-widget {
+  max-width: 100%;
+}

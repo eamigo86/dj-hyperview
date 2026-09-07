@@ -1,6 +1,7 @@
 {
   "elements": {
     "behavior": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -166,7 +167,7 @@
         }
       },
       "children": [
-        "option"
+        "{https://hyperview.org/hyperview-alert}option"
       ],
       "namespace": "https://hyperview.org/hyperview",
       "parents": [
@@ -193,6 +194,7 @@
       ]
     },
     "body": {
+      "allows_custom_children": true,
       "attributes": {
         "action": {
           "enum": [
@@ -465,6 +467,7 @@
       ]
     },
     "date-field": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -741,6 +744,7 @@
       ]
     },
     "doc": {
+      "allows_custom_children": false,
       "attributes": {},
       "children": [
         "navigator",
@@ -750,6 +754,7 @@
       "parents": []
     },
     "form": {
+      "allows_custom_children": true,
       "attributes": {
         "action": {
           "enum": [
@@ -1029,6 +1034,7 @@
       ]
     },
     "header": {
+      "allows_custom_children": true,
       "attributes": {
         "action": {
           "enum": [
@@ -1308,6 +1314,7 @@
       ]
     },
     "image": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -1523,6 +1530,7 @@
       ]
     },
     "item": {
+      "allows_custom_children": true,
       "attributes": {
         "action": {
           "enum": [
@@ -1796,6 +1804,7 @@
       ]
     },
     "items": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -2056,6 +2065,7 @@
       ]
     },
     "list": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -2295,6 +2305,7 @@
       ]
     },
     "modifier": {
+      "allows_custom_children": false,
       "attributes": {
         "focused": {
           "enum": [],
@@ -2318,6 +2329,7 @@
       ]
     },
     "nav-route": {
+      "allows_custom_children": false,
       "attributes": {
         "href": {
           "enum": [],
@@ -2345,6 +2357,7 @@
       ]
     },
     "navigator": {
+      "allows_custom_children": false,
       "attributes": {
         "id": {
           "enum": [],
@@ -2373,6 +2386,7 @@
       ]
     },
     "option": {
+      "allows_custom_children": true,
       "attributes": {
         "action": {
           "enum": [
@@ -2574,7 +2588,6 @@
       ],
       "namespace": "https://hyperview.org/hyperview",
       "parents": [
-        "behavior",
         "body",
         "form",
         "header",
@@ -2586,6 +2599,7 @@
       ]
     },
     "picker-field": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -2851,6 +2865,7 @@
       ]
     },
     "picker-item": {
+      "allows_custom_children": false,
       "attributes": {
         "label": {
           "enum": [],
@@ -2868,6 +2883,7 @@
       ]
     },
     "screen": {
+      "allows_custom_children": false,
       "attributes": {
         "id": {
           "enum": [],
@@ -2888,6 +2904,7 @@
       ]
     },
     "section": {
+      "allows_custom_children": false,
       "attributes": {
         "hide": {
           "enum": [],
@@ -2911,6 +2928,7 @@
       ]
     },
     "section-list": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -3152,6 +3170,7 @@
       ]
     },
     "section-title": {
+      "allows_custom_children": true,
       "attributes": {
         "action": {
           "enum": [
@@ -3424,6 +3443,7 @@
       ]
     },
     "select-multiple": {
+      "allows_custom_children": true,
       "attributes": {
         "collapsable": {
           "enum": [],
@@ -3486,6 +3506,7 @@
       ]
     },
     "select-single": {
+      "allows_custom_children": true,
       "attributes": {
         "allow-deselect": {
           "enum": [],
@@ -3552,6 +3573,7 @@
       ]
     },
     "spinner": {
+      "allows_custom_children": false,
       "attributes": {
         "color": {
           "enum": [],
@@ -3585,6 +3607,7 @@
       ]
     },
     "style": {
+      "allows_custom_children": false,
       "attributes": {
         "alignContent": {
           "enum": [
@@ -4187,6 +4210,7 @@
       ]
     },
     "styles": {
+      "allows_custom_children": false,
       "attributes": {},
       "children": [
         "style"
@@ -4197,6 +4221,7 @@
       ]
     },
     "switch": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -4400,6 +4425,7 @@
       ]
     },
     "text": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -4631,6 +4657,7 @@
       ]
     },
     "text-field": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -5054,6 +5081,7 @@
       ]
     },
     "view": {
+      "allows_custom_children": true,
       "attributes": {
         "action": {
           "enum": [
@@ -5334,6 +5362,7 @@
       ]
     },
     "web-view": {
+      "allows_custom_children": false,
       "attributes": {
         "activity-indicator-color": {
           "enum": [],
@@ -5393,6 +5422,7 @@
       ]
     },
     "{https://hyperview.org/hyperview-alert}option": {
+      "allows_custom_children": false,
       "attributes": {
         "action": {
           "enum": [
@@ -5565,7 +5595,9 @@
         "behavior"
       ],
       "namespace": "https://hyperview.org/hyperview-alert",
-      "parents": []
+      "parents": [
+        "behavior"
+      ]
     }
   },
   "schema_version": "0.110.0"

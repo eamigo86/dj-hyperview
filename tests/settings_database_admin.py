@@ -4,6 +4,7 @@ from . import settings_database as database
 
 SECRET_KEY = database.SECRET_KEY
 INSTALLED_APPS = [
+    "django_ace",
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",

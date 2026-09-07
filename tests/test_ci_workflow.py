@@ -13,6 +13,7 @@ WORKFLOW_CONTRACT = ROOT / "tests" / "fixtures" / "ci_contract.yml"
 ACTION_PINS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",
+    "actions/setup-node": "249970729cb0ef3589644e2896645e5dc5ba9c38",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "astral-sh/setup-uv": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
     "codecov/codecov-action": "fb8b3582c8e4def4969c97caa2f19720cb33a72f",
@@ -426,6 +427,7 @@ def _tagged_workflow_signature(text: str) -> tuple[object, ...]:
 APPROVED_RUN_CONTRACT = {
     "quality": (
         "uv sync --locked",
+        "node --test tests/js/test_hxml_editor.mjs",
         "uv lock --check\nuv run ruff check .\nuv run ruff format --check .",
         (
             "PYTHONPATH=.:src uv run python -m django check --settings=tests.settings\n"
@@ -472,6 +474,23 @@ APPROVED_RUN_CONTRACT = {
             'is_relative_to(Path.cwd() / "venv")\'\n'
             ")"
         ),
+        (
+            'wheel="$(echo dist/*.whl)"\n'
+            'schema_dir="$(mktemp -d)"\n'
+            'uv venv "$schema_dir/venv" --python 3.12\n'
+            'uv pip install --python "$schema_dir/venv/bin/python" "${wheel}[schema]"\n'
+            'editor_dir="$(mktemp -d)"\n'
+            'uv venv "$editor_dir/venv" --python 3.12\n'
+            'uv pip install --python "$editor_dir/venv/bin/python" "${wheel}[editor]"\n'
+            '(cd "$schema_dir" && unset PYTHONPATH && '
+            '"$schema_dir/venv/bin/python" -I -c '
+            "'import xmlschema; from dj_hyperview import "
+            "validate_hyperview_schema; assert xmlschema.__version__')\n"
+            '(cd "$editor_dir" && unset PYTHONPATH && '
+            '"$editor_dir/venv/bin/python" -I -c '
+            "'import django_ace; from dj_hyperview.contrib.database.admin_editor "
+            "import HyperviewAceWidget; assert django_ace and HyperviewAceWidget')"
+        ),
         "uv run zensical build --clean --strict -f zensical.yml",
     ),
 }
@@ -488,6 +507,8 @@ APPROVED_STEP_KEYS = {
         {"uses"},
         {"uses", "with"},
         {"uses", "with"},
+        {"uses", "with"},
+        {"name", "run"},
         {"name", "run"},
         {"name", "run"},
         {"name", "run"},
@@ -512,6 +533,7 @@ APPROVED_STEP_KEYS = {
         {"uses", "with"},
         {"uses", "with"},
         {"run"},
+        {"name", "run"},
         {"name", "run"},
         {"name", "run"},
         {"name", "run"},
@@ -720,8 +742,18 @@ def test_quality_job_checks_lock_style_settings_migrations_and_boundaries() -> N
         "makemigrations dj_hyperview_database --check --dry-run",
         "tests/test_package_boundary.py",
         "tests/test_public_api_quality.py",
+        "node --test tests/js/test_hxml_editor.mjs",
     ):
         assert command in quality
+    node = next(
+        step
+        for step in workflow["jobs"]["quality"]["steps"]
+        if "actions/setup-node" in step.get("uses", "")
+    )
+    assert node == {
+        "uses": "actions/setup-node@" + ACTION_PINS["actions/setup-node"],
+        "with": {"node-version": "24"},
+    }
     assert all("uv build" not in script for script in scripts.values())
     assert all("zensical build" not in script for script in scripts.values())
 
@@ -746,6 +778,10 @@ def test_artifact_job_builds_checks_and_smokes_one_immutable_candidate() -> None
     assert "unset PYTHONPATH" in script
     assert "uv pip install" in script and "dist/*.whl" in script
     assert "dj_hyperview.__file__" in script
+    assert '"${wheel}[schema]"' in script
+    assert '"${wheel}[editor]"' in script
+    assert "import xmlschema" in script
+    assert "import django_ace" in script
     assert upload["with"] == {
         "name": "release-candidate-${{ github.sha }}",
         "path": "dist/*\nsite/\n",

@@ -57,9 +57,12 @@ def test_custom_catalog_merges_local_namespaced_elements(tmp_path: Path) -> None
     schema = tmp_path / "components.xsd"
     schema.write_text(
         """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+xmlns:app="https://example.test/app"
 targetNamespace="https://example.test/app" elementFormDefault="qualified">
+  <xs:element name="swipe-action" />
   <xs:element name="swipe-row">
     <xs:complexType>
+      <xs:sequence><xs:element ref="app:swipe-action" /></xs:sequence>
       <xs:attribute name="threshold" use="required">
         <xs:simpleType><xs:restriction base="xs:string">
           <xs:enumeration value="short"/><xs:enumeration value="long"/>
@@ -79,6 +82,11 @@ targetNamespace="https://example.test/app" elementFormDefault="qualified">
         "enum": ["long", "short"],
         "required": True,
     }
+    action = "{https://example.test/app}swipe-action"
+    assert element["children"] == [action]
+    assert catalog["elements"][action]["parents"] == [
+        "{https://example.test/app}swipe-row"
+    ]
 
 
 @pytest.mark.parametrize(

@@ -7,6 +7,7 @@ ROOT = Path(__file__).parents[1]
 LOCKED_DIRECT = {
     "coverage": "7.16.0",
     "django": "6.1.1",
+    "django-ace": "1.44.0",
     "lxml": "6.1.3",
     "packaging": "26.3",
     "pytest": "9.1.1",
@@ -30,17 +31,20 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
         "lxml>=6.1.3,<7",
     ]
     assert metadata["project"]["optional-dependencies"] == {
-        "schema": ["xmlschema>=4.3,<5"]
+        "schema": ["xmlschema>=4.3,<5"],
+        "editor": ["django-ace>=1.44,<2", "xmlschema>=4.3,<5"],
     }
     assert metadata["build-system"]["requires"] == ["uv_build>=0.12.9,<0.13"]
     assert metadata["dependency-groups"]["dev"] == [
         "coverage[toml]>=7.16,<8",
+        "django-ace>=1.44,<2",
         "packaging>=26.3,<27",
         "pytest>=9.1,<10",
         "pytest-cov>=7.1,<8",
         "pytest-django>=4.14,<5",
         "ruff>=0.16.6,<0.17",
         "uv-build>=0.12.9,<0.13",
+        "xmlschema>=4.3,<5",
         "zensical==0.0.59",
     ]
     assert metadata["dependency-groups"]["redis"] == ["redis==8.1.0"]

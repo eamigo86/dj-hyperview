@@ -6,11 +6,14 @@ from typing import Any, cast
 from django import forms
 from django.contrib import admin, messages
 from django.db import DEFAULT_DB_ALIAS, connections, models, router
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect
+from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.template.response import TemplateResponse
+from django.urls import path
 from django.utils.datastructures import MultiValueDict
 
+from dj_hyperview.conf import get_settings
 from dj_hyperview.exceptions import InvalidTemplateName
+from dj_hyperview.schema import get_hyperview_catalog
 
 from ._identity import template_name_identity
 from .models import HyperviewTemplate
@@ -83,6 +86,10 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
             else None
         )
         super().__init__(*args, **kwargs)
+        if get_settings().admin.editor:
+            from .admin_editor import HyperviewAceWidget
+
+            self.fields["content"].widget = HyperviewAceWidget()
         if self.instance.pk is None:
             self.fields.pop("expected_revision", None)
         else:
@@ -162,6 +169,41 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
     delete_confirmation_template = (
         "admin/dj_hyperview_database/hyperviewtemplate/delete_confirmation.html"
     )
+
+    def get_urls(self) -> list[Any]:
+        """Add the permission-protected HXML completion catalog endpoint.
+
+        Returns:
+            Custom catalog route followed by standard model admin routes.
+        """
+        opts = self.model._meta
+        name = f"{opts.app_label}_{opts.model_name}_hxml_catalog"
+        custom = [
+            path(
+                "hxml-catalog/",
+                self.admin_site.admin_view(self.hxml_catalog_view),
+                name=name,
+            )
+        ]
+        return custom + super().get_urls()
+
+    def hxml_catalog_view(self, request: HttpRequest) -> JsonResponse:
+        """Return completion metadata to authorized template editors.
+
+        Args:
+            request: Current authenticated admin request.
+
+        Returns:
+            Combined official and project-owned schema catalog.
+
+        Raises:
+            PermissionDenied: If the user cannot view stored templates.
+        """
+        from django.core.exceptions import PermissionDenied
+
+        if not self.has_view_permission(request):
+            raise PermissionDenied
+        return JsonResponse(get_hyperview_catalog())
 
     def get_fields(
         self, request: HttpRequest, obj: HyperviewTemplate | None = None
