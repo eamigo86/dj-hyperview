@@ -12,5 +12,12 @@
 .django-ace-editor,
 .django-ace-toolbar,
 .django-ace-widget {
+  box-sizing: border-box;
   max-width: 100%;
+}
+
+.django-ace-editor {
+  align-self: stretch;
+  min-width: 0;
+  width: 100%;
 }

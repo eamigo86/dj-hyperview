@@ -1,6 +1,7 @@
 """Integration tests for the optional database template admin."""
 
 import importlib
+from importlib.resources import files
 from types import ModuleType
 from typing import Any
 
@@ -94,6 +95,19 @@ def test_enabled_admin_editor_uses_local_strict_csp_assets() -> None:
     assert "https://" not in media
     assert "dj_hyperview/admin/hxml_mode.js" in media
     assert "dj_hyperview/admin/hxml_editor.js" in media
+
+
+def test_admin_editor_stretches_across_django_admin_flex_layout() -> None:
+    """The editor must not collapse to its gutter inside Django admin forms."""
+    stylesheet = (
+        files("dj_hyperview")
+        .joinpath("static/dj_hyperview/admin/hxml_editor.css")
+        .read_text(encoding="utf-8")
+    )
+
+    assert "align-self: stretch" in stylesheet
+    assert "min-width: 0" in stylesheet
+    assert "width: 100%" in stylesheet
 
 
 @pytest.mark.django_db
