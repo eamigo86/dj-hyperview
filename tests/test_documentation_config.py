@@ -16,6 +16,7 @@ DOCS = (
     "quickstart.md",
     "mobile-getting-started.md",
     "configuration.md",
+    "custom-schemas.md",
     "hyperview-0.110.0.md",
     "filesystem.md",
     "database-admin.md",
@@ -93,6 +94,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
                 {"Quick Start": "quickstart.md"},
                 {"Mobile Getting Started": "mobile-getting-started.md"},
                 {"Configuration": "configuration.md"},
+                {"Custom schemas": "custom-schemas.md"},
                 {"Hyperview compatibility": "hyperview-0.110.0.md"},
             ]
         },
@@ -184,6 +186,25 @@ def test_custom_component_schema_example_is_valid_xsd_1_1() -> None:
     assert schema.target_namespace == "https://example.com/hypertodo"
     assert "swipe-row" in schema.elements
     assert "swipe-action" in schema.elements
+
+
+def test_custom_schema_guide_covers_the_complete_project_extension_path() -> None:
+    """Consumers can define, register, use, and verify custom HXML elements."""
+    page = _documentation_pages()["custom-schemas.md"]
+
+    for expected in (
+        'uv add "dj-hyperview[schema]"',
+        'targetNamespace="https://example.com/hypertodo"',
+        'xmlns:app="https://example.com/hypertodo"',
+        '"EXTRA_SCHEMAS"',
+        '"SCHEMA": "dj_hyperview.validate_hyperview_schema"',
+        "app:swipe-row",
+        "app:swipe-action",
+        "python manage.py check",
+        "autocomplete",
+        "does not implement",
+    ):
+        assert expected in page
 
 
 def test_configuration_documents_every_builtin_source_option() -> None:

@@ -30,6 +30,8 @@ Choose the next guide for your source:
   optional schema-aware HXML authoring.
 - [Configure cache consistency](cache-consistency.md) only when caching is needed.
 - [Harden names and XML](security.md) before accepting authored templates.
+- [Add custom HXML elements](custom-schemas.md) when a mobile client extends
+  the Hyperview vocabulary.
 - [Return documents and fragments](http-responses.md) with the right client contract.
 - [Create a mobile client](mobile-getting-started.md) without cloning an example app.
 - [Test a consumer integration](testing.md) across supported Django versions.

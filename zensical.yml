@@ -65,6 +65,7 @@ nav:
       - Quick Start: quickstart.md
       - Mobile Getting Started: mobile-getting-started.md
       - Configuration: configuration.md
+      - Custom schemas: custom-schemas.md
       - Hyperview compatibility: hyperview-0.110.0.md
   - User Guide:
       - Filesystem sources: filesystem.md

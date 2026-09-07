@@ -183,6 +183,9 @@ def test_cache_guide_matches_opt_in_and_invalidation_contracts() -> None:
     assert "compiled templates" in page
     assert "filesystem deploy" in page.lower()
     assert "rotate" in page.lower() and "NAMESPACE" in page
+    assert "django.core.cache.backends.redis.RedisCache" in page
+    assert "redis://127.0.0.1:6379/3" in page
+    assert '"ALIAS": "hyperview"' in page
     assert parameter.kind is Parameter.VAR_POSITIONAL
     assert blocks
     for block in blocks:

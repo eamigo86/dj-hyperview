@@ -37,6 +37,38 @@ The cache stores raw content and source misses, including valid empty content.
 It never stores compiled templates. Namespace, source identity, canonical name,
 revision, and generation keep entries isolated.
 
+## Select a Redis database
+
+`CACHE.ALIAS` can point to any stateful cache configured in Django. Redis host,
+credentials, logical database, and transport belong in `CACHES`; dj-hyperview
+only resolves the alias.
+
+For example, dedicate Redis logical database 3 to Hyperview templates:
+
+```python
+CACHES = {
+    "hyperview": {
+        "BACKEND": "django.core.cache.backends.redis.RedisCache",
+        "LOCATION": "redis://127.0.0.1:6379/3",
+    },
+}
+
+HYPERVIEW = {
+    "CACHE": {
+        "ALIAS": "hyperview",
+        "NAMESPACE": "my-service-v1",
+        "TTL": 300,
+        "NEGATIVE_TTL": 15,
+        "FAILURE_MODE": "bypass",
+    },
+}
+```
+
+Change the final URL segment to select another logical database supported by
+the configured Redis deployment. A separate alias may also point to another
+Redis server or cluster. Backend-specific restrictions still apply; the
+package does not bypass limitations imposed by Django's backend or Redis.
+
 `bypass` returns authoritative source data when ordinary cache reads or writes
 fail. `raise` reports `SourceUnavailable` instead. Neither mode hides a real
 source failure.

@@ -93,7 +93,9 @@ resolved path, file size, and nanosecond modification time. Changes to
 `HYPERVIEW` clear those caches. An editor process notices a saved schema file on
 its next request because the file fingerprint changes.
 
-See the [custom component schema example](examples/hypertodo.xsd) for
+Follow [Add custom HXML elements](custom-schemas.md) for the complete namespace,
+registration, validation, and autocomplete workflow. Its
+[custom component schema example](examples/hypertodo.xsd) defines
 `app:swipe-row` and `app:swipe-action`.
 
 ## Admin editor
