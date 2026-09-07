@@ -49,7 +49,7 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
     ]
     assert metadata["dependency-groups"]["redis"] == ["redis==8.1.0"]
     assert metadata["tool"]["dj-hyperview"] == {
-        "dependency-audit-date": "2026-09-04",
+        "dependency-audit-date": "2026-09-07",
         "supported-python": ["3.12", "3.13", "3.14"],
         "supported-django": ["5.2.17", "6.1.1"],
     }

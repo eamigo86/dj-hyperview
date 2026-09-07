@@ -1,6 +1,6 @@
 [project]
 name = "dj-hyperview"
-version = "0.1.0a8"
+version = "0.1.0a9"
 description = "Django infrastructure for server-driven Hyperview interfaces"
 readme = "README.md"
 license = "MIT"
@@ -51,7 +51,7 @@ redis = ["redis==8.1.0"]
 package = false
 
 [tool.dj-hyperview]
-dependency-audit-date = "2026-09-04"
+dependency-audit-date = "2026-09-07"
 supported-python = ["3.12", "3.13", "3.14"]
 supported-django = ["5.2.17", "6.1.1"]
 
