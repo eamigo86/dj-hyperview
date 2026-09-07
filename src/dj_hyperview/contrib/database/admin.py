@@ -1,5 +1,6 @@
 """Standard Django admin integration for stored Hyperview templates."""
 
+import logging
 from collections.abc import Mapping
 from typing import Any, cast
 
@@ -27,6 +28,7 @@ from .services import (
 __all__ = ["HyperviewTemplateAdmin", "HyperviewTemplateAdminForm"]
 
 _CONFLICT_MESSAGE = "Template changed; reload and retry."
+logger = logging.getLogger(__name__)
 
 
 def _submitted_revision(
@@ -170,6 +172,64 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         "admin/dj_hyperview_database/hyperviewtemplate/delete_confirmation.html"
     )
 
+    def has_add_permission(self, request: HttpRequest) -> bool:
+        """Apply the configured mutation policy to template creation.
+
+        Args:
+            request: Current authenticated admin request.
+
+        Returns:
+            Whether the request may create stored templates.
+        """
+        return self._has_mutation_permission(request)
+
+    def has_change_permission(
+        self, request: HttpRequest, obj: HyperviewTemplate | None = None
+    ) -> bool:
+        """Apply the configured mutation policy to template changes.
+
+        Args:
+            request: Current authenticated admin request.
+            obj: Optional stored template being changed.
+
+        Returns:
+            Whether the request may change stored templates.
+        """
+        del obj
+        return self._has_mutation_permission(request)
+
+    def has_delete_permission(
+        self, request: HttpRequest, obj: HyperviewTemplate | None = None
+    ) -> bool:
+        """Apply the configured mutation policy to template deletion.
+
+        Args:
+            request: Current authenticated admin request.
+            obj: Optional stored template being deleted.
+
+        Returns:
+            Whether the request may delete stored templates.
+        """
+        del obj
+        return self._has_mutation_permission(request)
+
+    def _has_mutation_permission(self, request: HttpRequest) -> bool:
+        """Evaluate the configured request callback with fail-closed semantics.
+
+        Args:
+            request: Current authenticated admin request.
+
+        Returns:
+            True only when the callback returns the literal boolean True.
+        """
+        try:
+            return get_settings().admin.permission(request) is True
+        except Exception:
+            logger.exception(
+                "HYPERVIEW ADMIN.PERMISSION failed; template mutation was denied."
+            )
+            return False
+
     def get_urls(self) -> list[Any]:
         """Add the permission-protected HXML completion catalog endpoint.
 
@@ -201,7 +261,9 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         """
         from django.core.exceptions import PermissionDenied
 
-        if not self.has_view_permission(request):
+        if not (
+            self.has_view_permission(request) or self.has_change_permission(request)
+        ):
             raise PermissionDenied
         return JsonResponse(get_hyperview_catalog())
 

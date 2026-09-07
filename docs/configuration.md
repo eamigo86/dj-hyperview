@@ -59,6 +59,7 @@ empty mapping disables Hyperview caching.
 | `VALIDATION.MAX_NODES` | Positive integer | 20,000 nodes | Maximum number of elements in the final parsed XML document. |
 | `ADMIN` | Mapping | `{}` | Optional Django Admin enhancements. |
 | `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
+| `ADMIN.PERMISSION` | Callable or dotted callable path | Superuser-only callback | Authoritative mutation policy for adding, changing, and deleting stored templates. The callable receives the current `HttpRequest` and must return the literal boolean `True`; exceptions and non-boolean results deny access. |
 | `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.110.0 registry and completion catalog. URLs are rejected. |
 
 Raw-source size, encoding, and forbidden-declaration checks cannot be disabled
@@ -114,13 +115,55 @@ INSTALLED_APPS = [
 ]
 
 HYPERVIEW = {
-    "ADMIN": {"EDITOR": True},
+    "ADMIN": {
+        "EDITOR": True,
+        "PERMISSION": "sample_app.permissions.can_edit_hyperview",
+    },
 }
 ```
 
 Enabling the setting without the extra, or without `django_ace` in
 `INSTALLED_APPS`, produces an actionable Django system-check error. When the
 setting is false, the standard Django textarea remains unchanged.
+
+Stored templates are executable Django template source, so mutations default to
+superusers even when a staff user holds the model's ordinary add, change, or
+delete permissions. A project can replace that policy with an inline callable:
+
+```python
+HYPERVIEW = {
+    "ADMIN": {
+        "PERMISSION": lambda request: request.user.is_superuser,
+    },
+}
+```
+
+For reusable and testable production configuration, prefer a dotted path:
+
+```python
+# sample_app/permissions.py
+from django.http import HttpRequest
+
+
+def can_edit_hyperview(request: HttpRequest) -> bool:
+    """Return whether the current user may mutate stored HXML templates."""
+    return request.user.has_perm("dj_hyperview_database.change_hyperviewtemplate")
+```
+
+```python
+HYPERVIEW = {
+    "ADMIN": {
+        "PERMISSION": "sample_app.permissions.can_edit_hyperview",
+    },
+}
+```
+
+The callback is authoritative for all three mutation operations rather than an
+additional Django model-permission check. Admin-site access still requires an
+active staff user. Standard model view permission continues to govern read-only
+access. Missing paths, non-callables, and callbacks that cannot accept one
+request fail Django system checks; runtime exceptions and non-boolean return
+values fail closed.
 
 ## Source backend options
 

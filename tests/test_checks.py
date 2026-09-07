@@ -304,3 +304,17 @@ def test_enabled_editor_reports_a_missing_optional_dependency() -> None:
     relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
     assert [message.id for message in relevant] == ["dj_hyperview.E015"]
     assert "dj-hyperview[editor]" in relevant[0].hint
+
+
+@pytest.mark.parametrize(
+    "permission",
+    [object(), "missing.permission_callback", lambda: True],
+)
+def test_admin_permission_requires_a_single_request_callable(permission) -> None:
+    """Invalid mutation policies fail through an actionable startup check."""
+    with override_settings(HYPERVIEW={"ADMIN": {"PERMISSION": permission}}):
+        messages = check_hyperview_settings()
+
+    relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
+    assert [message.id for message in relevant] == ["dj_hyperview.E017"]
+    assert "request" in relevant[0].hint

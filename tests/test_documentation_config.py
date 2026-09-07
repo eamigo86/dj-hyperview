@@ -329,6 +329,19 @@ def test_changelog_describes_the_0_1_0a9_release() -> None:
     assert "Django 6.1" in page
 
 
+def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:
+    """Security guidance covers callable and dotted mutation policies."""
+    pages = _documentation_pages()
+    reference = pages["configuration.md"]
+    guide = pages["database-admin.md"]
+
+    for page in (reference, guide):
+        assert "ADMIN.PERMISSION" in page
+        assert "request.user.is_superuser" in page
+        assert "sample_app.permissions.can_edit_hyperview" in page
+        assert "fail" in page.lower()
+
+
 def test_api_reference_distinguishes_validation_and_cache_states() -> None:
     """Reference wording separates source, rendered, absent, and cached states."""
     reference = _documentation_pages()["api-reference.md"]

@@ -8,6 +8,43 @@ Stored source is executable Django template code. Anyone allowed to add or
 change a `HyperviewTemplate` must have developer-level trust; XML validation
 does not sandbox template tags, filters, or render-context access.
 
+Template mutations are therefore restricted to superusers by default:
+
+```python
+HYPERVIEW = {
+    "ADMIN": {
+        "PERMISSION": lambda request: request.user.is_superuser,
+    },
+}
+```
+
+The explicit lambda above matches the built-in default. Prefer a dotted callback
+in production so the policy can be imported and tested directly:
+
+```python
+# sample_app/permissions.py
+from django.http import HttpRequest
+
+
+def can_edit_hyperview(request: HttpRequest) -> bool:
+    """Authorize trusted mobile-interface maintainers."""
+    return request.user.has_perm("dj_hyperview_database.change_hyperviewtemplate")
+```
+
+```python
+HYPERVIEW = {
+    "ADMIN": {
+        "PERMISSION": "sample_app.permissions.can_edit_hyperview",
+    },
+}
+```
+
+`ADMIN.PERMISSION` controls add, change, and delete as one authoritative policy.
+It receives the current `HttpRequest` and grants access only by returning the
+literal boolean `True`. Exceptions and non-boolean results fail closed. Admin
+login still requires an active staff user, while ordinary Django model view
+permission can provide read-only access without granting template mutation.
+
 ## Enable the database source
 
 Add the optional app and source to project settings:
@@ -133,7 +170,10 @@ INSTALLED_APPS = [
 ]
 
 HYPERVIEW = {
-    "ADMIN": {"EDITOR": True},
+    "ADMIN": {
+        "EDITOR": True,
+        "PERMISSION": "sample_app.permissions.can_edit_hyperview",
+    },
     "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
     "VALIDATION": {
         "SCHEMA": "dj_hyperview.validate_hyperview_schema",

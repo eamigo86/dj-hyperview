@@ -83,12 +83,20 @@ INSTALLED_APPS = [
 ]
 
 HYPERVIEW = {
-    "ADMIN": {"EDITOR": True},
+    "ADMIN": {
+        "EDITOR": True,
+        "PERMISSION": "sample_app.permissions.can_edit_hyperview",
+    },
     "VALIDATION": {
         "SCHEMA": "dj_hyperview.validate_hyperview_schema",
     },
 }
 ```
+
+Stored templates execute as Django template code. Template mutations therefore
+default to superusers only. `ADMIN.PERMISSION` may be a callable receiving the
+current request or a dotted path to one; it must return the literal boolean
+`True` to grant add, change, and delete access.
 
 ## Quick start
 

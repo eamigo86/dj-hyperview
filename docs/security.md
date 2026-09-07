@@ -7,6 +7,19 @@ application state. Grant publication and admin permissions only to people with
 developer-level trust. XML validation limits the rendered document; it does not
 sandbox Django template execution.
 
+## Restrict database-template mutations
+
+The database admin defaults to `request.user.is_superuser` for add, change, and
+delete operations, even when a staff user holds ordinary model permissions.
+Keep that default unless a narrower trusted maintainer group is required.
+
+Configure `ADMIN.PERMISSION` with a callable or a dotted path such as
+`sample_app.permissions.can_edit_hyperview`. The callback receives the current
+request and is the authoritative mutation policy. It must return the literal
+boolean `True`; import errors fail Django system checks, while runtime errors and
+non-boolean values fail closed. Active staff status remains mandatory for access
+to the Django admin itself.
+
 ## Use canonical names
 
 Names are relative, case-preserving POSIX paths. Reject absolute paths, empty or

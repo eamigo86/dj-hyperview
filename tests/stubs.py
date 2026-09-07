@@ -26,3 +26,8 @@ class TemplateSource:
 
 def validate_schema(document: str) -> None:
     del document
+
+
+def allow_template_admin(request) -> bool:
+    """Allow authenticated staff in admin permission configuration tests."""
+    return bool(request.user.is_staff)

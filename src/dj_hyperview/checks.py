@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping, Sequence
 from importlib.util import find_spec
+from inspect import signature
 from pathlib import Path
 from typing import Any
 
@@ -309,30 +310,51 @@ def _check_extra_schemas(value: Any) -> list[CheckMessage]:
 def _check_admin(value: Any) -> list[CheckMessage]:
     if not isinstance(value, Mapping):
         return [_error("E014", "ADMIN", "must be a mapping")]
+    errors = []
     editor = value.get("EDITOR", False)
     if not isinstance(editor, bool):
-        return [_error("E014", "ADMIN.EDITOR", "must be a boolean")]
-    if not editor:
-        return []
-    if find_spec("django_ace") is None:
-        return [
-            Error(
-                "ADMIN.EDITOR requires the optional editor dependency.",
-                hint="Install dj-hyperview[editor] before enabling ADMIN.EDITOR.",
-                obj=SETTING,
-                id="dj_hyperview.E015",
+        errors.append(_error("E014", "ADMIN.EDITOR", "must be a boolean"))
+    elif editor:
+        if find_spec("django_ace") is None:
+            errors.append(
+                Error(
+                    "ADMIN.EDITOR requires the optional editor dependency.",
+                    hint="Install dj-hyperview[editor] before enabling ADMIN.EDITOR.",
+                    obj=SETTING,
+                    id="dj_hyperview.E015",
+                )
             )
-        ]
-    if not apps.is_installed("django_ace"):
-        return [
-            Error(
-                "ADMIN.EDITOR requires django_ace in INSTALLED_APPS.",
-                hint="Add django_ace before dj_hyperview in INSTALLED_APPS.",
-                obj=SETTING,
-                id="dj_hyperview.E016",
+        elif not apps.is_installed("django_ace"):
+            errors.append(
+                Error(
+                    "ADMIN.EDITOR requires django_ace in INSTALLED_APPS.",
+                    hint="Add django_ace before dj_hyperview in INSTALLED_APPS.",
+                    obj=SETTING,
+                    id="dj_hyperview.E016",
+                )
             )
-        ]
-    return []
+
+    permission = value.get("PERMISSION", lambda request: True)
+    if isinstance(permission, str):
+        try:
+            permission = import_string(permission)
+        except Exception:
+            permission = None
+    accepts_request = callable(permission)
+    if accepts_request:
+        try:
+            signature(permission).bind(object())
+        except (TypeError, ValueError):
+            accepts_request = False
+    if not accepts_request:
+        errors.append(
+            _error(
+                "E017",
+                "ADMIN.PERMISSION",
+                "must be a callable accepting request or a dotted path to one",
+            )
+        )
+    return errors
 
 
 @register("dj_hyperview")

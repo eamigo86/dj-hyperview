@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 from django.apps import apps
 from django.contrib import admin
-from django.test import Client, override_settings
+from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 
 from tests.test_database_app import run_isolated
@@ -263,6 +263,76 @@ def test_admin_mutation_requires_csrf(admin_user) -> None:
 
     assert response.status_code == 403
     assert model.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_admin_mutations_default_to_superusers_even_with_model_permissions(
+    django_user_model,
+) -> None:
+    """Django model permissions cannot bypass the secure package default."""
+    from django.contrib.auth.models import Permission
+
+    module, model = _admin_types()
+    editor = django_user_model.objects.create_user(
+        username="template-editor", password="secret", is_staff=True
+    )
+    editor.user_permissions.set(
+        Permission.objects.filter(
+            content_type__app_label=model._meta.app_label,
+            content_type__model=model._meta.model_name,
+        )
+    )
+    request = RequestFactory().get("/admin/")
+    request.user = editor
+    registered = admin.site.get_model_admin(model)
+
+    assert isinstance(registered, module.HyperviewTemplateAdmin)
+    assert registered.has_add_permission(request) is False
+    assert registered.has_change_permission(request) is False
+    assert registered.has_delete_permission(request) is False
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    "permission",
+    [
+        lambda request: bool(request.user.is_staff),
+        "tests.stubs.allow_template_admin",
+    ],
+)
+def test_admin_permission_callback_authorizes_all_template_mutations(
+    django_user_model, permission
+) -> None:
+    """Callable and dotted policies become the mutation permission boundary."""
+    _, model = _admin_types()
+    editor = django_user_model.objects.create_user(
+        username="template-editor", password="secret", is_staff=True
+    )
+    request = RequestFactory().get("/admin/")
+    request.user = editor
+    registered = admin.site.get_model_admin(model)
+
+    with override_settings(HYPERVIEW={"ADMIN": {"PERMISSION": permission}}):
+        assert registered.has_add_permission(request) is True
+        assert registered.has_change_permission(request) is True
+        assert registered.has_delete_permission(request) is True
+
+
+@pytest.mark.parametrize(
+    "permission",
+    [lambda request: "yes", lambda request: 1 / 0],
+)
+def test_admin_permission_callback_fails_closed(permission) -> None:
+    """Callback errors and non-boolean results never grant mutation access."""
+    _, model = _admin_types()
+    request = RequestFactory().get("/admin/")
+    request.user = type("User", (), {"is_superuser": False})()
+    registered = admin.site.get_model_admin(model)
+
+    with override_settings(HYPERVIEW={"ADMIN": {"PERMISSION": permission}}):
+        assert registered.has_add_permission(request) is False
+        assert registered.has_change_permission(request) is False
+        assert registered.has_delete_permission(request) is False
 
 
 @pytest.mark.django_db

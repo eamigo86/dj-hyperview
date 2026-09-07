@@ -10,12 +10,27 @@ from typing import Any
 from django.conf import settings as django_settings
 from django.core.checks import ERROR
 from django.dispatch import receiver
+from django.http import HttpRequest
 from django.test.signals import setting_changed
+from django.utils.module_loading import import_string
 
 Schema = str | Path | Callable[[str], None] | None
+AdminPermission = Callable[[HttpRequest], bool]
 _SETTING_DEPENDENCIES = frozenset(
     {"CACHES", "DATABASES", "HYPERVIEW", "INSTALLED_APPS"}
 )
+
+
+def _superuser_admin_permission(request: HttpRequest) -> bool:
+    """Restrict stored-template mutations to Django superusers by default.
+
+    Args:
+        request: Current authenticated admin request.
+
+    Returns:
+        Whether the current user is a superuser.
+    """
+    return bool(request.user.is_superuser)
 
 
 @dataclass(frozen=True, slots=True)
@@ -53,6 +68,7 @@ class AdminSettings:
     """Configuration for optional Django Admin enhancements."""
 
     editor: bool = False
+    permission: AdminPermission = _superuser_admin_permission
 
 
 @dataclass(frozen=True, slots=True)
@@ -75,6 +91,22 @@ def _section(raw: Mapping[str, Any], defaults: Any) -> dict[str, Any]:
         item.name: raw.get(item.name.upper(), getattr(defaults, item.name))
         for item in fields(defaults)
     }
+
+
+def _admin_settings(raw: Mapping[str, Any]) -> AdminSettings:
+    """Normalize editor and mutation permission configuration.
+
+    Args:
+        raw: Raw ADMIN mapping from Django settings.
+
+    Returns:
+        Immutable normalized admin configuration.
+    """
+    values = _section(raw, DEFAULTS.admin)
+    permission = values["permission"]
+    if isinstance(permission, str):
+        permission = import_string(permission)
+    return AdminSettings(editor=values["editor"], permission=permission)
 
 
 @lru_cache(maxsize=1)
@@ -102,7 +134,7 @@ def _settings_snapshot() -> HyperviewSettings:
         validation=ValidationSettings(
             **_section(raw.get("VALIDATION", {}), DEFAULTS.validation)
         ),
-        admin=AdminSettings(**_section(raw.get("ADMIN", {}), DEFAULTS.admin)),
+        admin=_admin_settings(raw.get("ADMIN", {})),
         extra_schemas=tuple(Path(path) for path in raw.get("EXTRA_SCHEMAS", ())),
     )
 

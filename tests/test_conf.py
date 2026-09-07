@@ -45,7 +45,10 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
             "MAX_DEPTH": 8,
             "MAX_NODES": 100,
         },
-        "ADMIN": {"EDITOR": True},
+        "ADMIN": {
+            "EDITOR": True,
+            "PERMISSION": "tests.stubs.allow_template_admin",
+        },
         "EXTRA_SCHEMAS": [tmp_path / "extension.xsd"],
     }
     caches = {"screens": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
@@ -61,7 +64,12 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
         sources=(SourceSettings("tests.stubs.TemplateSource", {"x": 1}),),
         cache=CacheSettings("screens", 60, 5, "raise"),
         validation=ValidationSettings("render", schema, 2_000, 8, 100),
-        admin=AdminSettings(editor=True),
+        admin=AdminSettings(
+            editor=True,
+            permission=__import__(
+                "tests.stubs", fromlist=["allow_template_admin"]
+            ).allow_template_admin,
+        ),
         extra_schemas=(tmp_path / "extension.xsd",),
     )
 
