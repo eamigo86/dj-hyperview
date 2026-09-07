@@ -1,8 +1,10 @@
 """Migration-safe validators for stored Hyperview templates."""
 
 from django.core.exceptions import ValidationError
+from django.template import TemplateSyntaxError
 
 from dj_hyperview.conf import get_settings
+from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.validation import validate_template_source
 
@@ -34,6 +36,15 @@ def validate_stored_template_source(value: str) -> None:
     config = get_settings().validation
     try:
         validate_template_source(value, config=config)
+        HyperviewEngine(validation=config).backend.from_string(value)
+    except TemplateSyntaxError as error:
+        token = getattr(error, "token", None)
+        line = getattr(token, "lineno", None)
+        location = f" at line {line}" if line is not None else ""
+        raise ValidationError(
+            f"Invalid Django template syntax{location}.",
+            code="django_syntax",
+        ) from None
     except TemplateValidationError as error:
         raise ValidationError(
             f"Invalid Hyperview template source ({error.code}).",

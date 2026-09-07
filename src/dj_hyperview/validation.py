@@ -245,6 +245,8 @@ def _validate_schema(root, document: str, config: ValidationSettings) -> None:
     if validator is not None:
         try:
             accepted = validator(document)
+        except TemplateValidationError:
+            raise
         except Exception as error:
             raise TemplateValidationError("schema", SCHEMA_MESSAGE) from error
         if accepted is False:
@@ -290,12 +292,15 @@ def validate_fragment_hxml(
         TemplateValidationError: If XML is unsafe, malformed, exceeds a limit,
             or uses a client-owned document root.
     """
-    root = _parse(document, config or get_settings().validation)
+    resolved = config or get_settings().validation
+    root = _parse(document, resolved)
     if etree.QName(root).localname.casefold() in RESTRICTED_FRAGMENT_ROOTS:
         _fail(
             "restricted_fragment_root",
             "fragment root must not be doc, navigator, screen, or body",
         )
+    if resolved.schema is not None:
+        _validate_schema(root, document, resolved)
     return document
 
 

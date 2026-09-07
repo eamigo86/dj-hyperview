@@ -137,6 +137,42 @@ def test_invalid_publication_never_persists(
     schedule.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "content",
+    [
+        "{% if enabled %}<view />",
+        "<view>{{ value|missing_hyperview_filter }}</view>",
+        "{% unknown_hyperview_tag %}<view />",
+    ],
+)
+def test_publication_rejects_invalid_django_template_syntax_before_writing(
+    publication_model: type[Model], content: str
+) -> None:
+    """Database publication compiles Django syntax without rendering context."""
+    with (
+        patch(SCHEDULE) as schedule,
+        pytest.raises(ValidationError) as captured,
+    ):
+        publish_template("screen.xml", content)
+
+    assert captured.value.error_dict["content"][0].code == "django_syntax"
+    assert publication_model.objects.count() == 0
+    schedule.assert_not_called()
+
+
+def test_invalid_django_syntax_does_not_increment_an_existing_revision(
+    publication_model: type[Model],
+) -> None:
+    """A rejected update preserves the last published source and revision."""
+    template = publication_model.objects.create(name="screen.xml", content="<view />")
+
+    with pytest.raises(ValidationError):
+        publish_template("screen.xml", "{% for item in items %}<view />")
+
+    template.refresh_from_db()
+    assert (template.content, template.revision) == ("<view />", 1)
+
+
 @pytest.mark.parametrize("expected", [True, 0, -1, "1"])
 def test_invalid_expected_revision_fails_before_database_access(
     expected: object,

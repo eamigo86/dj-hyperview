@@ -1,6 +1,7 @@
 """Django system checks for consumer Hyperview configuration."""
 
 from collections.abc import Mapping, Sequence
+from importlib.util import find_spec
 from pathlib import Path
 from typing import Any
 
@@ -256,8 +257,21 @@ def _check_validation(value: Any) -> list[CheckMessage]:
     modes = {"publish", "render", "publish_and_render"}
     if value.get("MODE", "publish_and_render") not in modes:
         errors.append(_error("E007", "VALIDATION.MODE", "has an unsupported value"))
-    if not _schema(value.get("SCHEMA")):
+    schema = value.get("SCHEMA")
+    if not _schema(schema):
         errors.append(_error("E008", "VALIDATION.SCHEMA", "must be a path or callable"))
+    elif (
+        schema == "dj_hyperview.validate_hyperview_schema"
+        and find_spec("xmlschema") is None
+    ):
+        errors.append(
+            Error(
+                "VALIDATION.SCHEMA requires the optional schema dependency.",
+                hint="Install dj-hyperview[schema] or set VALIDATION.SCHEMA to None.",
+                obj=SETTING,
+                id="dj_hyperview.E013",
+            )
+        )
     limits = (("MAX_BYTES", 1_000_000), ("MAX_DEPTH", 64), ("MAX_NODES", 20_000))
     for name, default in limits:
         current = value.get(name, default)
@@ -269,6 +283,26 @@ def _check_validation(value: Any) -> list[CheckMessage]:
             errors.append(
                 _error("E009", "VALIDATION.MAX_DEPTH", "must be no greater than 256")
             )
+    return errors
+
+
+def _check_extra_schemas(value: Any) -> list[CheckMessage]:
+    if not _sequence(value):
+        return [_error("E012", "EXTRA_SCHEMAS", "must be a sequence of local files")]
+    from .exceptions import TemplateValidationError
+    from .schema import _compile_schema, _guard_local_references
+
+    errors = []
+    for index, configured in enumerate(value):
+        path = f"EXTRA_SCHEMAS[{index}]"
+        try:
+            schema_path = Path(configured)
+            if not schema_path.is_file():
+                raise OSError
+            _guard_local_references(schema_path)
+            _compile_schema(schema_path)
+        except (OSError, TypeError, TemplateValidationError):
+            errors.append(_error("E012", path, "must be a valid local XSD 1.1 schema"))
     return errors
 
 
@@ -302,4 +336,5 @@ def check_hyperview_settings(
         *_source_consistency_warnings(raw, template_dir_messages),
         *cache_errors,
         *_check_validation(raw.get("VALIDATION", {})),
+        *_check_extra_schemas(raw.get("EXTRA_SCHEMAS", ())),
     ]

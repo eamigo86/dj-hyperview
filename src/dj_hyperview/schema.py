@@ -138,7 +138,7 @@ def _fingerprint(path: Path) -> tuple[str, int, int]:
     return str(resolved), metadata.st_size, metadata.st_mtime_ns
 
 
-def _guard_local_references(path: Path) -> None:
+def _guard_local_references(path: Path) -> tuple[Path, ...]:
     root = path.parent.resolve()
     pending = [path.resolve()]
     visited: set[Path] = set()
@@ -171,6 +171,7 @@ def _guard_local_references(path: Path) -> None:
                     "schema references must remain inside their local root",
                 )
             pending.append(target)
+    return tuple(sorted(visited))
 
 
 @lru_cache(maxsize=64)
@@ -178,6 +179,45 @@ def _custom_catalog(fingerprint: tuple[str, int, int]) -> dict[str, Any]:
     path = Path(fingerprint[0])
     _guard_local_references(path)
     return _schema_catalog(_compile_schema(path))
+
+
+def _target_namespace(path: Path) -> str:
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
+    try:
+        root = etree.parse(path, parser).getroot()
+    except (OSError, etree.XMLSyntaxError) as error:
+        raise TemplateValidationError("schema_invalid", "invalid schema") from error
+    return root.get("targetNamespace", "")
+
+
+def _registry_state() -> tuple[tuple[str, int, int], ...]:
+    state: list[tuple[str, int, int]] = []
+    for configured in get_settings().extra_schemas:
+        root = configured.resolve()
+        for path in _guard_local_references(root):
+            name, size, modified = _fingerprint(path)
+            marker = "root:" if path == root else "dependency:"
+            state.append((f"{marker}{name}", size, modified))
+    return tuple(sorted(state))
+
+
+@lru_cache(maxsize=64)
+def _compile_registry(state: tuple[tuple[str, int, int], ...]) -> Any:
+    xmlschema = _xmlschema_module()
+    roots = [
+        Path(name.removeprefix("root:"))
+        for name, _, _ in state
+        if name.startswith("root:")
+    ]
+    locations = [(_target_namespace(path), str(path)) for path in roots]
+    try:
+        return xmlschema.XMLSchema11(
+            get_hyperview_schema_path(),
+            allow="local",
+            locations=locations,
+        )
+    except Exception as error:
+        raise TemplateValidationError("schema_invalid", "invalid schema") from error
 
 
 @lru_cache(maxsize=1)
@@ -212,6 +252,36 @@ def get_hyperview_catalog() -> dict[str, Any]:
     return catalog
 
 
+def validate_hyperview_schema(document: str) -> None:
+    """Validate rendered HXML against Hyperview 0.110.0 and local extensions.
+
+    Args:
+        document: Rendered HXML document or fragment.
+
+    Raises:
+        TemplateValidationError: If the document does not match the compiled
+            XSD 1.1 registry or the optional dependency is unavailable.
+    """
+    from .validation import _parse
+
+    root = _parse(document, get_settings().validation)
+    validator = _compile_registry(_registry_state())
+    try:
+        error = next(validator.iter_errors(root), None)
+    except Exception as failure:
+        raise TemplateValidationError("schema_invalid", "invalid schema") from failure
+    if error is None:
+        return
+    line = getattr(error, "sourceline", None)
+    if line is None:
+        line = getattr(getattr(error, "elem", None), "sourceline", None)
+    raise TemplateValidationError(
+        "schema",
+        "document does not match schema",
+        line=line,
+    ) from None
+
+
 @receiver(
     setting_changed,
     dispatch_uid="dj_hyperview.clear_schema_registry_cache",
@@ -222,3 +292,4 @@ def _clear_schema_registry_cache(*, setting: str, **kwargs: Any) -> None:
     if setting == "HYPERVIEW":
         _official_catalog.cache_clear()
         _custom_catalog.cache_clear()
+        _compile_registry.cache_clear()

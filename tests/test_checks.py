@@ -1,4 +1,5 @@
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 from django.test import override_settings
@@ -223,3 +224,49 @@ def test_root_and_optional_database_config_are_validated(value, expected) -> Non
         errors = check_hyperview_settings()
 
     assert [error.id for error in errors] == [f"dj_hyperview.{expected}"]
+
+
+@pytest.mark.parametrize(
+    "extra_schemas",
+    ["schema.xsd", ["https://example.test/app.xsd"], ["/missing/app.xsd"]],
+)
+def test_extra_schemas_must_be_a_sequence_of_local_files(extra_schemas) -> None:
+    """Schema extensions fail startup checks before an editor or request uses them."""
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": extra_schemas}):
+        messages = check_hyperview_settings()
+
+    assert [
+        message.id for message in messages if message.id != "dj_hyperview.W005"
+    ] == ["dj_hyperview.E012"]
+
+
+def test_valid_extra_schema_passes_startup_checks(tmp_path: Path) -> None:
+    """A local XSD 1.1 extension is accepted when the schema extra is installed."""
+    schema = tmp_path / "app.xsd"
+    schema.write_text(
+        '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" '
+        'targetNamespace="https://example.test/app"><xs:element name="item">'
+        '<xs:complexType><xs:assert test="true()"/></xs:complexType>'
+        "</xs:element></xs:schema>",
+        encoding="utf-8",
+    )
+
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [schema]}):
+        assert [
+            message
+            for message in check_hyperview_settings()
+            if message.id != "dj_hyperview.W005"
+        ] == []
+
+
+@override_settings(
+    HYPERVIEW={"VALIDATION": {"SCHEMA": "dj_hyperview.validate_hyperview_schema"}}
+)
+def test_builtin_schema_validator_requires_the_schema_extra() -> None:
+    """A configured optional validator reports its missing dependency at startup."""
+    with patch("dj_hyperview.checks.find_spec", return_value=None):
+        messages = check_hyperview_settings()
+
+    relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
+    assert [message.id for message in relevant] == ["dj_hyperview.E013"]
+    assert "dj-hyperview[schema]" in relevant[0].hint

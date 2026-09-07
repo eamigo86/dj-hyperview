@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from django.test import override_settings
 
-from dj_hyperview.exceptions import TemplateValidationError
+from dj_hyperview.exceptions import HyperviewConfigurationError
 from dj_hyperview.schema import (
     HYPERVIEW_SCHEMA_VERSION,
     build_hyperview_catalog,
@@ -98,7 +98,10 @@ def test_custom_catalog_rejects_unsafe_schema_references(
     )
 
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [schema]}):
-        with pytest.raises(TemplateValidationError) as error:
+        with pytest.raises(HyperviewConfigurationError) as error:
             get_hyperview_catalog()
 
-    assert error.value.code == "forbidden_schema_reference"
+    assert error.value.issues == (
+        "dj_hyperview.E012: EXTRA_SCHEMAS[0] must be a valid local XSD 1.1 schema.",
+    )
+    assert location not in str(error.value)

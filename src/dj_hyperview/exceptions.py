@@ -84,15 +84,26 @@ class TemplateNotFound(HyperviewError, TemplateDoesNotExist, LookupError):
 class TemplateValidationError(HyperviewError, ValueError):
     """HXML failed a deterministic validation rule."""
 
-    def __init__(self, code: str, message: str) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        line: int | None = None,
+        column: int | None = None,
+    ) -> None:
         """Initialize a deterministic template validation error.
 
         Args:
             code: Stable validation error code.
             message: Safe validation failure description.
+            line: Optional one-based source line.
+            column: Optional one-based source column.
         """
         self.code = code
         self.message = message
+        self.line = line
+        self.column = column
         super().__init__(code, message)
 
     def __str__(self) -> str:
@@ -101,7 +112,12 @@ class TemplateValidationError(HyperviewError, ValueError):
         Returns:
             Validation code and safe explanation.
         """
-        return f"HXML validation failed [{self.code}]: {self.message}"
+        location = ""
+        if self.line is not None:
+            location = f" at line {self.line}"
+            if self.column is not None:
+                location += f", column {self.column}"
+        return f"HXML validation failed [{self.code}]{location}: {self.message}"
 
 
 class SourceUnavailable(HyperviewError):

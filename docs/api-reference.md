@@ -48,6 +48,8 @@ with an underscore remain implementation details.
 | `validate_template_source` | Validate raw template source safety before compilation. |
 | `validate_hxml` | Validate a final rendered HXML document against configured limits and schema. |
 | `validate_fragment_hxml` | Validate fragment XML, limits, and client-safe root shape. |
+| `validate_hyperview_schema` | Validate rendered HXML with the optional Hyperview 0.110.0 XSD 1.1 registry. |
+| `HYPERVIEW_SCHEMA_VERSION` | Hyperview schema release bundled by the optional validator and editor catalog. |
 | `TemplateCache` | Cache raw resolved templates when enabled. |
 | `CacheEntry` | Represent a cache hit or negative entry. |
 | `CACHE_MISS` | Represent an explicit cached source miss. A cache lookup returns `None` when no cache entry exists. |
