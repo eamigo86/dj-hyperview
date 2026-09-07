@@ -2,6 +2,26 @@
 
 This page records user-visible changes for each published version.
 
+## 0.1.0a10 — 2026-09-07
+
+### Added
+
+- `ADMIN.PERMISSION` as an authoritative callable or dotted-path policy for
+  stored-template creation, changes, and deletion, with a superuser-only default.
+- Detailed custom-schema guidance for project-owned namespaced HXML elements,
+  validation, and editor autocomplete.
+
+### Changed
+
+- The HXML Ace editor now fills the available Django 5.2 and Django 6.1 admin
+  form width instead of collapsing to its gutter inside the admin flex layout.
+
+### Security
+
+- Template mutation callbacks grant access only when they return the literal
+  boolean `True`; import problems fail system checks and runtime failures deny
+  access.
+
 ## 0.1.0a9 — 2026-09-07
 
 ### Added

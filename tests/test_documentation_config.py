@@ -318,13 +318,13 @@ def test_http_response_guide_distinguishes_documents_and_fragments() -> None:
         assert root in page
 
 
-def test_changelog_describes_the_0_1_0a9_release() -> None:
-    """Release notes identify the schema and editor alpha."""
+def test_changelog_describes_the_0_1_0a10_release() -> None:
+    """Release notes identify the secured Admin editing alpha."""
     page = _documentation_pages()["changelog.md"]
 
-    assert "0.1.0a9" in page
-    assert "XSD 1.1" in page
-    assert "editor" in page.lower()
+    assert "0.1.0a10" in page
+    assert "ADMIN.PERMISSION" in page
+    assert "superuser" in page.lower()
     assert "Django 5.2" in page
     assert "Django 6.1" in page
 
