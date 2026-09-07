@@ -15,6 +15,7 @@ LOCKED_DIRECT = {
     "redis": "8.1.0",
     "ruff": "0.16.6",
     "uv-build": "0.12.9",
+    "xmlschema": "4.3.2",
     "zensical": "0.0.59",
 }
 
@@ -28,6 +29,9 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
         "Django>=5.2,<6.2",
         "lxml>=6.1.3,<7",
     ]
+    assert metadata["project"]["optional-dependencies"] == {
+        "schema": ["xmlschema>=4.3,<5"]
+    }
     assert metadata["build-system"]["requires"] == ["uv_build>=0.12.9,<0.13"]
     assert metadata["dependency-groups"]["dev"] == [
         "coverage[toml]>=7.16,<8",

@@ -44,6 +44,22 @@ def test_project_reports_wrong_identity_and_runtime_markup(tmp_path: Path) -> No
     ]
 
 
+def test_project_rejects_schema_files_outside_the_versioned_registry(
+    tmp_path: Path,
+) -> None:
+    """Runtime XSD files must live inside the package-owned schema registry."""
+    (tmp_path / "pyproject.toml").write_text('[project]\nname = "dj-hyperview"\n')
+    package = tmp_path / "src" / "dj_hyperview"
+    package.mkdir(parents=True)
+    (package / "py.typed").touch()
+    (package / "screen.xsd").write_text("<schema />")
+
+    assert validate_project(tmp_path) == [
+        "schema resource must live below dj_hyperview/schemas: "
+        "src/dj_hyperview/screen.xsd"
+    ]
+
+
 def test_wheel_has_expected_identity_and_no_runtime_markup(tmp_path: Path) -> None:
     wheel = tmp_path / "dj_hyperview-0.1.0-py3-none-any.whl"
     write_wheel(

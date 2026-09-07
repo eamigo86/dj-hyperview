@@ -116,6 +116,11 @@ dependencies = [
     { name = "lxml" },
 ]
 
+[package.optional-dependencies]
+schema = [
+    { name = "xmlschema" },
+]
+
 [package.dev-dependencies]
 dev = [
     { name = "coverage" },
@@ -135,7 +140,9 @@ redis = [
 requires-dist = [
     { name = "django", specifier = ">=5.2,<6.2" },
     { name = "lxml", specifier = ">=6.1.3,<7" },
+    { name = "xmlschema", marker = "extra == 'schema'", specifier = ">=4.3,<5" },
 ]
+provides-extras = ["schema"]
 
 [package.metadata.requires-dev]
 dev = [
@@ -162,6 +169,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/f8/d4/8314b5bdef20832f0ac6ae3b3e4d4924e4759fa3b4af27609dd747e7a6be/django-6.1.1.tar.gz", hash = "sha256:7ab93536d8e677aa14554c56426290c69480bf2ee68d7513d4a22f57d6bfeb84", size = 11284905, upload-time = "2026-09-02T17:20:45.621Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/8d/ca/c1040a4fd15754ede7df15fd72fc2e123045b473b253ab5f5284e11c651e/django-6.1.1-py3-none-any.whl", hash = "sha256:585fb82bf15053c42cf52e67c2f1b54a032dca384759315fd6678ab1870d1d72", size = 8419512, upload-time = "2026-09-02T17:20:39.153Z" },
+]
+
+[[package]]
+name = "elementpath"
+version = "5.1.4"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/69/9d/766386c47959bb8b014242af8770c869350884a3c3f7054375576e11f30a/elementpath-5.1.4.tar.gz", hash = "sha256:3c912a9c41311ac5244c038867670d7c0b0fec0e444813608e5b846dbb3428ac", size = 381114, upload-time = "2026-08-08T20:29:22.963Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/42/b0/b709cc33ccb0288f41f2d92dfd754d2ccf925cb9277a66effbc132cd004c/elementpath-5.1.4-py3-none-any.whl", hash = "sha256:5ec8d7bb44b16c98414a6a95e20cb150f3cbfc3cac65edc14773288c7a937376", size = 261881, upload-time = "2026-08-08T20:29:20.649Z" },
 ]
 
 [[package]]
@@ -586,6 +602,18 @@ wheels = [
     { url = "https://files.pythonhosted.org/packages/53/39/ed02c9a9a850eda9732b6135c3f269ebddee3ca285e8838d5cbe6ab85453/uv_build-0.12.9-py3-none-win32.whl", hash = "sha256:ce29cddc8b4a1dec16ab1a2d840966de5f611e3b26c2325887ce3a58ff5d910d", size = 1407909, upload-time = "2026-09-01T21:57:22.893Z" },
     { url = "https://files.pythonhosted.org/packages/de/c6/a77540b9d61855aba4c0f7dbcdcf2c4f5edd5d7641ef6ddaec03396e3b75/uv_build-0.12.9-py3-none-win_amd64.whl", hash = "sha256:d3760b01f767b469bb6bd959c99fb35e0f15c14c06c6bb714f325a9a10a4f194", size = 1472097, upload-time = "2026-09-01T21:57:24.203Z" },
     { url = "https://files.pythonhosted.org/packages/88/95/026160082a8f38edd7983fd25e71bf0641e4a59b26571f4661059f415d95/uv_build-0.12.9-py3-none-win_arm64.whl", hash = "sha256:9767704439fe0aa6188bcae5895cf33f54580c94e043b63bc2f9db5852d83528", size = 1392231, upload-time = "2026-09-01T21:57:25.579Z" },
+]
+
+[[package]]
+name = "xmlschema"
+version = "4.3.2"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "elementpath" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/55/f0/2431c2c8f77326757f2e2b1d79226c17b2abfe44a78a41c7d7b944e90732/xmlschema-4.3.2.tar.gz", hash = "sha256:f3b33a21a2b2cdc404ddc3fb599d8bc1dee90b155d547370672e6e684746b8d6", size = 682724, upload-time = "2026-06-30T06:11:50.744Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5c/fb/8be39dc47b0ed9bbc80f384906eed87fa974c9b377a7a430118c3b405550/xmlschema-4.3.2-py3-none-any.whl", hash = "sha256:cf5c970a30f6ebcb3da35260e694704cc0b6794d8ace46125bb2a95e38ed9307", size = 504613, upload-time = "2026-06-30T06:11:47.462Z" },
 ]
 
 [[package]]

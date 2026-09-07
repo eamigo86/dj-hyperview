@@ -22,6 +22,17 @@ def _runtime_markup_violations(names: Iterable[str]) -> list[str]:
     ]
 
 
+def _schema_resource_violations(
+    names: Iterable[str], *, package_prefix: str
+) -> list[str]:
+    approved_prefix = f"{package_prefix}schemas/"
+    return [
+        f"schema resource must live below dj_hyperview/schemas: {name}"
+        for name in names
+        if Path(name).suffix.lower() == ".xsd" and not name.startswith(approved_prefix)
+    ]
+
+
 def validate_project(root: Path) -> list[str]:
     """Return package-boundary violations for a source checkout."""
     metadata = tomllib.loads((root / "pyproject.toml").read_text())
@@ -47,7 +58,13 @@ def validate_project(root: Path) -> list[str]:
         if package_root.is_dir()
         else ()
     )
+    package_files = tuple(package_files)
     violations.extend(_runtime_markup_violations(package_files))
+    violations.extend(
+        _schema_resource_violations(
+            package_files, package_prefix=f"src/{EXPECTED_PACKAGE}/"
+        )
+    )
 
     return violations
 
@@ -77,6 +94,9 @@ def validate_wheel(path: Path) -> list[str]:
             violations.append(f"wheel must contain {EXPECTED_PACKAGE}/{PEP_561_MARKER}")
 
         violations.extend(_runtime_markup_violations(names))
+        violations.extend(
+            _schema_resource_violations(names, package_prefix=f"{EXPECTED_PACKAGE}/")
+        )
 
     return violations
 

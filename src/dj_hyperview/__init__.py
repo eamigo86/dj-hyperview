@@ -35,6 +35,7 @@ from .middleware import (
     detect_hyperview_request,
 )
 from .resolver import TemplateResolver, resolve_template
+from .schema import HYPERVIEW_SCHEMA_VERSION
 from .sources import FileSystemSource, ResolvedTemplate, TemplateSource
 from .validation import validate_fragment_hxml, validate_hxml, validate_template_source
 from .views import HyperviewTemplateView
@@ -49,6 +50,7 @@ __all__ = [
     "HYPERVIEW_MEDIA_TYPE",
     "HYPERVIEW_FRAGMENT_MEDIA_TYPE",
     "HYPERVIEW_VERSION_HEADER",
+    "HYPERVIEW_SCHEMA_VERSION",
     "CACHE_MISS",
     "CacheEntry",
     "FileSystemSource",

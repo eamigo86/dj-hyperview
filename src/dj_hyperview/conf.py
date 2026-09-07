@@ -56,6 +56,7 @@ class HyperviewSettings:
     sources: tuple[SourceSettings, ...] = ()
     cache: CacheSettings = field(default_factory=CacheSettings)
     validation: ValidationSettings = field(default_factory=ValidationSettings)
+    extra_schemas: tuple[Path, ...] = ()
 
 
 DEFAULTS = HyperviewSettings()
@@ -93,6 +94,7 @@ def _settings_snapshot() -> HyperviewSettings:
         validation=ValidationSettings(
             **_section(raw.get("VALIDATION", {}), DEFAULTS.validation)
         ),
+        extra_schemas=tuple(Path(path) for path in raw.get("EXTRA_SCHEMAS", ())),
     )
 
 
