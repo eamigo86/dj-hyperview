@@ -19,21 +19,20 @@ screens into the package.
 - **Ordered template sources** — resolve from configured filesystem directories,
   the optional database app, or custom source backends with explicit precedence.
 - **Live database publication** — edit validated templates through Django admin
-  and expose committed changes on the next request.
+  and expose committed changes on the next request, with an optional HXML-aware
+  Ace editor.
 - **Cache consistency** — opt into any Django cache backend, including Redis,
   with source-aware keys and generation-based invalidation.
 - **Django-native HTTP integration** — use lazy template responses, class-based
   views, validated fragment responses, request metadata, content negotiation,
   and standard CSRF protection.
 - **Fail-closed validation** — enforce canonical names, UTF-8, XML safety,
-  consumer-provided single-file XSD 1.0 rules, and configurable resource limits.
+  configurable resource limits, and optional XSD 1.1 validation against the
+  bundled Hyperview 0.110.0 schemas plus project extensions.
 
-> dj-hyperview does not ship application screens, runtime XML or HXML files,
+> dj-hyperview does not ship application screens, runtime application HXML,
 > mobile components, Redis, or a required database app. Those choices remain
 > under the consumer project's control.
-
-The upstream Hyperview schema uses composition and XSD 1.1 features. Flatten
-and downgrade it before configuring it as the package validation schema.
 
 ## Requirements
 
@@ -65,6 +64,31 @@ INSTALLED_APPS = [
 
 The base app performs no database, cache, or network access during startup.
 Database-backed templates and admin integration are optional.
+
+Install schema validation or the complete admin-authoring profile only when a
+project needs them:
+
+```bash
+uv add "dj-hyperview[schema]"
+uv add "dj-hyperview[editor]"
+```
+
+The editor profile includes XSD validation. Enable it explicitly:
+
+```python
+INSTALLED_APPS = [
+    "django_ace",
+    "dj_hyperview",
+    "dj_hyperview.contrib.database",
+]
+
+HYPERVIEW = {
+    "ADMIN": {"EDITOR": True},
+    "VALIDATION": {
+        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
+    },
+}
+```
 
 ## Quick start
 

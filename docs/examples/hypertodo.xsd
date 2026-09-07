@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema
+  xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:app="https://example.com/hypertodo"
+  targetNamespace="https://example.com/hypertodo"
+  elementFormDefault="qualified"
+  version="1.1"
+>
+  <xs:element name="swipe-row">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:element ref="app:swipe-action" minOccurs="1" maxOccurs="unbounded" />
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" />
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:ID" />
+      <xs:attribute name="direction" use="required">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="left" />
+            <xs:enumeration value="right" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="swipe-action">
+    <xs:complexType>
+      <xs:attribute name="label" type="xs:string" use="required" />
+      <xs:attribute name="href" type="xs:anyURI" use="required" />
+      <xs:attribute name="verb" default="post">
+        <xs:simpleType>
+          <xs:restriction base="xs:string">
+            <xs:enumeration value="delete" />
+            <xs:enumeration value="patch" />
+            <xs:enumeration value="post" />
+          </xs:restriction>
+        </xs:simpleType>
+      </xs:attribute>
+    </xs:complexType>
+  </xs:element>
+</xs:schema>

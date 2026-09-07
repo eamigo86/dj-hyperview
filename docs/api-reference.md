@@ -62,5 +62,9 @@ with an underscore remain implementation details.
 `HyperviewConfigurationError`, `InvalidTemplateName`, `TemplateNotFound`,
 `TemplateValidationError`, and `SourceUnavailable`.
 
+`TemplateValidationError` exposes the stable `code` and `message` fields plus
+optional one-based `line` and `column` coordinates. Its string form never
+includes rejected source content or internal filesystem paths.
+
 Database publication is an optional contribution with its own service boundary.
 See [Database source and admin](database-admin.md) for those imports.

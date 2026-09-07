@@ -57,10 +57,68 @@ empty mapping disables Hyperview caching.
 | `VALIDATION.MAX_BYTES` | Positive integer | 1,000,000 bytes | Maximum UTF-8 size accepted for raw source and the final rendered document. |
 | `VALIDATION.MAX_DEPTH` | Positive integer | 64 levels | Maximum final XML element depth, with an absolute maximum of 256 imposed by the parser safety ceiling. |
 | `VALIDATION.MAX_NODES` | Positive integer | 20,000 nodes | Maximum number of elements in the final parsed XML document. |
+| `ADMIN` | Mapping | `{}` | Optional Django Admin enhancements. |
+| `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
+| `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.110.0 registry and completion catalog. URLs are rejected. |
 
 Raw-source size, encoding, and forbidden-declaration checks cannot be disabled
 by `VALIDATION.MODE`. Final parsing, depth, node, and schema checks run only for
 `render` and `publish_and_render`.
+
+## Hyperview XSD 1.1 validation
+
+Install the optional schema profile and select the bundled validator:
+
+```bash
+uv add "dj-hyperview[schema]"
+```
+
+```python
+HYPERVIEW = {
+    "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
+    "VALIDATION": {
+        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
+    },
+}
+```
+
+The validator uses the versioned Hyperview 0.110.0 XSD registry included in the
+wheel. Project schemas can declare namespaced custom elements and import the
+Hyperview namespace. Includes, imports, and redefines may reference only local
+files below the configured schema's own directory. Remote references and paths
+that escape that directory are rejected.
+
+Schema registries and completion catalogs are loaded lazily and cached by
+resolved path, file size, and nanosecond modification time. Changes to
+`HYPERVIEW` clear those caches. An editor process notices a saved schema file on
+its next request because the file fingerprint changes.
+
+See the [custom component schema example](examples/hypertodo.xsd) for
+`app:swipe-row` and `app:swipe-action`.
+
+## Admin editor
+
+The enhanced editor is deliberately separate from database storage:
+
+```bash
+uv add "dj-hyperview[editor]"
+```
+
+```python
+INSTALLED_APPS = [
+    "django_ace",
+    "dj_hyperview",
+    "dj_hyperview.contrib.database",
+]
+
+HYPERVIEW = {
+    "ADMIN": {"EDITOR": True},
+}
+```
+
+Enabling the setting without the extra, or without `django_ace` in
+`INSTALLED_APPS`, produces an actionable Django system-check error. When the
+setting is false, the standard Django textarea remains unchanged.
 
 ## Source backend options
 

@@ -22,7 +22,7 @@ Defaults are safe for general use; lower them for smaller documents:
 HYPERVIEW = {
     "VALIDATION": {
         "MODE": "publish_and_render",
-        "SCHEMA": BASE_DIR / "schemas" / "hyperview.xsd",
+        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
         "MAX_BYTES": 250_000,
         "MAX_DEPTH": 48,
         "MAX_NODES": 8_000,
@@ -33,13 +33,16 @@ HYPERVIEW = {
 Publish validation rejects unsafe declarations before Django compiles a
 template. Render validation then parses the final UTF-8 XML with entity
 resolution and network access disabled, applying byte, depth, node, and schema
-limits. DTD declarations and entities are forbidden. XSD includes, imports, and redefines
-are forbidden because they could cross the local schema boundary.
-The configured schema must be a single-file XSD 1.0 document. The upstream
-Hyperview schema uses external composition and XSD 1.1 features, so it must be
-flattened and downgraded before use with lxml. `MAX_DEPTH` cannot exceed the
-libxml2 safety ceiling of 256. File schemas are compiled once per file revision
-and reused across validations.
+limits. DTD declarations and entities are forbidden. The optional bundled
+validator uses XSD 1.1 and the official Hyperview 0.110.0 schemas.
+
+Configured extra schemas may use local includes, imports, and redefines within
+their own directory. Remote schema references and traversal outside that root
+are rejected before compilation. Duplicate declarations must be identical.
+The registry never fetches schemas from the network or exposes schema paths in
+public errors. `MAX_DEPTH` cannot exceed the libxml2 safety ceiling of 256.
+Compiled schemas are reused until their path, size, modification time, or the
+relevant Django setting changes.
 
 ## Render a Hyperview CSRF field
 

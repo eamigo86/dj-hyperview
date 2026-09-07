@@ -44,3 +44,14 @@ uv run python -m tools.test_matrix --django-version 6.1.1
 The default profile requires no Redis service or network. Live Redis acceptance
 is explicit and opt-in. Keep source/backend failures deterministic rather than
 using sleeps in transaction or race tests.
+
+The contributor suite also executes the editor's dependency-free JavaScript
+tests with Node 24:
+
+```console
+node --test tests/js/test_hxml_editor.mjs
+```
+
+CI smoke-tests the built wheel in three isolated profiles: no extras,
+`[schema]`, and `[editor]`. Wheel construction remains a CI responsibility;
+local quality checks do not need to build a distribution.

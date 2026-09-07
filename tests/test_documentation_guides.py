@@ -120,6 +120,11 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
     assert "one commit-aware invalidation" in normalized
     assert "byte-exact" in page
     assert "case-insensitive" in page
+    assert 'uv add "dj-hyperview[editor]"' in page
+    assert '"django_ace"' in page
+    assert "Format HXML" in page
+    assert "not history or rollback" in normalized
+    assert "does not render" in page
     assert len(blocks) >= 2
     for block in blocks:
         compile(block, "docs/database-admin.md", "exec")
@@ -201,7 +206,9 @@ def test_security_guide_matches_name_and_xml_validation_contracts() -> None:
     assert "hv_csrf_token" in page
     assert "load dj_hyperview" in page
     assert "XML declaration" in page
-    assert "single-file XSD 1.0" in page
+    assert "XSD 1.1" in page
+    assert "remote schema references" in page.lower()
+    assert '"dj_hyperview.validate_hyperview_schema"' in page
     assert list(signature(validate_hxml).parameters) == ["document", "config"]
     assert blocks
     for block in blocks:

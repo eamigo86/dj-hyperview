@@ -4,6 +4,7 @@ import re
 from importlib.metadata import version
 from pathlib import Path
 
+import xmlschema
 import yaml
 
 from dj_hyperview import __all__ as public_api
@@ -152,11 +153,15 @@ def test_documentation_starts_with_installation_and_configuration_outcomes() -> 
     assert "TemplateResolver" in pages["configuration.md"]
 
 
-def test_readme_states_the_supported_schema_format() -> None:
-    """The project overview prevents copying an incompatible upstream XSD."""
+def test_readme_introduces_optional_schema_and_editor_profiles() -> None:
+    """The project overview keeps advanced authoring explicitly optional."""
     readme = (ROOT / "README.md").read_text()
 
-    assert "single-file XSD 1.0" in readme
+    assert 'uv add "dj-hyperview[schema]"' in readme
+    assert 'uv add "dj-hyperview[editor]"' in readme
+    assert '"django_ace"' in readme
+    assert '"EDITOR": True' in readme
+    assert "XSD 1.1" in readme
 
 
 def test_hyperview_manifest_link_targets_the_public_repository() -> None:
@@ -168,6 +173,17 @@ def test_hyperview_manifest_link_targets_the_public_repository() -> None:
         "tests/contracts/hyperview/0.110.0/manifest.json"
     ) in page
     assert "../tests/contracts/hyperview/0.110.0/manifest.json" not in page
+
+
+def test_custom_component_schema_example_is_valid_xsd_1_1() -> None:
+    """The documented extension schema remains executable and self-contained."""
+    path = ROOT / "docs" / "examples" / "hypertodo.xsd"
+
+    schema = xmlschema.XMLSchema11(path, allow="local")
+
+    assert schema.target_namespace == "https://example.com/hypertodo"
+    assert "swipe-row" in schema.elements
+    assert "swipe-action" in schema.elements
 
 
 def test_configuration_documents_every_builtin_source_option() -> None:
@@ -214,6 +230,9 @@ def test_configuration_documents_every_setting_contract() -> None:
         "`VALIDATION.MAX_BYTES`",
         "`VALIDATION.MAX_DEPTH`",
         "`VALIDATION.MAX_NODES`",
+        "`ADMIN`",
+        "`ADMIN.EDITOR`",
+        "`EXTRA_SCHEMAS`",
     ):
         assert f"| {setting} |" in page
 
@@ -278,12 +297,13 @@ def test_http_response_guide_distinguishes_documents_and_fragments() -> None:
         assert root in page
 
 
-def test_changelog_describes_the_0_1_0a8_release() -> None:
-    """Release notes identify the audited alpha and its compatibility changes."""
+def test_changelog_describes_the_0_1_0a9_release() -> None:
+    """Release notes identify the schema and editor alpha."""
     page = _documentation_pages()["changelog.md"]
 
-    assert "0.1.0a8" in page
-    assert "fragment" in page.lower()
+    assert "0.1.0a9" in page
+    assert "XSD 1.1" in page
+    assert "editor" in page.lower()
     assert "Django 5.2" in page
     assert "Django 6.1" in page
 

@@ -110,12 +110,62 @@ The contrib app registers
 rename, and individual delete use the publication services; change and delete
 forms carry a protected revision token to reject stale submissions.
 
+`revision` is an optimistic-concurrency and cache identity token. It is not
+history or rollback: publishing replaces the stored content, and the package
+does not retain earlier revisions.
+
+## Enable the HXML editor
+
+The standard textarea is the default and needs no extra dependencies. For
+schema-aware completion, local formatting, and Django-template highlighting,
+install the optional editor profile:
+
+```bash
+uv add "dj-hyperview[editor]"
+```
+
+```python
+INSTALLED_APPS = [
+    "django.contrib.admin",
+    "django_ace",
+    "dj_hyperview",
+    "dj_hyperview.contrib.database",
+]
+
+HYPERVIEW = {
+    "ADMIN": {"EDITOR": True},
+    "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
+    "VALIDATION": {
+        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
+    },
+}
+```
+
+The editor uses package-owned assets, django-ace strict CSP mode, automatic
+light and dark themes, line numbers, search, wrapping, full screen, and
+contextual completion for elements, unused attributes, enumerated values, and
+configured namespace prefixes. Its catalog endpoint requires authentication
+and view permission for the template model.
+
+**Format HXML** temporarily protects Django variables, tags, and comments,
+formats the XML, and restores the exact template tokens. Unsafe or incomplete
+input is left untouched and reported beside the editor. Ace synchronizes back
+to Django's textarea before submission, so standard form processing remains the
+source of truth.
+
+Publication compiles Django template syntax before writing or incrementing a
+revision. Invalid tags, variables, or blocks are reported next to `content`.
+This check does not render the template: context-dependent XML and schema
+validation still occur when the response is rendered. XSD errors expose safe
+line and column coordinates when the underlying parser provides them.
+
 Direct `save()` does not call `full_clean()`. Prefer the services or the admin
 for validated publication. The package QuerySet batches `update()` and `delete()`
 while scheduling one commit-aware invalidation for all canonical affected names.
-`bulk_create()` rejects unsafe names and schedules invalidation, but still bypasses
-content validation and revision semantics. Raw SQL provides no automatic
-publication contract.
+`bulk_create()` rejects unsafe names and schedules invalidation, but still
+bypasses content compilation, validation, and revision semantics. It is an
+import primitive, not a substitute for the publication services. Raw SQL
+provides no automatic publication contract.
 
 A row imported by raw SQL or an older release can contain a name that is no
 longer canonical. Such a row is never resolved, but it remains recoverable:

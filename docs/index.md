@@ -20,13 +20,14 @@ schema, route, and application decision.
 - Django 5.2 and 6.1.
 - Hyperview markup contract 0.110.0.
 
-dj-hyperview does not ship application screens, runtime XML or HXML files,
+dj-hyperview does not ship application screens, runtime application HXML,
 Redis, or a required database app.
 
 Choose the next guide for your source:
 
 - [Use filesystem sources](filesystem.md) for the smallest deployment.
-- [Publish through the database](database-admin.md) when editors need admin.
+- [Publish through the database](database-admin.md) when editors need admin or
+  optional schema-aware HXML authoring.
 - [Configure cache consistency](cache-consistency.md) only when caching is needed.
 - [Harden names and XML](security.md) before accepting authored templates.
 - [Return documents and fragments](http-responses.md) with the right client contract.
