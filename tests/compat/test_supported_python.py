@@ -56,11 +56,12 @@ def test_coverage_commands_enforce_the_aggregate_after_admin() -> None:
 
 @pytest.mark.parametrize(("codes", "expected_calls"), [([7], 1), ([0, 9], 2)])
 def test_coverage_runner_stops_after_a_failed_phase(
-    monkeypatch: Any, codes: list[int], expected_calls: int
+    monkeypatch: Any, codes: list[int], expected_calls: int, tmp_path: Path
 ) -> None:
     """Any failed phase prevents a misleading aggregate coverage result."""
     seen: list[tuple[str, ...]] = []
     remaining = iter(codes)
+    monkeypatch.chdir(tmp_path)
 
     def _fake_run(
         command: tuple[str, ...], *, check: bool, env: dict[str, str]

@@ -427,7 +427,7 @@ def _tagged_workflow_signature(text: str) -> tuple[object, ...]:
 APPROVED_RUN_CONTRACT = {
     "quality": (
         "uv sync --locked",
-        "node --test tests/js/test_hxml_editor.mjs",
+        "node --test tests/js/*.mjs",
         "uv lock --check\nuv run ruff check .\nuv run ruff format --check .",
         (
             "PYTHONPATH=.:src uv run python -m django check --settings=tests.settings\n"
@@ -742,7 +742,7 @@ def test_quality_job_checks_lock_style_settings_migrations_and_boundaries() -> N
         "makemigrations dj_hyperview_database --check --dry-run",
         "tests/test_package_boundary.py",
         "tests/test_public_api_quality.py",
-        "node --test tests/js/test_hxml_editor.mjs",
+        "node --test tests/js/*.mjs",
     ):
         assert command in quality
     node = next(

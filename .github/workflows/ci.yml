@@ -41,8 +41,8 @@ jobs:
           version: "0.12.6"
       - name: Sync exact development environment
         run: uv sync --locked
-      - name: Test HXML editor JavaScript
-        run: node --test tests/js/test_hxml_editor.mjs
+      - name: Test browser JavaScript
+        run: node --test tests/js/*.mjs
       - name: Check dependency and style drift
         run: |
           uv lock --check

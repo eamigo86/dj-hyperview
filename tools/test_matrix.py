@@ -9,11 +9,15 @@ import subprocess
 import sys
 from collections.abc import Sequence
 from importlib import metadata
+from pathlib import Path
+from xml.etree import ElementTree
 
 SUPPORTED_PYTHONS = ("3.12", "3.13", "3.14")
 SUPPORTED_DJANGOS = ("5.2.17", "6.1.1")
 REDIS_OPT_IN_ENV = "DJHV_TEST_REDIS"
 REDIS_URL_ENV = "DJHV_REDIS_URL"
+COVERAGE_REPORT = Path("coverage.xml")
+COVERAGE_MINIMUM = 95
 
 _BASE_COVERAGE = (
     sys.executable,
@@ -88,6 +92,51 @@ def _profile_environment(*, redis: bool) -> dict[str, str]:
     return environment
 
 
+def check_coverage(report: Path) -> int:
+    """Enforce independent exact line and branch coverage thresholds.
+
+    Args:
+        report: Coverage.py XML report produced after all test profiles.
+
+    Returns:
+        Zero when both dimensions reach 95 percent, one when either falls
+        short, or two when the report is missing, invalid, or empty.
+    """
+    try:
+        root = ElementTree.parse(report).getroot()
+        if root.tag != "coverage":
+            raise ValueError("unexpected report root")
+        dimensions = []
+        for label in ("lines", "branches"):
+            values = (root.get(f"{label}-covered"), root.get(f"{label}-valid"))
+            if any(
+                value is None or not value.isascii() or not value.isdecimal()
+                for value in values
+            ):
+                raise ValueError("invalid coverage counter")
+            covered, total = (int(value) for value in values)
+            if total <= 0 or covered > total:
+                raise ValueError("invalid coverage total")
+            dimensions.append((label, covered, total))
+    except (OSError, ValueError, ElementTree.ParseError):
+        print(
+            "Invalid coverage report: positive integer totals are required.",
+            file=sys.stderr,
+        )
+        return 2
+
+    result = 0
+    for label, covered, total in dimensions:
+        passed = covered * 100 >= total * COVERAGE_MINIMUM
+        print(
+            f"Coverage {label}: {covered}/{total}; minimum {COVERAGE_MINIMUM}%.",
+            file=sys.stdout if passed else sys.stderr,
+        )
+        if not passed:
+            result = 1
+    return result
+
+
 def run_coverage(*, redis: bool) -> int:
     """Execute canonical aggregate coverage with optional live Redis.
 
@@ -95,7 +144,8 @@ def run_coverage(*, redis: bool) -> int:
         redis: Whether to enable the explicitly configured Redis acceptance.
 
     Returns:
-        Zero when both coverage phases pass, otherwise the first failure code.
+        Zero when both profiles and independent coverage thresholds pass,
+        otherwise the first failure code. Invalid reports return two.
     """
     try:
         environment = _profile_environment(redis=redis)
@@ -103,11 +153,16 @@ def run_coverage(*, redis: bool) -> int:
         print(error, file=sys.stderr)
         return 2
 
+    try:
+        COVERAGE_REPORT.unlink(missing_ok=True)
+    except OSError:
+        print("Cannot reset the coverage report before testing.", file=sys.stderr)
+        return 2
     for command in coverage_commands():
         completed = subprocess.run(command, check=False, env=environment)
         if completed.returncode:
             return completed.returncode
-    return 0
+    return check_coverage(COVERAGE_REPORT)
 
 
 def _run_for_django(version: str, *, redis: bool) -> int:
