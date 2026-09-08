@@ -4,7 +4,11 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- Opt-in Admin template preview with configured example-data scenarios, unsaved
+  draft rendering, structured diagnostics, and an isolated static web view.
+  Preview keeps the editor buffer unchanged and never publishes a template.
 
 ## 0.1.0a11 — 2026-09-08
 

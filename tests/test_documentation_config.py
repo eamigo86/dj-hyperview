@@ -20,6 +20,7 @@ DOCS = (
     "hyperview-0.110.0.md",
     "filesystem.md",
     "database-admin.md",
+    "admin-preview.md",
     "cache-consistency.md",
     "security.md",
     "http-responses.md",
@@ -102,6 +103,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
             "User Guide": [
                 {"Filesystem sources": "filesystem.md"},
                 {"Database and admin": "database-admin.md"},
+                {"Admin template preview": "admin-preview.md"},
                 {"Cache consistency": "cache-consistency.md"},
                 {"Security": "security.md"},
                 {"HTTP responses": "http-responses.md"},

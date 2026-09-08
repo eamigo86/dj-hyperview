@@ -202,6 +202,7 @@ backend.
 [Configuration](https://eamigo86.github.io/dj-hyperview/configuration/),
 [Filesystem sources](https://eamigo86.github.io/dj-hyperview/filesystem/),
 [Database and admin](https://eamigo86.github.io/dj-hyperview/database-admin/),
+[Admin template preview](https://eamigo86.github.io/dj-hyperview/admin-preview/),
 [Cache consistency](https://eamigo86.github.io/dj-hyperview/cache-consistency/),
 [Security](https://eamigo86.github.io/dj-hyperview/security/),
 [HTTP responses](https://eamigo86.github.io/dj-hyperview/http-responses/),

@@ -62,3 +62,36 @@ node --test tests/js/test_hxml_editor.mjs
 CI smoke-tests the built wheel in three isolated profiles: no extras,
 `[schema]`, and `[editor]`. Wheel construction remains a CI responsibility;
 local quality checks do not need to build a distribution.
+
+## Chromium preview acceptance
+
+The opt-in browser profile tests the real Admin, Ace, CSRF-protected preview POST,
+and sandboxed static renderer against a temporary test database and local test
+server. It never uses a consumer deployment or HyperTodo.
+
+```bash
+uv sync --locked --group browser --no-build
+uv run --locked --group browser python -m playwright install chromium
+DJHV_TEST_BROWSER=1 uv run --locked --group browser python -m pytest -q \
+  --ds=tests.settings_browser tests/browser
+```
+
+The separate development-only `browser` group pins Playwright 1.60.0 and its
+matching Chromium revision for reproducibility, not as a latest-version claim.
+CI installs the matching browser and Linux prerequisites with
+`python -m playwright install --with-deps chromium`. Neither Playwright nor its
+browser is a package runtime dependency. Ordinary Python matrix cells do not
+launch browsers; the dedicated CI browser job is required before artifact jobs.
+
+Acceptance covers real context selection, immutable editor content/selection/undo,
+source versus rendered diagnostics, stale responses, media/action suppression,
+iframe isolation, and desktop/mobile Admin themes. To capture the desktop dark
+workspace during the test, additionally set `DJHV_BROWSER_SCREENSHOT` to an
+absolute PNG path in a temporary directory. Browser tests do not build assets or
+publish templates.
+
+The browser baseline uses Django Admin's normal test settings. A consumer's
+stricter host CSP may independently block frames or generated inline styles;
+iframe sandboxing does not override inherited CSP. Do not relax the site's
+global policy merely to enable this approximation. Assess any narrowly scoped
+Admin policy adjustment separately, or keep the escaped HXML diagnostics only.
