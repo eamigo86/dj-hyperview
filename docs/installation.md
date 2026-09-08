@@ -21,24 +21,28 @@ INSTALLED_APPS = [
 The base app performs no database, cache, or network access during startup.
 Database-backed templates and admin integration remain optional.
 
-## Optional authoring profiles
+## Automatic schema validation
 
-Install server-side Hyperview XSD 1.1 validation without changing the admin:
+`xmlschema` is a normal dependency of the base package. Every rendered Hyperview
+document and fragment uses the same corrected XSD 1.1 registry automatically.
+No schema profile, validation mode, or callback needs to be configured.
+The deprecated `[schema]` installation extra is an empty compatibility alias:
+it does not enable a second validation mode or install an additional package.
 
-```bash
-uv add "dj-hyperview[schema]"
-```
-
-Install validation and the HXML-aware Django Admin editor together:
+## Optional Admin editor
 
 ```bash
 uv add "dj-hyperview[editor]"
 ```
 
-The base installation never imports either optional dependency. The editor is
-also opt-in at runtime: add `"django_ace"` to `INSTALLED_APPS` and set
-`HYPERVIEW["ADMIN"]["EDITOR"]` to `True`. Adding the package extra alone does
+The extra adds Ace, not a different schema. The base package does not import
+`django_ace`. Enable the editor by adding `"django_ace"` to `INSTALLED_APPS` and
+setting `HYPERVIEW["ADMIN"]["EDITOR"]` to `True`. Installing the extra alone does
 not change existing admin forms.
+
+An upgrade changes validation for all rendered HXML. Review effective database
+overrides as well as filesystem templates before adoption; follow the
+[coordinated upgrade procedure](release-rollback.md#automatic-validation-adoption).
 
 Continue with the [Quick Start](quickstart.md) to serve a filesystem-backed
 screen, or open the complete [configuration reference](configuration.md).

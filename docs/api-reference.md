@@ -1,6 +1,7 @@
 # API Reference
 
-Import stable public objects from `dj_hyperview`. Modules and names beginning
+Import stable public objects from `dj_hyperview`; catalog helpers are in
+`dj_hyperview.schema`. Modules and names beginning
 with an underscore remain implementation details.
 
 | Symbol | Purpose |
@@ -24,13 +25,21 @@ with an underscore remain implementation details.
 | --- | --- |
 | `HyperviewEngine` | Compile, render, and validate consumer templates. |
 | `render_template` | Render one template using current settings. |
-| `HyperviewResponse` | Return explicit Hyperview markup. |
+| `HyperviewResponse` | Validate and return explicit Hyperview markup. |
 | `HyperviewTemplateResponse` | Preserve Django's lazy template response. |
 | `HyperviewFragmentResponse` | Return and validate one eager bare fragment. |
 | `HyperviewFragmentTemplateResponse` | Lazily render and validate one bare fragment. |
 | `HyperviewTemplateView` | Serve a named template from a class-based view. |
 | `HYPERVIEW_MEDIA_TYPE` | Canonical Hyperview response media type. |
 | `HYPERVIEW_FRAGMENT_MEDIA_TYPE` | Canonical replacement-fragment media type. |
+
+All package render methods, including compiled templates from `get_template()`
+and `select_template()`, validate final output automatically. `engine.backend`
+is the underlying low-level Django backend, not a validated rendering API.
+
+HTTP body construction, assignment, `write()`, and `writelines()` validate the
+complete candidate before changing stored bytes. See [HTTP responses](http-responses.md)
+for bodyless statuses, HEAD request context, and lazy callback semantics.
 
 ## Request detection
 
@@ -46,10 +55,13 @@ with an underscore remain implementation details.
 | Symbol | Purpose |
 | --- | --- |
 | `validate_template_source` | Validate raw template source safety before compilation. |
-| `validate_hxml` | Validate a final rendered HXML document against configured limits and schema. |
-| `validate_fragment_hxml` | Validate fragment XML, limits, and client-safe root shape. |
-| `validate_hyperview_schema` | Validate rendered HXML with the optional Hyperview 0.110.0 XSD 1.1 registry. |
-| `HYPERVIEW_SCHEMA_VERSION` | Hyperview schema release bundled by the optional validator and editor catalog. |
+| `validate_hxml` | Validate a final rendered HXML document against resource limits and the automatic corrected schema. |
+| `validate_fragment_hxml` | Validate fragment XML, limits, the automatic schema, and client-safe root shape. |
+| `validate_hyperview_schema` | Validate rendered HXML with the automatic corrected XSD 1.1 registry. |
+| `HYPERVIEW_SCHEMA_VERSION` | Bundled upstream Hyperview schema release. |
+| `HYPERVIEW_VALIDATION_CONTRACT` | Capability identifier `automatic-xsd-v1`. |
+| `schema.get_hyperview_catalog` | Inspect the corrected runtime declarations and registered extensions (catalog format 2). |
+| `schema.build_hyperview_catalog` | Inspect frozen upstream declarations without selecting a runtime schema. |
 | `TemplateCache` | Cache raw resolved templates when enabled. |
 | `CacheEntry` | Represent a cache hit or negative entry. |
 | `CACHE_MISS` | Represent an explicit cached source miss. A cache lookup returns `None` when no cache entry exists. |

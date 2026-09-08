@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, fields
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any, Literal
+from typing import Any
 
 from django.conf import settings as django_settings
 from django.core.checks import ERROR
@@ -14,13 +14,10 @@ from django.http import HttpRequest
 from django.test.signals import setting_changed
 from django.utils.module_loading import import_string
 
-Schema = str | Path | Callable[[str], None] | None
+from ._schema_extensions import _normalize_extensions, _SchemaExtensions
+
 AdminPermission = Callable[[HttpRequest], bool]
-SchemaProfile = Literal["upstream-0.110.0", "compatible-0.110.0"]
-SCHEMA_PROFILES: tuple[SchemaProfile, ...] = (
-    "upstream-0.110.0",
-    "compatible-0.110.0",
-)
+
 _SETTING_DEPENDENCIES = frozenset(
     {"CACHES", "DATABASES", "HYPERVIEW", "INSTALLED_APPS"}
 )
@@ -61,11 +58,22 @@ class CacheSettings:
 class ValidationSettings:
     """Configuration for safe source and rendered HXML validation."""
 
-    mode: str = "publish_and_render"
-    schema: Schema = None
     max_bytes: int = 1_000_000
     max_depth: int = 64
     max_nodes: int = 20_000
+
+    def __post_init__(self) -> None:
+        """Reject invalid limits even when constructed outside Django settings.
+
+        Raises:
+            ValueError: If a limit is invalid.
+        """
+        for name in ("max_bytes", "max_depth", "max_nodes"):
+            value = getattr(self, name)
+            if type(value) is not int or value < 1:
+                raise ValueError(f"{name} must be a positive integer")
+        if self.max_depth > 256:
+            raise ValueError("max_depth must be no greater than 256")
 
 
 @dataclass(frozen=True, slots=True)
@@ -86,7 +94,7 @@ class HyperviewSettings:
     validation: ValidationSettings = field(default_factory=ValidationSettings)
     admin: AdminSettings = field(default_factory=AdminSettings)
     extra_schemas: tuple[Path, ...] = ()
-    schema_profile: SchemaProfile = "upstream-0.110.0"
+    schema_extensions: _SchemaExtensions = field(default_factory=_SchemaExtensions)
 
 
 DEFAULTS = HyperviewSettings()
@@ -142,7 +150,7 @@ def _settings_snapshot() -> HyperviewSettings:
         ),
         admin=_admin_settings(raw.get("ADMIN", {})),
         extra_schemas=tuple(Path(path) for path in raw.get("EXTRA_SCHEMAS", ())),
-        schema_profile=raw.get("SCHEMA_PROFILE", DEFAULTS.schema_profile),
+        schema_extensions=_normalize_extensions(raw.get("SCHEMA_EXTENSIONS", {})),
     )
 
 

@@ -49,7 +49,16 @@ class BlockingMutationSource(MemorySource):
 
 def test_engine_renders_a_root_template_with_django_semantics():
     resolver = TemplateResolver(
-        [MemorySource({"screen.xml": "<view>{{ title }}</view>"})]
+        [
+            MemorySource(
+                {
+                    "screen.xml": (
+                        '<text xmlns="https://hyperview.org/hyperview">{{'
+                        " title }}</text>"
+                    )
+                }
+            )
+        ]
     )
     engine = HyperviewEngine(resolver)
 
@@ -60,7 +69,9 @@ def test_engine_renders_a_root_template_with_django_semantics():
     assert template.origin.name == "memory:screen.xml"
     assert template.origin.template_name == "screen.xml"
     assert template.origin.loader_name == "dj_hyperview.loaders.ResolverLoader"
-    assert engine.render("screen.xml", {"title": "A & B"}) == ("<view>A &amp; B</view>")
+    assert engine.render("screen.xml", {"title": "A & B"}) == (
+        '<text xmlns="https://hyperview.org/hyperview">A &amp; B</text>'
+    )
 
 
 def test_engine_raises_django_error_after_resolver_miss():
@@ -82,10 +93,23 @@ def test_engine_reports_every_selected_name_after_all_miss():
 def test_engine_skips_an_invalid_candidate_and_uses_the_next_template() -> None:
     """Unsafe candidates do not abort an otherwise valid ordered selection."""
     engine = HyperviewEngine(
-        TemplateResolver([MemorySource({"screen.xml": "<view>safe</view>"})])
+        TemplateResolver(
+            [
+                MemorySource(
+                    {
+                        "screen.xml": (
+                            '<text xmlns="https://hyperview.org/hyperview">safe</text>'
+                        )
+                    }
+                )
+            ]
+        )
     )
 
-    assert engine.render(["../private.xml", "screen.xml"]) == "<view>safe</view>"
+    assert (
+        engine.render(["../private.xml", "screen.xml"])
+        == '<text xmlns="https://hyperview.org/hyperview">safe</text>'
+    )
     assert issubclass(TemplateNotFound, TemplateDoesNotExist)
     assert issubclass(InvalidTemplateName, SuspiciousOperation)
 
@@ -117,7 +141,12 @@ def test_engine_inherits_consumer_django_template_options() -> None:
         TemplateResolver(
             [
                 MemorySource(
-                    {"screen.xml": "<view>{{ request.path }}|{{ missing }}</view>"}
+                    {
+                        "screen.xml": (
+                            '<text xmlns="https://hyperview.org/hyperview">{{'
+                            " request.path }}|{{ missing }}</text>"
+                        )
+                    }
                 )
             ]
         )
@@ -125,7 +154,7 @@ def test_engine_inherits_consumer_django_template_options() -> None:
 
     assert (
         engine.render("screen.xml", request=RequestFactory().get("/configured/"))
-        == "<view>/configured/|INVALID</view>"
+        == '<text xmlns="https://hyperview.org/hyperview">/configured/|INVALID</text>'
     )
 
 
@@ -140,11 +169,22 @@ def test_engine_inherits_consumer_django_template_options() -> None:
 def test_engine_does_not_inherit_consumer_autoescape_overrides() -> None:
     """Consumer engine safety overrides cannot disable HXML autoescaping."""
     engine = HyperviewEngine(
-        TemplateResolver([MemorySource({"screen.xml": "<view>{{ value }}</view>"})])
+        TemplateResolver(
+            [
+                MemorySource(
+                    {
+                        "screen.xml": (
+                            '<text xmlns="https://hyperview.org/hyperview">{{'
+                            " value }}</text>"
+                        )
+                    }
+                )
+            ]
+        )
     )
 
     assert engine.render("screen.xml", {"value": "<behavior />"}) == (
-        "<view>&lt;behavior /&gt;</view>"
+        '<text xmlns="https://hyperview.org/hyperview">&lt;behavior /&gt;</text>'
     )
 
 
@@ -159,10 +199,24 @@ def test_engine_does_not_inherit_consumer_autoescape_overrides() -> None:
 def test_engine_inherits_options_from_django_backend_subclasses() -> None:
     """Custom DjangoTemplates subclasses retain supported consumer options."""
     engine = HyperviewEngine(
-        TemplateResolver([MemorySource({"screen.xml": "<view>{{ missing }}</view>"})])
+        TemplateResolver(
+            [
+                MemorySource(
+                    {
+                        "screen.xml": (
+                            '<text xmlns="https://hyperview.org/hyperview">{{'
+                            " missing }}</text>"
+                        )
+                    }
+                )
+            ]
+        )
     )
 
-    assert engine.render("screen.xml") == "<view>SUBCLASS</view>"
+    assert (
+        engine.render("screen.xml")
+        == '<text xmlns="https://hyperview.org/hyperview">SUBCLASS</text>'
+    )
 
 
 def test_engine_entry_points_raise_the_package_not_found_specialization() -> None:
@@ -184,14 +238,18 @@ def test_extends_and_include_use_resolver_names_and_precedence():
                 '{% extends "layout.xml" %}'
                 '{% block body %}{% include "parts/item.xml" %}{% endblock %}'
             ),
-            "layout.xml": "<view>{% block body %}{% endblock %}</view>",
+            "layout.xml": (
+                '<text xmlns="https://hyperview.org/hyperview">{%'
+                " block body %}{% endblock %}</text>"
+            ),
             "parts/item.xml": "<text>second</text>",
         }
     )
     engine = HyperviewEngine(TemplateResolver([first, second]))
 
     assert engine.render("screen.xml", {"value": "A & B"}) == (
-        "<view><text>first: A &amp; B</text></view>"
+        '<text xmlns="https://hyperview.org/hyperview"><t'
+        "ext>first: A &amp; B</text></text>"
     )
 
 
@@ -208,11 +266,12 @@ def test_render_snapshot_does_not_mix_a_concurrent_source_mutation():
     source = BlockingMutationSource(
         {
             "screen.xml": (
-                '<view>{% include "shared.xml" %}'
+                '<text xmlns="https://hyperview.org/hyperview">{%'
+                ' include "shared.xml" %}'
                 "{% include choices %}"
                 '{% include "trigger.xml" %}'
                 '{% include "shared.xml" %}'
-                "{% include choices %}</view>"
+                "{% include choices %}</text>"
             ),
             "shared.xml": "old",
             "fallback.xml": "fallback",
@@ -227,15 +286,25 @@ def test_render_snapshot_does_not_mix_a_concurrent_source_mutation():
         assert source.paused.wait(timeout=2)
         source.templates["shared.xml"] = "new"
         source.templates["future.xml"] = "future"
-        assert engine.render("screen.xml", context) == "<view>newfuturenewfuture</view>"
+        assert (
+            engine.render("screen.xml", context)
+            == '<text xmlns="https://hyperview.org/hyperview">newfuturenewfuture</text>'
+        )
         source.resume.set()
-        assert rendered.result(timeout=2) == "<view>oldfallbackoldfallback</view>"
+        assert rendered.result(timeout=2) == (
+            '<text xmlns="https://hyperview.org/hyperview">ol'
+            "dfallbackoldfallback</text>"
+        )
 
 
 def test_template_response_uses_the_dedicated_engine(tmp_path):
     (tmp_path / "parts").mkdir()
     (tmp_path / "screen.xml").write_text(
-        '<view>{% include "parts/title.xml" %}</view>', encoding="utf-8"
+        (
+            '<text xmlns="https://hyperview.org/hyperview">{%'
+            ' include "parts/title.xml" %}</text>'
+        ),
+        encoding="utf-8",
     )
     (tmp_path / "parts" / "title.xml").write_text(
         "<text>{{ title }}</text>", encoding="utf-8"
@@ -253,7 +322,9 @@ def test_template_response_uses_the_dedicated_engine(tmp_path):
         )
         response.render()
 
-    assert response.content == b"<view><text>A &amp; B</text></view>"
+    assert response.content == (
+        b'<text xmlns="https://hyperview.org/hyperview"><text>A &amp; B</text></text>'
+    )
 
 
 @override_settings(
@@ -264,7 +335,12 @@ def test_template_response_uses_the_dedicated_engine(tmp_path):
                 "loaders": [
                     (
                         "django.template.loaders.locmem.Loader",
-                        {"screen.xml": "<view>standard</view>"},
+                        {
+                            "screen.xml": (
+                                '<text xmlns="https://hyperview.org/hyperview">st'
+                                "andard</text>"
+                            )
+                        },
                     )
                 ]
             },
@@ -274,7 +350,9 @@ def test_template_response_uses_the_dedicated_engine(tmp_path):
         "SOURCES": [
             {
                 "BACKEND": "tests.stubs.TemplateSource",
-                "OPTIONS": {"content": "<view>hv</view>"},
+                "OPTIONS": {
+                    "content": '<text xmlns="https://hyperview.org/hyperview">hv</text>'
+                },
             }
         ]
     },
@@ -284,22 +362,9 @@ def test_template_response_preserves_explicit_django_engine_selection():
         RequestFactory().get("/screen"), "screen.xml", using="django"
     )
 
-    assert response.render().content == b"<view>standard</view>"
-
-
-@override_settings(
-    HYPERVIEW={
-        "SOURCES": [
-            {
-                "BACKEND": "tests.stubs.TemplateSource",
-                "OPTIONS": {"content": "<view>{{ title }}</view>"},
-            }
-        ]
-    }
-)
-def test_render_template_uses_current_hyperview_settings():
-    assert render_template("screen.xml", {"title": "Configured"}) == (
-        "<view>Configured</view>"
+    assert (
+        response.render().content
+        == b'<text xmlns="https://hyperview.org/hyperview">standard</text>'
     )
 
 
@@ -308,7 +373,33 @@ def test_render_template_uses_current_hyperview_settings():
         "SOURCES": [
             {
                 "BACKEND": "tests.stubs.TemplateSource",
-                "OPTIONS": {"content": "<view>{{ title }}</view>"},
+                "OPTIONS": {
+                    "content": (
+                        '<text xmlns="https://hyperview.org/hyperview">{{'
+                        " title }}</text>"
+                    )
+                },
+            }
+        ]
+    }
+)
+def test_render_template_uses_current_hyperview_settings():
+    assert render_template("screen.xml", {"title": "Configured"}) == (
+        '<text xmlns="https://hyperview.org/hyperview">Configured</text>'
+    )
+
+
+@override_settings(
+    HYPERVIEW={
+        "SOURCES": [
+            {
+                "BACKEND": "tests.stubs.TemplateSource",
+                "OPTIONS": {
+                    "content": (
+                        '<text xmlns="https://hyperview.org/hyperview">{{'
+                        " title }}</text>"
+                    )
+                },
             }
         ]
     }
@@ -317,25 +408,37 @@ def test_default_render_paths_reuse_engine_until_hyperview_changes() -> None:
     """Convenience rendering pays engine construction once per settings snapshot."""
     setting_changed.send(sender=object, setting="HYPERVIEW", value={}, enter=True)
     with patch("dj_hyperview.engine.HyperviewEngine", wraps=HyperviewEngine) as engine:
-        assert render_template("screen.xml", {"title": "One"}) == "<view>One</view>"
+        assert (
+            render_template("screen.xml", {"title": "One"})
+            == '<text xmlns="https://hyperview.org/hyperview">One</text>'
+        )
         response = HyperviewTemplateResponse(
             RequestFactory().get("/screen"),
             "screen.xml",
             {"title": "Two"},
         )
-        assert response.render().content == b"<view>Two</view>"
+        assert (
+            response.render().content
+            == b'<text xmlns="https://hyperview.org/hyperview">Two</text>'
+        )
         setting_changed.send(sender=object, setting="OTHER", value=None, enter=True)
         assert render_template("screen.xml", {"title": "Three"}) == (
-            "<view>Three</view>"
+            '<text xmlns="https://hyperview.org/hyperview">Three</text>'
         )
         assert engine.call_count == 1
 
         setting_changed.send(sender=object, setting="TEMPLATES", value=[], enter=True)
-        assert render_template("screen.xml", {"title": "Four"}) == "<view>Four</view>"
+        assert (
+            render_template("screen.xml", {"title": "Four"})
+            == '<text xmlns="https://hyperview.org/hyperview">Four</text>'
+        )
         assert engine.call_count == 2
 
         setting_changed.send(sender=object, setting="HYPERVIEW", value={}, enter=True)
-        assert render_template("screen.xml", {"title": "Five"}) == "<view>Five</view>"
+        assert (
+            render_template("screen.xml", {"title": "Five"})
+            == '<text xmlns="https://hyperview.org/hyperview">Five</text>'
+        )
 
     assert engine.call_count == 3
 
@@ -352,7 +455,17 @@ def test_uninitialized_validated_template_can_be_copied_without_recursion() -> N
     """Python copy protocols do not recurse through an absent wrapped template."""
     template_type = type(
         HyperviewEngine(
-            TemplateResolver([MemorySource({"screen.xml": "<view />"})])
+            TemplateResolver(
+                [
+                    MemorySource(
+                        {
+                            "screen.xml": (
+                                '<text xmlns="https://hyperview.org/hyperview" />'
+                            )
+                        }
+                    )
+                ]
+            )
         ).get_template("screen.xml")
     )
     uninitialized = object.__new__(template_type)

@@ -15,7 +15,12 @@ from lxml import etree
 from dj_hyperview.conf import get_settings
 from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import InvalidTemplateName, TemplateValidationError
-from dj_hyperview.schema import HYPERVIEW_NAMESPACE, _get_static_validation_catalog
+from dj_hyperview.schema import (
+    HYPERVIEW_NAMESPACE,
+    _get_compiled_registry,
+    _get_declaration_type,
+    _get_static_validation_catalog,
+)
 from dj_hyperview.sources import canonicalize_template_name
 from dj_hyperview.validation import validate_template_source
 
@@ -142,10 +147,15 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
             )
         ]
 
-    elements = _get_static_validation_catalog()["elements"]
+    catalog = _get_static_validation_catalog()
+    elements = catalog["elements"]
+    compiled = _get_compiled_registry()
     known_namespaces = {item["namespace"] for item in elements.values()}
     diagnostics = []
     incomplete_line = None
+    if has_dynamic_syntax or re.search(r"{%\s*verbatim(?:\s|%)", content):
+        token = _DJANGO_TOKEN.search(content)
+        incomplete_line = content.count("\n", 0, token.start()) + 1 if token else 1
     for element in root.iterdescendants():
         if not isinstance(element.tag, str):
             continue
@@ -173,6 +183,16 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
                     )
                 )
             continue
+        dynamic_action = key == "behavior" and dynamic_marker in element.get(
+            "action", ""
+        )
+        if key == "behavior" and not dynamic_action:
+            definition = catalog["behavior_variants"].get(
+                element.get("action"), definition
+            )
+        selected_type = _get_declaration_type(
+            compiled.maps.elements[element.tag], element
+        )
         allowed = definition["attributes"]
         present = set()
         dynamic_attributes = False
@@ -189,6 +209,9 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
             present.add(attribute_key)
             attribute_definition = allowed.get(attribute_key)
             if attribute_definition is None:
+                if dynamic_action and attribute.namespace is None:
+                    # Without the rendered action, custom fields cannot be selected.
+                    continue
                 if (
                     attribute.namespace is not None
                     and definition["allows_custom_attributes"]
@@ -205,12 +228,11 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
                 )
                 continue
             value = element.attrib[raw_name]
-            allowed_values = attribute_definition["enum"]
-            if (
-                allowed_values
-                and dynamic_marker not in value
-                and value not in allowed_values
-            ):
+            invalid_value = False
+            if dynamic_marker not in value:
+                declared_attribute = selected_type.attributes[attribute_key]
+                invalid_value = not declared_attribute.type.is_valid(value)
+            if invalid_value:
                 diagnostics.append(
                     _diagnostic(
                         "schema_attribute_value",

@@ -1,1 +1,1 @@
-<view><header>primary-layout</header>{% block body %}{% endblock %}</view>
+<view xmlns='https://hyperview.org/hyperview'><text id='layout-marker'>primary-layout</text>{% block body %}{% endblock %}</view>

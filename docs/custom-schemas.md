@@ -12,20 +12,14 @@ it does not implement their React Native behavior.
 4. Declare a prefix for the same namespace in each HXML document.
 5. Run Django's system checks before opening the editor or serving HXML.
 
-Install validation alone:
+The base installation includes automatic XSD 1.1 validation:
 
 ```bash
-uv add "dj-hyperview[schema]"
+uv add dj-hyperview
 ```
 
-Install validation plus admin autocomplete and formatting:
-
-```bash
-uv add "dj-hyperview[editor]"
-```
-
-The editor profile includes the schema dependency. It also requires
-`django_ace` in `INSTALLED_APPS`.
+For optional Admin autocomplete and formatting, install `dj-hyperview[editor]`
+and add `django_ace` to `INSTALLED_APPS`. Neither installation selects a schema.
 
 ## 1. Choose a namespace
 
@@ -110,7 +104,7 @@ starting point.
 
 ## 3. Register the schema
 
-Configure the local path and activate the bundled Hyperview validator:
+Configure the local path; the bundled Hyperview validator is automatic:
 
 ```python
 from pathlib import Path
@@ -131,9 +125,6 @@ HYPERVIEW = {
     "EXTRA_SCHEMAS": [
         BASE_DIR / "schema" / "hypertodo.xsd",
     ],
-    "VALIDATION": {
-        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
-    },
 }
 ```
 
@@ -213,7 +204,7 @@ dependencies outside the configured root directory. Each root is limited to
 visited once rather than recursively expanded forever.
 
 The registry and custom completion caches share the complete transitive graph
-of resolved paths, sizes, and nanosecond modification times, keyed by profile.
+of resolved paths, sizes, and nanosecond modification times, keyed by the internal correction revision and normalized registrations.
 They inspect references before cache hits. Saving a deeply included schema
 therefore refreshes both validation and autocomplete without restarting Django.
 
@@ -225,20 +216,14 @@ configured dependency and validating against an incomplete registry.
 Do not use `xs:override` in `EXTRA_SCHEMAS`: it is rejected with the stable
 `forbidden_schema_reference` validation code (`dj_hyperview.E012` during
 configuration checks). The only allowed override belongs to the package's fixed
-compatibility profile, not to arbitrary project schemas.
+trusted correction, not to arbitrary project schemas.
 
-## Choose the bundled validation profile
+## One corrected registry
 
-`SCHEMA_PROFILE` defaults to `upstream-0.110.0`. The opt-in
-`compatible-0.110.0` profile adds signed decimal percentage values only to the
-nine Hyperview style margin attributes, preserving all other upstream types.
-Custom elements still participate in either profile's validation and catalog.
-See [percentage margin compatibility](configuration.md#opt-in-to-compatible-percentage-margins)
-for configuration and the exact boundary.
-
-Both profiles reuse the unchanged upstream completion catalog; runtime
-catalog responses identify the selection in `schema_profile`. Arbitrary extra
-schemas cannot replace the fixed overlay or broaden unrelated Hyperview types.
+All runtime and Admin paths use one corrected registry. There is no selectable
+profile. The [configuration reference](configuration.md#corrected-schema-boundaries)
+lists the verified corrections and exclusions. Arbitrary extra schemas cannot
+replace the fixed overlay or broaden unrelated Hyperview types.
 
 ## Know the boundary
 
@@ -250,3 +235,72 @@ implement and test that client-side contract separately.
 Publication of a database template compiles Django template syntax but does not
 render it. Values and branches that depend on runtime context are validated
 when the final document or fragment is served.
+
+## Typed registrations and registry identity
+
+Use `SCHEMA_EXTENSIONS` when a registered mobile
+behavior or a known built-in element needs additional typed attributes. Keep
+namespaced custom components in `EXTRA_SCHEMAS`. Neither setting installs a
+mobile component or behavior. The [configuration reference](configuration.md#register-typed-schema-extensions)
+contains the complete descriptor contract and a small example.
+
+For a registered action, the package generates an in-memory trusted XSD 1.1
+alternative with its exact attributes. The final alternative retains the
+standard behavior type. A `message` allowed on `show-snackbar` therefore remains
+invalid on `reload` or an unknown action. An `image.variant` registration does
+not admit `variant` on `text`, and unrelated attributes remain forbidden.
+
+Only package code produces this overlay from normalized data. Registrations
+cannot contain raw XSD, XPath, import callbacks, custom regexes, or schema
+locations. External `xs:override` stays forbidden. Existing local-reference,
+DTD/entity, symlink-confinement and transitive-file limits remain unchanged.
+Conflicting global declarations across extra schemas are rejected before
+runtime validation, static Admin validation or catalog use; matching completion
+enums alone do not prove matching XSD types or child models. This comparison
+also includes effective schema defaults (such as local attribute/element forms
+and default attributes), node-scoped QName bindings, and XPath namespace context.
+Changing the order of `EXTRA_SCHEMAS` cannot select between incompatible
+interpretations of the same declaration. Equivalent explicit overrides remain
+accepted; for example, local `form="unqualified"` is independent of the root's
+`attributeFormDefault`.
+
+Custom elements may also use simple XSD types, such as `xs:integer` or a named
+string enumeration. Their catalogs contain no attributes or child elements;
+rendered validation still enforces the value type and rejects unknown attributes.
+Admin source checks reject those attributes without evaluating dynamic text.
+
+The registry snapshot is detached and immutable. Its identity includes the
+internal correction revision, normalized registrations and all configured dependency fingerprints.
+References are checked before cache reuse, and Django's `setting_changed`
+signal clears the active-schema and catalog caches together.
+
+### Catalog format 2
+
+Active catalog responses always contain `catalog_format: 2` and `behavior_variants`, keyed
+by the literal registered action. Each variant has the same element-definition
+shape as `elements.behavior`, with its complete allowed attributes. The baseline
+behavior completion offers registered action names, but not their unrelated
+attributes. Static validation's baseline retains only standard action names;
+it selects a registered variant when the action is known literally.
+
+Unqualified attribute keys remain local names; qualified keys use Clark names,
+for example `{https://hyperview.org/hyperview-alert}message`. The editor resolves
+the prefix actually declared in the source, rather than confusing that attribute
+with an unqualified `message`. Dynamic actions receive conservative suggestions
+and require rendered validation for a complete answer.
+
+The packaged corrected catalog is generated deterministically from its fixed schema;
+regressions compare it with fresh schema introspection and check the approved
+attribute deltas. Runtime variants are derived from the same compiled registry
+as validation. The config-free `get_hyperview_schema_path()` and
+`build_hyperview_catalog()` helpers retain their upstream inspection meaning and
+original catalog format. That inspection output is not the active runtime registry.
+
+### Migration boundary
+
+Validate a synthetic rendered corpus, including error and conditional branches,
+before upgrading an existing application to automatic validation. Correct invalid
+structure in the application rather than adding a permissive schema exception.
+Existing database templates can override corrected filesystem templates; review
+those effective rows separately with explicit database authorization. This
+package performs no data migration, publication, cache flush or deployment.

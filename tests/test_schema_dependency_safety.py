@@ -39,16 +39,11 @@ def write_graph(tmp_path: Path) -> tuple[Path, Path]:
     return root, leaf
 
 
-@pytest.mark.parametrize("profile", ["upstream-0.110.0", "compatible-0.110.0"])
-def test_leaf_changes_refresh_both_catalog_and_validation(
-    tmp_path: Path, profile: str
-) -> None:
+def test_leaf_changes_refresh_both_catalog_and_validation(tmp_path: Path) -> None:
     """The completion catalog cannot lag behind a transitive validation change."""
     root, leaf = write_graph(tmp_path)
     document = f'<view xmlns="{HV}" xmlns:app="{APP}"><app:thing/></view>'
-    with override_settings(
-        HYPERVIEW={"EXTRA_SCHEMAS": [root], "SCHEMA_PROFILE": profile}
-    ):
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
         validate_hyperview_schema(document)
         assert (
             get_hyperview_catalog()["elements"][f"{{{APP}}}thing"]["attributes"] == {}
@@ -373,7 +368,7 @@ def test_compilers_forbid_entities_independently_of_reference_guard(
     )
     with pytest.raises(TemplateValidationError) as error:
         if registry:
-            _compile_registry("upstream-0.110.0", (_SchemaDependencies(str(root), ()),))
+            _compile_registry((_SchemaDependencies(str(root), ()),))
         else:
             _compile_schema(root)
     assert error.value.code == "schema_invalid"
@@ -441,7 +436,7 @@ def test_compilation_warnings_cannot_silently_omit_schema_dependencies(
 
     with pytest.raises(TemplateValidationError) as error:
         if registry:
-            _compile_registry("upstream-0.110.0", (_SchemaDependencies(str(root), ()),))
+            _compile_registry((_SchemaDependencies(str(root), ()),))
         else:
             _compile_schema(root)
     assert error.value.code == "schema_invalid"

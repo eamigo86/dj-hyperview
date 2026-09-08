@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
+from uuid import uuid4
 
 import pytest
 from django.core.cache import caches
@@ -94,6 +95,7 @@ def test_opt_in_redis_backend_round_trip() -> None:
         "djhv-redis": {
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
             "LOCATION": url,
+            "KEY_PREFIX": f"djhv-compat-{uuid4().hex}",
         }
     }
 

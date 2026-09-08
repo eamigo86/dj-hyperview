@@ -1,7 +1,6 @@
-"""Opt-in compatibility profiles preserve immutable upstream schema resources."""
+"""Automatic corrections preserve immutable upstream and historical resources."""
 
 from copy import deepcopy
-from unittest.mock import patch
 
 import pytest
 from django.test import override_settings
@@ -32,32 +31,21 @@ MARGINS = (
 )
 
 
-@pytest.mark.parametrize("profile", [UPSTREAM, COMPATIBLE])
-def test_schema_profile_preserves_existing_margin_values(profile: str) -> None:
+def test_corrected_schema_preserves_existing_margin_values() -> None:
     """Compatibility is additive: existing integer and auto values still work."""
-    with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
+    with override_settings(HYPERVIEW={}):
         for value in ("0", "-4", "+3", "auto"):
             for margin in MARGINS:
                 validate_hyperview_schema(f'<style xmlns="{HV}" {margin}="{value}"/>')
 
 
-@pytest.mark.parametrize("profile", [UPSTREAM, COMPATIBLE])
-def test_percentage_margins_require_the_explicit_compatible_profile(
-    profile: str,
-) -> None:
-    """Only the selected compatibility profile accepts decimal percentages."""
-    with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
-        for value in ("50%", "-12.5%", "+0.5%", ".5%", "-.25%", "100.0%"):
-            for margin in MARGINS:
-                document = f'<style xmlns="{HV}" {margin}="{value}"/>'
-                if profile == COMPATIBLE:
-                    validate_hyperview_schema(document)
-                else:
-                    with pytest.raises(TemplateValidationError, match="\\[schema\\]"):
-                        validate_hyperview_schema(document)
+def test_corrected_schema_accepts_audited_percentage_margins():
+    for value in ("50%", "-12.5%", "+0.5%", ".5%", "-.25%", "100.0%"):
+        for margin in MARGINS:
+            validate_hyperview_schema(f'<style xmlns="{HV}" {margin}="{value}"/>')
 
 
-@override_settings(HYPERVIEW={"SCHEMA_PROFILE": COMPATIBLE})
+@override_settings(HYPERVIEW={})
 def test_compatibility_does_not_accept_malformed_margin_percentages() -> None:
     """The overlay does not turn margins into arbitrary strings."""
     for value in (
@@ -78,7 +66,7 @@ def test_compatibility_does_not_accept_malformed_margin_percentages() -> None:
                 validate_hyperview_schema(f'<style xmlns="{HV}" {margin}="{value}"/>')
 
 
-@override_settings(HYPERVIEW={"SCHEMA_PROFILE": COMPATIBLE})
+@override_settings(HYPERVIEW={})
 def test_compatibility_does_not_broaden_unrelated_style_attributes() -> None:
     """Shared upstream sizing and numeric types remain untouched."""
     for attribute, value in (
@@ -91,27 +79,15 @@ def test_compatibility_does_not_broaden_unrelated_style_attributes() -> None:
             validate_hyperview_schema(f'<style xmlns="{HV}" {attribute}="{value}"/>')
 
 
-def test_profile_switches_validator_and_catalog_without_mutating_public_builders() -> (
-    None
-):
-    """Runtime profile selection is distinct from immutable upstream inspection."""
+def test_automatic_catalog_does_not_mutate_upstream_inspection_helpers():
     upstream_path = get_hyperview_schema_path()
     upstream_catalog = build_hyperview_catalog()
-    document = f'<style xmlns="{HV}" margin="50%"/>'
-    for profile in (UPSTREAM, COMPATIBLE, UPSTREAM):
-        with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
-            catalog = get_hyperview_catalog()
-            assert catalog["schema_profile"] == profile
-            assert {
-                key: value for key, value in catalog.items() if key != "schema_profile"
-            } == upstream_catalog
-            assert get_hyperview_schema_path() == upstream_path
-            assert build_hyperview_catalog() == upstream_catalog
-            if profile == COMPATIBLE:
-                validate_hyperview_schema(document)
-            else:
-                with pytest.raises(TemplateValidationError, match="\\[schema\\]"):
-                    validate_hyperview_schema(document)
+    catalog = get_hyperview_catalog()
+    assert catalog["catalog_format"] == 2
+    assert "schema_profile" not in catalog
+    assert get_hyperview_schema_path() == upstream_path
+    assert build_hyperview_catalog() == upstream_catalog
+    validate_hyperview_schema(f'<style xmlns="{HV}" margin="50%"/>')
 
 
 def test_compatibility_overlay_changes_only_the_nine_margin_types() -> None:
@@ -155,25 +131,23 @@ def test_compatibility_overlay_changes_only_the_nine_margin_types() -> None:
     assert union is not None and union.get("memberTypes") == "hv:sizing"
 
 
-@pytest.mark.parametrize("profile", [UPSTREAM, COMPATIBLE])
-def test_profile_catalog_stays_detached(profile: str) -> None:
+def test_active_catalog_stays_detached() -> None:
     """Caller edits cannot pollute the cached completion metadata."""
-    with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
+    with override_settings(HYPERVIEW={}):
         catalog = get_hyperview_catalog()
         catalog["elements"].clear()
-        catalog["schema_profile"] = "changed"
+        catalog["catalog_format"] = "changed"
         assert get_hyperview_catalog()["elements"]
-        assert get_hyperview_catalog()["schema_profile"] == profile
+        assert get_hyperview_catalog()["catalog_format"] == 2
 
 
-@override_settings(HYPERVIEW={"SCHEMA_PROFILE": COMPATIBLE})
-def test_compatible_catalog_reuses_packaged_metadata_without_compiling() -> None:
-    """Selecting compatible completions must not add runtime XSD compilation."""
-    with patch(
-        "dj_hyperview.schema._compile_schema",
-        side_effect=AssertionError("catalog must use packaged metadata"),
-    ):
-        assert get_hyperview_catalog()["schema_profile"] == COMPATIBLE
+def test_active_catalog_reuses_compiled_registry_for_unchanged_settings():
+    from dj_hyperview.schema import _cached_registry
+
+    get_hyperview_catalog()
+    hits = _cached_registry.cache_info().hits
+    assert get_hyperview_catalog()["catalog_format"] == 2
+    assert _cached_registry.cache_info().hits == hits
 
 
 def test_compiled_overlay_catalog_equals_the_packaged_upstream_catalog() -> None:

@@ -12,6 +12,7 @@ from dj_hyperview import (
     HYPERVIEW_FRAGMENT_MEDIA_TYPE,
     HYPERVIEW_MEDIA_TYPE,
     HyperviewResponse,
+    TemplateValidationError,
 )
 from tests.consumer_project import settings_filesystem as filesystem
 from tests.hyperview_contract import (
@@ -111,7 +112,7 @@ def test_versioned_request_escapes_context_and_accepts_real_csrf() -> None:
     )
     form = client.get("/documents/form/", headers=headers)
     field = etree.fromstring(form.content).find(
-        ".//text-field[@name='csrfmiddlewaretoken']"
+        ".//{https://hyperview.org/hyperview}text-field[@name='csrfmiddlewaretoken']"
     )
 
     assert fragment.headers["Content-Type"] == (
@@ -119,7 +120,9 @@ def test_versioned_request_escapes_context_and_accepts_real_csrf() -> None:
     )
     assert fragment.charset == "utf-8"
     assert fragment.content == (
-        b"<view><text>Caf\xc3\xa9 &amp; &lt;unsafe&gt;</text></view>"
+        b"<view xmlns='https://hyperview.org/hyperview'>"
+        b"<text>Caf\xc3\xa9 &amp; &lt;unsafe&gt;</text>"
+        b"</view>"
     )
     assert field is not None
     assert field.attrib["value"].isalnum()
@@ -168,7 +171,10 @@ def test_http_contract_rejects_invalid_protocol_boundaries(
             content_type=f"{HYPERVIEW_MEDIA_TYPE}; charset=iso-8859-1",
         )
     elif case == "xml":
-        response = HyperviewResponse(f'<view xmlns="{NAMESPACE}">'.encode())
+        invalid = f'<view xmlns="{NAMESPACE}">'.encode()
+        with pytest.raises(TemplateValidationError, match="malformed_xml"):
+            HyperviewResponse(invalid)
+        response = HttpResponse(invalid, content_type=HYPERVIEW_MEDIA_TYPE)
     elif case == "shape":
         expected_root = "doc"
     else:
@@ -200,7 +206,9 @@ def test_http_contract_rejects_non_utf8_bytes_or_declaration(
     content: bytes,
 ) -> None:
     """Reject body bytes and XML declarations that contradict HTTP UTF-8."""
-    response = HyperviewResponse(content)
+    with pytest.raises(TemplateValidationError):
+        HyperviewResponse(content)
+    response = HttpResponse(content, content_type=HYPERVIEW_MEDIA_TYPE)
 
     with pytest.raises(
         ContractValidationError, match="HTTP encoding mismatch"
@@ -236,7 +244,9 @@ def test_http_contract_rejects_dtd_and_entities_without_details(
     content = (
         '<?xml version="1.0" encoding="UTF-8"?>' + body.format(namespace=NAMESPACE)
     ).encode()
-    response = HyperviewResponse(content)
+    with pytest.raises(TemplateValidationError, match="forbidden_declaration"):
+        HyperviewResponse(content)
+    response = HttpResponse(content, content_type=HYPERVIEW_MEDIA_TYPE)
 
     with pytest.raises(
         ContractValidationError, match="HTTP XML declarations forbidden"

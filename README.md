@@ -28,8 +28,8 @@ screens into the package.
   views, validated fragment responses, request metadata, content negotiation,
   and standard CSRF protection.
 - **Fail-closed validation** — enforce canonical names, UTF-8, XML safety,
-  configurable resource limits, and optional XSD 1.1 validation against the
-  bundled Hyperview 0.110.0 schemas plus project extensions.
+  configurable resource limits, and automatic XSD 1.1 validation against one
+  corrected Hyperview 0.110.0 schema plus explicit project extensions.
 
 > dj-hyperview does not ship application screens, runtime application HXML,
 > mobile components, Redis, or a required database app. Those choices remain
@@ -74,16 +74,16 @@ INSTALLED_APPS = [
 The base app performs no database, cache, or network access during startup.
 Database-backed templates and admin integration are optional.
 
-Install schema validation or the complete admin-authoring profile only when a
-project needs them:
+Schema validation is automatic: `xmlschema` is a normal dependency, with no
+profile or enable flag. The deprecated `[schema]` extra remains an empty
+compatibility alias. Install the optional Admin authoring tools separately:
 
 ```bash
-uv add "dj-hyperview[schema]"
 uv add "dj-hyperview[editor]"
 ```
 
-The editor profile includes XSD validation, HXML completion and formatting, and
-context-free validation of unsaved source. Enable it explicitly:
+The editor adds HXML completion, formatting, and context-free validation of
+unsaved source. Enable only that editor explicitly:
 
 ```python
 INSTALLED_APPS = [
@@ -96,9 +96,6 @@ HYPERVIEW = {
     "ADMIN": {
         "EDITOR": True,
         "PERMISSION": "sample_app.permissions.can_edit_hyperview",
-    },
-    "VALIDATION": {
-        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
     },
 }
 ```

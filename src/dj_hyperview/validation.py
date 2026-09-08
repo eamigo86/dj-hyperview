@@ -3,13 +3,9 @@
 import codecs
 import re
 from collections.abc import Callable
-from pathlib import Path
-from threading import RLock
+from dataclasses import dataclass
 from typing import Any
 
-from django.dispatch import receiver
-from django.test.signals import setting_changed
-from django.utils.module_loading import import_string
 from django.utils.safestring import SafeData, mark_safe
 from lxml import etree
 
@@ -17,8 +13,6 @@ from .conf import ValidationSettings, get_settings
 from .exceptions import TemplateValidationError
 
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
-SCHEMA_MESSAGE = "document does not match schema"
-XSD_NAMESPACE = "{http://www.w3.org/2001/XMLSchema}"
 RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
 IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"))
 XML_ENCODING = re.compile(
@@ -27,24 +21,10 @@ XML_ENCODING = re.compile(
 )
 DJANGO_COMMENT = re.compile(r"{%\s*comment(?=\s|%})")
 DJANGO_ENDCOMMENT = re.compile(r"{%\s*endcomment(?=\s|%})")
-_SCHEMA_CACHE: dict[Path, tuple[tuple[int, int], etree.XMLSchema]] = {}
-_SCHEMA_LOCK = RLock()
 
 
 def _fail(code: str, message: str) -> None:
     raise TemplateValidationError(code, message)
-
-
-@receiver(
-    setting_changed,
-    dispatch_uid="dj_hyperview.clear_compiled_schema_cache",
-    weak=False,
-)
-def _clear_compiled_schema_cache(*, setting: str, **kwargs: Any) -> None:
-    del kwargs
-    if setting == "HYPERVIEW":
-        with _SCHEMA_LOCK:
-            _SCHEMA_CACHE.clear()
 
 
 def _parser() -> etree.XMLParser:
@@ -149,13 +129,6 @@ def _encode_utf8(document: str) -> bytes:
         raise TemplateValidationError("malformed_xml", "invalid XML") from error
 
 
-def _guard_declarations(document: str) -> bytes:
-    encoded = _encode_utf8(document)
-    if _contains_forbidden_declaration(document):
-        _fail("forbidden_declaration", FORBIDDEN_MESSAGE)
-    return encoded
-
-
 def _guard_document(
     document: str, config: ValidationSettings, *, template_source: bool = False
 ) -> bytes:
@@ -174,7 +147,7 @@ def validate_template_source(
 
     Args:
         document: Raw template source.
-        config: Validation policy and limits.
+        config: Validated byte, depth and node limits.
 
     Returns:
         The unchanged validated source.
@@ -183,7 +156,7 @@ def validate_template_source(
     return document
 
 
-def _parse(document: str, config: ValidationSettings):
+def _parse(document: str, config: ValidationSettings) -> etree._Element:
     encoded = _guard_document(document, config)
     try:
         root = etree.fromstring(encoded, parser=_parser())
@@ -209,74 +182,85 @@ def _parse(document: str, config: ValidationSettings):
     return root
 
 
-def _schema_callable(schema):
-    if callable(schema):
-        return schema
-    if isinstance(schema, str) and not Path(schema).is_file():
-        try:
-            return import_string(schema)
-        except ImportError as error:
-            raise TemplateValidationError("schema_invalid", "invalid schema") from error
-    return None
+@dataclass(frozen=True, slots=True)
+class _ValidatedHxml:
+    """Private exact rendered output and the immutable contract that accepted it."""
+
+    text: str
+    content: bytes
+    contract_identity: tuple[Any, ...]
 
 
-def _compile_schema(schema: str | Path) -> etree.XMLSchema:
-    try:
-        path = Path(schema).resolve()
-        metadata = path.stat()
-    except (OSError, TypeError) as error:
-        raise TemplateValidationError("schema_invalid", "invalid schema") from error
-    fingerprint = (metadata.st_mtime_ns, metadata.st_size)
+def _validation_contract_identity(
+    *, config: ValidationSettings | None = None, fragment: bool = False
+) -> tuple[Any, ...]:
+    """Resolve the current guarded contract for a private rendered-result handoff.
 
-    with _SCHEMA_LOCK:
-        cached = _SCHEMA_CACHE.get(path)
-        if cached is not None and cached[0] == fingerprint:
-            return cached[1]
-        try:
-            schema_document = path.read_text(encoding="utf-8")
-            schema_root = etree.fromstring(
-                _guard_declarations(schema_document), parser=_parser()
-            )
-        except TemplateValidationError:
-            raise
-        except (OSError, UnicodeError, etree.XMLSyntaxError) as error:
-            raise TemplateValidationError("schema_invalid", "invalid schema") from error
+    Args:
+        config: Explicit validated limits, or current configured limits.
+        fragment: Whether the bare-fragment root restriction is required.
 
-        references = {
-            f"{XSD_NAMESPACE}include",
-            f"{XSD_NAMESPACE}import",
-            f"{XSD_NAMESPACE}redefine",
-        }
-        if any(element.tag in references for element in schema_root.iter()):
-            _fail(
-                "forbidden_schema_reference", "external schema references are forbidden"
-            )
-        try:
-            compiled = etree.XMLSchema(schema_root)
-        except etree.XMLSchemaParseError as error:
-            raise TemplateValidationError("schema_invalid", "invalid schema") from error
-        _SCHEMA_CACHE[path] = (fingerprint, compiled)
-        return compiled
+    Returns:
+        Registry revision, dependency and extension snapshot, limits and root mode.
+    """
+    from .schema import _get_registry_snapshot
+
+    resolved = config or get_settings().validation
+    identity, _ = _get_registry_snapshot()
+    return (*identity, resolved, fragment)
 
 
-def _validate_schema(root, document: str, config: ValidationSettings) -> None:
-    schema = config.schema
-    validator = _schema_callable(schema)
-    if validator is not None:
-        try:
-            accepted = validator(document)
-        except TemplateValidationError:
-            raise
-        except Exception as error:
-            raise TemplateValidationError("schema", SCHEMA_MESSAGE) from error
-        if accepted is False:
-            _fail("schema", SCHEMA_MESSAGE)
-        return
+def _is_current_hxml_result(
+    result: _ValidatedHxml,
+    *,
+    config: ValidationSettings | None = None,
+    fragment: bool = False,
+) -> bool:
+    """Check a private result against dependencies and limits at handoff time.
 
-    try:
-        _compile_schema(schema).assertValid(root)
-    except etree.DocumentInvalid as error:
-        raise TemplateValidationError("schema", SCHEMA_MESSAGE) from error
+    Args:
+        result: Internal validated output, never inferred from a public string.
+        config: Explicit limits, or current configured limits.
+        fragment: Whether the receiving path requires a bare fragment.
+
+    Returns:
+        Whether its exact contract is still current.
+    """
+    return result.contract_identity == _validation_contract_identity(
+        config=config, fragment=fragment
+    )
+
+
+def _validate_hxml_result(
+    document: str, *, config: ValidationSettings | None = None, fragment: bool = False
+) -> _ValidatedHxml:
+    """Parse once and apply mandatory safety, root and corrected XSD validation.
+
+    Args:
+        document: Complete rendered document or fragment.
+        config: Explicit validated limits, or current configured limits.
+        fragment: Whether to reject client-owned document roots.
+
+    Returns:
+        Exact text and UTF-8 bytes bound to the checked registry and limits.
+
+    Raises:
+        TemplateValidationError: If safety, shape, limits or XSD validation fails.
+    """
+    from .schema import _get_registry_snapshot, _validate_schema_root
+
+    resolved = config or get_settings().validation
+    root = _parse(document, resolved)
+    if fragment and etree.QName(root).localname.casefold() in RESTRICTED_FRAGMENT_ROOTS:
+        _fail(
+            "restricted_fragment_root",
+            "fragment root must not be doc, navigator, screen, or body",
+        )
+    identity, registry = _get_registry_snapshot()
+    _validate_schema_root(root, registry)
+    return _ValidatedHxml(
+        document, document.encode("utf-8"), (*identity, resolved, fragment)
+    )
 
 
 def validate_hxml(document: str, *, config: ValidationSettings | None = None) -> str:
@@ -284,16 +268,12 @@ def validate_hxml(document: str, *, config: ValidationSettings | None = None) ->
 
     Args:
         document: Rendered HXML document.
-        config: Validation policy and limits.
+        config: Validated byte, depth and node limits.
 
     Returns:
         The unchanged validated document.
     """
-    resolved = config or get_settings().validation
-    root = _parse(document, resolved)
-    if resolved.schema is not None:
-        _validate_schema(root, document, resolved)
-    return document
+    return _validate_hxml_result(document, config=config).text
 
 
 def validate_fragment_hxml(
@@ -303,7 +283,7 @@ def validate_fragment_hxml(
 
     Args:
         document: Rendered HXML fragment.
-        config: Validation policy and limits.
+        config: Validated byte, depth and node limits.
 
     Returns:
         The unchanged validated fragment.
@@ -312,33 +292,22 @@ def validate_fragment_hxml(
         TemplateValidationError: If XML is unsafe, malformed, exceeds a limit,
             or uses a client-owned document root.
     """
-    resolved = config or get_settings().validation
-    root = _parse(document, resolved)
-    if etree.QName(root).localname.casefold() in RESTRICTED_FRAGMENT_ROOTS:
-        _fail(
-            "restricted_fragment_root",
-            "fragment root must not be doc, navigator, screen, or body",
-        )
-    if resolved.schema is not None:
-        _validate_schema(root, document, resolved)
-    return document
+    return _validate_hxml_result(document, config=config, fragment=True).text
 
 
 def validate_rendered_hxml(
     document: str, *, config: ValidationSettings | None = None
 ) -> str:
-    """Apply the configured post-render validation policy.
+    """Normalize leading render whitespace and apply mandatory XSD validation.
 
     Args:
         document: Rendered HXML document.
-        config: Validation policy and limits.
+        config: Validated byte, depth and node limits.
 
     Returns:
-        The rendered document after applying the configured policy.
+        The normalized rendered document after mandatory safety and XSD validation.
     """
     resolved = config or get_settings().validation
     stripped = document.lstrip()
     document = mark_safe(stripped) if isinstance(document, SafeData) else stripped
-    if resolved.mode in {"render", "publish_and_render"}:
-        return validate_hxml(document, config=resolved)
-    return document
+    return validate_hxml(document, config=resolved)

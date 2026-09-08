@@ -35,7 +35,8 @@ def test_declaration_search_work_is_linear_for_unclosed_delimiters(
 ) -> None:
     """An inert XML declaration must not trigger repeated suffix searches."""
     document = TrackedDocument(
-        f"<view>{opening * count}<!-- <!DOCTYPE view> --></view>"
+        f"<text xmlns='https://hyperview.org/hyperview'>{opening * count}"
+        "<!-- <!DOCTYPE view> --></text>"
     )
 
     assert validator(document) == document
@@ -45,7 +46,9 @@ def test_declaration_search_work_is_linear_for_unclosed_delimiters(
 def test_inline_comment_search_work_is_linear_across_a_later_line() -> None:
     """A distant closing marker cannot make failed inline comments quadratic."""
     document = TrackedDocument(
-        "<view>" + "{#" * 2_000 + "\n#}<!-- <!DOCTYPE view> --></view>"
+        "<text xmlns='https://hyperview.org/hyperview'>"
+        + "{#" * 2_000
+        + "\n#}<!-- <!DOCTYPE view> --></text>"
     )
 
     assert validate_template_source(document) == document
@@ -77,7 +80,9 @@ def test_unclosed_block_comment_at_end_is_deferred_to_compilation(source: str) -
 def test_scanner_rechecks_after_consuming_each_ignored_block(prefix: str) -> None:
     """Cached closing positions cannot hide an active later declaration."""
     with pytest.raises(TemplateValidationError) as captured:
-        validate_template_source(f"{prefix}<!DOCTYPE view><view />")
+        validate_template_source(
+            f"{prefix}<!DOCTYPE view><text xmlns='https://hyperview.org/hyperview' />"
+        )
 
     assert captured.value.code == "forbidden_declaration"
 
@@ -99,7 +104,10 @@ def test_public_engine_scans_autoescaped_context_as_xml_only(monkeypatch) -> Non
         TemplateResolver(
             [
                 TemplateSource(
-                    content="<view>{{ payload }}<!-- <!DOCTYPE view> --></view>"
+                    content=(
+                        "<text xmlns='https://hyperview.org/hyperview'>"
+                        "{{ payload }}<!-- <!DOCTYPE view> --></text>"
+                    )
                 )
             ]
         )
@@ -116,8 +124,9 @@ def test_public_engine_scans_autoescaped_context_as_xml_only(monkeypatch) -> Non
 @pytest.mark.parametrize(
     "document",
     [
-        "{# <!DOCTYPE view> #}<view />",
-        "{% comment %}<!DOCTYPE view>{% endcomment %}<view />",
+        "{# <!DOCTYPE view> #}<text xmlns='https://hyperview.org/hyperview' />",
+        "{% comment %}<!DOCTYPE view>{% endcomment %}"
+        "<text xmlns='https://hyperview.org/hyperview' />",
     ],
 )
 def test_rendered_django_comment_text_cannot_hide_active_xml_declarations(
@@ -138,7 +147,7 @@ def test_initial_bom_does_not_hide_non_utf8_declarations(
     validator, encoding: str
 ) -> None:
     """The declaration must agree with UTF-8 even when a BOM precedes it."""
-    document = f'\ufeff<?xml version="1.0" encoding="{encoding}"?><view>café</view>'
+    document = f'\ufeff<?xml version="1.0" encoding="{encoding}"?><text xmlns=\'https://hyperview.org/hyperview\'>café</text>'
 
     with pytest.raises(TemplateValidationError) as captured:
         validator(document)
@@ -149,7 +158,7 @@ def test_initial_bom_does_not_hide_non_utf8_declarations(
 @pytest.mark.parametrize("encoding", ["UTF-8", "utf8"])
 def test_utf8_bom_is_preserved_through_validation_and_http(encoding: str) -> None:
     """Accept compatible encoding aliases without rewriting valid content."""
-    document = f'\ufeff<?xml version="1.0" encoding="{encoding}"?><view>café</view>'
+    document = f'\ufeff<?xml version="1.0" encoding="{encoding}"?><text xmlns=\'https://hyperview.org/hyperview\'>café</text>'
 
     assert validate_template_source(document) == document
     assert validate_hxml(document) == document
@@ -158,7 +167,7 @@ def test_utf8_bom_is_preserved_through_validation_and_http(encoding: str) -> Non
 
 def test_public_engine_rejects_bom_hidden_incompatible_encoding() -> None:
     """The complete rendering path enforces the same declaration contract."""
-    document = '\ufeff<?xml version="1.0" encoding="ISO-8859-1"?><view>café</view>'
+    document = '\ufeff<?xml version="1.0" encoding="ISO-8859-1"?><text xmlns=\'https://hyperview.org/hyperview\'>café</text>'
     engine = HyperviewEngine(TemplateResolver([TemplateSource(content=document)]))
 
     with pytest.raises(TemplateValidationError) as captured:

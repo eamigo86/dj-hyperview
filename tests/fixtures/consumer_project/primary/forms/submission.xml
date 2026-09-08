@@ -1,1 +1,1 @@
-{% load dj_hyperview %}<view><form action="/documents/form/" method="post"><text-field name="message" />{% hv_csrf_token %}</form></view>
+{% load dj_hyperview %}<view xmlns='https://hyperview.org/hyperview'><form><text-field name="message" />{% hv_csrf_token %}</form></view>

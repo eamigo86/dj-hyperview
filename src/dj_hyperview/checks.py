@@ -13,7 +13,6 @@ from django.core.checks import CheckMessage, Error, Warning, register
 from django.utils.module_loading import import_string
 
 from .cache import _BACKEND_FAILURE, _UNSUPPORTED_BACKEND, _resolve_cache_alias
-from .conf import SCHEMA_PROFILES
 from .sources import FileSystemSource
 
 SETTING = "settings.HYPERVIEW"
@@ -241,47 +240,19 @@ def _check_cache(value: Any) -> list[CheckMessage]:
     return errors
 
 
-def _schema(value: Any) -> bool:
-    if value is None or callable(value):
-        return True
-    try:
-        is_file = Path(value).is_file()
-    except (OSError, TypeError):
-        return False
-    if not is_file:
-        return _importable(value)
-    from .exceptions import TemplateValidationError
-    from .validation import _compile_schema
-
-    try:
-        _compile_schema(value)
-    except TemplateValidationError:
-        return False
-    return True
-
-
 def _check_validation(value: Any) -> list[CheckMessage]:
     if not isinstance(value, Mapping):
         return [_error("E007", "VALIDATION", "must be a mapping")]
     errors = []
-    modes = {"publish", "render", "publish_and_render"}
-    if value.get("MODE", "publish_and_render") not in modes:
-        errors.append(_error("E007", "VALIDATION.MODE", "has an unsupported value"))
-    schema = value.get("SCHEMA")
-    if not _schema(schema):
-        errors.append(_error("E008", "VALIDATION.SCHEMA", "must be a path or callable"))
-    elif (
-        schema == "dj_hyperview.validate_hyperview_schema"
-        and find_spec("xmlschema") is None
-    ):
-        errors.append(
-            Error(
-                "VALIDATION.SCHEMA requires the optional schema dependency.",
-                hint="Install dj-hyperview[schema] or set VALIDATION.SCHEMA to None.",
-                obj=SETTING,
-                id="dj_hyperview.E013",
+    for name, code in (("MODE", "E007"), ("SCHEMA", "E008")):
+        if name in value:
+            errors.append(
+                _error(
+                    code,
+                    f"VALIDATION.{name}",
+                    "was removed; XSD validation is always enabled",
+                )
             )
-        )
     limits = (("MAX_BYTES", 1_000_000), ("MAX_DEPTH", 64), ("MAX_NODES", 20_000))
     for name, default in limits:
         current = value.get(name, default)
@@ -316,18 +287,6 @@ def _check_extra_schemas(value: Any) -> list[CheckMessage]:
     return errors
 
 
-def _check_schema_profile(value: Any) -> list[CheckMessage]:
-    if not isinstance(value, str) or value not in SCHEMA_PROFILES:
-        return [
-            _error(
-                "E019",
-                "SCHEMA_PROFILE",
-                "must be upstream-0.110.0 or compatible-0.110.0",
-            )
-        ]
-    return []
-
-
 def _check_admin(value: Any) -> list[CheckMessage]:
     if not isinstance(value, Mapping):
         return [_error("E014", "ADMIN", "must be a mapping")]
@@ -352,15 +311,6 @@ def _check_admin(value: Any) -> list[CheckMessage]:
                     hint="Add django_ace before dj_hyperview in INSTALLED_APPS.",
                     obj=SETTING,
                     id="dj_hyperview.E016",
-                )
-            )
-        elif find_spec("xmlschema") is None:
-            errors.append(
-                Error(
-                    "ADMIN.EDITOR static XSD validation requires xmlschema.",
-                    hint="Install dj-hyperview[editor] before enabling ADMIN.EDITOR.",
-                    obj=SETTING,
-                    id="dj_hyperview.E020",
                 )
             )
 
@@ -410,14 +360,42 @@ def check_hyperview_settings(
         if "CACHE" not in raw or (isinstance(cache, Mapping) and not cache)
         else _check_cache(cache)
     )
+    from ._schema_extensions import _extension_errors
+
+    extension_errors = [
+        _error("E021", path, message)
+        for path, message in _extension_errors(raw.get("SCHEMA_EXTENSIONS", {}))
+    ]
     template_dir_messages = _check_template_dirs(raw.get("TEMPLATE_DIRS", ()))
     return [
         *template_dir_messages,
+        *extension_errors,
         *_check_sources(raw.get("SOURCES", ())),
         *_source_consistency_warnings(raw, template_dir_messages),
         *cache_errors,
         *_check_validation(raw.get("VALIDATION", {})),
         *_check_extra_schemas(raw.get("EXTRA_SCHEMAS", ())),
-        *_check_schema_profile(raw.get("SCHEMA_PROFILE", "upstream-0.110.0")),
+        *(
+            [
+                _error(
+                    "E019",
+                    "SCHEMA_PROFILE",
+                    "was removed; the corrected schema is automatic",
+                )
+            ]
+            if "SCHEMA_PROFILE" in raw
+            else []
+        ),
+        *(
+            [
+                _error(
+                    "E013",
+                    "xmlschema",
+                    "is a required dependency; repair the package installation",
+                )
+            ]
+            if find_spec("xmlschema") is None
+            else []
+        ),
         *_check_admin(raw.get("ADMIN", {})),
     ]

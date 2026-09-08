@@ -3,7 +3,7 @@ import subprocess
 import sys
 import traceback
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 
 import pytest
 from django.core.exceptions import ValidationError
@@ -202,16 +202,14 @@ def test_full_clean_accepts_safe_documents_partials_and_template_source(content)
     assert template.content == content
 
 
-reject_all_schema = Mock(return_value=False)
-
-
-@override_settings(HYPERVIEW={"VALIDATION": {"SCHEMA": reject_all_schema}})
+@override_settings(HYPERVIEW={})
 def test_model_source_validation_does_not_apply_schema_before_render():
     template = template_model()(name="screen.xml", content="<view />")
 
-    template.full_clean(validate_unique=False, validate_constraints=False)
+    with patch("dj_hyperview.schema._validate_schema_root") as validate_schema:
+        template.full_clean(validate_unique=False, validate_constraints=False)
 
-    reject_all_schema.assert_not_called()
+    validate_schema.assert_not_called()
 
 
 @pytest.mark.parametrize("name", ["../screen.xml", "x" * 256, *UNSAFE_UNICODE_NAMES])

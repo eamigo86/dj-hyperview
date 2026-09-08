@@ -31,6 +31,7 @@ def run_consumer(
     environment = {
         **os.environ,
         "DJANGO_SETTINGS_MODULE": settings_module,
+        "PYTHONDONTWRITEBYTECODE": "1",
         "PYTHONPATH": os.pathsep.join((str(PROJECT_ROOT / "src"), str(PROJECT_ROOT))),
     }
     if database is not None:
@@ -38,7 +39,7 @@ def run_consumer(
     if template_dir is not None:
         environment["DJ_HYPERVIEW_CONSUMER_TEMPLATES"] = str(template_dir)
     return subprocess.run(
-        [sys.executable, "-c", source],
+        [sys.executable, "-B", "-c", source],
         cwd=PROJECT_ROOT,
         env=environment,
         capture_output=True,

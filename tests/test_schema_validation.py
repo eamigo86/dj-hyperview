@@ -1,4 +1,4 @@
-"""Tests for optional Hyperview XSD 1.1 validation."""
+"""Tests for automatic Hyperview XSD 1.1 validation."""
 
 from __future__ import annotations
 
@@ -39,8 +39,8 @@ def test_public_validator_enforces_xsd_11_assertions() -> None:
 
 
 def test_configured_validator_applies_to_documents_and_fragments() -> None:
-    """The same configured callable validates both response media contracts."""
-    config = ValidationSettings(schema="dj_hyperview.validate_hyperview_schema")
+    """The same mandatory registry validates both response media contracts."""
+    config = ValidationSettings()
 
     assert validate_hxml(f'<view xmlns="{HV}" />', config=config)
     with pytest.raises(TemplateValidationError) as document_error:
@@ -54,7 +54,7 @@ def test_configured_validator_applies_to_documents_and_fragments() -> None:
 
 def test_fragment_root_contract_precedes_schema_validation() -> None:
     """A restricted fragment reports its media-contract error before XSD errors."""
-    config = ValidationSettings(schema="dj_hyperview.validate_hyperview_schema")
+    config = ValidationSettings()
 
     with pytest.raises(TemplateValidationError) as error:
         validate_fragment_hxml(f'<doc xmlns="{HV}" />', config=config)

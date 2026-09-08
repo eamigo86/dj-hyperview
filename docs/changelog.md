@@ -4,6 +4,54 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+### Added
+
+- One automatically enforced Hyperview 0.110.0 schema includes narrowly verified
+  text, image, accessibility, date-field, and percentage-margin corrections.
+  Only `style@width` is constrained to its supported numeric forms. Schema
+  revision tracking is internal; upstream resources remain unchanged.
+- Typed `SCHEMA_EXTENSIONS` declarations describe application-owned behavior
+  attributes and extra attributes on specific built-in elements without opening
+  standard actions or allowing arbitrary attributes. Rendered validation,
+  context-free Admin checks, and editor completion share this single contract.
+  See [custom schema declarations](custom-schemas.md).
+- `HYPERVIEW_VALIDATION_CONTRACT="automatic-xsd-v1"` identifies automatic
+  validation support for consumers that must reject an incompatible package.
+  This exported capability is not a setting or a package release version.
+
+### Breaking changes
+
+- Remove `SCHEMA_PROFILE`, `VALIDATION.MODE`, and `VALIDATION.SCHEMA` from
+  settings. Their presence now raises a configuration error with migration
+  guidance. `ValidationSettings` accepts safety limits only; validation cannot
+  be disabled or replaced by a callback.
+- `xmlschema` is a normal dependency. The old `[schema]` installation extra is
+  retained as an empty compatibility alias; `[editor]` remains optional.
+- Hyperview responses require complete, valid HXML. Body assignments, `write()`,
+  and `writelines()` validate atomically; failed updates preserve the prior body.
+  Empty document bodies are allowed only for 204, 205, and 304, which reject
+  nonempty bodies. HEAD validates the document before suppressing its transport
+  body; pass `request=request` to eager responses for this request context.
+  Assemble incremental XML before assigning it.
+- Django gzip transport is accepted only when it encodes the already-validated
+  document exactly. Compressed input cannot introduce a new document or bypass
+  validation. Remove `Content-Encoding` before replacing the document afterward.
+- Adopt package and application configuration together after reviewing existing
+  database overrides. Previously unchecked invalid output now fails validation;
+  do not use seed commands, automatic repairs, or shared-cache flushes to migrate.
+
+### Fixed
+
+- The active completion catalog preserves attribute namespaces and offers custom
+  behavior attributes only for the selected literal action. Namespaced standard
+  attributes no longer collide with unqualified application attributes in that
+  catalog; upstream inspection helpers retain their original output.
+- Incompatible duplicate declarations are rejected consistently, including
+  differences inherited from schema defaults and namespace bindings, rather than
+  letting the order of external schemas change validation results.
+- External elements with simple XSD types no longer crash completion or Admin
+  validation catalogs. They expose no custom attributes; validation stays strict.
+
 ### Changed
 
 - The optional Admin editor now runs **Format and Validate** before **Save**,

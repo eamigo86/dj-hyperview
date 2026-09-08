@@ -177,9 +177,6 @@ HYPERVIEW = {
         "PERMISSION": "sample_app.permissions.can_edit_hyperview",
     },
     "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
-    "VALIDATION": {
-        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
-    },
 }
 ```
 
@@ -213,8 +210,8 @@ unchanged source and the Admin reports both results. Validation verifies the
 canonical name,
 nonempty source, UTF-8 and size limits, forbidden declarations, and Django
 template syntax. It also performs static XSD catalog checks for element names,
-attribute names, required attributes, and literal enumerated values. The catalog
-uses the selected `SCHEMA_PROFILE` and merges configured `EXTRA_SCHEMAS`, so the
+attribute names, required attributes, and literal typed values. The catalog
+uses the automatic corrected schema and merges configured `EXTRA_SCHEMAS`, so the
 same project components offered by autocomplete participate in this check. Safe
 diagnostics include the source line when it is available. The request uses the
 existing Admin CSRF and `ADMIN.PERMISSION` boundaries; it does not save content,
@@ -241,6 +238,46 @@ reports a warning instead of claiming a complete result. Authoritative checks
 still occur through rendered-response validation. A successful draft check means
 that the source compiles and its statically visible schema declarations pass; it
 does not mean that every possible rendered document is valid.
+
+### Register application schema extensions
+
+Validation is always active. Register only the client functionality your
+application adds; no profile or schema callback is needed:
+
+```python
+HYPERVIEW = {
+    "ADMIN": {"EDITOR": True},
+    "SCHEMA_EXTENSIONS": {
+        "BEHAVIORS": {
+            "show-toast": {
+                "ATTRIBUTES": {
+                    "message": {"TYPE": "string", "REQUIRED": True},
+                    "duration": {"TYPE": "string", "ENUM": ["short", "long"]},
+                },
+            },
+        },
+        "ELEMENT_ATTRIBUTES": {
+            "image": {"variant": {"TYPE": "string", "ENUM": ["face", "fingerprint"]}},
+        },
+    },
+}
+```
+
+Registrations describe client functionality your application already implements;
+they do not install behavior handlers. Attributes belong only to the registered
+literal action or named built-in element. An unknown or Django-generated action
+never exposes the union of custom attributes in autocomplete. Qualified
+attributes retain their declared, in-scope prefixes: `alert:message` is distinct
+from the unqualified custom `message`, including when prefixes are shadowed.
+
+The source checker and rendered validator share the compiled registry and
+conditional behavior types. In addition to required attributes and enums, the checker
+checks literal primitive values and type restrictions, including width syntax.
+Dynamic values, actions, includes, and branches produce an incomplete-analysis
+warning; valid static declarations can still be checked without rendering.
+Warnings do not block the existing save workflow. Exact rendered XSD validation
+remains authoritative for composed structure, assertions, and runtime values.
+Neither autocomplete nor source validation rewrites template XML.
 
 Publication compiles Django template syntax before writing or incrementing a
 revision. Invalid tags, variables, or blocks are reported next to `content`.

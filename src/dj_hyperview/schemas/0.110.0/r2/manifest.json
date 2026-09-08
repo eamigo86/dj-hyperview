@@ -1,0 +1,31 @@
+{
+  "added_attributes": {
+    "date-field": [
+      "cancel-label",
+      "done-label"
+    ],
+    "image": [
+      "alt",
+      "accessibilityRole"
+    ],
+    "text": [
+      "ellipsizeMode",
+      "accessibilityLabel",
+      "accessibilityRole",
+      "importantForAccessibility"
+    ],
+    "text-field": [
+      "accessibilityLabel"
+    ]
+  },
+  "base_profile": "compatible-0.110.0",
+  "changed_attribute_types": [
+    "style.width"
+  ],
+  "schema_profile": "compatible-0.110.0-r2",
+  "sha256": {
+    "catalog.json": "fe89b03e3c01867e561f77ea8958f828666f25b3dabb3811e54bce1692e54180",
+    "hyperview.xsd": "79bb698d3a88143ba3ee46cff00f9fb1b465bbb931a1399034dc81802575b7b2"
+  },
+  "upstream_version": "0.110.0"
+}

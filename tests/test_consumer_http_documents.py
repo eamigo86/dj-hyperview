@@ -38,7 +38,8 @@ def test_full_document_preserves_context_and_http_metadata(client: Client) -> No
     assert response.template_name == ["screens/full.xml"]
     assert response.context_data["title"] == "Café & <consumer>"
     assert response.content.decode() == (
-        "<view><header>primary-layout</header>"
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text id='layout-marker'>primary-layout</text>"
         "<text>primary: Café &amp; &lt;consumer&gt;</text></view>"
     )
 
@@ -58,7 +59,9 @@ def test_fragment_uses_public_engine_response_and_canonical_name(
     assert response.headers["X-Consumer-Document"] == "fragment"
     assert response.headers["X-Hyperview-Template"] == "fragments/item.xml"
     assert response.content.decode() == (
-        "<view><text>Niño &amp; &lt;fragment&gt;</text></view>"
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>Niño &amp; &lt;fragment&gt;</text>"
+        "</view>"
     )
 
 
@@ -71,7 +74,7 @@ def test_unknown_document_route_returns_a_redacted_django_404(
 
     assert response.status_code == 404
     assert str(filesystem.FIXTURE_ROOT).encode() not in response.content
-    assert b"<view>" not in response.content
+    assert b"<view xmlns='https://hyperview.org/hyperview'>" not in response.content
 
 
 def test_full_document_defers_template_resolution_until_render(tmp_path: Path) -> None:
@@ -91,10 +94,19 @@ def test_full_document_defers_template_resolution_until_render(tmp_path: Path) -
 
         screen = tmp_path / "screens" / "full.xml"
         screen.parent.mkdir()
-        screen.write_text("<view>{{ title }}</view>", encoding="utf-8")
+        screen.write_text(
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text>{{ title }}</text>"
+            "</view>",
+            encoding="utf-8",
+        )
         response.render()
 
-    assert response.content.decode() == "<view>Late &amp; &lt;safe&gt;</view>"
+    assert response.content.decode() == (
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>Late &amp; &lt;safe&gt;</text>"
+        "</view>"
+    )
     assert response.status_code == 201
     assert response.headers["X-Consumer-Document"] == "full"
 
@@ -131,5 +143,7 @@ def test_documents_do_not_touch_optional_database_or_cache(
 
     assert full.status_code == 201
     assert fragment.status_code == 206
-    assert full.content.startswith(b"<view>")
-    assert fragment.content.startswith(b"<view>")
+    assert full.content.startswith(b"<view xmlns='https://hyperview.org/hyperview'>")
+    assert fragment.content.startswith(
+        b"<view xmlns='https://hyperview.org/hyperview'>"
+    )

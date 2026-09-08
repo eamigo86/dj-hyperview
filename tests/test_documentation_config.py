@@ -156,11 +156,13 @@ def test_documentation_starts_with_installation_and_configuration_outcomes() -> 
     assert "TemplateResolver" in pages["configuration.md"]
 
 
-def test_readme_introduces_optional_schema_and_editor_profiles() -> None:
-    """The project overview keeps advanced authoring explicitly optional."""
+def test_readme_introduces_automatic_schema_and_optional_editor() -> None:
+    """The project overview separates automatic validation from optional authoring."""
     readme = (ROOT / "README.md").read_text()
 
-    assert 'uv add "dj-hyperview[schema]"' in readme
+    assert "uv add dj-hyperview" in readme
+    assert "automatic" in readme.lower()
+    assert "normal dependency" in readme
     assert 'uv add "dj-hyperview[editor]"' in readme
     assert '"django_ace"' in readme
     assert '"EDITOR": True' in readme
@@ -194,11 +196,11 @@ def test_custom_schema_guide_covers_the_complete_project_extension_path() -> Non
     page = _documentation_pages()["custom-schemas.md"]
 
     for expected in (
-        'uv add "dj-hyperview[schema]"',
+        "uv add dj-hyperview",
         'targetNamespace="https://example.com/hypertodo"',
         'xmlns:app="https://example.com/hypertodo"',
         '"EXTRA_SCHEMAS"',
-        '"SCHEMA": "dj_hyperview.validate_hyperview_schema"',
+        "automatic",
         "app:swipe-row",
         "app:swipe-action",
         "python manage.py check",
@@ -247,22 +249,22 @@ def test_configuration_documents_every_setting_contract() -> None:
         "`CACHE.NEGATIVE_TTL`",
         "`CACHE.FAILURE_MODE`",
         "`VALIDATION`",
-        "`VALIDATION.MODE`",
-        "`VALIDATION.SCHEMA`",
         "`VALIDATION.MAX_BYTES`",
         "`VALIDATION.MAX_DEPTH`",
         "`VALIDATION.MAX_NODES`",
         "`ADMIN`",
         "`ADMIN.EDITOR`",
         "`EXTRA_SCHEMAS`",
+        "`SCHEMA_EXTENSIONS`",
     ):
         assert f"| {setting} |" in page
 
     assert "300 seconds" in page
     assert "15 seconds" in page
     assert "`bypass` or `raise`" in page
-    assert "`publish`, `render`, or `publish_and_render`" in page
-    assert "filesystem path, callable, or dotted callable path" in page
+    assert "| `VALIDATION.MODE` |" not in page
+    assert "| `VALIDATION.SCHEMA` |" not in page
+    assert "always" in page.lower()
     assert "maximum of 256" in page
 
 
@@ -518,3 +520,36 @@ def test_database_admin_documents_context_free_draft_validation() -> None:
     assert "full rendered XSD" in normalized
     assert "does not save" in normalized
     assert "Django template syntax" in normalized
+
+
+def test_automatic_schema_guides_have_no_active_validation_selectors() -> None:
+    """Current examples cannot opt out of or replace standard validation."""
+    for name in ("configuration.md", "custom-schemas.md", "security.md"):
+        page = (ROOT / "docs" / name).read_text()
+        for block in re.findall(r"```python\n(.*?)```", page, flags=re.DOTALL):
+            assert not re.search(r'["\'](?:SCHEMA_PROFILE|MODE|SCHEMA)["\']\s*:', block)
+    installation = (ROOT / "docs/installation.md").read_text()
+    assert "normal dependency" in installation
+    assert "empty compatibility alias" in installation
+    configuration = (ROOT / "docs/configuration.md").read_text()
+    for removed in ("SCHEMA_PROFILE", "VALIDATION.MODE", "VALIDATION.SCHEMA"):
+        assert removed in configuration
+    assert "configuration error" in configuration
+    assert "internal" in configuration
+    custom = (ROOT / "docs/custom-schemas.md").read_text()
+    assert "catalog_format: 2" in custom
+    assert "config-free" in custom
+
+
+def test_automatic_schema_adoption_requires_effective_database_review() -> None:
+    """Upgrade guidance retains explicit data ownership and rollback boundaries."""
+    page = (ROOT / "docs/release-rollback.md").read_text()
+    normalized = " ".join(page.split())
+    for phrase in (
+        "package and consumer configuration together",
+        "effective database overrides",
+        "expected_revision",
+        "does not repair",
+        "no validation toggle",
+    ):
+        assert phrase in normalized

@@ -84,7 +84,9 @@ def test_form_tag_supplies_real_token_and_valid_post_is_escaped() -> None:
     headers = {"Accept": HYPERVIEW_MEDIA_TYPE}
     form = client.get("/documents/form/", headers=headers)
     element = ElementTree.fromstring(form.content)
-    field = element.find(".//text-field[@name='csrfmiddlewaretoken']")
+    field = element.find(
+        ".//{https://hyperview.org/hyperview}text-field[@name='csrfmiddlewaretoken']"
+    )
 
     assert form.status_code == 200
     assert field is not None
@@ -107,7 +109,10 @@ def test_form_tag_supplies_real_token_and_valid_post_is_escaped() -> None:
     )
     assert response.headers["X-Consumer-Hyperview"] == "true"
     confirmed = ElementTree.fromstring(response.content)
-    assert confirmed.findtext("text") == "accepted: Café & <confirmed>"
+    assert (
+        confirmed.findtext("{https://hyperview.org/hyperview}text")
+        == "accepted: Café & <confirmed>"
+    )
     assert b"&amp; &lt;confirmed&gt;" in response.content
 
 
@@ -119,13 +124,19 @@ def test_sync_and_async_middleware_are_equivalent_and_single_call() -> None:
     def _sync_response(request: HttpRequest) -> HyperviewResponse:
         details = request.hyperview
         calls.append(("sync", bool(details), details.version))
-        return HyperviewResponse("<view>sync</view>", status=202)
+        return HyperviewResponse(
+            "<view xmlns='https://hyperview.org/hyperview'><text>sync</text></view>",
+            status=202,
+        )
 
     async def _async_response(request: HttpRequest) -> HyperviewResponse:
         assert threading.get_ident() == caller_thread
         details = request.hyperview
         calls.append(("async", bool(details), details.version))
-        return HyperviewResponse("<view>async</view>", status=202)
+        return HyperviewResponse(
+            "<view xmlns='https://hyperview.org/hyperview'><text>async</text></view>",
+            status=202,
+        )
 
     factory = RequestFactory()
     sync_result = HyperviewMiddleware(_sync_response)(
@@ -142,5 +153,11 @@ def test_sync_and_async_middleware_are_equivalent_and_single_call() -> None:
         ("async", True, "0.110.0"),
     ]
     assert sync_result.status_code == async_result.status_code == 202
-    assert sync_result.content == b"<view>sync</view>"
-    assert async_result.content == b"<view>async</view>"
+    assert (
+        sync_result.content
+        == b"<view xmlns='https://hyperview.org/hyperview'><text>sync</text></view>"
+    )
+    assert (
+        async_result.content
+        == b"<view xmlns='https://hyperview.org/hyperview'><text>async</text></view>"
+    )

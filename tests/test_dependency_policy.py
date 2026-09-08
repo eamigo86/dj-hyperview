@@ -29,10 +29,11 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
     assert metadata["project"]["dependencies"] == [
         "Django>=5.2,<6.2",
         "lxml>=6.1.3,<7",
+        "xmlschema>=4.3,<5",
     ]
     assert metadata["project"]["optional-dependencies"] == {
-        "schema": ["xmlschema>=4.3,<5"],
-        "editor": ["django-ace>=1.44,<2", "xmlschema>=4.3,<5"],
+        "schema": [],
+        "editor": ["django-ace>=1.44,<2"],
     }
     assert metadata["project"]["urls"] == {
         "Documentation": "https://eamigo86.github.io/dj-hyperview/",

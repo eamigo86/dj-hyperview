@@ -66,7 +66,7 @@ print(json.dumps({
 }))
 """
     return subprocess.run(
-        [sys.executable, "-c", script],
+        [sys.executable, "-B", "-c", script],
         cwd=PROJECT_ROOT,
         env=env,
         capture_output=True,
@@ -101,7 +101,10 @@ def test_full_render_uses_one_precedence_rule_for_extends_and_include() -> None:
         included = resolver.resolve("parts/title.xml")
 
     assert rendered == (
-        "<view><header>primary-layout</header><text>primary: A &amp; B</text></view>"
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text id='layout-marker'>primary-layout</text>"
+        "<text>primary: A &amp; B</text>"
+        "</view>"
     )
     assert (
         layout.origin
@@ -121,8 +124,13 @@ def test_fragment_render_escapes_context_and_first_directory_wins() -> None:
         fragment = engine.render("fragments/item.xml", {"label": "<safe>"})
         precedence = engine.render("precedence.xml")
 
-    assert fragment == "<view><text>&lt;safe&gt;</text></view>"
-    assert precedence == "<view>primary</view>"
+    assert fragment == (
+        "<view xmlns='https://hyperview.org/hyperview'><text>&lt;safe&gt;</text></view>"
+    )
+    assert (
+        precedence
+        == "<view xmlns='https://hyperview.org/hyperview'><text>primary</text></view>"
+    )
 
 
 def test_empty_content_is_a_hit_and_miss_remains_typed() -> None:
@@ -171,7 +179,10 @@ def test_filesystem_startup_and_render_avoid_optional_infrastructure() -> None:
     assert json.loads(completed.stdout) == {
         "checks": [],
         "rendered": (
-            "<view><header>primary-layout</header><text>primary: Clean</text></view>"
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text id='layout-marker'>primary-layout</text>"
+            "<text>primary: Clean</text>"
+            "</view>"
         ),
         "sources": 1,
     }

@@ -57,16 +57,16 @@ def test_enabled_editor_exposes_context_free_validation_control() -> None:
 
 
 @pytest.mark.django_db
-@override_settings(
-    HYPERVIEW={
-        "ADMIN": {"EDITOR": True},
-        "VALIDATION": {"SCHEMA": lambda document: False},
-    }
-)
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_accepts_compilable_source_without_context_or_schema_render(
     admin_client,
+    monkeypatch,
 ) -> None:
     """Source validation must not render variables or invoke the HXML schema."""
+    monkeypatch.setattr(
+        "dj_hyperview.engine._validate_hxml_result",
+        lambda *args, **kwargs: pytest.fail("Admin rendered template source"),
+    )
     _, model = _admin_types()
     source = (
         '<doc xmlns="https://hyperview.org/hyperview">'
@@ -80,7 +80,10 @@ def test_validation_accepts_compilable_source_without_context_or_schema_render(
     )
 
     assert response.status_code == 200
-    assert response.json() == {"ok": True, "diagnostics": []}
+    assert response.json()["ok"] is True
+    assert [item["code"] for item in response.json()["diagnostics"]] == [
+        "schema_static_incomplete"
+    ]
     assert model.objects.count() == 0
 
 
@@ -284,7 +287,11 @@ def test_validation_defers_dynamic_xsd_values_until_render(
         f'<view xmlns="https://hyperview.org/hyperview" scroll-orientation="{value}" />'
     )
 
-    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+    result = _validate(admin_client, source)
+    assert result["ok"] is True
+    assert [item["code"] for item in result["diagnostics"]] == [
+        "schema_static_incomplete"
+    ]
 
 
 @pytest.mark.django_db

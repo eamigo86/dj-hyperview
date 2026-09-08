@@ -34,7 +34,9 @@ def test_filesystem_source_document_exposes_safe_resolution_metadata(
     """A resolved filesystem document retains content and source metadata."""
     response = client.get("/documents/source/", {"template": "precedence.xml"})
 
-    expected = b"<view>primary</view>"
+    expected = (
+        b"<view xmlns='https://hyperview.org/hyperview'><text>primary</text></view>"
+    )
     assert response.status_code == 200
     assert response.content == expected
     assert response.headers["X-Hyperview-Template"] == "precedence.xml"
@@ -61,9 +63,24 @@ def test_unsafe_template_name_returns_redacted_bad_request(
 @pytest.mark.parametrize(
     ("content", "validation", "code"),
     [
-        ("<view>private-payload", {}, "malformed_xml"),
-        ("<view>private-payload</view>", {"SCHEMA": lambda document: False}, "schema"),
-        ("<view>private-payload</view>", {"MAX_BYTES": 4}, "max_bytes"),
+        (
+            "<view xmlns='https://hyperview.org/hyperview'>private-payload",
+            {},
+            "malformed_xml",
+        ),
+        (
+            "<view xmlns='https://hyperview.org/hyperview'"
+            " invalid='private-payload' />",
+            {},
+            "schema",
+        ),
+        (
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text>private-payload</text>"
+            "</view>",
+            {"MAX_BYTES": 4},
+            "max_bytes",
+        ),
         ("<v><a><b>private-payload</b></a></v>", {"MAX_DEPTH": 2}, "max_depth"),
         ("<v><a /><b>private-payload</b></v>", {"MAX_NODES": 2}, "max_nodes"),
     ],
@@ -118,7 +135,10 @@ def test_database_cache_precedence_and_failure_modes_over_http(
     """Optional source stacks preserve metadata, cache states, and failure policy."""
     root = tmp_path / "templates"
     root.mkdir()
-    (root / "screen.xml").write_text("<view>old</view>", encoding="utf-8")
+    (root / "screen.xml").write_text(
+        "<view xmlns='https://hyperview.org/hyperview'><text>old</text></view>",
+        encoding="utf-8",
+    )
     (root / "empty.xml").write_text("", encoding="utf-8")
     result = run_consumer(
         "tests.consumer_project.settings_database",
@@ -137,10 +157,18 @@ from dj_hyperview import TemplateResolver, invalidate_templates
 call_command("migrate", "dj_hyperview_database", verbosity=0)
 model = apps.get_model("dj_hyperview_database", "HyperviewTemplate")
 model.objects.create(
-    name="precedence.xml", content="<view>database</view>", revision=7
+    name="precedence.xml", content=(
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>database</text>"
+        "</view>"
+    ), revision=7
 )
 model.objects.create(
-    name="fragments/item.xml", content="<view>inactive</view>", active=False
+    name="fragments/item.xml", content=(
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>inactive</text>"
+        "</view>"
+    ), active=False
 )
 client = Client()
 database = client.get("/documents/source/", {"template": "precedence.xml"})
@@ -173,13 +201,25 @@ cache = {
 }
 with override_settings(CACHES=caches, HYPERVIEW={**base, "CACHE": cache}):
     first = client.get("/documents/source/", {"template": "screen.xml"})
-    (root / "screen.xml").write_text("<view>new</view>", encoding="utf-8")
+    (root / "screen.xml").write_text((
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>new</text>"
+        "</view>"
+    ), encoding="utf-8")
     hit = client.get("/documents/source/", {"template": "screen.xml"})
     first_miss = client.get("/documents/source/", {"template": "missing.xml"})
-    (root / "missing.xml").write_text("<view>created</view>", encoding="utf-8")
+    (root / "missing.xml").write_text((
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>created</text>"
+        "</view>"
+    ), encoding="utf-8")
     cached_miss = client.get("/documents/source/", {"template": "missing.xml"})
     empty = client.get("/documents/source/", {"template": "empty.xml"})
-    (root / "empty.xml").write_text("<view>filled</view>", encoding="utf-8")
+    (root / "empty.xml").write_text((
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>filled</text>"
+        "</view>"
+    ), encoding="utf-8")
     empty_hit = client.get("/documents/source/", {"template": "empty.xml"})
     invalidate_templates("screen.xml", "missing.xml", "empty.xml")
     refreshed = [
@@ -240,18 +280,29 @@ print(json.dumps({
 
     assert result.returncode == 0, result.stderr
     data = json.loads(result.stdout)
-    assert data["database"][:4] == [200, "<view>database</view>", "database", "7"]
+    assert data["database"][:4] == [
+        200,
+        "<view xmlns='https://hyperview.org/hyperview'><text>database</text></view>",
+        "database",
+        "7",
+    ]
     assert data["database"][4] == "database:precedence.xml"
-    assert data["fallback"] == [200, "<view><text>fallback</text></view>", "filesystem"]
-    assert data["cache"][:6] == ["<view>old</view>"] * 2 + [404, 200, 422, 422]
+    assert data["fallback"] == [
+        200,
+        "<view xmlns='https://hyperview.org/hyperview'><text>fallback</text></view>",
+        "filesystem",
+    ]
+    assert data["cache"][:6] == [
+        "<view xmlns='https://hyperview.org/hyperview'><text>old</text></view>"
+    ] * 2 + [404, 200, 422, 422]
     assert data["cache"][6] == [
-        "<view>new</view>",
-        "<view>created</view>",
-        "<view>filled</view>",
+        "<view xmlns='https://hyperview.org/hyperview'><text>new</text></view>",
+        "<view xmlns='https://hyperview.org/hyperview'><text>created</text></view>",
+        "<view xmlns='https://hyperview.org/hyperview'><text>filled</text></view>",
     ]
     assert data["failures"] == [
         200,
-        "<view>new</view>",
+        "<view xmlns='https://hyperview.org/hyperview'><text>new</text></view>",
         503,
         "source_unavailable",
         503,

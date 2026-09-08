@@ -40,13 +40,21 @@ from dj_hyperview.contrib.database.services import publish_template
 call_command("migrate", verbosity=0)
 client = Client()
 url = "/documents/source/?template=screen.xml"
-publish_template("screen.xml", "<view>old</view>", using="default")
+publish_template("screen.xml", (
+    "<view xmlns='https://hyperview.org/hyperview'>"
+    "<text>old</text>"
+    "</view>"
+), using="default")
 initial = client.get(url).content.decode()
 
 try:
     with transaction.atomic(using="default"):
         publish_template(
-            "screen.xml", "<view>rolled back</view>",
+            "screen.xml", (
+                "<view xmlns='https://hyperview.org/hyperview'>"
+                "<text>rolled back</text>"
+                "</view>"
+            ),
             expected_revision=1, using="default",
         )
         during_rollback = client.get(url).content.decode()
@@ -57,7 +65,11 @@ after_rollback = client.get(url).content.decode()
 
 with transaction.atomic(using="default"):
     publication = publish_template(
-        "screen.xml", "<view>committed</view>",
+        "screen.xml", (
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text>committed</text>"
+            "</view>"
+        ),
         expected_revision=1, using="default",
     )
     during_commit = client.get(url).content.decode()
@@ -77,11 +89,15 @@ print(json.dumps({
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
         "content": [
-            "<view>old</view>",
-            "<view>old</view>",
-            "<view>old</view>",
-            "<view>old</view>",
-            "<view>committed</view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>old</text></view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>old</text></view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>old</text></view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>old</text></view>",
+            (
+                "<view xmlns='https://hyperview.org/hyperview'>"
+                "<text>committed</text>"
+                "</view>"
+            ),
         ],
         "database": "screen.xml",
         "revision": 2,
@@ -113,7 +129,11 @@ account = get_user_model().objects.create_superuser(
 client = Client()
 client.force_login(account)
 model = apps.get_model("dj_hyperview_database", "HyperviewTemplate")
-publish_template("admin-old.xml", "<view>old</view>", using="default")
+publish_template("admin-old.xml", (
+    "<view xmlns='https://hyperview.org/hyperview'>"
+    "<text>old</text>"
+    "</view>"
+), using="default")
 template = model.objects.get(name="admin-old.xml")
 prefix = "admin:dj_hyperview_database_hyperviewtemplate"
 change = reverse(f"{prefix}_change", args=[template.pk])
@@ -122,12 +142,20 @@ new_url = "/documents/source/?template=admin-new.xml"
 before = client.get(old_url).content.decode()
 
 edited = client.post(change, {
-    "name": "admin-old.xml", "content": "<view>edited</view>",
+    "name": "admin-old.xml", "content": (
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>edited</text>"
+        "</view>"
+    ),
     "active": "on", "expected_revision": "1", "_save": "Save",
 })
 after_edit = client.get(old_url).content.decode()
 renamed = client.post(change, {
-    "name": "admin-new.xml", "content": "<view>renamed</view>",
+    "name": "admin-new.xml", "content": (
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>renamed</text>"
+        "</view>"
+    ),
     "active": "on", "expected_revision": "2", "_save": "Save",
 })
 old_after_rename = client.get(old_url)
@@ -153,9 +181,9 @@ print(json.dumps({
     assert json.loads(result.stdout) == {
         "statuses": [302, 302, 404, 200, 302, 404],
         "content": [
-            "<view>old</view>",
-            "<view>edited</view>",
-            "<view>renamed</view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>old</text></view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>edited</text></view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>renamed</text></view>",
         ],
         "database": "default",
         "remaining": 0,
@@ -191,7 +219,11 @@ account = get_user_model().objects.create_superuser(
 client = Client()
 client.force_login(account)
 model = apps.get_model("dj_hyperview_database", "HyperviewTemplate")
-publish_template("failure.xml", "<view>old</view>", using="default")
+publish_template("failure.xml", (
+    "<view xmlns='https://hyperview.org/hyperview'>"
+    "<text>old</text>"
+    "</view>"
+), using="default")
 template = model.objects.get(name="failure.xml")
 change = reverse(
     "admin:dj_hyperview_database_hyperviewtemplate_change", args=[template.pk]
@@ -203,7 +235,11 @@ try:
         side_effect=SourceUnavailable("cache:test", "failure"),
     ):
         client.post(change, {
-            "name": "failure.xml", "content": "<view>committed</view>",
+            "name": "failure.xml", "content": (
+                "<view xmlns='https://hyperview.org/hyperview'>"
+                "<text>committed</text>"
+                "</view>"
+            ),
             "active": "on", "expected_revision": "1", "_save": "Save",
         })
 except SourceUnavailable:
@@ -221,7 +257,11 @@ print(json.dumps({
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
         "observed": True,
-        "content": "<view>committed</view>",
+        "content": (
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text>committed</text>"
+            "</view>"
+        ),
         "database": "default",
         "revision": 2,
     }

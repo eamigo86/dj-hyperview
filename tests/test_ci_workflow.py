@@ -463,16 +463,17 @@ APPROVED_RUN_CONTRACT = {
         "uv sync --locked",
         "uv build\nuv run python -m tools.package_guard dist/*.whl",
         (
-            'smoke_dir="$(mktemp -d)"\n'
-            'uv venv "$smoke_dir/venv" --python 3.12\n'
-            'uv pip install --python "$smoke_dir/venv/bin/python" dist/*.whl\n'
-            "(\n"
-            'cd "$smoke_dir"\n'
-            "unset PYTHONPATH\n"
-            '"$smoke_dir/venv/bin/python" -I -c \'from pathlib import Path; '
-            "import dj_hyperview; assert Path(dj_hyperview.__file__).resolve()."
-            'is_relative_to(Path.cwd() / "venv")\'\n'
-            ")"
+            'smoke_dir="$(mktemp -d)"\nuv venv "$smoke_dir/venv" --pytho'
+            'n 3.12\nuv pip install --python "$smoke_dir/venv/bin/python'
+            '" dist/*.whl\n(\ncd "$smoke_dir"\nunset PYTHONPATH\n"$smoke_di'
+            "r/venv/bin/python\" -I -c 'from pathlib import Path; import"
+            " xmlschema; import dj_hyperview; from django.conf import s"
+            "ettings; settings.configure(HYPERVIEW={}); assert Path(dj_"
+            "hyperview.__file__).resolve().is_relative_to(Path.cwd() / "
+            '"venv"); assert xmlschema.__version__; assert dj_hyperview'
+            '.HYPERVIEW_VALIDATION_CONTRACT == "automatic-xsd-v1"; asse'
+            'rt dj_hyperview.validate_hxml("<view xmlns=\\"https://hyper'
+            'view.org/hyperview\\"/>")\'\n)'
         ),
         (
             'wheel="$(echo dist/*.whl)"\n'
@@ -812,3 +813,18 @@ def test_redis_job_is_versioned_real_and_strictly_opt_in() -> None:
         "--group redis" not in _run_script(workflow["jobs"][name])
         for name in ("quality", "compatibility", "artifacts")
     )
+
+
+def test_base_wheel_smoke_checks_the_automatic_validation_contract() -> None:
+    """The base installation must include and enforce XSD without an extra."""
+    step = next(
+        step
+        for step in _workflow()["jobs"]["artifacts"]["steps"]
+        if step.get("name") == "Smoke installed wheel outside checkout"
+    )
+    assert "import xmlschema" in step["run"]
+    assert "HYPERVIEW_VALIDATION_CONTRACT" in step["run"]
+    assert "automatic-xsd-v1" in step["run"]
+    assert "settings.configure(HYPERVIEW={})" in step["run"]
+    assert "dj_hyperview.validate_hxml" in step["run"]
+    assert "[schema]" not in step["run"]

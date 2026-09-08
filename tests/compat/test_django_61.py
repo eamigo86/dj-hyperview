@@ -25,6 +25,7 @@ def test_django_61_renders_the_public_consumer_contract(client: Client) -> None:
         f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
     )
     assert response.content.decode() == (
-        "<view><header>primary-layout</header>"
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text id='layout-marker'>primary-layout</text>"
         "<text>primary: 6.1 &amp; &lt;supported&gt;</text></view>"
     )

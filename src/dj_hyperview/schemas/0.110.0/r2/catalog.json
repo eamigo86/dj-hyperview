@@ -1,0 +1,5713 @@
+{
+  "behavior_variants": {},
+  "catalog_format": 2,
+  "elements": {
+    "behavior": {
+      "allows_custom_children": false,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "{https://hyperview.org/hyperview-alert}option"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "item",
+        "list",
+        "navigator",
+        "option",
+        "picker-field",
+        "section",
+        "section-list",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "{https://hyperview.org/hyperview-alert}option"
+      ]
+    },
+    "body": {
+      "allows_custom_children": true,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "avoid-keyboard": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "safe-area": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "scroll-to-input-offset": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "sticky": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "list",
+        "option",
+        "picker-field",
+        "section-list",
+        "select-multiple",
+        "select-single",
+        "spinner",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "web-view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "screen"
+      ]
+    },
+    "date-field": {
+      "allows_custom_children": false,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "allowFontScaling": {
+          "enum": [],
+          "required": false
+        },
+        "cancel-label": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "done-label": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "field-style": {
+          "enum": [],
+          "required": false
+        },
+        "field-text-style": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "label-format": {
+          "enum": [],
+          "required": false
+        },
+        "max": {
+          "enum": [],
+          "required": false
+        },
+        "maxFontSizeMultiplier": {
+          "enum": [],
+          "required": false
+        },
+        "min": {
+          "enum": [],
+          "required": false
+        },
+        "minimumFontScale": {
+          "enum": [],
+          "required": false
+        },
+        "modal-animation-duration": {
+          "enum": [],
+          "required": false
+        },
+        "modal-dismiss-animation-duration": {
+          "enum": [],
+          "required": false
+        },
+        "modal-dismiss-overlay-animation-duration": {
+          "enum": [],
+          "required": false
+        },
+        "modal-overlay-animation-duration": {
+          "enum": [],
+          "required": false
+        },
+        "modal-overlay-style": {
+          "enum": [],
+          "required": false
+        },
+        "modal-style": {
+          "enum": [],
+          "required": false
+        },
+        "modal-text-style": {
+          "enum": [],
+          "required": false
+        },
+        "mode": {
+          "enum": [
+            "calendar",
+            "default",
+            "spinner"
+          ],
+          "required": false
+        },
+        "name": {
+          "enum": [],
+          "required": true
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "placeholder": {
+          "enum": [],
+          "required": false
+        },
+        "placeholderTextColor": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "doc": {
+      "allows_custom_children": false,
+      "attributes": {},
+      "children": [
+        "navigator",
+        "screen"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": []
+    },
+    "form": {
+      "allows_custom_children": true,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "avoid-keyboard": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "safe-area": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "scroll-to-input-offset": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "sticky": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "list",
+        "option",
+        "picker-field",
+        "section-list",
+        "select-multiple",
+        "select-single",
+        "spinner",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "web-view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "header": {
+      "allows_custom_children": true,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "avoid-keyboard": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "safe-area": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "scroll-to-input-offset": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "sticky": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "list",
+        "option",
+        "picker-field",
+        "section-list",
+        "select-multiple",
+        "select-single",
+        "spinner",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "web-view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "image": {
+      "allows_custom_children": false,
+      "attributes": {
+        "accessibilityRole": {
+          "enum": [
+            "button"
+          ],
+          "required": false
+        },
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "alt": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "resizeMode": {
+          "enum": [
+            "center",
+            "contain",
+            "cover",
+            "repeat",
+            "stretch"
+          ],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "source": {
+          "enum": [],
+          "required": true
+        },
+        "style": {
+          "enum": [],
+          "required": true
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "option",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "item": {
+      "allows_custom_children": true,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "avoid-keyboard": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "safe-area": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "scroll-to-input-offset": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "sticky": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "option",
+        "picker-field",
+        "select-multiple",
+        "select-single",
+        "spinner",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "web-view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "items",
+        "list",
+        "section",
+        "section-list"
+      ]
+    },
+    "items": {
+      "allows_custom_children": false,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "avoid-keyboard": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "safe-area": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "scroll-to-input-offset": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "sticky": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "item",
+        "section",
+        "section-title"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "list",
+        "section",
+        "section-list"
+      ]
+    },
+    "list": {
+      "allows_custom_children": false,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "itemHeight": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "item",
+        "items"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "modifier": {
+      "allows_custom_children": false,
+      "attributes": {
+        "focused": {
+          "enum": [],
+          "required": false
+        },
+        "pressed": {
+          "enum": [],
+          "required": false
+        },
+        "selected": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "style"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "style"
+      ]
+    },
+    "nav-route": {
+      "allows_custom_children": false,
+      "attributes": {
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": true
+        },
+        "modal": {
+          "enum": [],
+          "required": false
+        },
+        "selected": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "navigator"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "navigator"
+      ]
+    },
+    "navigator": {
+      "allows_custom_children": false,
+      "attributes": {
+        "id": {
+          "enum": [],
+          "required": true
+        },
+        "merge": {
+          "enum": [],
+          "required": false
+        },
+        "type": {
+          "enum": [
+            "stack",
+            "tab"
+          ],
+          "required": true
+        }
+      },
+      "children": [
+        "behavior",
+        "nav-route"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "doc",
+        "nav-route"
+      ]
+    },
+    "option": {
+      "allows_custom_children": true,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "selected": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "image",
+        "spinner",
+        "text",
+        "view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "picker-field": {
+      "allows_custom_children": false,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "allowFontScaling": {
+          "enum": [],
+          "required": false
+        },
+        "cancel-label": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "done-label": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "field-style": {
+          "enum": [],
+          "required": false
+        },
+        "field-text-style": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "maxFontSizeMultiplier": {
+          "enum": [],
+          "required": false
+        },
+        "minimumFontScale": {
+          "enum": [],
+          "required": false
+        },
+        "modal-animation-duration": {
+          "enum": [],
+          "required": false
+        },
+        "modal-dismiss-animation-duration": {
+          "enum": [],
+          "required": false
+        },
+        "modal-dismiss-overlay-animation-duration": {
+          "enum": [],
+          "required": false
+        },
+        "modal-overlay-animation-duration": {
+          "enum": [],
+          "required": false
+        },
+        "modal-overlay-style": {
+          "enum": [],
+          "required": false
+        },
+        "modal-style": {
+          "enum": [],
+          "required": false
+        },
+        "modal-text-style": {
+          "enum": [],
+          "required": false
+        },
+        "name": {
+          "enum": [],
+          "required": true
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "placeholder": {
+          "enum": [],
+          "required": false
+        },
+        "placeholderTextColor": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "picker-item"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "picker-item": {
+      "allows_custom_children": false,
+      "attributes": {
+        "label": {
+          "enum": [],
+          "required": true
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "picker-field"
+      ]
+    },
+    "screen": {
+      "allows_custom_children": false,
+      "attributes": {
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "body",
+        "styles"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "doc"
+      ]
+    },
+    "section": {
+      "allows_custom_children": false,
+      "attributes": {
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "item",
+        "items",
+        "section-title"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "items",
+        "section-list"
+      ]
+    },
+    "section-list": {
+      "allows_custom_children": false,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "sticky-section-titles": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "item",
+        "items",
+        "section",
+        "section-title"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "section-title": {
+      "allows_custom_children": true,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "avoid-keyboard": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "safe-area": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "scroll-to-input-offset": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "sticky": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "option",
+        "picker-field",
+        "select-multiple",
+        "select-single",
+        "spinner",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "web-view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "items",
+        "section",
+        "section-list"
+      ]
+    },
+    "select-multiple": {
+      "allows_custom_children": true,
+      "attributes": {
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "name": {
+          "enum": [],
+          "required": true
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "list",
+        "option",
+        "picker-field",
+        "section-list",
+        "select-multiple",
+        "select-single",
+        "spinner",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "web-view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "select-single": {
+      "allows_custom_children": true,
+      "attributes": {
+        "allow-deselect": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "name": {
+          "enum": [],
+          "required": true
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "list",
+        "option",
+        "picker-field",
+        "section-list",
+        "select-multiple",
+        "select-single",
+        "spinner",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "web-view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "spinner": {
+      "allows_custom_children": false,
+      "attributes": {
+        "color": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "option",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "style": {
+      "allows_custom_children": false,
+      "attributes": {
+        "alignContent": {
+          "enum": [
+            "center",
+            "flex-end",
+            "flex-start",
+            "space-around",
+            "space-between",
+            "stretch"
+          ],
+          "required": false
+        },
+        "alignItems": {
+          "enum": [
+            "baseline",
+            "center",
+            "flex-end",
+            "flex-start",
+            "stretch"
+          ],
+          "required": false
+        },
+        "alignSelf": {
+          "enum": [
+            "baseline",
+            "center",
+            "flex-end",
+            "flex-start",
+            "stretch"
+          ],
+          "required": false
+        },
+        "aspectRatio": {
+          "enum": [],
+          "required": false
+        },
+        "backfaceVisibility": {
+          "enum": [],
+          "required": false
+        },
+        "backgroundColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderBlockColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderBlockEndColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderBlockStartColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderBottomColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderBottomEndRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderBottomLeftRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderBottomRightRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderBottomStartRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderBottomWidth": {
+          "enum": [],
+          "required": false
+        },
+        "borderColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderCurve": {
+          "enum": [],
+          "required": false
+        },
+        "borderEndColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderEndEndRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderEndStartRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderEndWidth": {
+          "enum": [],
+          "required": false
+        },
+        "borderLeftColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderLeftWidth": {
+          "enum": [],
+          "required": false
+        },
+        "borderRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderRightColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderRightWidth": {
+          "enum": [],
+          "required": false
+        },
+        "borderStartColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderStartEndRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderStartStartRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderStartWidth": {
+          "enum": [],
+          "required": false
+        },
+        "borderStyle": {
+          "enum": [
+            "dashed",
+            "dotted",
+            "solid"
+          ],
+          "required": false
+        },
+        "borderTopColor": {
+          "enum": [],
+          "required": false
+        },
+        "borderTopEndRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderTopLeftRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderTopRightRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderTopStartRadius": {
+          "enum": [],
+          "required": false
+        },
+        "borderTopWidth": {
+          "enum": [],
+          "required": false
+        },
+        "borderWidth": {
+          "enum": [],
+          "required": false
+        },
+        "bottom": {
+          "enum": [],
+          "required": false
+        },
+        "boxShadow": {
+          "enum": [],
+          "required": false
+        },
+        "boxSizing": {
+          "enum": [],
+          "required": false
+        },
+        "color": {
+          "enum": [],
+          "required": false
+        },
+        "columnGap": {
+          "enum": [],
+          "required": false
+        },
+        "cursor": {
+          "enum": [],
+          "required": false
+        },
+        "direction": {
+          "enum": [],
+          "required": false
+        },
+        "display": {
+          "enum": [
+            "flex",
+            "none"
+          ],
+          "required": false
+        },
+        "elevation": {
+          "enum": [],
+          "required": false
+        },
+        "end": {
+          "enum": [],
+          "required": false
+        },
+        "filter": {
+          "enum": [],
+          "required": false
+        },
+        "flex": {
+          "enum": [],
+          "required": false
+        },
+        "flexBasis": {
+          "enum": [],
+          "required": false
+        },
+        "flexDirection": {
+          "enum": [
+            "column",
+            "column-reverse",
+            "row",
+            "row-reverse"
+          ],
+          "required": false
+        },
+        "flexGrow": {
+          "enum": [],
+          "required": false
+        },
+        "flexShrink": {
+          "enum": [],
+          "required": false
+        },
+        "flexWrap": {
+          "enum": [
+            "nowrap",
+            "wrap"
+          ],
+          "required": false
+        },
+        "fontFamily": {
+          "enum": [],
+          "required": false
+        },
+        "fontSize": {
+          "enum": [],
+          "required": false
+        },
+        "fontStyle": {
+          "enum": [
+            "italic",
+            "normal"
+          ],
+          "required": false
+        },
+        "fontVariant": {
+          "enum": [],
+          "required": false
+        },
+        "fontWeight": {
+          "enum": [
+            "100",
+            "200",
+            "300",
+            "400",
+            "500",
+            "600",
+            "700",
+            "800",
+            "900",
+            "bold",
+            "normal"
+          ],
+          "required": false
+        },
+        "gap": {
+          "enum": [],
+          "required": false
+        },
+        "height": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "includeFontPadding": {
+          "enum": [],
+          "required": false
+        },
+        "justifyContent": {
+          "enum": [
+            "center",
+            "flex-end",
+            "flex-start",
+            "space-around",
+            "space-between",
+            "space-evenly"
+          ],
+          "required": false
+        },
+        "left": {
+          "enum": [],
+          "required": false
+        },
+        "letterSpacing": {
+          "enum": [],
+          "required": false
+        },
+        "lineHeight": {
+          "enum": [],
+          "required": false
+        },
+        "margin": {
+          "enum": [],
+          "required": false
+        },
+        "marginBottom": {
+          "enum": [],
+          "required": false
+        },
+        "marginEnd": {
+          "enum": [],
+          "required": false
+        },
+        "marginHorizontal": {
+          "enum": [],
+          "required": false
+        },
+        "marginLeft": {
+          "enum": [],
+          "required": false
+        },
+        "marginRight": {
+          "enum": [],
+          "required": false
+        },
+        "marginStart": {
+          "enum": [],
+          "required": false
+        },
+        "marginTop": {
+          "enum": [],
+          "required": false
+        },
+        "marginVertical": {
+          "enum": [],
+          "required": false
+        },
+        "maxHeight": {
+          "enum": [],
+          "required": false
+        },
+        "maxWidth": {
+          "enum": [],
+          "required": false
+        },
+        "minHeight": {
+          "enum": [],
+          "required": false
+        },
+        "minWidth": {
+          "enum": [],
+          "required": false
+        },
+        "numberOfLines": {
+          "enum": [],
+          "required": false
+        },
+        "objectFit": {
+          "enum": [],
+          "required": false
+        },
+        "opacity": {
+          "enum": [],
+          "required": false
+        },
+        "outlineColor": {
+          "enum": [],
+          "required": false
+        },
+        "outlineOffset": {
+          "enum": [],
+          "required": false
+        },
+        "outlineStyle": {
+          "enum": [
+            "dotted",
+            "groove",
+            "inset",
+            "none",
+            "solid"
+          ],
+          "required": false
+        },
+        "outlineWidth": {
+          "enum": [],
+          "required": false
+        },
+        "overflow": {
+          "enum": [
+            "hidden",
+            "scroll",
+            "visible"
+          ],
+          "required": false
+        },
+        "overlayColor": {
+          "enum": [],
+          "required": false
+        },
+        "padding": {
+          "enum": [],
+          "required": false
+        },
+        "paddingBottom": {
+          "enum": [],
+          "required": false
+        },
+        "paddingEnd": {
+          "enum": [],
+          "required": false
+        },
+        "paddingHorizontal": {
+          "enum": [],
+          "required": false
+        },
+        "paddingLeft": {
+          "enum": [],
+          "required": false
+        },
+        "paddingRight": {
+          "enum": [],
+          "required": false
+        },
+        "paddingStart": {
+          "enum": [],
+          "required": false
+        },
+        "paddingTop": {
+          "enum": [],
+          "required": false
+        },
+        "paddingVertical": {
+          "enum": [],
+          "required": false
+        },
+        "pointerEvents": {
+          "enum": [],
+          "required": false
+        },
+        "position": {
+          "enum": [
+            "absolute",
+            "relative"
+          ],
+          "required": false
+        },
+        "resizeMode": {
+          "enum": [
+            "center",
+            "contain",
+            "cover",
+            "repeat",
+            "stretch"
+          ],
+          "required": false
+        },
+        "right": {
+          "enum": [],
+          "required": false
+        },
+        "rowGap": {
+          "enum": [],
+          "required": false
+        },
+        "shadowColor": {
+          "enum": [],
+          "required": false
+        },
+        "shadowOffsetX": {
+          "enum": [],
+          "required": false
+        },
+        "shadowOffsetY": {
+          "enum": [],
+          "required": false
+        },
+        "shadowOpacity": {
+          "enum": [],
+          "required": false
+        },
+        "shadowRadius": {
+          "enum": [],
+          "required": false
+        },
+        "start": {
+          "enum": [],
+          "required": false
+        },
+        "textAlign": {
+          "enum": [
+            "auto",
+            "center",
+            "justify",
+            "left",
+            "right"
+          ],
+          "required": false
+        },
+        "textAlignVertical": {
+          "enum": [
+            "auto",
+            "bottom",
+            "center",
+            "top"
+          ],
+          "required": false
+        },
+        "textDecorationColor": {
+          "enum": [],
+          "required": false
+        },
+        "textDecorationLine": {
+          "enum": [],
+          "required": false
+        },
+        "textDecorationStyle": {
+          "enum": [],
+          "required": false
+        },
+        "textShadowOffsetX": {
+          "enum": [],
+          "required": false
+        },
+        "textShadowOffsetY": {
+          "enum": [],
+          "required": false
+        },
+        "textShadowRadius": {
+          "enum": [],
+          "required": false
+        },
+        "textTransform": {
+          "enum": [],
+          "required": false
+        },
+        "tintColor": {
+          "enum": [],
+          "required": false
+        },
+        "top": {
+          "enum": [],
+          "required": false
+        },
+        "userSelect": {
+          "enum": [],
+          "required": false
+        },
+        "verticalAlign": {
+          "enum": [],
+          "required": false
+        },
+        "width": {
+          "enum": [],
+          "required": false
+        },
+        "writingDirection": {
+          "enum": [],
+          "required": false
+        },
+        "zIndex": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "modifier"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "modifier",
+        "styles"
+      ]
+    },
+    "styles": {
+      "allows_custom_children": false,
+      "attributes": {},
+      "children": [
+        "style"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "screen"
+      ]
+    },
+    "switch": {
+      "allows_custom_children": false,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "name": {
+          "enum": [],
+          "required": true
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [
+            "off",
+            "on"
+          ],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "text": {
+      "allows_custom_children": false,
+      "attributes": {
+        "accessibilityLabel": {
+          "enum": [],
+          "required": false
+        },
+        "accessibilityRole": {
+          "enum": [
+            "button",
+            "none"
+          ],
+          "required": false
+        },
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "adjustsFontSizeToFit": {
+          "enum": [],
+          "required": false
+        },
+        "allowFontScaling": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "ellipsizeMode": {
+          "enum": [
+            "clip",
+            "head",
+            "middle",
+            "tail"
+          ],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "importantForAccessibility": {
+          "enum": [
+            "auto",
+            "no",
+            "no-hide-descendants",
+            "yes"
+          ],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "maxFontSizeMultiplier": {
+          "enum": [],
+          "required": false
+        },
+        "minimumFontScale": {
+          "enum": [],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "numberOfLines": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "preformatted": {
+          "enum": [],
+          "required": false
+        },
+        "selectable": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "text"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "option",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "text",
+        "view"
+      ]
+    },
+    "text-field": {
+      "allows_custom_children": false,
+      "attributes": {
+        "accessibilityLabel": {
+          "enum": [],
+          "required": false
+        },
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "allowFontScaling": {
+          "enum": [],
+          "required": false
+        },
+        "auto-focus": {
+          "enum": [],
+          "required": false
+        },
+        "autoCapitalize": {
+          "enum": [
+            "characters",
+            "none",
+            "sentences",
+            "words"
+          ],
+          "required": false
+        },
+        "autoComplete": {
+          "enum": [
+            "additional-name",
+            "address-line1",
+            "address-line2",
+            "birthday-day",
+            "birthday-full",
+            "birthday-month",
+            "birthday-year",
+            "cc-csp",
+            "cc-exp",
+            "cc-exp-day",
+            "cc-exp-month",
+            "cc-exp-year",
+            "cc-family-name",
+            "cc-given-name",
+            "cc-middle-name",
+            "cc-name",
+            "cc-number",
+            "cc-type",
+            "country",
+            "current-password",
+            "email",
+            "family-name",
+            "full-name",
+            "gender",
+            "given-name",
+            "honorific-prefix",
+            "honorific-suffix",
+            "name",
+            "name-family",
+            "name-given",
+            "name-middle",
+            "name-middle-initial",
+            "name-prefix",
+            "name-suffix",
+            "new-password",
+            "nickname",
+            "off",
+            "one-time-code",
+            "organization",
+            "organization-title",
+            "password",
+            "password-new",
+            "postal-address",
+            "postal-address-country",
+            "postal-address-extended",
+            "postal-address-extended-locality",
+            "postal-address-extended-postal-code",
+            "postal-address-extended-region",
+            "postal-code",
+            "sms-otp",
+            "street-address",
+            "tel",
+            "tel-country-code",
+            "tel-device",
+            "tel-national",
+            "url",
+            "username",
+            "username-new"
+          ],
+          "required": false
+        },
+        "clearButtonMode": {
+          "enum": [
+            "always",
+            "never",
+            "unless-editing",
+            "while-editing"
+          ],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "cursorColor": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "editable": {
+          "enum": [],
+          "required": false
+        },
+        "enterKeyHint": {
+          "enum": [
+            "done",
+            "enter",
+            "go",
+            "next",
+            "previous",
+            "search",
+            "send"
+          ],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-type": {
+          "enum": [
+            "ascii-capable",
+            "decimal-pad",
+            "default",
+            "email-address",
+            "name-phone-pad",
+            "number-pad",
+            "numbers-and-punctuation",
+            "phone-pad",
+            "twitter",
+            "url",
+            "web-search"
+          ],
+          "required": false
+        },
+        "mask": {
+          "enum": [],
+          "required": false
+        },
+        "maxFontSizeMultiplier": {
+          "enum": [],
+          "required": false
+        },
+        "minimumFontScale": {
+          "enum": [],
+          "required": false
+        },
+        "multiline": {
+          "enum": [],
+          "required": false
+        },
+        "name": {
+          "enum": [],
+          "required": true
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "placeholder": {
+          "enum": [],
+          "required": false
+        },
+        "placeholderTextColor": {
+          "enum": [],
+          "required": false
+        },
+        "returnKeyLabel": {
+          "enum": [],
+          "required": false
+        },
+        "returnKeyType": {
+          "enum": [
+            "default",
+            "done",
+            "emergency-call",
+            "go",
+            "google",
+            "join",
+            "next",
+            "none",
+            "previous",
+            "route",
+            "search",
+            "send",
+            "yahoo"
+          ],
+          "required": false
+        },
+        "secure-text": {
+          "enum": [],
+          "required": false
+        },
+        "selectionColor": {
+          "enum": [],
+          "required": false
+        },
+        "selectionHandleColor": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "text-content-type": {
+          "enum": [
+            "URL",
+            "addressCity",
+            "addressCityAndState",
+            "addressState",
+            "countryName",
+            "creditCardNumber",
+            "emailAddress",
+            "familyName",
+            "fullStreetAddress",
+            "givenName",
+            "jobTitle",
+            "location",
+            "middleName",
+            "namePrefix",
+            "nameSuffix",
+            "newPassword",
+            "nickname",
+            "none",
+            "oneTimeCode",
+            "organizationName",
+            "password",
+            "postalCode",
+            "streetAddressLine1",
+            "streetAddressLine2",
+            "sublocality",
+            "telephoneNumber",
+            "username"
+          ],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "type": {
+          "enum": [],
+          "required": false
+        },
+        "underlineColorAndroid": {
+          "enum": [],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "view": {
+      "allows_custom_children": true,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "avoid-keyboard": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable": {
+          "enum": [],
+          "required": false
+        },
+        "collapsable-children": {
+          "enum": [],
+          "required": false
+        },
+        "content-container-style": {
+          "enum": [],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "disabled": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "keyboard-dismiss-mode": {
+          "enum": [
+            "interactive",
+            "none",
+            "on-drag"
+          ],
+          "required": false
+        },
+        "keyboard-should-persist-taps": {
+          "enum": [
+            "always",
+            "handled",
+            "never"
+          ],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "over-scroll": {
+          "enum": [],
+          "required": false
+        },
+        "safe-area": {
+          "enum": [],
+          "required": false
+        },
+        "scroll": {
+          "enum": [],
+          "required": false
+        },
+        "scroll-orientation": {
+          "enum": [
+            "horizontal",
+            "vertical"
+          ],
+          "required": false
+        },
+        "scroll-to-input-offset": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "shows-scroll-indicator": {
+          "enum": [],
+          "required": false
+        },
+        "sticky": {
+          "enum": [],
+          "required": false
+        },
+        "style": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "value": {
+          "enum": [],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior",
+        "date-field",
+        "form",
+        "header",
+        "image",
+        "list",
+        "option",
+        "picker-field",
+        "section-list",
+        "select-multiple",
+        "select-single",
+        "spinner",
+        "switch",
+        "text",
+        "text-field",
+        "view",
+        "web-view"
+      ],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "option",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "web-view": {
+      "allows_custom_children": false,
+      "attributes": {
+        "activity-indicator-color": {
+          "enum": [],
+          "required": false
+        },
+        "allows-inline-media-playback": {
+          "enum": [],
+          "required": false
+        },
+        "debug": {
+          "enum": [],
+          "required": false
+        },
+        "html": {
+          "enum": [],
+          "required": false
+        },
+        "id": {
+          "enum": [],
+          "required": false
+        },
+        "injected-java-script": {
+          "enum": [],
+          "required": false
+        },
+        "key": {
+          "enum": [],
+          "required": false
+        },
+        "shared-cookies-enabled": {
+          "enum": [],
+          "required": false
+        },
+        "show-loading-indicator": {
+          "enum": [
+            "all",
+            "document-only"
+          ],
+          "required": false
+        },
+        "url": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [],
+      "namespace": "https://hyperview.org/hyperview",
+      "parents": [
+        "body",
+        "form",
+        "header",
+        "item",
+        "section-title",
+        "select-multiple",
+        "select-single",
+        "view"
+      ]
+    },
+    "{https://hyperview.org/hyperview-alert}option": {
+      "allows_custom_children": false,
+      "attributes": {
+        "action": {
+          "enum": [
+            "alert",
+            "append",
+            "back",
+            "close",
+            "copy-to-clipboard",
+            "deep-link",
+            "dispatch-event",
+            "hide",
+            "navigate",
+            "new",
+            "open-settings",
+            "prepend",
+            "push",
+            "reload",
+            "replace",
+            "replace-inner",
+            "scroll",
+            "select-all",
+            "set-value",
+            "show",
+            "toggle",
+            "unselect-all"
+          ],
+          "required": false
+        },
+        "copy-to-clipboard-value": {
+          "enum": [],
+          "required": false
+        },
+        "debounce": {
+          "enum": [],
+          "required": false
+        },
+        "delay": {
+          "enum": [],
+          "required": false
+        },
+        "event-name": {
+          "enum": [],
+          "required": false
+        },
+        "hide-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "href": {
+          "enum": [],
+          "required": false
+        },
+        "href-style": {
+          "enum": [],
+          "required": false
+        },
+        "immediate": {
+          "enum": [],
+          "required": false
+        },
+        "network-retry-action": {
+          "enum": [
+            "replace"
+          ],
+          "required": false
+        },
+        "network-retry-event": {
+          "enum": [],
+          "required": false
+        },
+        "new-value": {
+          "enum": [],
+          "required": false
+        },
+        "once": {
+          "enum": [],
+          "required": false
+        },
+        "show-during-load": {
+          "enum": [],
+          "required": false
+        },
+        "sync-id": {
+          "enum": [],
+          "required": false
+        },
+        "sync-method": {
+          "enum": [
+            "drop",
+            "replace"
+          ],
+          "required": false
+        },
+        "target": {
+          "enum": [],
+          "required": false
+        },
+        "trigger": {
+          "enum": [
+            "back",
+            "blur",
+            "change",
+            "deselect",
+            "enter-geofence",
+            "focus",
+            "leave-geofence",
+            "load",
+            "load-stale-error",
+            "longPress",
+            "on-event",
+            "press",
+            "pressIn",
+            "pressOut",
+            "refresh",
+            "select",
+            "submit",
+            "visible"
+          ],
+          "required": false
+        },
+        "verb": {
+          "enum": [
+            "get",
+            "post"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}label": {
+          "enum": [],
+          "required": true
+        },
+        "{https://hyperview.org/hyperview-alert}message": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}style": {
+          "enum": [
+            "cancel",
+            "default",
+            "destructive"
+          ],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-alert}title": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}animated": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}context-key": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}event-throttle": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}offset": {
+          "enum": [],
+          "required": false
+        },
+        "{https://hyperview.org/hyperview-scroll}position": {
+          "enum": [],
+          "required": false
+        }
+      },
+      "children": [
+        "behavior"
+      ],
+      "namespace": "https://hyperview.org/hyperview-alert",
+      "parents": [
+        "behavior"
+      ]
+    }
+  },
+  "schema_version": "0.110.0"
+}

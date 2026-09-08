@@ -147,7 +147,7 @@ jobs:
           (
             cd "$smoke_dir"
             unset PYTHONPATH
-            "$smoke_dir/venv/bin/python" -I -c 'from pathlib import Path; import dj_hyperview; assert Path(dj_hyperview.__file__).resolve().is_relative_to(Path.cwd() / "venv")'
+            "$smoke_dir/venv/bin/python" -I -c 'from pathlib import Path; import xmlschema; import dj_hyperview; from django.conf import settings; settings.configure(HYPERVIEW={}); assert Path(dj_hyperview.__file__).resolve().is_relative_to(Path.cwd() / "venv"); assert xmlschema.__version__; assert dj_hyperview.HYPERVIEW_VALIDATION_CONTRACT == "automatic-xsd-v1"; assert dj_hyperview.validate_hxml("<view xmlns=\"https://hyperview.org/hyperview\"/>")'
           )
       - name: Smoke optional wheel profiles
         run: |

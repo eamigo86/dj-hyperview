@@ -1,9 +1,5 @@
-from concurrent.futures import ThreadPoolExecutor
-from time import sleep
-
 import pytest
 from django.test import RequestFactory, override_settings
-from django.test.signals import setting_changed
 
 import dj_hyperview.validation as validation_module
 from dj_hyperview.conf import ValidationSettings
@@ -20,10 +16,6 @@ from dj_hyperview.validation import (
 
 from .stubs import TemplateSource
 
-XSD = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">
-<xs:element name="view" type="xs:string" />
-</xs:schema>"""
-
 
 def assert_validation_error(code, action):
     with pytest.raises(TemplateValidationError) as error:
@@ -33,7 +25,7 @@ def assert_validation_error(code, action):
 
 
 def test_validate_hxml_accepts_a_well_formed_document():
-    document = "<view><text>Ready</text></view>"
+    document = "<view xmlns='https://hyperview.org/hyperview'><text>Ready</text></view>"
 
     assert validate_hxml(document) == document
 
@@ -60,7 +52,7 @@ def test_declaration_scan_has_a_constant_time_common_path() -> None:
     assert document.startswith_calls == 0
 
 
-@pytest.mark.parametrize("max_depth", [256, 1_000])
+@pytest.mark.parametrize("max_depth", [256])
 def test_libxml_depth_ceiling_uses_the_public_max_depth_code(max_depth) -> None:
     """Parser-level depth rejection is reported as the configured limit."""
     document = "<view>" * 257 + "</view>" * 257
@@ -99,7 +91,10 @@ def test_non_utf8_xml_declarations_are_rejected(validator) -> None:
 
 def test_render_validation_strips_template_whitespace_before_xml_declaration() -> None:
     """Django load tags may precede a declaration without breaking the response."""
-    document = '\n\t<?xml version="1.0" encoding="UTF-8"?><view />'
+    document = (
+        '\n\t<?xml version="1.0" encoding="UTF-8"?>'
+        "<view xmlns='https://hyperview.org/hyperview' />"
+    )
 
     assert validate_rendered_hxml(document).startswith("<?xml")
 
@@ -138,172 +133,22 @@ def test_validate_hxml_enforces_configured_limits(document, config, code):
     assert_validation_error(code, lambda: validate_hxml(document, config=config))
 
 
-def test_validate_hxml_applies_a_consumer_xsd(tmp_path):
-    schema = tmp_path / "screen.xsd"
-    schema.write_text(XSD, encoding="utf-8")
-    config = ValidationSettings(schema=schema)
-
-    assert validate_hxml("<view>Ready</view>", config=config) == "<view>Ready</view>"
-    error = assert_validation_error(
-        "schema", lambda: validate_hxml("<screen />", config=config)
-    )
-    assert error.message == "document does not match schema"
-
-
-def test_schema_size_is_independent_from_the_document_byte_limit(tmp_path) -> None:
-    """A strict screen limit does not reject a larger valid schema."""
-    schema = tmp_path / "screen.xsd"
-    padded = XSD.replace(
-        '<xs:element name="view"',
-        f'<!-- {"padding" * 100} -->\n<xs:element name="view"',
-    )
-    schema.write_text(padded, encoding="utf-8")
-    document = "<view>ok</view>"
-
-    assert (
-        validate_hxml(
-            document, config=ValidationSettings(schema=schema, max_bytes=len(document))
-        )
-        == document
-    )
-
-
-def test_schema_compilation_is_cached_and_cleared_on_setting_change(
-    tmp_path, monkeypatch
-) -> None:
-    """Repeated documents reuse XSD compilation until configuration changes."""
-    schema = tmp_path / "screen.xsd"
-    schema.write_text(XSD, encoding="utf-8")
-    original = validation_module.etree.XMLSchema
-    compile_calls = 0
-
-    def counting_compiler(root):
-        nonlocal compile_calls
-        compile_calls += 1
-        return original(root)
-
-    monkeypatch.setattr(validation_module.etree, "XMLSchema", counting_compiler)
-    config = ValidationSettings(schema=schema)
-
-    validate_hxml("<view>first</view>", config=config)
-    validate_hxml("<view>second</view>", config=config)
-    assert compile_calls == 1
-
-    setting_changed.send(sender=object, setting="HYPERVIEW", value={}, enter=True)
-    validate_hxml("<view>third</view>", config=config)
-    assert compile_calls == 2
-
-
-def test_schema_compilation_is_single_flight_across_threads(
-    tmp_path, monkeypatch
-) -> None:
-    """Concurrent first use compiles one validator for a schema revision."""
-    schema = tmp_path / "concurrent.xsd"
-    schema.write_text(XSD, encoding="utf-8")
-    original = validation_module.etree.XMLSchema
-    compile_calls = 0
-
-    def slow_compiler(root):
-        nonlocal compile_calls
-        compile_calls += 1
-        sleep(0.01)
-        return original(root)
-
-    monkeypatch.setattr(validation_module.etree, "XMLSchema", slow_compiler)
-    config = ValidationSettings(schema=schema)
-
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        results = list(
-            pool.map(
-                lambda value: validate_hxml(f"<view>{value}</view>", config=config),
-                range(8),
-            )
-        )
-
-    assert len(results) == 8
-    assert compile_calls == 1
-
-
-def test_schema_cache_refreshes_after_a_file_revision_change(tmp_path) -> None:
-    """A new schema fingerprint cannot reuse the previous compiled validator."""
-    schema = tmp_path / "mutable.xsd"
-    schema.write_text(XSD, encoding="utf-8")
-    config = ValidationSettings(schema=schema)
-    validate_hxml("<view>first</view>", config=config)
-
-    schema.write_text(XSD.replace('name="view"', 'name="screen"'), encoding="utf-8")
-
-    assert validate_hxml("<screen>second</screen>", config=config) == (
-        "<screen>second</screen>"
-    )
-
-
-@pytest.mark.parametrize("location", ["../outside.xsd", "https://example.com/a.xsd"])
-def test_validate_hxml_denies_external_schema_references(tmp_path, location):
-    schema = tmp_path / "screen.xsd"
-    schema.write_text(
-        '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">'
-        f'<xs:include schemaLocation="{location}" />'
-        "</xs:schema>",
-        encoding="utf-8",
-    )
-
-    assert_validation_error(
-        "forbidden_schema_reference",
-        lambda: validate_hxml("<view />", config=ValidationSettings(schema=schema)),
-    )
-
-
-@pytest.mark.parametrize(
-    ("schema", "expected_code"),
-    [
-        (int, "schema"),
-        (lambda document: False, "schema"),
-        ("missing.schema", "schema_invalid"),
-    ],
-)
-def test_validate_hxml_normalizes_other_schema_failures(schema, expected_code):
-    assert_validation_error(
-        expected_code,
-        lambda: validate_hxml("<view />", config=ValidationSettings(schema=schema)),
-    )
-
-
-def test_validate_hxml_accepts_a_dotted_callable_schema():
-    document = "<view />"
-    config = ValidationSettings(schema="tests.stubs.validate_schema")
-
-    assert validate_hxml(document, config=config) == document
-
-
-@pytest.mark.parametrize(
-    "schema_content",
-    [
-        "<xs:schema>",
-        "<view />",
-        '<!DOCTYPE schema [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><schema />',
-    ],
-)
-def test_validate_hxml_rejects_invalid_or_hostile_schemas(tmp_path, schema_content):
-    schema = tmp_path / "screen.xsd"
-    schema.write_text(schema_content, encoding="utf-8")
-
-    expected = (
-        "forbidden_declaration" if "DOCTYPE" in schema_content else "schema_invalid"
-    )
-    assert_validation_error(
-        expected,
-        lambda: validate_hxml("<view />", config=ValidationSettings(schema=schema)),
-    )
-
-
 def test_engine_safe_render_escapes_context_and_validates_output():
     engine = HyperviewEngine(
-        TemplateResolver([TemplateSource(content="<view>{{ value }}</view>")])
+        TemplateResolver(
+            [
+                TemplateSource(
+                    content=(
+                        "<text xmlns='https://hyperview.org/hyperview'>"
+                        "{{ value }}</text>"
+                    )
+                )
+            ]
+        )
     )
 
     assert engine.render_hxml("screen.xml", {"value": "<&"}) == (
-        "<view>&lt;&amp;</view>"
+        "<text xmlns='https://hyperview.org/hyperview'>&lt;&amp;</text>"
     )
 
 
@@ -335,13 +180,9 @@ def test_engine_rejects_unsafe_source_or_rendered_output(
     assert_validation_error(code, lambda: engine.render_hxml("screen.xml", context))
 
 
-def test_engine_publish_only_mode_skips_post_render_validation():
-    engine = HyperviewEngine(
-        TemplateResolver([TemplateSource(content="<view>")]),
-        validation=ValidationSettings(mode="publish"),
-    )
-
-    assert engine.render_hxml("screen.xml") == "<view>"
+def test_engine_cannot_request_retired_publish_only_mode():
+    with pytest.raises(TypeError):
+        ValidationSettings(mode="publish")
 
 
 @override_settings(

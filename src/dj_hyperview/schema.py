@@ -2,11 +2,11 @@
 
 from __future__ import annotations
 
-import json
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from threading import RLock
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -14,14 +14,20 @@ from django.dispatch import receiver
 from django.test.signals import setting_changed
 from lxml import etree
 
-from .conf import SchemaProfile, get_settings
+from ._schema_duplicates import _guard_duplicate_declarations
+from ._schema_extensions import _EMPTY_EXTENSIONS, _SchemaExtensions
+from ._schema_overlay import _generated_overlay
+from .conf import get_settings
 from .exceptions import TemplateValidationError
 
 HYPERVIEW_SCHEMA_VERSION = "0.110.0"
+HYPERVIEW_VALIDATION_CONTRACT = "automatic-xsd-v1"
+_SCHEMA_REVISION = "hyperview-0.110.0-corrected-r2"
 HYPERVIEW_NAMESPACE = "https://hyperview.org/hyperview"
 XSD_NAMESPACE = "http://www.w3.org/2001/XMLSchema"
 _SCHEMA_ROOT = Path(__file__).with_name("schemas") / HYPERVIEW_SCHEMA_VERSION
 _MAX_SCHEMA_FILES = 256
+_REGISTRY_LOCK = RLock()
 _OVERRIDE_TAG = f"{{{XSD_NAMESPACE}}}override"
 _REFERENCE_TAGS = frozenset(
     {
@@ -39,19 +45,12 @@ class _SchemaDependencies:
 
 
 def get_hyperview_schema_path() -> Path:
-    """Return the bundled root schema path.
+    """Return the unmodified upstream root schema path without Django settings.
 
     Returns:
-        Absolute path to the versioned Hyperview schema entry point.
+        Absolute path to the versioned upstream Hyperview schema entry point.
     """
     return _SCHEMA_ROOT / "hyperview.xsd"
-
-
-def _profile_resources(profile: SchemaProfile) -> tuple[Path, Path]:
-    catalog_path = get_hyperview_schema_path().with_name("catalog.json")
-    if profile == "compatible-0.110.0":
-        return _SCHEMA_ROOT / "compatibility" / "hyperview.xsd", catalog_path
-    return get_hyperview_schema_path(), catalog_path
 
 
 def _xmlschema_module() -> Any:
@@ -59,7 +58,8 @@ def _xmlschema_module() -> Any:
         import xmlschema
     except ImportError as error:
         raise TemplateValidationError(
-            "schema_dependency", "XSD validation requires the schema extra"
+            "schema_dependency",
+            "XSD validation requires the installed xmlschema dependency",
         ) from error
     return xmlschema
 
@@ -74,7 +74,19 @@ def _catalog_key(name: str, namespace: str) -> str:
     return local if namespace == HYPERVIEW_NAMESPACE else f"{{{namespace}}}{local}"
 
 
-def _schema_catalog(schema: Any, *, version: str | None = None) -> dict[str, Any]:
+def _schema_catalog(
+    schema: Any, *, version: str | None = None, qualified: bool = False
+) -> dict[str, Any]:
+    """Build deterministic metadata while preserving legacy output by default.
+
+    Args:
+        schema: Compiled schema whose declarations supply completion metadata.
+        version: Optional upstream version label.
+        qualified: Whether to emit format 2 with qualified attribute identities.
+
+    Returns:
+        Detached JSON-compatible element metadata.
+    """
     elements: dict[str, Any] = {}
     declarations = sorted(
         schema.maps.elements.values(), key=lambda item: item.name or ""
@@ -83,12 +95,20 @@ def _schema_catalog(schema: Any, *, version: str | None = None) -> dict[str, Any
         if not element.name or element.target_namespace == XSD_NAMESPACE:
             continue
         namespace = element.target_namespace or ""
+        element_type = _base_declaration_type(element)
+        declared_attributes = (
+            {} if element_type.is_simple() else element_type.attributes
+        )
         attributes = {
-            name.rsplit("}", 1)[-1]: _attribute_definition(attribute)
-            for name, attribute in sorted(element.type.attributes.items())
+            (name if qualified else name.rsplit("}", 1)[-1]): _attribute_definition(
+                attribute
+            )
+            for name, attribute in sorted(
+                declared_attributes.items(), key=lambda pair: pair[0] or ""
+            )
             if name is not None
         }
-        content = getattr(element.type, "content", None)
+        content = getattr(element_type, "content", None)
         declared_children = (
             tuple(content.iter_elements()) if content is not None else ()
         )
@@ -119,7 +139,31 @@ def _schema_catalog(schema: Any, *, version: str | None = None) -> dict[str, Any
     result: dict[str, Any] = {"elements": dict(sorted(elements.items()))}
     if version is not None:
         result["schema_version"] = version
+    if qualified:
+        result["catalog_format"] = 2
+        result["behavior_variants"] = {}
     return result
+
+
+def _base_declaration_type(declaration: Any) -> Any:
+    """Return the standard fallback, not anyType introduced by alternatives."""
+    alternatives = getattr(declaration, "alternatives", ())
+    if alternatives and alternatives[-1].elem.get("test") is None:
+        return alternatives[-1].type
+    return declaration.type
+
+
+def _get_declaration_type(declaration: Any, element: Any) -> Any:
+    """Select the exact XSD type for a statically known element action.
+
+    Args:
+        declaration: Compiled element declaration from the shared registry.
+        element: Parsed source element with statically known attributes.
+
+    Returns:
+        The XSD type selected by the element alternative table.
+    """
+    return declaration.get_alternative_type(element)
 
 
 def _static_validation_catalog(schema: Any) -> dict[str, Any]:
@@ -132,10 +176,15 @@ def _static_validation_catalog(schema: Any) -> dict[str, Any]:
         if not element.name or element.target_namespace == XSD_NAMESPACE:
             continue
         namespace = element.target_namespace or ""
-        declared_attributes = tuple(element.type.attributes.items())
+        element_type = _base_declaration_type(element)
+        declared_attributes = (
+            () if element_type.is_simple() else tuple(element_type.attributes.items())
+        )
         attributes = {
             name: _attribute_definition(attribute)
-            for name, attribute in sorted(declared_attributes)
+            for name, attribute in sorted(
+                declared_attributes, key=lambda pair: pair[0] or ""
+            )
             if name is not None
         }
         elements[_catalog_key(element.name, namespace)] = {
@@ -173,7 +222,7 @@ def build_hyperview_catalog() -> dict[str, Any]:
         JSON-compatible schema catalog sorted by declaration name.
 
     Raises:
-        TemplateValidationError: If the optional schema dependency is unavailable
+        TemplateValidationError: If the required schema dependency is unavailable
             or the bundled schema cannot be compiled.
     """
     return _schema_catalog(
@@ -261,14 +310,6 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
     return tuple(sorted(visited))
 
 
-@lru_cache(maxsize=64)
-def _custom_catalog(
-    profile: SchemaProfile, dependencies: _SchemaDependencies
-) -> dict[str, Any]:
-    del profile
-    return _schema_catalog(_compile_schema(Path(dependencies.root)))
-
-
 def _target_namespace(path: Path) -> str:
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
     try:
@@ -291,16 +332,31 @@ def _registry_state() -> tuple[_SchemaDependencies, ...]:
 
 
 @lru_cache(maxsize=64)
-def _compile_registry(
-    profile: SchemaProfile, state: tuple[_SchemaDependencies, ...]
+def _cached_registry(
+    state: tuple[_SchemaDependencies, ...],
+    extensions: _SchemaExtensions = _EMPTY_EXTENSIONS,
 ) -> Any:
+    """Compile the corrected registry for one guarded dependency snapshot.
+
+    Args:
+        state: Local schema entry points and transitive dependency fingerprints.
+        extensions: Immutable typed registrations for the trusted overlay.
+
+    Returns:
+        A complete XSD 1.1 registry cached for this exact contract.
+
+    Raises:
+        TemplateValidationError: If dependencies or declarations are invalid.
+    """
     xmlschema = _xmlschema_module()
-    schema_path, _ = _profile_resources(profile)
+    schema_path = _SCHEMA_ROOT / "r2" / "hyperview.xsd"
     roots = [Path(dependencies.root) for dependencies in state]
     locations = [(_target_namespace(path), str(path)) for path in roots]
     try:
         compiled = xmlschema.XMLSchema11(
-            schema_path,
+            _generated_overlay(schema_path, extensions)
+            if extensions != _EMPTY_EXTENSIONS
+            else schema_path,
             allow="local",
             locations=locations,
             use_fallback=False,
@@ -308,74 +364,153 @@ def _compile_registry(
         )
     except Exception as error:
         raise TemplateValidationError("schema_invalid", "invalid schema") from error
-    return _require_complete_schema(compiled)
+    _require_complete_schema(compiled)
+    if state:
+        _guard_duplicate_declarations(
+            compiled, [_compile_schema(path) for path in roots]
+        )
+    return compiled
 
 
-@lru_cache(maxsize=2)
-def _official_catalog(profile: SchemaProfile) -> dict[str, Any]:
-    _, path = _profile_resources(profile)
-    return json.loads(path.read_text(encoding="utf-8"))
+def _compile_registry(
+    state: tuple[_SchemaDependencies, ...],
+    extensions: _SchemaExtensions = _EMPTY_EXTENSIONS,
+) -> Any:
+    """Serialize cache lookup and compilation for one immutable registry snapshot.
+
+    Args:
+        state: Guarded dependency fingerprints.
+        extensions: Normalized typed registrations.
+
+    Returns:
+        The cached compiled registry, compiled once under concurrent first use.
+    """
+    with _REGISTRY_LOCK:
+        return _cached_registry(state, extensions)
 
 
 def get_hyperview_catalog() -> dict[str, Any]:
-    """Return profile completion metadata merged with configured local schemas.
+    """Return detached completion metadata for the automatic corrected registry.
 
     Returns:
-        A detached JSON-compatible catalog with schema profile metadata, safe
-        for caller mutation.
+        Format 2 metadata including registered typed behavior variants.
 
     Raises:
-        TemplateValidationError: If an extra schema is unsafe, invalid, or
-            declares an incompatible duplicate element.
+        TemplateValidationError: If a dependency is unsafe, invalid, or conflicts.
     """
-    profile = get_settings().schema_profile
-    state = _registry_state()
-    catalog = deepcopy(_official_catalog(profile))
-    catalog["schema_profile"] = profile
-    elements = catalog["elements"]
-    for dependencies in state:
-        extra = _custom_catalog(profile, dependencies)
-        for name, definition in extra["elements"].items():
-            existing = elements.get(name)
-            if existing is not None and existing != definition:
-                raise TemplateValidationError(
-                    "duplicate_schema_declaration",
-                    "schema contains an incompatible duplicate declaration",
-                )
-            elements[name] = definition
-    catalog["elements"] = dict(sorted(elements.items()))
-    return catalog
+    config = get_settings()
+    return deepcopy(_active_catalog(_registry_state(), config.schema_extensions))
 
 
 @lru_cache(maxsize=64)
 def _cached_static_validation_catalog(
-    profile: SchemaProfile, state: tuple[_SchemaDependencies, ...]
+    state: tuple[_SchemaDependencies, ...],
+    extensions: _SchemaExtensions = _EMPTY_EXTENSIONS,
 ) -> dict[str, Any]:
     """Compile namespace-preserving schema metadata for one registry state."""
-    return _static_validation_catalog(_compile_registry(profile, state))
+    compiled = _compile_registry(state, extensions)
+    catalog = _static_validation_catalog(compiled)
+    catalog["catalog_format"] = 2
+    catalog["behavior_variants"] = _behavior_variants(
+        compiled, extensions, catalog["elements"]["behavior"]
+    )
+    return catalog
 
 
 def _get_static_validation_catalog() -> dict[str, Any]:
     """Return detached schema metadata for context-free Admin validation."""
-    profile = get_settings().schema_profile
-    state = _registry_state()
-    return deepcopy(_cached_static_validation_catalog(profile, state))
+    config = get_settings()
+    return deepcopy(
+        _cached_static_validation_catalog(_registry_state(), config.schema_extensions)
+    )
 
 
-def validate_hyperview_schema(document: str) -> None:
-    """Validate rendered HXML against the selected profile and local extensions.
+def _get_registry_snapshot() -> tuple[tuple[Any, ...], Any]:
+    """Inspect dependencies and return a contract identity and compiled registry.
 
-    Args:
-        document: Rendered HXML document or fragment.
+    Returns:
+        Immutable revision/dependency/registration identity and its validator.
 
     Raises:
-        TemplateValidationError: If the document does not match the compiled
-            XSD 1.1 registry or the optional dependency is unavailable.
+        TemplateValidationError: If any dependency is unsafe or inconsistent.
     """
-    from .validation import _parse
+    config = get_settings()
+    state = _registry_state()
+    return (
+        (_SCHEMA_REVISION, state, config.schema_extensions),
+        _compile_registry(state, config.schema_extensions),
+    )
 
-    root = _parse(document, get_settings().validation)
-    validator = _compile_registry(get_settings().schema_profile, _registry_state())
+
+def _get_compiled_registry() -> Any:
+    """Return the shared validator after checking all configured dependencies."""
+    return _get_registry_snapshot()[1]
+
+
+def _behavior_variants(
+    compiled: Any, extensions: _SchemaExtensions, baseline: dict[str, Any]
+) -> dict[str, Any]:
+    """Describe each selected behavior type without mixing unrelated actions.
+
+    Args:
+        compiled: Registry containing the generated behavior alternative table.
+        extensions: Immutable registrations in deterministic action order.
+        baseline: Common metadata shape for completion or static validation.
+
+    Returns:
+        Complete per-action element definitions with detached attributes.
+    """
+    variants = {}
+    declaration = compiled.maps.elements[f"{{{HYPERVIEW_NAMESPACE}}}behavior"]
+    for index, (action, _attributes) in enumerate(extensions.behaviors):
+        variant = deepcopy(baseline)
+        variant["attributes"] = {
+            name: _attribute_definition(attribute)
+            for name, attribute in sorted(
+                declaration.alternatives[index].type.attributes.items()
+            )
+        }
+        variants[action] = variant
+    return variants
+
+
+@lru_cache(maxsize=64)
+def _active_catalog(
+    state: tuple[_SchemaDependencies, ...],
+    extensions: _SchemaExtensions,
+) -> dict[str, Any]:
+    """Build qualified, action-specific metadata from the actual r2 registry.
+
+    Args:
+        state: Guarded transitive dependency fingerprints.
+        extensions: Normalized immutable registrations.
+
+    Returns:
+        Cached metadata shared through detached copies at the public boundary.
+    """
+    compiled = _compile_registry(state, extensions)
+    catalog = _schema_catalog(
+        compiled, version=HYPERVIEW_SCHEMA_VERSION, qualified=True
+    )
+    baseline = catalog["elements"]["behavior"]
+    catalog["behavior_variants"] = _behavior_variants(compiled, extensions, baseline)
+    baseline["attributes"]["action"]["enum"] = sorted(
+        set(baseline["attributes"]["action"]["enum"])
+        | {name for name, _ in extensions.behaviors}
+    )
+    return catalog
+
+
+def _validate_schema_root(root: Any, validator: Any) -> None:
+    """Validate one already guarded XML tree without parsing a second time.
+
+    Args:
+        root: Safely parsed rendered document or fragment.
+        validator: Compiled corrected registry from the current snapshot.
+
+    Raises:
+        TemplateValidationError: If validation fails or the registry is invalid.
+    """
     try:
         error = next(validator.iter_errors(root), None)
     except Exception as failure:
@@ -392,6 +527,20 @@ def validate_hyperview_schema(document: str) -> None:
     ) from None
 
 
+def validate_hyperview_schema(document: str) -> None:
+    """Validate rendered HXML with the mandatory corrected registry.
+
+    Args:
+        document: Rendered HXML document or fragment.
+
+    Raises:
+        TemplateValidationError: If the document is unsafe or violates the XSD.
+    """
+    from .validation import _validate_hxml_result
+
+    _validate_hxml_result(document)
+
+
 @receiver(
     setting_changed,
     dispatch_uid="dj_hyperview.clear_schema_registry_cache",
@@ -400,7 +549,7 @@ def validate_hyperview_schema(document: str) -> None:
 def _clear_schema_registry_cache(*, setting: str, **kwargs: Any) -> None:
     del kwargs
     if setting == "HYPERVIEW":
-        _official_catalog.cache_clear()
-        _custom_catalog.cache_clear()
-        _compile_registry.cache_clear()
+        with _REGISTRY_LOCK:
+            _cached_registry.cache_clear()
         _cached_static_validation_catalog.cache_clear()
+        _active_catalog.cache_clear()

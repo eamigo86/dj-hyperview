@@ -14,7 +14,10 @@ MALFORMED_TEMPLATES = [
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "OPTIONS": {
             "loaders": [
-                ("django.template.loaders.locmem.Loader", {"screen.xml": "<view>"})
+                (
+                    "django.template.loaders.locmem.Loader",
+                    {"screen.xml": "<view xmlns='https://hyperview.org/hyperview'>"},
+                )
             ]
         },
     }
@@ -29,7 +32,11 @@ def assert_malformed(action):
 
 
 def test_public_engine_render_rejects_malformed_hxml():
-    engine = HyperviewEngine(TemplateResolver([TemplateSource(content="<view>")]))
+    engine = HyperviewEngine(
+        TemplateResolver(
+            [TemplateSource(content="<view xmlns='https://hyperview.org/hyperview'>")]
+        )
+    )
 
     assert_malformed(lambda: engine.render("screen.xml"))
 
@@ -53,8 +60,9 @@ def test_isolated_unicode_surrogate_is_a_typed_failure():
 @pytest.mark.parametrize(
     "document",
     [
-        "<view><!-- <!DOCTYPE view> --><text /></view>",
-        '<view><![CDATA[<!ENTITY xxe SYSTEM "file:///etc/passwd">]]></view>',
+        "<text xmlns='https://hyperview.org/hyperview'>"
+        "<!-- <!DOCTYPE view> --><text /></text>",
+        "<text xmlns='https://hyperview.org/hyperview'><![CDATA[<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]]></text>",
     ],
 )
 def test_declaration_text_is_allowed_in_xml_comments_and_cdata(document):
@@ -72,16 +80,23 @@ def test_declaration_text_is_allowed_in_xml_comments_and_cdata(document):
 def test_declaration_text_is_allowed_in_django_comments(comment):
     engine = HyperviewEngine(
         TemplateResolver(
-            [TemplateSource(content=f"<view>{comment}<text>ok</text></view>")]
+            [
+                TemplateSource(
+                    content=f"<view xmlns='https://hyperview.org/hyperview'>{comment}<text>ok</text></view>"
+                )
+            ]
         )
     )
 
-    assert engine.render("screen.xml") == "<view><text>ok</text></view>"
+    assert (
+        engine.render("screen.xml")
+        == "<view xmlns='https://hyperview.org/hyperview'><text>ok</text></view>"
+    )
 
 
 def test_multiline_django_comment_syntax_cannot_hide_a_declaration() -> None:
     """The source guard mirrors Django's single-line comment lexer."""
-    source = "{#\n<!DOCTYPE view [<!ENTITY x 'unsafe'>]>\n#}<view>&x;</view>"
+    source = "{#\n<!DOCTYPE view [<!ENTITY x 'unsafe'>]>\n#}<view xmlns='https://hyperview.org/hyperview'>&x;</view>"
 
     with pytest.raises(TemplateValidationError) as captured:
         validate_template_source(source)
@@ -91,10 +106,15 @@ def test_multiline_django_comment_syntax_cannot_hide_a_declaration() -> None:
 
 def test_bare_carriage_return_remains_inside_an_inline_django_comment() -> None:
     """Declaration scanning mirrors Django's LF-only inline-comment boundary."""
-    source = "{# note\r<!DOCTYPE view> #}<view />"
+    source = (
+        "{# note\r<!DOCTYPE view> #}<view xmlns='https://hyperview.org/hyperview' />"
+    )
     engine = HyperviewEngine(TemplateResolver([TemplateSource(content=source)]))
 
-    assert engine.render("screen.xml") == "<view />"
+    assert (
+        engine.render("screen.xml")
+        == "<view xmlns='https://hyperview.org/hyperview' />"
+    )
 
 
 def test_csrf_tag_can_precede_an_xml_declaration_on_its_own_line() -> None:
@@ -102,7 +122,7 @@ def test_csrf_tag_can_precede_an_xml_declaration_on_its_own_line() -> None:
     source = (
         "{% load dj_hyperview %}\n"
         '<?xml version="1.0" encoding="UTF-8"?>'
-        "<view>{% hv_csrf_token %}</view>"
+        "<view xmlns='https://hyperview.org/hyperview'>{% hv_csrf_token %}</view>"
     )
     engine = HyperviewEngine(TemplateResolver([TemplateSource(content=source)]))
 
@@ -129,10 +149,21 @@ def test_source_guard_defers_malformed_django_comments_to_compilation(source):
 
 def test_active_and_post_render_constructed_declarations_remain_forbidden():
     with pytest.raises(TemplateValidationError) as source_error:
-        validate_template_source("<!DOCTYPE view><view />")
+        validate_template_source(
+            "<!DOCTYPE view><view xmlns='https://hyperview.org/hyperview' />"
+        )
 
     engine = HyperviewEngine(
-        TemplateResolver([TemplateSource(content="{{ payload|safe }}<view />")])
+        TemplateResolver(
+            [
+                TemplateSource(
+                    content=(
+                        "{{ payload|safe }}"
+                        "<view xmlns='https://hyperview.org/hyperview' />"
+                    )
+                )
+            ]
+        )
     )
     payload = '<!DOCTYPE view [<!ENTITY xxe SYSTEM "http://127.0.0.1/secret">]>'
     with pytest.raises(TemplateValidationError) as rendered_error:

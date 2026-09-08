@@ -54,7 +54,10 @@ def test_changed_implicit_template_dirs_do_not_reuse_prior_content(tmp_path):
 
 @override_settings(CACHES=LOCMEM)
 def test_cache_active_engine_preserves_include_and_extends_resolution(tmp_path):
-    (tmp_path / "layout.xml").write_text("<view>{% block body %}{% endblock %}</view>")
+    (tmp_path / "layout.xml").write_text(
+        '<view xmlns="https://hyperview.org/hyperview">'
+        "{% block body %}{% endblock %}</view>"
+    )
     (tmp_path / "part.xml").write_text("<text>{{ value }}</text>")
     (tmp_path / "screen.xml").write_text(
         '{% extends "layout.xml" %}'
@@ -64,7 +67,8 @@ def test_cache_active_engine_preserves_include_and_extends_resolution(tmp_path):
 
     with override_settings(HYPERVIEW=configured(source, template_dirs=[tmp_path])):
         assert render_template("screen.xml", {"value": "A & B"}) == (
-            "<view><text>A &amp; B</text></view>"
+            '<view xmlns="https://hyperview.org/hyperview">'
+            "<text>A &amp; B</text></view>"
         )
 
 
@@ -275,7 +279,8 @@ class CountingInitCache(BaseCache):
 
 @pytest.mark.parametrize("cache_setting", [pytest.param(None, id="absent"), {}])
 def test_disabled_cache_never_initializes_cache_handler(cache_setting):
-    hyperview = {"SOURCES": [stub("<view />")]}
+    content = '<view xmlns="https://hyperview.org/hyperview" />'
+    hyperview = {"SOURCES": [stub(content)]}
     if cache_setting is not None:
         hyperview["CACHE"] = cache_setting
     caches = {"default": {"BACKEND": f"{__name__}.CountingInitCache"}}
@@ -284,6 +289,6 @@ def test_disabled_cache_never_initializes_cache_handler(cache_setting):
     with override_settings(CACHES=caches, HYPERVIEW=hyperview):
         get_settings()
         assert TemplateResolver.from_settings().resolve("screen.xml").content
-        assert render_template("screen.xml") == "<view />"
+        assert render_template("screen.xml") == content
 
     assert CountingInitCache.constructions == 0

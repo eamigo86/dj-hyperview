@@ -21,13 +21,13 @@ def test_settings_use_safe_optional_defaults() -> None:
     assert get_settings() == HyperviewSettings()
 
 
-@pytest.mark.parametrize("profile", ["upstream-0.110.0", "compatible-0.110.0"])
-def test_settings_normalize_schema_profile(profile: str) -> None:
-    """Only an explicit profile opt-in changes the schema registry selection."""
+@pytest.mark.parametrize(
+    "profile", ["upstream-0.110.0", "compatible-0.110.0", "compatible-0.110.0-r2"]
+)
+def test_previous_schema_profiles_raise_explicit_migration_errors(profile):
     with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
-        assert get_settings().schema_profile == profile
-    with override_settings(HYPERVIEW={}):
-        assert get_settings().schema_profile == "upstream-0.110.0"
+        with pytest.raises(HyperviewConfigurationError, match="E019.*removed"):
+            get_settings()
 
 
 @pytest.mark.parametrize(
@@ -41,9 +41,6 @@ def test_invalid_schema_profiles_raise_e019(profile: object) -> None:
 
 
 def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
-    def schema(document: str) -> None:
-        del document
-
     (tmp_path / "extension.xsd").write_text(
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>',
         encoding="utf-8",
@@ -58,8 +55,6 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
             "FAILURE_MODE": "raise",
         },
         "VALIDATION": {
-            "MODE": "render",
-            "SCHEMA": schema,
             "MAX_BYTES": 2_000,
             "MAX_DEPTH": 8,
             "MAX_NODES": 100,
@@ -82,7 +77,7 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
         template_dirs=(tmp_path,),
         sources=(SourceSettings("tests.stubs.TemplateSource", {"x": 1}),),
         cache=CacheSettings("screens", 60, 5, "raise"),
-        validation=ValidationSettings("render", schema, 2_000, 8, 100),
+        validation=ValidationSettings(2_000, 8, 100),
         admin=AdminSettings(
             editor=True,
             permission=__import__(
@@ -145,11 +140,11 @@ def test_settings_snapshot_is_replaced_when_hyperview_changes() -> None:
     """Django setting overrides cannot observe a stale normalized snapshot."""
     with override_settings(HYPERVIEW={}):
         first = get_settings()
-    with override_settings(HYPERVIEW={"VALIDATION": {"MODE": "render"}, "SOURCES": []}):
+    with override_settings(HYPERVIEW={"VALIDATION": {"MAX_NODES": 30}, "SOURCES": []}):
         second = get_settings()
 
     assert second is not first
-    assert second.validation.mode == "render"
+    assert second.validation.max_nodes == 30
 
 
 @pytest.mark.parametrize("setting", ["CACHES", "DATABASES", "INSTALLED_APPS"])

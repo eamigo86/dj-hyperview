@@ -34,8 +34,6 @@ Defaults are safe for general use; lower them for smaller documents:
 ```python
 HYPERVIEW = {
     "VALIDATION": {
-        "MODE": "publish_and_render",
-        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
         "MAX_BYTES": 250_000,
         "MAX_DEPTH": 48,
         "MAX_NODES": 8_000,
@@ -46,10 +44,24 @@ HYPERVIEW = {
 Publish validation rejects unsafe declarations before Django compiles a
 template. Render validation then parses the final UTF-8 XML with entity
 resolution and network access disabled, applying byte, depth, node, and schema
-limits. DTD declarations and entities are forbidden. The optional bundled
-validator uses XSD 1.1. The default `SCHEMA_PROFILE="upstream-0.110.0"` preserves
-the official schemas; opt-in `compatible-0.110.0` permits percentages only in
-the nine style margin attributes. It does not relax unrelated style types.
+limits. DTD declarations and entities are forbidden. The bundled XSD 1.1
+registry is always enforced, with one internal set of verified corrections.
+`SCHEMA_PROFILE`, `VALIDATION.MODE`, and `VALIDATION.SCHEMA` are rejected, not
+ignored. Resource limits remain configurable, but no setting disables validation.
+
+Eager Hyperview responses and public body mutations validate before committing a
+replacement; invalid mutations preserve the previous body. Lazy responses retain
+Django's deferred rendering and validate their generated representation before
+exposure. The integrated engine/response pipeline parses and checks XSD once;
+independent public render and response calls may each validate their input.
+Only a private immutable handoff reuses exact already-validated bytes and the
+matching registry/limit identity. A SafeString is not a bypass.
+
+Explicit plain Django `HttpResponse` objects, raw Django `engine.backend` calls,
+and callbacks returning another Django response remain outside this guarantee.
+Use a non-HXML error response when even a valid error document would exceed the
+configured HXML limits. See [HTTP responses](http-responses.md) for HEAD and
+no-content status rules.
 
 Declaration scanning is linear in document length, including repeated unclosed
 Django delimiters. Only the source scan recognizes Django comments: after
@@ -82,9 +94,13 @@ Load the package tag library and render `hv_csrf_token` inside a form:
 ```xml
 {% load dj_hyperview %}
 <?xml version="1.0" encoding="UTF-8"?>
-<view>
-  <form action="/submit/" method="post">
+<view xmlns="https://hyperview.org/hyperview">
+  <form>
     {% hv_csrf_token %}
+    <view>
+      <behavior trigger="press" action="replace" href="/submit/" verb="post" />
+      <text>Submit</text>
+    </view>
   </form>
 </view>
 ```

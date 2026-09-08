@@ -114,7 +114,7 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
     assert "transaction.on_commit" in page
     assert "multi-root and text-only partials" in page
     assert "render-time validation" in page
-    assert "render or publish_and_render" in normalized
+    assert "automatic" in normalized
     assert "no longer canonical" in normalized
     assert "remains recoverable" in normalized
     assert "one commit-aware invalidation" in normalized
@@ -198,7 +198,7 @@ def test_security_guide_matches_name_and_xml_validation_contracts() -> None:
     database_page = _read_document("database-admin.md")
     blocks = _python_blocks(page)
 
-    for key in ("MODE", "SCHEMA", "MAX_BYTES", "MAX_DEPTH", "MAX_NODES"):
+    for key in ("MAX_BYTES", "MAX_DEPTH", "MAX_NODES"):
         assert f'"{key}"' in page
     assert "DTD" in page and "entities" in page
     assert "control characters" in page and "isolated surrogates" in page
@@ -211,7 +211,9 @@ def test_security_guide_matches_name_and_xml_validation_contracts() -> None:
     assert "XML declaration" in page
     assert "XSD 1.1" in page
     assert "remote schema references" in page.lower()
-    assert '"dj_hyperview.validate_hyperview_schema"' in page
+    assert "always" in page.lower()
+    assert "raw Django" in page
+    assert "once" in page
     assert list(signature(validate_hxml).parameters) == ["document", "config"]
     assert blocks
     for block in blocks:
@@ -247,3 +249,28 @@ def test_release_guide_documents_trusted_environments_and_recovery() -> None:
     assert "Only the PyPI job receives" not in release
     assert "PyPI and Pages jobs receive OIDC only within their own jobs" in release
     assert "Only Pages receives `pages: write`" in release
+
+
+def test_security_csrf_example_passes_automatic_render_validation(
+    tmp_path: Path,
+) -> None:
+    """The documented CSRF form uses real HXML rather than HTML form attributes."""
+    from django.test import RequestFactory, override_settings
+
+    from dj_hyperview import HyperviewEngine
+
+    page = _read_document("security.md")
+    blocks = re.findall(r"```xml\n(.*?)```", page, flags=re.DOTALL)
+    source = next(block for block in blocks if "hv_csrf_token" in block)
+    (tmp_path / "security.xml").write_text(source, encoding="utf-8")
+    with override_settings(
+        HYPERVIEW={
+            "TEMPLATE_DIRS": [tmp_path],
+            "SOURCES": [{"BACKEND": "dj_hyperview.sources.FileSystemSource"}],
+        }
+    ):
+        rendered = HyperviewEngine(TemplateResolver.from_settings()).render_hxml(
+            "security.xml", request=RequestFactory().get("/")
+        )
+    assert 'name="csrfmiddlewaretoken"' in rendered
+    assert 'hide="true"' in rendered

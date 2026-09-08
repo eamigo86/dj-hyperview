@@ -17,6 +17,7 @@ classifiers = [
 dependencies = [
     "Django>=5.2,<6.2",
     "lxml>=6.1.3,<7",
+    "xmlschema>=4.3,<5",
 ]
 
 [project.urls]
@@ -25,12 +26,10 @@ Documentation = "https://eamigo86.github.io/dj-hyperview/"
 Source = "https://github.com/eamigo86/dj-hyperview"
 
 [project.optional-dependencies]
-schema = [
-    "xmlschema>=4.3,<5",
-]
+# Deprecated installation alias; XSD validation is always included.
+schema = []
 editor = [
     "django-ace>=1.44,<2",
-    "xmlschema>=4.3,<5",
 ]
 
 [build-system]

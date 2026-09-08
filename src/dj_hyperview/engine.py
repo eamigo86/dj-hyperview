@@ -11,12 +11,13 @@ from django.template import TemplateDoesNotExist
 from django.template.backends.django import DjangoTemplates
 from django.test.signals import setting_changed
 from django.utils.module_loading import import_string
+from django.utils.safestring import SafeData, mark_safe
 
 from .conf import _SETTING_DEPENDENCIES, ValidationSettings, get_settings
 from .exceptions import InvalidTemplateName, TemplateNotFound
 from .loaders import template_snapshot
 from .resolver import TemplateResolver
-from .validation import validate_rendered_hxml
+from .validation import _validate_hxml_result, _ValidatedHxml
 
 _INHERITED_DJANGO_TEMPLATE_OPTIONS = frozenset(
     {"builtins", "context_processors", "libraries", "string_if_invalid"}
@@ -48,6 +49,12 @@ def _consumer_django_template_options() -> dict[str, Any]:
     return {}
 
 
+def _rendered_hxml_text(rendered: str) -> str:
+    """Keep template preambles compatible without trusting safe-string markup."""
+    stripped = rendered.lstrip()
+    return mark_safe(stripped) if isinstance(rendered, SafeData) else stripped
+
+
 class _ValidatedTemplate:
     def __init__(
         self,
@@ -64,10 +71,21 @@ class _ValidatedTemplate:
             raise AttributeError(name)
         return getattr(self._template, name)
 
-    def render(self, context=None, request=None) -> str:
+    def _render_source(self, context=None, request=None) -> str:
         with template_snapshot(self._resolver):
-            rendered = self._template.render(context, request)
-        return validate_rendered_hxml(rendered, config=self.validation)
+            return self._template.render(context, request)
+
+    def _render_result(
+        self, context=None, request=None, *, fragment=False
+    ) -> _ValidatedHxml:
+        return _validate_hxml_result(
+            _rendered_hxml_text(self._render_source(context, request)),
+            config=self.validation,
+            fragment=fragment,
+        )
+
+    def render(self, context=None, request=None) -> str:
+        return self._render_result(context, request).text
 
 
 class HyperviewEngine:
@@ -159,13 +177,18 @@ class HyperviewEngine:
         Returns:
             The rendered and validated Hyperview markup.
         """
+        return self._render_result(name, context, request).text
+
+    def _render_result(
+        self, name, context=None, request=None, *, fragment=False
+    ) -> _ValidatedHxml:
         with template_snapshot(self.resolver):
             template = (
                 self.get_template(name)
                 if isinstance(name, str)
                 else self.select_template(name)
             )
-            return template.render(context, request)
+            return template._render_result(context, request, fragment=fragment)
 
     def render_hxml(
         self,
@@ -173,7 +196,7 @@ class HyperviewEngine:
         context: dict[str, Any] | None = None,
         request: HttpRequest | None = None,
     ) -> str:
-        """Render and, when configured, validate consumer HXML.
+        """Render and validate consumer HXML.
 
         Args:
             name: Canonical name or ordered candidate names.

@@ -48,10 +48,18 @@ for alias in ("default", "replica"):
 model = apps.get_model("dj_hyperview_database", "HyperviewTemplate")
 for alias, content in (("default", "default"), ("replica", "replica")):
     model.objects.using(alias).create(
-        name="screen.xml", content=f"<view>{content}</view>"
+        name="screen.xml", content=(
+            f"<view xmlns='https://hyperview.org/hyperview'>"
+            f"<text>{content}</text>"
+            f"</view>"
+        )
     )
     model.objects.using(alias).create(
-        name="atomic.xml", content=f"<view>{content}-old</view>"
+        name="atomic.xml", content=(
+            f"<view xmlns='https://hyperview.org/hyperview'>"
+            f"<text>{content}-old</text>"
+            f"</view>"
+        )
     )
 client = Client()
 
@@ -74,7 +82,11 @@ def document(name, alias):
 default_first = document("screen.xml", "default")
 replica_first = document("screen.xml", "replica")
 model.objects.using("default").filter(name="screen.xml").update(
-    content="<view>default-new</view>", revision=2
+    content=(
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>default-new</text>"
+        "</view>"
+    ), revision=2
 )
 default_cached = document("screen.xml", "default")
 replica_cached = document("screen.xml", "replica")
@@ -91,7 +103,11 @@ with patch(
 ):
     with transaction.atomic(using="default"):
         with transaction.atomic(using="replica"):
-            routed = publish_template("routed.xml", "<view>service</view>")
+            routed = publish_template("routed.xml", (
+                "<view xmlns='https://hyperview.org/hyperview'>"
+                "<text>service</text>"
+                "</view>"
+            ))
             before_replica_commit = list(events)
         after_replica_commit = list(events)
         default_still_open = connections["default"].in_atomic_block
@@ -105,19 +121,31 @@ change = reverse(
     "admin:dj_hyperview_database_hyperviewtemplate_change", args=[template.pk]
 )
 admin_response = client.post(change, {
-    "name": "routed.xml", "content": "<view>admin</view>", "active": "on",
+    "name": "routed.xml", "content": (
+        "<view xmlns='https://hyperview.org/hyperview'>"
+        "<text>admin</text>"
+        "</view>"
+    ), "active": "on",
     "expected_revision": "1", "_save": "Save",
 })
 
 try:
     with transaction.atomic(using="default"):
         publish_template(
-            "atomic.xml", "<view>default-rollback</view>",
+            "atomic.xml", (
+                "<view xmlns='https://hyperview.org/hyperview'>"
+                "<text>default-rollback</text>"
+                "</view>"
+            ),
             expected_revision=1, using="default",
         )
         with transaction.atomic(using="replica"):
             publish_template(
-                "atomic.xml", "<view>replica-commit</view>",
+                "atomic.xml", (
+                    "<view xmlns='https://hyperview.org/hyperview'>"
+                    "<text>replica-commit</text>"
+                    "</view>"
+                ),
                 expected_revision=1, using="replica",
             )
         raise RuntimeError("rollback")
@@ -149,17 +177,34 @@ print(json.dumps({
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout) == {
         "cache": [
-            "<view>default</view>",
-            "<view>replica</view>",
-            "<view>default-new</view>",
-            "<view>replica</view>",
-            "<view>default-new</view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>default</text></view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>replica</text></view>",
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text>default-new</text>"
+            "</view>",
+            "<view xmlns='https://hyperview.org/hyperview'><text>replica</text></view>",
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text>default-new</text>"
+            "</view>",
         ],
         "callback": [[], [["routed.xml"]], True],
         "service": ["routed.xml", 1, True],
-        "router_read": "<view>replica</view>",
-        "admin": [302, "<view>admin</view>", False],
-        "transactions": ["<view>default-old</view>", "<view>replica-commit</view>"],
+        "router_read": (
+            "<view xmlns='https://hyperview.org/hyperview'><text>replica</text></view>"
+        ),
+        "admin": [
+            302,
+            "<view xmlns='https://hyperview.org/hyperview'><text>admin</text></view>",
+            False,
+        ],
+        "transactions": [
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text>default-old</text>"
+            "</view>",
+            "<view xmlns='https://hyperview.org/hyperview'>"
+            "<text>replica-commit</text>"
+            "</view>",
+        ],
     }
 
 

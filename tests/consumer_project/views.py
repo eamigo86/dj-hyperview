@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from django.http import HttpRequest
+from django.http import HttpRequest, HttpResponse
 from django.views.decorators.http import require_GET, require_http_methods
 
 from dj_hyperview import (
@@ -126,10 +126,10 @@ def consumer_form(
     return HyperviewResponse(content, status=201, headers=headers)
 
 
-_SOURCE_ERROR_BODY = "<view><text>request failed</text></view>"
+_SOURCE_ERROR_BODY = "request failed"
 
 
-def _source_error_response(error: Exception) -> HyperviewResponse:
+def _source_error_response(error: Exception) -> HttpResponse:
     if isinstance(error, InvalidTemplateName):
         status, code = 400, "invalid_template_name"
     elif isinstance(error, TemplateNotFound):
@@ -138,13 +138,18 @@ def _source_error_response(error: Exception) -> HyperviewResponse:
         status, code = 422, error.code
     else:
         status, code = 503, "source_unavailable"
-    return HyperviewResponse(
-        _SOURCE_ERROR_BODY, status=status, headers={"X-Hyperview-Error": code}
+    # Deliberately plain Django errors remain outside HXML validation: even a
+    # four-byte HXML limit must allow the consumer to report a safe HTTP error.
+    return HttpResponse(
+        _SOURCE_ERROR_BODY,
+        status=status,
+        content_type="text/plain",
+        headers={"X-Hyperview-Error": code},
     )
 
 
 @require_GET
-def consumer_source(request: HttpRequest) -> HyperviewResponse:
+def consumer_source(request: HttpRequest) -> HttpResponse:
     """Render a named document through the configured public source stack.
 
     Args:

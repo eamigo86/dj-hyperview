@@ -56,9 +56,7 @@ empty mapping disables Hyperview caching.
 | `CACHE.TTL` | Integer greater than or equal to 1 | 300 seconds | Lifetime of successful raw-template and resolved-source entries. Generation keys do not expire. |
 | `CACHE.NEGATIVE_TTL` | Integer greater than or equal to 0 | 15 seconds | Lifetime of explicit source misses. Zero disables effective negative-entry retention. |
 | `CACHE.FAILURE_MODE` | `bypass` or `raise` | `"bypass"` | `bypass` falls back to authoritative sources after ordinary cache failures; `raise` reports `SourceUnavailable`. Invalidation remains fail-closed in both modes. |
-| `VALIDATION` | Mapping | `{}` | Source-safety and final rendered-document validation policy. |
-| `VALIDATION.MODE` | `publish`, `render`, or `publish_and_render` | `"publish_and_render"` | `publish` performs mandatory raw-source safety checks and skips final XML/schema validation. `render` and `publish_and_render` also validate the final rendered document; the latter is the explicit combined default policy. |
-| `VALIDATION.SCHEMA` | `None`, filesystem path, callable, or dotted callable path | `None` | Optional final-document validator. A path must identify a local single-file XSD 1.0 schema. A callable receives the rendered string and rejects it by returning `False` or raising. |
+| `VALIDATION` | Mapping | `{}` | Resource limits for mandatory source safety and automatic rendered validation. |
 | `VALIDATION.MAX_BYTES` | Positive integer | 1,000,000 bytes | Maximum UTF-8 size accepted for raw source and the final rendered document. |
 | `VALIDATION.MAX_DEPTH` | Positive integer | 64 levels | Maximum final XML element depth, with an absolute maximum of 256 imposed by the parser safety ceiling. |
 | `VALIDATION.MAX_NODES` | Positive integer | 20,000 nodes | Maximum number of elements in the final parsed XML document. |
@@ -66,81 +64,50 @@ empty mapping disables Hyperview caching.
 | `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor with one conservative Format and Validate action. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
 | `ADMIN.PERMISSION` | Callable or dotted callable path | Superuser-only callback | Authoritative mutation policy for adding, changing, and deleting stored templates. The callable receives the current `HttpRequest` and must return the literal boolean `True`; exceptions and non-boolean results deny access. |
 | `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.110.0 registry and completion catalog. URLs are rejected. |
-| `SCHEMA_PROFILE` | `upstream-0.110.0` or `compatible-0.110.0` | `"upstream-0.110.0"` | Selects the bundled validator and editor profile. Compatibility adds percentage margins only; invalid values raise `dj_hyperview.E019`. |
+| `SCHEMA_EXTENSIONS` | Mapping | `{}` | Typed app-owned behavior and element-attribute declarations; standard declarations cannot be replaced. |
 
-Raw-source size, encoding, and forbidden-declaration checks cannot be disabled
-by `VALIDATION.MODE`. Final parsing, depth, node, and schema checks run only for
-`render` and `publish_and_render`.
+## Automatic Hyperview XSD 1.1 validation
 
-## Hyperview XSD 1.1 validation
+The package always validates final rendered documents and fragments against one
+corrected Hyperview 0.110.0 registry. Raw source remains context-free: safety and
+Django compilation do not invent variables or render a scenario. Configuring
+`VALIDATION` changes only `MAX_BYTES`, `MAX_DEPTH`, and `MAX_NODES`; it cannot
+skip or replace standard validation.
 
-Install the optional schema profile and select the bundled validator:
-
-```bash
-uv add "dj-hyperview[schema]"
-```
+`SCHEMA_PROFILE`, `VALIDATION.MODE`, and `VALIDATION.SCHEMA` are removed settings.
+Their presence produces a configuration error, including their former default
+values. Delete them rather than replacing them with a new selector. Register
+only application extensions when needed:
 
 ```python
 HYPERVIEW = {
+    "TEMPLATE_DIRS": [BASE_DIR / "hyperview"],
     "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
-    "VALIDATION": {
-        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
-    },
 }
 ```
 
-The validator uses the versioned Hyperview 0.110.0 XSD registry included in the
-wheel. Project schemas can declare namespaced custom elements and import the
-Hyperview namespace. Includes, imports, and redefines may reference only local
-files below the configured schema's own directory. Remote references, paths
-that escape that directory, percent-encoded reference locations, and arbitrary
-`xs:override` declarations are rejected. Reference locations must use plain
-local paths so the guard and compiler resolve the same file. Each extra schema
-may reference at most 256 distinct files, including its root; include cycles
-are visited once and symlink escapes are rejected.
+Project schemas can declare namespaced custom elements and import the Hyperview
+namespace. Includes, imports, and redefines may reference only plain local files
+below their root schema's directory. Remote references, traversal, percent-encoded
+locations, backslash/URI ambiguity, DTD/entities, and arbitrary `xs:override` are
+rejected. Each extra schema may reference at most 256 distinct files, including
+its root; cycles are visited once and symlink escapes remain forbidden.
 
-Schema registries and custom completion catalogs use the same complete
-transitive dependency fingerprints: resolved paths, file sizes, nanosecond
-modification times, and selected profile. References are checked for safety
-before cache hits, including after a dependency changes. Changes to `HYPERVIEW`
-clear both caches. Saving a referenced local schema refreshes validation and
-editor suggestions on their next request without restarting Django.
+Validation, static Admin checks, and completion use one immutable registry
+identity: the internal correction revision, normalized registrations, and complete
+transitive dependency fingerprints (resolved paths, sizes and nanosecond mtimes).
+References are rechecked before cache hits. Changed dependencies or `HYPERVIEW`
+settings refresh all consumers without restarting Django.
 
-### Opt in to compatible percentage margins
+The fixed trusted package overlay leaves upstream XSD artifacts unchanged.
+`get_hyperview_catalog()` returns active `catalog_format: 2` without public
+profile metadata. The config-free `get_hyperview_schema_path()` and
+`build_hyperview_catalog()` helpers still inspect upstream resources, not the
+active corrected runtime registry.
 
-The default `upstream-0.110.0` profile preserves the original XSD behavior.
-Choose the narrowly scoped compatibility profile only when the client uses
-percentage margins:
-
-```python
-HYPERVIEW = {
-    "SCHEMA_PROFILE": "compatible-0.110.0",
-    "VALIDATION": {
-        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
-    },
-}
-```
-
-This accepts signed decimal percentages such as `margin="50%"` and
-`marginTop="-12.5%"`, while retaining integer and `auto` values. The only
-broadened attributes are `margin`, `marginBottom`, `marginHorizontal`,
-`marginLeft`, `marginRight`, `marginTop`, `marginEnd`, `marginStart`, and
-`marginVertical`. Types for `letterSpacing`, `outlineWidth`, `flexGrow`, and all
-other attributes remain upstream-defined; this is not general client/XSD
-parity. Selecting a profile does not enable final schema validation by itself:
-keep the `VALIDATION.SCHEMA` callable shown above.
-
-The package uses one fixed trusted overlay and leaves upstream XSD files and
-`catalog.json` unchanged. Both profiles reuse that completion catalog; tests
-prove the overlay generates identical suggestions. `get_hyperview_catalog()`
-includes the selected `schema_profile` alongside `schema_version`. The public
-`get_hyperview_schema_path()` and `build_hyperview_catalog()` functions always
-inspect upstream resources, independently of Django settings.
-
-Follow [Add custom HXML elements](custom-schemas.md) for the complete namespace,
-registration, validation, and autocomplete workflow. Its
-[custom component schema example](examples/hypertodo.xsd) defines
-`app:swipe-row` and `app:swipe-action`.
+Follow [Add custom HXML elements](custom-schemas.md) for namespace registration
+and the [custom component example](examples/hypertodo.xsd). Standard validation
+does not require an additional install or callback.
 
 ## Admin editor
 
@@ -268,3 +235,79 @@ Continue with [Filesystem](filesystem.md), [Database and admin](database-admin.m
 [Testing](testing.md), [Release and rollback](release-rollback.md), or the
 [public Python API](api-reference.md). Return to the
 [documentation home](index.md).
+
+## Corrected schema boundaries
+
+The internal correction revision is package-owned, not a user-selectable profile.
+It accepts signed decimal percentages on the nine margin attributes while keeping
+integer and `auto` values, and adds only these verified declarations:
+
+| Element | Added attributes | Boundary |
+| --- | --- | --- |
+| `text` | `ellipsizeMode` | `clip`, `head`, `middle`, `tail`; `clip` is iOS-specific |
+| `text`, `text-field` | `accessibilityLabel` | String, including empty text |
+| `text` | `accessibilityRole` | `button`, `none` |
+| `image` | `accessibilityRole`, `alt` | Role `button`; alternative text is a string |
+| `text` | `importantForAccessibility` | `auto`, `yes`, `no`, `no-hide-descendants`; Android-specific |
+| `date-field` | `cancel-label`, `done-label` | Strings consumed by the iOS modal, not Android's native picker |
+
+The correction restricts only `style@width`, not the shared upstream sizing types. It accepts
+nonnegative decimal points with a leading digit (`0`, `84`, `12.5`, `0.5`) and
+decimal percentages (`0%`, `12.5%`, `.5%`, `150%`); a leading `+` is accepted.
+It rejects negative values, `auto`, `.5` without `%`, trailing decimal points,
+units, exponent notation, arbitrary suffixes, `NaN`, and `Infinity`.
+
+These are deliberate lexical boundaries. Hyperview 0.110.0 truncates point
+values with `parseInt`: `12.5` becomes `12`. Validation never rewrites the input.
+React Native itself supports fractional dimensions and `auto`, but this pinned
+Hyperview converter passes `auto` as `NaN`, not as the native auto value.
+
+The corrected schema does **not** permit `accessibilityElementsHidden` as a boolean
+string, move `styles` outside its owning `screen`, accept arbitrary native
+properties, or establish native visual/accessibility parity. The evidence is
+pinned client source plus package tests, not device E2E testing.
+
+## Register typed schema extensions
+
+`SCHEMA_EXTENSIONS` defaults to `{}`. Invalid registrations produce
+`dj_hyperview.E021`. Registration describes server validation
+and editor metadata, not executable mobile implementations.
+
+```python
+HYPERVIEW["SCHEMA_EXTENSIONS"] = {
+    "BEHAVIORS": {
+        "show-snackbar": {
+            "ATTRIBUTES": {
+                "message": {"TYPE": "string"},
+                "tone": {"TYPE": "string", "ENUM": ["success", "error"]},
+            },
+        },
+    },
+    "ELEMENT_ATTRIBUTES": {
+        "image": {
+            "variant": {"TYPE": "string", "ENUM": ["face", "fingerprint"]},
+        },
+    },
+}
+```
+
+A descriptor requires `TYPE`: `string`, `boolean`, `integer`, or `decimal`.
+`REQUIRED` defaults to `False`; `True` requires the attribute's presence, not
+nonempty string content. Optional `ENUM` is a nonempty sequence of unique XML
+strings and is valid only with `TYPE: "string"`. There are no implicit defaults,
+coercions or output mutations. XML boolean lexical forms are `true`, `false`,
+`1`, and `0`; declaring a type does not convert a mobile client's raw attribute.
+
+All sections and descriptor keys are closed. Names must be unqualified ASCII
+XML names; names starting with `xml` are reserved. Standard actions and standard
+attributes cannot be redefined. Qualified and unqualified names are distinct:
+custom `message` can coexist with standard `alert:message`. `ELEMENT_ATTRIBUTES`
+can add attributes only to existing Hyperview elements other than `behavior`.
+Use `BEHAVIORS` for action-specific attributes; custom actions are supported on
+`behavior`, not inline on `view`, `text`, or other built-in elements.
+
+Strings can be empty, including an opaque revocation token. Register DOM target
+identifiers as strings when they may reference a host outside the current
+fragment; registration does not impose document-wide `xs:IDREF` existence.
+See [custom schema contracts](custom-schemas.md#typed-registrations-and-registry-identity)
+for validation, catalog and trust boundaries.

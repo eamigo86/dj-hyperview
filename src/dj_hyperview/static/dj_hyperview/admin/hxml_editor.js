@@ -36,11 +36,6 @@
     });
   }
 
-  function tagName(token) {
-    const match = token.match(/^<\/?\s*([^\s/>]+)/);
-    return match ? match[1] : null;
-  }
-
   // Only known element-only Hyperview containers may have whitespace rewritten.
   // Text-bearing and custom subtrees retain their original source spans.
   const STRUCTURAL_ELEMENTS = new Set([
@@ -329,70 +324,150 @@
     }
   }
 
-  function namespaces(source) {
-    const result = {};
-    const pattern = /xmlns(?::([\w-]+))?\s*=\s*["']([^"']+)["']/g;
-    for (const match of source.matchAll(pattern)) {
-      result[match[1] || ""] = match[2];
-    }
-    return result;
+  function xmlLiteral(value) {
+    return value.replace(/&(amp|lt|gt|quot|apos|#x[0-9a-fA-F]+|#[0-9]+);/g, function (entity, name) {
+      if (name[0] !== "#") {
+        return {amp: "&", lt: "<", gt: ">", quot: '"', apos: "'"}[name];
+      }
+      const point = name[1] === "x" ? parseInt(name.slice(2), 16) : Number(name.slice(1));
+      return point > 0 && point <= 0x10ffff ? String.fromCodePoint(point) : entity;
+    });
   }
 
-  function catalogKey(name, declared) {
+  function completionTag(fragment) {
+    const protectedValue = protectDjango(fragment);
+    const opening = protectedValue.source.match(/^(?:[^<>"']|"[^"]*"|'[^']*')*/)[0];
+    const attributes = Object.create(null);
+    for (const match of opening.matchAll(/\s([\w.:-]+)\s*=\s*(["'])(.*?)\2/g)) {
+      attributes[match[1]] = restoreDjango(match[3], protectedValue.tokens, protectedValue.prefix);
+    }
+    return {
+      attributes: attributes,
+      conditional: restoreDjango(opening, protectedValue.tokens, protectedValue.prefix).includes("{%"),
+    };
+  }
+
+  function declaredNamespaces(parent, attributes, conditional) {
+    const declared = {...parent};
+    for (const [name, value] of Object.entries(attributes)) {
+      if (name === "xmlns" || name.startsWith("xmlns:")) {
+        declared[name === "xmlns" ? "" : name.slice(6)] = conditional || /[{][{%#]/.test(value) ? null : xmlLiteral(value);
+      }
+    }
+    return declared;
+  }
+
+  function catalogKey(name, declared, attribute) {
     const separator = name.indexOf(":");
     const prefix = separator >= 0 ? name.slice(0, separator) : "";
     const local = separator >= 0 ? name.slice(separator + 1) : name;
-    const namespace = declared[prefix] || (prefix ? "" : HV_NAMESPACE);
-    return namespace === HV_NAMESPACE ? local : "{" + namespace + "}" + local;
+    if (attribute && !prefix) {
+      return local;
+    }
+    const namespace = Object.hasOwn(declared, prefix) ? declared[prefix] : (prefix ? null : HV_NAMESPACE);
+    if (namespace === null) {
+      return null;
+    }
+    return !attribute && namespace === HV_NAMESPACE ? local : "{" + namespace + "}" + local;
   }
 
-  function displayName(key, declared) {
-    if (!key.startsWith("{")) {
+  function displayName(key, declared, attribute, partial) {
+    if (!key.startsWith("{") && (attribute || !Object.hasOwn(declared, "") || declared[""] === HV_NAMESPACE)) {
       return key;
     }
     const boundary = key.indexOf("}");
-    const namespace = key.slice(1, boundary);
-    const local = key.slice(boundary + 1);
+    const namespace = boundary >= 0 ? key.slice(1, boundary) : HV_NAMESPACE;
+    const local = boundary >= 0 ? key.slice(boundary + 1) : key;
+    if (!attribute && declared[""] === namespace) {
+      return local;
+    }
     const prefix = Object.keys(declared).find(function (candidate) {
-      return candidate && declared[candidate] === namespace;
+      return candidate && declared[candidate] === namespace &&
+        (!partial || !partial.includes(":") || candidate === partial.split(":", 1)[0]);
     });
     return prefix ? prefix + ":" + local : null;
   }
 
-  function parentElement(source) {
-    const stack = [];
-    const pattern = /<\/?\s*[^!?][^>]*>/g;
-    for (const match of source.matchAll(pattern)) {
-      const token = match[0];
-      const name = tagName(token);
-      if (!name) {
+  function completionContext(before) {
+    const stack = [{namespaces: {}, key: null}];
+    const blocks = [];
+    let cursor = 0;
+    while (cursor < before.length) {
+      const token = djangoToken(before, cursor);
+      if (token) {
+        if (DJANGO_BLOCKS.has(token.command)) {
+          blocks.push({command: token.command, stack: stack.slice()});
+        } else if (token.command && (
+          ["else", "elif", "empty"].includes(token.command) || token.command.startsWith("end")
+        )) {
+          const block = blocks[blocks.length - 1];
+          if (!block || block.stack.length !== stack.length ||
+              !block.stack.every(function (node, index) { return node === stack[index]; })) {
+            return null;
+          }
+          if (token.command === "end" + block.command) {
+            blocks.pop();
+          }
+        }
+        cursor = token.end;
         continue;
       }
-      if (/^<\//.test(token)) {
-        stack.pop();
-      } else if (!/\/\s*>$/.test(token)) {
-        stack.push(name);
+      if (before[cursor] !== "<") {
+        cursor += 1;
+        continue;
       }
+      const special = before.startsWith("<!--", cursor) ? "-->" :
+        before.startsWith("<![CDATA[", cursor) ? "]]>" : before.startsWith("<?", cursor) ? "?>" : null;
+      if (special) {
+        const end = before.indexOf(special, cursor + 2);
+        if (end < 0) {
+          return null;
+        }
+        cursor = end + special.length;
+        continue;
+      }
+      let tag;
+      try {
+        tag = xmlTag(before, cursor);
+      } catch (_error) {
+        return /^<(?:[A-Za-z_]|$)/.test(before.slice(cursor)) ?
+          {start: cursor, parent: stack[stack.length - 1]} : null;
+      }
+      if (tag.kind === "close") {
+        if (stack.length === 1) {
+          return null;
+        }
+        stack.pop();
+      } else if (!tag.selfClosing) {
+        const declared = declaredNamespaces(stack[stack.length - 1].namespaces, tag.attributes);
+        stack.push({namespaces: declared, key: catalogKey(tag.name, declared)});
+      }
+      cursor = tag.end;
     }
-    return stack.length ? stack[stack.length - 1] : null;
+    return null;
   }
 
   function getCompletions(catalog, source, cursor) {
     const before = source.slice(0, cursor);
-    const left = before.lastIndexOf("<");
-    const right = before.lastIndexOf(">");
-    if (left <= right || /^<\//.test(before.slice(left))) {
+    let context;
+    try {
+      context = completionContext(before);
+    } catch (_error) {
       return [];
     }
-    const fragment = before.slice(left + 1);
-    const declared = namespaces(before);
+    if (!context) {
+      return [];
+    }
+    const fragment = before.slice(context.start + 1);
+    const opening = completionTag(source.slice(context.start + 1));
+    const attributes = opening.attributes;
+    const declared = declaredNamespaces(context.parent.namespaces, attributes, opening.conditional);
     const tagMatch = fragment.match(/^([^\s/>]+)/);
     if (!tagMatch || !/\s/.test(fragment)) {
       const typed = tagMatch ? tagMatch[1] : "";
-      const parent = parentElement(before.slice(0, left));
       let keys = Object.keys(catalog.elements);
-      if (parent) {
-        const definition = catalog.elements[catalogKey(parent, declared)];
+      if (context.parent.key) {
+        const definition = catalog.elements[context.parent.key];
         if (!definition) {
           return [];
         }
@@ -404,32 +479,44 @@
         }
       }
       return Array.from(new Set(keys.map(function (key) {
-        return displayName(key, declared);
+        return displayName(key, declared, false);
       }).filter(function (name) {
         return name && name.startsWith(typed);
       }))).sort();
     }
 
-    const definition = catalog.elements[catalogKey(tagMatch[1], declared)];
+    const key = catalogKey(tagMatch[1], declared);
+    let definition = catalog.elements[key];
     if (!definition) {
       return [];
     }
-    const valueMatch = fragment.match(/([\w:-]+)\s*=\s*["']([^"']*)$/);
+    const action = attributes.action && xmlLiteral(attributes.action);
+    if (catalog.catalog_format === 2 && key === "behavior" && action &&
+        !/[{][{%#]/.test(action) && !opening.conditional &&
+        Object.hasOwn(catalog.behavior_variants || {}, action)) {
+      definition = catalog.behavior_variants[action];
+    }
+    const valueMatch = fragment.match(/([\w.:-]+)\s*=\s*["']([^"']*)$/);
     if (valueMatch) {
-      const attribute = definition.attributes[valueMatch[1]];
+      const attributeKey = catalog.catalog_format === 2 ? catalogKey(valueMatch[1], declared, true) : valueMatch[1];
+      const attribute = definition.attributes[attributeKey];
       const typed = valueMatch[2];
       return attribute ? attribute.enum.filter(function (value) {
         return value.startsWith(typed);
       }).sort() : [];
     }
     const used = new Set();
-    for (const match of fragment.matchAll(/\s([\w:-]+)\s*=/g)) {
-      used.add(match[1]);
+    for (const name of Object.keys(attributes)) {
+      used.add(catalog.catalog_format === 2 ? catalogKey(name, declared, true) : name);
     }
-    const partialMatch = fragment.match(/\s([\w:-]*)$/);
+    const partialMatch = fragment.match(/\s([\w.:-]*)$/);
     const partial = partialMatch ? partialMatch[1] : "";
     return Object.keys(definition.attributes).filter(function (name) {
-      return !used.has(name) && name.startsWith(partial);
+      return !used.has(name);
+    }).map(function (name) {
+      return catalog.catalog_format === 2 ? displayName(name, declared, true, partial) : name;
+    }).filter(function (name) {
+      return name && name.startsWith(partial);
     }).sort();
   }
 

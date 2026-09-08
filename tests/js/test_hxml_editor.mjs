@@ -260,3 +260,115 @@ for (const source of [
     assert.deepEqual(formatHxml(result.value), result);
   });
 }
+
+const alertNamespace = "https://hyperview.org/hyperview-alert";
+const r2BaseBehavior = {
+  namespace: "https://hyperview.org/hyperview", children: [], allows_custom_children: false,
+  attributes: {
+    action: {required: false, enum: ["alert", "push", "show-toast"]},
+    href: {required: false, enum: []},
+    ["{" + alertNamespace + "}message"]: {required: false, enum: ["alert-only"]},
+  },
+};
+const r2Catalog = {
+  ...catalog, catalog_format: 2,
+  elements: {...catalog.elements, behavior: r2BaseBehavior},
+  behavior_variants: {
+    "show-toast": {...r2BaseBehavior, attributes: {
+      ...r2BaseBehavior.attributes,
+      message: {required: true, enum: ["toast-only"]},
+      duration: {required: false, enum: ["long", "short"]},
+    }},
+  },
+};
+
+function completeR2(source) {
+  return getCompletions(r2Catalog, source, source.length);
+}
+
+test("r2 completion selects only a known literal behavior action", () => {
+  assert.deepEqual(completeR2('<behavior action="show-toast" d'), ["duration"]);
+  for (const action of ["push", "unknown", "{{ action }}", "{% if x %}show-toast{% else %}push{% endif %}"]) {
+    assert.deepEqual(completeR2('<behavior action="' + action + '" d'), []);
+  }
+  assert.deepEqual(completeR2('<behavior d'), []);
+  assert.deepEqual(completeR2('<text action="show-toast" d'), []);
+});
+
+test("r2 completion preserves namespaced and custom message collisions", () => {
+  const source = '<behavior xmlns:notify="' + alertNamespace + '" action="show-toast" ';
+  assert.deepEqual(completeR2(source), ["duration", "href", "message", "notify:message"]);
+  assert.deepEqual(completeR2(source + 'message="t'), ["toast-only"]);
+  assert.deepEqual(completeR2(source + 'notify:message="a'), ["alert-only"]);
+  assert.deepEqual(completeR2(source + 'message="toast-only" n'), ["notify:message"]);
+  assert.deepEqual(completeR2('<behavior action="show-toast" '), ["duration", "href", "message"]);
+});
+
+test("r2 attribute aliases identify used qualified attributes by namespace", () => {
+  const source = '<behavior xmlns:a="' + alertNamespace + '" xmlns:b="' + alertNamespace +
+    '" action="show-toast" b:message="alert-only" ';
+  assert.deepEqual(completeR2(source), ["duration", "href", "message"]);
+});
+
+test("completion restores namespace scope after closed and self-closing descendants", () => {
+  const start = '<view xmlns:app="https://example.test/app"><view xmlns:app="urn:other"';
+  for (const middle of ['/>', '></view>']) {
+    assert.deepEqual(completeR2(start + middle + '<'), ["app:swipe-row", "text"]);
+  }
+  assert.deepEqual(completeR2(start + '><'), ["text"]);
+});
+
+test("r2 qualified attributes use the active scope rather than closed siblings", () => {
+  const source = '<view xmlns:alert="' + alertNamespace + '"><view xmlns:alert="urn:other"/>';
+  assert.deepEqual(completeR2(source + '<behavior action="show-toast" alert:m'), ["alert:message"]);
+  assert.deepEqual(completeR2(source + '<behavior xmlns:alert="urn:other" action="show-toast" alert:m'), []);
+  assert.deepEqual(completeR2(source + '<behavior xmlns:alert="{{ namespace }}" action="show-toast" alert:m'), []);
+});
+
+test("completion ignores namespace declarations inside comments and Django literals", () => {
+  const source = '<view xmlns:app="https://example.test/app"><!-- xmlns:app="urn:other" -->' +
+    '{% comment %}<view xmlns:app="urn:other">{% endcomment %}<';
+  assert.deepEqual(completeR2(source), ["app:swipe-row", "text"]);
+});
+
+test("r2 completion does not infer a behavior variant from conditional attribute source", () => {
+  const source = '<behavior {% if ready %}action="show-toast"{% else %}action="push"{% endif %} d';
+  assert.deepEqual(completeR2(source), []);
+});
+
+test("r2 completion can use literal action and namespaces after the cursor", () => {
+  const source = '<behavior m action="show-toast" xmlns:a="' + alertNamespace + '" />';
+  const cursor = source.indexOf('m action') + 1;
+  assert.deepEqual(getCompletions(r2Catalog, source, cursor), ["message"]);
+});
+
+test("r2 completion follows the qualified prefix currently being typed", () => {
+  const source = '<behavior xmlns:a="' + alertNamespace + '" xmlns:b="' + alertNamespace + '" action="show-toast" b:m';
+  assert.deepEqual(completeR2(source), ["b:message"]);
+});
+
+test("r2 completion resolves XML entity references in literal action and namespace values", () => {
+  const source = '<behavior xmlns:a="https://hyperview.org/hyperview&#45;alert" action="show&#45;toast" ';
+  assert.deepEqual(completeR2(source), ["a:message", "duration", "href", "message"]);
+});
+
+test("r2 completion never selects an action introduced by a conditional after the cursor", () => {
+  const source = '<behavior m {% if ready %} action="show-toast" {% endif %}/>';
+  assert.deepEqual(getCompletions(r2Catalog, source, source.indexOf('m {%') + 1), []);
+});
+
+test("r2 completion handles quoted greater-than before conditional action source", () => {
+  const source = '<behavior href="a > b" m {% if ready %} action="show-toast" {% endif %}/>';
+  assert.deepEqual(getCompletions(r2Catalog, source, source.indexOf('m {%') + 1), []);
+});
+
+test("r2 completion defers branch-dependent namespace bindings", () => {
+  const source = '<behavior {% if ready %} xmlns:a="urn:other" {% else %} xmlns:a="' + alertNamespace + '" {% endif %} a:m';
+  assert.deepEqual(completeR2(source), []);
+});
+
+test("r2 completion does not guess namespaces from branch-dependent opening elements", () => {
+  const source = '<view>{% if ready %}<view xmlns:a="urn:other">{% else %}' +
+    '<view xmlns:a="' + alertNamespace + '">{% endif %}<behavior a:m';
+  assert.deepEqual(completeR2(source), []);
+});

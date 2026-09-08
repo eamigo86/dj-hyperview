@@ -60,5 +60,6 @@ node --test tests/js/test_hxml_editor.mjs
 ```
 
 CI smoke-tests the built wheel in three isolated profiles: no extras,
-`[schema]`, and `[editor]`. Wheel construction remains a CI responsibility;
+the deprecated empty `[schema]` alias, and optional `[editor]`. Wheel construction
+remains a CI responsibility;
 local quality checks do not need to build a distribution.

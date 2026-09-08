@@ -62,3 +62,30 @@ new resolvers avoid it, but preserve it for reproducibility. Stop or roll back
 the Pages deployment independently if its content is wrong. Then revert the
 fault on the development chain, add a regression test, increment the version,
 and publish a new tag. Never replace an existing tag or PyPI artifact.
+
+
+## Automatic validation adoption
+
+Adopt the package and consumer configuration together. An upgrade now enforces
+one corrected schema on every rendered document and fragment; there is no
+validation toggle or alternate callback to postpone activation.
+
+Before changing a served environment, validate a synthetic corpus in isolated
+source checkouts that preserve current reviewed changes. Review effective database
+overrides before filesystem fallbacks, using only explicitly authorized aliases
+and a verified backup. The read-only integrity command checks identities, not
+rendered XSD compatibility. This package does not repair or publish stored data
+automatically; do not use a demo seed command as an upgrade procedure.
+
+After human review, publish any necessary source repairs through the publication
+services with the explicit alias and `expected_revision`. Concurrent edits require
+another review. Pin only an available, approved release and repeat installed-package
+acceptance before switching the running application. A consumer may require the
+exported `HYPERVIEW_VALIDATION_CONTRACT="automatic-xsd-v1"` at startup to reject an
+older package that ignores new extension declarations.
+
+If adoption fails, retain or restore the reviewed package/configuration pair.
+Data rollback requires its separate approved backup procedure, not automatic
+replacement of current rows. Rotate only Hyperview's cache namespace when needed;
+never flush a shared cache. Native visual and accessibility acceptance remains a
+separate consumer responsibility, not a claim made by schema tests.

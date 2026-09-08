@@ -115,13 +115,11 @@ def test_complete_valid_settings_pass_checks(tmp_path) -> None:
         "TEMPLATE_DIRS": [tmp_path],
         "SOURCES": [{"BACKEND": "dj_hyperview.sources.FileSystemSource"}],
         "CACHE": {"ALIAS": "screens"},
-        "VALIDATION": {"SCHEMA": schema},
+        "EXTRA_SCHEMAS": [schema],
     }
     caches = {"screens": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}}
-    for configured_schema in (schema, "tests.stubs.validate_schema"):
-        value["VALIDATION"]["SCHEMA"] = configured_schema
-        with override_settings(HYPERVIEW=value, CACHES=caches):
-            assert check_hyperview_settings() == []
+    with override_settings(HYPERVIEW=value, CACHES=caches):
+        assert check_hyperview_settings() == []
 
 
 def test_missing_filesystem_root_is_an_operational_warning(tmp_path) -> None:
@@ -178,10 +176,10 @@ def test_dummy_cache_emits_an_actionable_warning() -> None:
         ),
     ],
 )
-def test_schema_configuration_is_compiled_by_system_checks(
+def test_removed_schema_replacement_is_rejected_before_reading(
     tmp_path, schema_content
 ) -> None:
-    """Invalid, composed, and unsupported schemas fail before first request."""
+    """Retired schema replacement paths never select another compiler."""
     schema = tmp_path / "screen.xsd"
     schema.write_text(schema_content, encoding="utf-8")
 
@@ -304,17 +302,15 @@ def test_valid_extra_schema_passes_startup_checks(tmp_path: Path) -> None:
         ] == []
 
 
-@override_settings(
-    HYPERVIEW={"VALIDATION": {"SCHEMA": "dj_hyperview.validate_hyperview_schema"}}
-)
-def test_builtin_schema_validator_requires_the_schema_extra() -> None:
-    """A configured optional validator reports its missing dependency at startup."""
+@override_settings(HYPERVIEW={})
+def test_builtin_validator_requires_its_regular_dependency() -> None:
+    """Every installation reports a missing mandatory dependency at startup."""
     with patch("dj_hyperview.checks.find_spec", return_value=None):
         messages = check_hyperview_settings()
 
     relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
     assert [message.id for message in relevant] == ["dj_hyperview.E013"]
-    assert "dj-hyperview[schema]" in relevant[0].hint
+    assert "required dependency" in relevant[0].msg
 
 
 @pytest.mark.parametrize("admin_config", [True, [], {"EDITOR": "yes"}])
@@ -343,7 +339,10 @@ def test_enabled_editor_requires_django_ace_in_installed_apps() -> None:
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_enabled_editor_reports_a_missing_optional_dependency() -> None:
     """Editor configuration explains which package extra must be installed."""
-    with patch("dj_hyperview.checks.find_spec", return_value=None):
+    with patch(
+        "dj_hyperview.checks.find_spec",
+        side_effect=lambda name: None if name == "django_ace" else object(),
+    ):
         messages = check_hyperview_settings()
 
     relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
@@ -365,8 +364,8 @@ def test_enabled_editor_requires_schema_dependency_for_static_validation() -> No
         messages = check_hyperview_settings()
 
     relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
-    assert [message.id for message in relevant] == ["dj_hyperview.E020"]
-    assert "dj-hyperview[editor]" in relevant[0].hint
+    assert [message.id for message in relevant] == ["dj_hyperview.E013"]
+    assert "required dependency" in relevant[0].msg
 
 
 @pytest.mark.parametrize(

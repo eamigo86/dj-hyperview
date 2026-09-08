@@ -64,25 +64,51 @@ class EqualResolver(TemplateResolver):
 def test_nested_engines_isolate_same_template_name_by_resolver():
     outer = HyperviewEngine(
         TemplateResolver(
-            [TemplateSource(content="<view>{{ value }}</view>", revision="outer")]
+            [
+                TemplateSource(
+                    content=(
+                        '<text xmlns="https://hyperview.org/hyperview">{{'
+                        " value }}</text>"
+                    ),
+                    revision="outer",
+                )
+            ]
         )
     )
     inner = HyperviewEngine(
-        TemplateResolver([TemplateSource(content="<inner />", revision="inner")])
+        TemplateResolver(
+            [
+                TemplateSource(
+                    content=(
+                        '<text xmlns="https://hyperview.org/hyperview" id="inner" />'
+                    ),
+                    revision="inner",
+                )
+            ]
+        )
     )
     value = NestedRenderValue(lambda: inner.render("screen.xml"))
 
     rendered = outer.render("screen.xml", {"value": value})
 
-    assert rendered == "<view><inner /></view>"
-    assert value.rendered == "<inner />"
+    assert rendered == (
+        '<text xmlns="https://hyperview.org/hyperview"><t'
+        'ext xmlns="https://hyperview.org/hyperview" id="'
+        'inner" /></text>'
+    )
+    assert (
+        value.rendered == '<text xmlns="https://hyperview.org/hyperview" id="inner" />'
+    )
 
 
 def test_nested_engines_with_the_same_resolver_reuse_its_snapshot():
     source = MutableSource(
         {
-            "screen.xml": '<view>{{ value }}{% include "shared.xml" %}</view>',
-            "shared.xml": "<old />",
+            "screen.xml": (
+                '<text xmlns="https://hyperview.org/hyperview">{{'
+                ' value }}{% include "shared.xml" %}</text>'
+            ),
+            "shared.xml": '<text xmlns="https://hyperview.org/hyperview" id="old" />',
         },
         "shared",
     )
@@ -91,82 +117,169 @@ def test_nested_engines_with_the_same_resolver_reuse_its_snapshot():
     inner = HyperviewEngine(resolver)
     value = NestedRenderValue(
         lambda: inner.render("shared.xml"),
-        after=lambda: source.templates.update({"shared.xml": "<new />"}),
+        after=lambda: source.templates.update(
+            {"shared.xml": '<text xmlns="https://hyperview.org/hyperview" id="new" />'}
+        ),
     )
 
     rendered = outer.render("screen.xml", {"value": value})
 
-    assert value.rendered == "<old />"
-    assert rendered == "<view><old /><old /></view>"
-    assert outer.render("shared.xml") == "<new />"
+    assert value.rendered == '<text xmlns="https://hyperview.org/hyperview" id="old" />'
+    assert rendered == (
+        '<text xmlns="https://hyperview.org/hyperview"><t'
+        'ext xmlns="https://hyperview.org/hyperview" id="'
+        'old" /><text xmlns="https://hyperview.org/hyperv'
+        'iew" id="old" /></text>'
+    )
+    assert (
+        outer.render("shared.xml")
+        == '<text xmlns="https://hyperview.org/hyperview" id="new" />'
+    )
 
 
 def test_inner_scope_preserves_outer_resolutions_made_while_nested():
     outer_source = MutableSource(
         {
-            "screen.xml": '<view>{{ value }}{% include "late.xml" %}</view>',
-            "late.xml": "<late-old />",
+            "screen.xml": (
+                '<text xmlns="https://hyperview.org/hyperview">{{'
+                ' value }}{% include "late.xml" %}</text>'
+            ),
+            "late.xml": (
+                '<text xmlns="https://hyperview.org/hyperview" id="late-old" />'
+            ),
         },
         "outer",
     )
-    inner_source = MutableSource({"screen.xml": "<inner>{{ value }}</inner>"}, "inner")
+    inner_source = MutableSource(
+        {
+            "screen.xml": (
+                '<text xmlns="https://hyperview.org/hyperview" id'
+                '="inner">{{ value }}</text>'
+            )
+        },
+        "inner",
+    )
     outer = HyperviewEngine(TemplateResolver([outer_source]))
     inner = HyperviewEngine(TemplateResolver([inner_source]))
     late_value = NestedRenderValue(lambda: outer.render("late.xml"))
     value = NestedRenderValue(
         lambda: inner.render("screen.xml", {"value": late_value}),
-        after=lambda: outer_source.templates.update({"late.xml": "<late-new />"}),
+        after=lambda: outer_source.templates.update(
+            {
+                "late.xml": (
+                    '<text xmlns="https://hyperview.org/hyperview" id="late-new" />'
+                )
+            }
+        ),
     )
 
     rendered = outer.render("screen.xml", {"value": value})
 
-    assert late_value.rendered == "<late-old />"
-    assert rendered == "<view><inner><late-old /></inner><late-old /></view>"
-    assert outer.render("late.xml") == "<late-new />"
+    assert (
+        late_value.rendered
+        == '<text xmlns="https://hyperview.org/hyperview" id="late-old" />'
+    )
+    assert rendered == (
+        '<text xmlns="https://hyperview.org/hyperview"><t'
+        'ext xmlns="https://hyperview.org/hyperview" id="'
+        'inner"><text xmlns="https://hyperview.org/hyperv'
+        'iew" id="late-old" /></text><text xmlns="https:/'
+        '/hyperview.org/hyperview" id="late-old" /></text'
+        ">"
+    )
+    assert (
+        outer.render("late.xml")
+        == '<text xmlns="https://hyperview.org/hyperview" id="late-new" />'
+    )
 
 
 def test_inner_exception_cleans_only_its_scope_and_next_render_sees_changes():
     outer_source = MutableSource(
         {
             "screen.xml": (
-                '<view>{% include "shared.xml" %}'
-                '{{ value }}{% include "shared.xml" %}</view>'
+                '<text xmlns="https://hyperview.org/hyperview">{%'
+                ' include "shared.xml" %}'
+                '{{ value }}{% include "shared.xml" %}</text>'
             ),
-            "shared.xml": "<outer-old />",
+            "shared.xml": (
+                '<text xmlns="https://hyperview.org/hyperview" id="outer-old" />'
+            ),
         },
         "outer",
     )
-    inner_source = MutableSource({"screen.xml": "<inner>"}, "inner")
+    inner_source = MutableSource(
+        {"screen.xml": '<text xmlns="https://hyperview.org/hyperview" id="inner">'},
+        "inner",
+    )
     outer = HyperviewEngine(TemplateResolver([outer_source]))
     inner = HyperviewEngine(TemplateResolver([inner_source]))
 
     def render_invalid_inner():
-        outer_source.templates["shared.xml"] = "<outer-new />"
+        outer_source.templates["shared.xml"] = (
+            '<text xmlns="https://hyperview.org/hyperview" id="outer-new" />'
+        )
         return inner.render("screen.xml")
 
     value = RecoveringRenderValue(render_invalid_inner)
 
     assert outer.render("screen.xml", {"value": value}) == (
-        "<view><outer-old />&lt;recovered /&gt;<outer-old /></view>"
+        '<text xmlns="https://hyperview.org/hyperview"><t'
+        'ext xmlns="https://hyperview.org/hyperview" id="'
+        'outer-old" />&lt;recovered /&gt;<text xmlns="htt'
+        'ps://hyperview.org/hyperview" id="outer-old" /><'
+        "/text>"
     )
     assert value.error_code == "malformed_xml"
 
-    inner_source.templates["screen.xml"] = "<inner-new />"
-    assert outer.render("shared.xml") == "<outer-new />"
-    assert inner.render("screen.xml") == "<inner-new />"
+    inner_source.templates["screen.xml"] = (
+        '<text xmlns="https://hyperview.org/hyperview" id="inner-new" />'
+    )
+    assert (
+        outer.render("shared.xml")
+        == '<text xmlns="https://hyperview.org/hyperview" id="outer-new" />'
+    )
+    assert (
+        inner.render("screen.xml")
+        == '<text xmlns="https://hyperview.org/hyperview" id="inner-new" />'
+    )
 
 
 def test_equal_resolver_objects_still_have_distinct_snapshot_identity():
     outer = HyperviewEngine(
-        EqualResolver([TemplateSource(content="<view>{{ value }}</view>")])
+        EqualResolver(
+            [
+                TemplateSource(
+                    content=(
+                        '<text xmlns="https://hyperview.org/hyperview">{{'
+                        " value }}</text>"
+                    )
+                )
+            ]
+        )
     )
-    inner = HyperviewEngine(EqualResolver([TemplateSource(content="<equal-inner />")]))
+    inner = HyperviewEngine(
+        EqualResolver(
+            [
+                TemplateSource(
+                    content=(
+                        '<text xmlns="https://hyperview.org/hyperview" id'
+                        '="equal-inner" />'
+                    )
+                )
+            ]
+        )
+    )
     value = NestedRenderValue(lambda: inner.render("screen.xml"))
 
     assert outer.render("screen.xml", {"value": value}) == (
-        "<view><equal-inner /></view>"
+        '<text xmlns="https://hyperview.org/hyperview"><t'
+        'ext xmlns="https://hyperview.org/hyperview" id="'
+        'equal-inner" /></text>'
     )
-    assert value.rendered == "<equal-inner />"
+    assert (
+        value.rendered
+        == '<text xmlns="https://hyperview.org/hyperview" id="equal-inner" />'
+    )
 
 
 def test_concurrent_reentrant_renders_do_not_cross_resolvers():
@@ -175,11 +288,27 @@ def test_concurrent_reentrant_renders_do_not_cross_resolvers():
     def render_pair(label):
         outer = HyperviewEngine(
             TemplateResolver(
-                [TemplateSource(content=f"<{label}>{{{{ value }}}}</{label}>")]
+                [
+                    TemplateSource(
+                        content=(
+                            '<text xmlns="https://hyperview.org/hyperview" '
+                            f'id="{label}">{{{{ value }}}}</text>'
+                        )
+                    )
+                ]
             )
         )
         inner = HyperviewEngine(
-            TemplateResolver([TemplateSource(content=f"<inner-{label} />")])
+            TemplateResolver(
+                [
+                    TemplateSource(
+                        content=(
+                            '<text xmlns="https://hyperview.org/hyperview" '
+                            f'id="inner-{label}" />'
+                        )
+                    )
+                ]
+            )
         )
 
         def render_inner():
@@ -192,6 +321,14 @@ def test_concurrent_reentrant_renders_do_not_cross_resolvers():
         results = list(pool.map(render_pair, ["one", "two"]))
 
     assert results == [
-        "<one><inner-one /></one>",
-        "<two><inner-two /></two>",
+        (
+            '<text xmlns="https://hyperview.org/hyperview" id'
+            '="one"><text xmlns="https://hyperview.org/hyperv'
+            'iew" id="inner-one" /></text>'
+        ),
+        (
+            '<text xmlns="https://hyperview.org/hyperview" id'
+            '="two"><text xmlns="https://hyperview.org/hyperv'
+            'iew" id="inner-two" /></text>'
+        ),
     ]
