@@ -34,6 +34,11 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
         "schema": ["xmlschema>=4.3,<5"],
         "editor": ["django-ace>=1.44,<2", "xmlschema>=4.3,<5"],
     }
+    assert metadata["project"]["urls"] == {
+        "Documentation": "https://eamigo86.github.io/dj-hyperview/",
+        "Release notes": "https://eamigo86.github.io/dj-hyperview/changelog/",
+        "Source": "https://github.com/eamigo86/dj-hyperview",
+    }
     assert metadata["build-system"]["requires"] == ["uv_build>=0.12.9,<0.13"]
     assert metadata["dependency-groups"]["dev"] == [
         "coverage[toml]>=7.16,<8",
