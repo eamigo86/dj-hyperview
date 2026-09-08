@@ -4,6 +4,8 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+## 0.1.0a16 — 2026-09-08
+
 ### Added
 
 - One automatically enforced Hyperview 0.110.0 schema includes narrowly verified

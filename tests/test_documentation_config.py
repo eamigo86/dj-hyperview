@@ -362,6 +362,17 @@ def test_changelog_prepares_the_0_1_0a15_release() -> None:
     assert "unchanged source" in normalized
 
 
+def test_changelog_prepares_the_0_1_0a16_release() -> None:
+    """Release notes explain the mandatory automatic validation contract."""
+    page = _documentation_pages()["changelog.md"]
+    normalized = " ".join(page.split())
+
+    assert "## 0.1.0a16 — 2026-09-08" in page
+    assert "HYPERVIEW_VALIDATION_CONTRACT" in page
+    assert "SCHEMA_EXTENSIONS" in page
+    assert "validation cannot be disabled" in normalized
+
+
 def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:
     """Security guidance covers callable and dotted mutation policies."""
     pages = _documentation_pages()
