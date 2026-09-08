@@ -4,6 +4,10 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.1.0a13 — 2026-09-08
+
 ### Added
 
 - **Validate source** in the optional Admin editor checks an unsaved template name
