@@ -332,13 +332,14 @@ def test_changelog_describes_the_0_1_0a10_release() -> None:
     assert "Django 6.1" in page
 
 
-def test_changelog_prepares_the_0_1_0a11_release() -> None:
-    """Release notes identify the audited compatibility and integrity fixes."""
+def test_changelog_prepares_the_0_1_0a12_release() -> None:
+    """Release notes identify the opt-in Admin preview."""
     page = _documentation_pages()["changelog.md"]
 
-    assert "## 0.1.0a11 — 2026-09-08" in page
-    assert "SCHEMA_PROFILE" in page
-    assert "check_hyperview_templates" in page
+    assert "## 0.1.0a12 — 2026-09-08" in page
+    assert "disabled by default" in page
+    assert "unsaved" in page
+    assert "static" in page
 
 
 def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:

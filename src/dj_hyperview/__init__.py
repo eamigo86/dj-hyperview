@@ -43,7 +43,7 @@ from .views import HyperviewTemplateView
 try:
     __version__ = _distribution_version("dj-hyperview")
 except _PackageNotFoundError:
-    __version__ = "0.1.0a11"
+    __version__ = "0.1.0a12"
 
 __all__ = [
     "__version__",

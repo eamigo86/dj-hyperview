@@ -4,11 +4,21 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.1.0a12 — 2026-09-08
+
 ### Added
 
 - Opt-in Admin template preview with configured example-data scenarios, unsaved
   draft rendering, structured diagnostics, and an isolated static web view.
-  Preview keeps the editor buffer unchanged and never publishes a template.
+  Preview is disabled by default, keeps the editor buffer unchanged, and never
+  publishes a template. See [Admin template preview](admin-preview.md).
+
+### Fixed
+
+- Static preview now applies styles declared at document level and refreshes
+  visual warning state when selecting another screen.
 
 ## 0.1.0a11 — 2026-09-08
 
