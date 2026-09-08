@@ -423,3 +423,48 @@ def test_changelist_escapes_hostile_name(admin_client) -> None:
 
     assert "screens/&lt;script&gt;.xml" in rendered
     assert "screens/<script>.xml" not in rendered
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("editor", [False, True])
+def test_view_only_staff_can_open_template_without_edit_controls(
+    client, django_user_model, editor: bool
+) -> None:
+    """Read-only forms omit the content field even when the Ace editor is enabled."""
+    from django.contrib.auth.models import Permission
+
+    _, model = _admin_types()
+    template = model.objects.create(name="screen.xml", content="<view />")
+    reader = django_user_model.objects.create_user(
+        username="template-reader", password="secret", is_staff=True
+    )
+    reader.user_permissions.add(
+        Permission.objects.get(
+            content_type__app_label=model._meta.app_label,
+            codename=f"view_{model._meta.model_name}",
+        )
+    )
+    client.force_login(reader)
+    url = reverse(
+        "admin:dj_hyperview_database_hyperviewtemplate_change", args=[template.pk]
+    )
+
+    with override_settings(HYPERVIEW={"ADMIN": {"EDITOR": editor}}):
+        response = client.get(url)
+        rejected = client.post(url, {"name": "changed.xml", "content": "<changed />"})
+
+    assert response.status_code == 200
+    assert "content" not in response.context["adminform"].form.fields
+    assert response.context["has_change_permission"] is False
+    assert response.context["has_delete_permission"] is False
+    assert b'name="_save"' not in response.content
+    assert b'class="deletelink"' not in response.content
+    assert b"djhv-format-hxml" not in response.content
+    assert b"&lt;view /&gt;" in response.content
+    assert rejected.status_code == 403
+    template.refresh_from_db()
+    assert (template.name, template.content, template.revision) == (
+        "screen.xml",
+        "<view />",
+        1,
+    )

@@ -88,7 +88,7 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
             else None
         )
         super().__init__(*args, **kwargs)
-        if get_settings().admin.editor:
+        if get_settings().admin.editor and "content" in self.fields:
             from .admin_editor import HyperviewAceWidget
 
             self.fields["content"].widget = HyperviewAceWidget()
