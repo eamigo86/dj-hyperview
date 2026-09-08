@@ -1,11 +1,46 @@
-(() => {
-  const loadSourceFacts = async () => {
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === "object" && module.exports) {
+    module.exports = api;
+  } else {
+    root.djHyperviewSourceFacts = api;
+    api.install(root);
+  }
+})(typeof globalThis === "object" ? globalThis : this, function () {
+  "use strict";
+
+  function newestPublishedRelease(releases) {
+    if (!Array.isArray(releases)) {
+      return undefined;
+    }
+    let newest;
+    let newestTimestamp = -Infinity;
+    for (const release of releases) {
+      if (!release || release.draft === true || typeof release.tag_name !== "string") {
+        continue;
+      }
+      const timestamp = Date.parse(release.published_at);
+      if (Number.isFinite(timestamp) && timestamp > newestTimestamp) {
+        newest = release;
+        newestTimestamp = timestamp;
+      }
+    }
+    return newest;
+  }
+
+  async function loadSourceFacts(root) {
+    const document = root.document;
     const source = document.querySelector("[data-dj-hyperview-source]");
     if (!source || source.dataset.factsLoaded === "true") {
       return;
     }
 
-    const parts = new URL(source.href).pathname.split("/").filter(Boolean);
+    let parts;
+    try {
+      parts = new root.URL(source.href).pathname.split("/").filter(Boolean);
+    } catch (_error) {
+      return;
+    }
     if (parts.length !== 2) {
       return;
     }
@@ -19,24 +54,24 @@
     const api = `https://api.github.com/repos/${parts[0]}/${parts[1]}`;
     const fetchJson = async (url, fallback) => {
       try {
-        const response = await fetch(url);
+        const response = await root.fetch(url);
         return response.ok ? await response.json() : fallback;
-      } catch {
+      } catch (_error) {
         return fallback;
       }
     };
     const [releases, metadata] = await Promise.all([
-      fetchJson(`${api}/releases?per_page=1`, []),
+      fetchJson(`${api}/releases?per_page=100`, []),
       fetchJson(api, {}),
     ]);
 
-    const release = Array.isArray(releases) ? releases[0] : undefined;
-    const format = new Intl.NumberFormat("en", {
+    const release = newestPublishedRelease(releases);
+    const format = new root.Intl.NumberFormat("en", {
       notation: "compact",
       compactDisplay: "short",
     });
     const facts = [];
-    if (release && typeof release.tag_name === "string") {
+    if (release) {
       facts.push(["version", release.tag_name]);
     }
     if (Number.isFinite(metadata.stargazers_count)) {
@@ -59,11 +94,27 @@
     }
     repository.appendChild(list);
     repository.classList.add("md-source__repository--active");
-  };
-
-  if (document.readyState === "loading") {
-    document.addEventListener("DOMContentLoaded", loadSourceFacts, { once: true });
-  } else {
-    loadSourceFacts();
   }
-})();
+
+  function install(root) {
+    const document = root.document;
+    if (!document) {
+      return;
+    }
+    if (document.readyState === "loading") {
+      document.addEventListener(
+        "DOMContentLoaded",
+        function () { loadSourceFacts(root); },
+        {once: true},
+      );
+    } else {
+      loadSourceFacts(root);
+    }
+  }
+
+  return {
+    install: install,
+    loadSourceFacts: loadSourceFacts,
+    newestPublishedRelease: newestPublishedRelease,
+  };
+});
