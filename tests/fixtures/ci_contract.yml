@@ -59,26 +59,6 @@ jobs:
           uv run pytest -q tests/test_dependency_policy.py tests/test_package_boundary.py
           uv run pytest -q tests/test_public_api_quality.py
 
-  browser:
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
-        with:
-          python-version: "3.12"
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
-        with:
-          version: "0.12.6"
-      - name: Sync isolated browser development profile
-        run: uv sync --locked --group browser --no-build
-      - name: Install matching Chromium
-        run: uv run --locked --group browser python -m playwright install --with-deps chromium
-      - name: Test isolated Admin preview in Chromium
-        run: >-
-          DJHV_TEST_BROWSER=1 uv run --locked --group browser python -m pytest -q
-          --ds=tests.settings_browser tests/browser
-
   compatibility:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -143,7 +123,7 @@ jobs:
           --django-version 6.1.1
 
   artifacts:
-    needs: [quality, compatibility, browser]
+    needs: [quality, compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

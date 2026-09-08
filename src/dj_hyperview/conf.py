@@ -16,9 +16,6 @@ from django.utils.module_loading import import_string
 
 Schema = str | Path | Callable[[str], None] | None
 AdminPermission = Callable[[HttpRequest], bool]
-PreviewContext = (
-    Mapping[str, Any] | Callable[[HttpRequest | None, str], Mapping[str, Any]]
-)
 SchemaProfile = Literal["upstream-0.110.0", "compatible-0.110.0"]
 SCHEMA_PROFILES: tuple[SchemaProfile, ...] = (
     "upstream-0.110.0",
@@ -72,42 +69,11 @@ class ValidationSettings:
 
 
 @dataclass(frozen=True, slots=True)
-class PreviewScenario:
-    """Trusted example context and optional root used by one preview scenario."""
-
-    label: str
-    context: PreviewContext
-    root_template: str | None = None
-
-
-def _empty_preview_scenarios() -> Mapping[str, PreviewScenario]:
-    """Create the immutable fallback when no example scenarios are configured.
-
-    Returns:
-        A single empty scenario with an immutable context mapping.
-    """
-    return MappingProxyType(
-        {"empty": PreviewScenario("No example data", MappingProxyType({}))}
-    )
-
-
-@dataclass(frozen=True, slots=True)
-class AdminPreviewSettings:
-    """Opt-in preview settings with ordered, server-configured scenarios."""
-
-    enabled: bool = False
-    scenarios: Mapping[str, PreviewScenario] = field(
-        default_factory=_empty_preview_scenarios
-    )
-
-
-@dataclass(frozen=True, slots=True)
 class AdminSettings:
     """Configuration for optional Django Admin enhancements."""
 
     editor: bool = False
     permission: AdminPermission = _superuser_admin_permission
-    preview: AdminPreviewSettings = field(default_factory=AdminPreviewSettings)
 
 
 @dataclass(frozen=True, slots=True)
@@ -134,7 +100,7 @@ def _section(raw: Mapping[str, Any], defaults: Any) -> dict[str, Any]:
 
 
 def _admin_settings(raw: Mapping[str, Any]) -> AdminSettings:
-    """Normalize editor, mutation permission, and preview configuration.
+    """Normalize editor and mutation permission configuration.
 
     Args:
         raw: Raw ADMIN mapping from Django settings.
@@ -146,27 +112,7 @@ def _admin_settings(raw: Mapping[str, Any]) -> AdminSettings:
     permission = values["permission"]
     if isinstance(permission, str):
         permission = import_string(permission)
-    preview = raw.get("PREVIEW", {})
-    scenarios = {}
-    for key, scenario in preview.get("SCENARIOS", {}).items():
-        context = scenario["CONTEXT"]
-        if isinstance(context, str):
-            context = import_string(context)
-        if isinstance(context, Mapping):
-            context = MappingProxyType(dict(context))
-        scenarios[key] = PreviewScenario(
-            scenario["LABEL"], context, scenario.get("ROOT_TEMPLATE")
-        )
-    return AdminSettings(
-        editor=values["editor"],
-        permission=permission,
-        preview=AdminPreviewSettings(
-            enabled=preview.get("ENABLED", False),
-            scenarios=MappingProxyType(scenarios)
-            if scenarios
-            else _empty_preview_scenarios(),
-        ),
-    )
+    return AdminSettings(editor=values["editor"], permission=permission)
 
 
 @lru_cache(maxsize=1)

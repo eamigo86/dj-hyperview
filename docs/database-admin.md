@@ -47,12 +47,6 @@ permission can provide read-only access without granting template mutation.
 Read-only template pages display escaped content without edit, delete, or format
 controls, including when the optional Ace editor is enabled.
 
-## Preview unsaved edits
-
-The optional [Admin preview](admin-preview.md) renders the current Ace buffer
-with configured example data, without saving or formatting it. It requires
-editable permission and is disabled by default.
-
 ## Enable the database source
 
 Add the optional app and source to project settings:

@@ -30,8 +30,6 @@ Choose the next guide for your source:
 - [Use filesystem sources](filesystem.md) for the smallest deployment.
 - [Publish through the database](database-admin.md) when editors need admin or
   optional schema-aware HXML authoring.
-- [Preview unsaved Admin templates](admin-preview.md) with explicit example data
-  before publishing them.
 - [Configure cache consistency](cache-consistency.md) only when caching is needed.
 - [Harden names and XML](security.md) before accepting authored templates.
 - [Add custom HXML elements](custom-schemas.md) when a mobile client extends

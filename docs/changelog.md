@@ -4,7 +4,11 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
-No changes yet.
+### Removed
+
+- The experimental static Admin template preview and its server-configured
+  scenarios. Template authoring keeps the Ace editor, formatter, schema-backed
+  completion, and publication validation.
 
 ## 0.1.0a12 — 2026-09-08
 
@@ -13,7 +17,7 @@ No changes yet.
 - Opt-in Admin template preview with configured example-data scenarios, unsaved
   draft rendering, structured diagnostics, and an isolated static web view.
   Preview is disabled by default, keeps the editor buffer unchanged, and never
-  publishes a template. See [Admin template preview](admin-preview.md).
+  publishes a template.
 
 ### Fixed
 

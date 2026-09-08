@@ -1,6 +1,5 @@
 """Django system checks for consumer Hyperview configuration."""
 
-import re
 from collections.abc import Mapping, Sequence
 from importlib.util import find_spec
 from inspect import signature
@@ -329,92 +328,6 @@ def _check_schema_profile(value: Any) -> list[CheckMessage]:
     return []
 
 
-def _check_preview(value: Any, editor: Any) -> list[CheckMessage]:
-    """Validate preview scenarios without executing their context providers.
-
-    Args:
-        value: Raw preview configuration.
-        editor: Raw editor feature flag.
-
-    Returns:
-        Actionable configuration errors for unsafe or unsupported options.
-    """
-    path = "ADMIN.PREVIEW"
-    if not isinstance(value, Mapping):
-        return [_error("E020", path, "must be a mapping")]
-    errors = []
-    enabled = value.get("ENABLED", False)
-    if not isinstance(enabled, bool):
-        errors.append(_error("E020", f"{path}.ENABLED", "must be a boolean"))
-    elif enabled:
-        if editor is not True:
-            errors.append(_error("E020", path, "requires ADMIN.EDITOR=True"))
-        if find_spec("xmlschema") is None:
-            errors.append(
-                _error("E020", path, "requires the editor extra with xmlschema")
-            )
-    scenarios = value.get("SCENARIOS", {})
-    if not isinstance(scenarios, Mapping):
-        return [*errors, _error("E020", f"{path}.SCENARIOS", "must be a mapping")]
-    from .exceptions import InvalidTemplateName
-    from .sources.base import canonicalize_template_name
-
-    for key, scenario in scenarios.items():
-        item = f"{path}.SCENARIOS"
-        if (
-            not isinstance(key, str)
-            or re.fullmatch(r"[A-Za-z0-9_-]{1,64}", key) is None
-        ):
-            errors.append(
-                _error(
-                    "E020",
-                    item,
-                    "must use 1-64 character alphanumeric, hyphen or underscore IDs",
-                )
-            )
-        if not isinstance(scenario, Mapping):
-            errors.append(_error("E020", item, "must contain scenario mappings"))
-            continue
-        label = scenario.get("LABEL")
-        if not isinstance(label, str) or not label.strip():
-            errors.append(_error("E020", f"{item}.LABEL", "must be a non-empty string"))
-        context = scenario.get("CONTEXT")
-        if isinstance(context, str):
-            try:
-                context = import_string(context)
-            except Exception:
-                context = None
-        valid = isinstance(context, Mapping)
-        if callable(context):
-            try:
-                signature(context).bind(None, "preview.xml")
-                valid = True
-            except (TypeError, ValueError):
-                valid = False
-        if not valid:
-            errors.append(
-                _error(
-                    "E020",
-                    f"{item}.CONTEXT",
-                    "must be a mapping or trusted callable accepting "
-                    "request and template_name",
-                )
-            )
-        root = scenario.get("ROOT_TEMPLATE")
-        if root is not None:
-            try:
-                canonicalize_template_name(root)
-            except InvalidTemplateName:
-                errors.append(
-                    _error(
-                        "E020",
-                        f"{item}.ROOT_TEMPLATE",
-                        "must be a canonical template name or None",
-                    )
-                )
-    return errors
-
-
 def _check_admin(value: Any) -> list[CheckMessage]:
     if not isinstance(value, Mapping):
         return [_error("E014", "ADMIN", "must be a mapping")]
@@ -441,8 +354,6 @@ def _check_admin(value: Any) -> list[CheckMessage]:
                     id="dj_hyperview.E016",
                 )
             )
-
-    errors.extend(_check_preview(value.get("PREVIEW", {}), editor))
 
     permission = value.get("PERMISSION", lambda request: True)
     if isinstance(permission, str):

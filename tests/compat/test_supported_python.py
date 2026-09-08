@@ -51,7 +51,6 @@ def test_coverage_commands_enforce_the_aggregate_after_admin() -> None:
     assert {
         "tests/test_database_admin.py",
         "tests/test_database_admin_publication.py",
-        "tests/test_database_admin_preview.py",
     }.issubset(admin)
 
 

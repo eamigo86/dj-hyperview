@@ -16,7 +16,6 @@ from dj_hyperview.contrib.database.services import (
 ROOT = Path(__file__).parents[1]
 SOURCE_GUIDES = ("filesystem.md", "database-admin.md")
 OPERATIONAL_GUIDES = (
-    "admin-preview.md",
     "cache-consistency.md",
     "security.md",
     "testing.md",

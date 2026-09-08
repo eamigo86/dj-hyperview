@@ -65,11 +65,6 @@ empty mapping disables Hyperview caching.
 | `ADMIN` | Mapping | `{}` | Optional Django Admin enhancements. |
 | `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
 | `ADMIN.PERMISSION` | Callable or dotted callable path | Superuser-only callback | Authoritative mutation policy for adding, changing, and deleting stored templates. The callable receives the current `HttpRequest` and must return the literal boolean `True`; exceptions and non-boolean results deny access. |
-| `ADMIN.PREVIEW.ENABLED` | Boolean | `False` | Enable isolated, static preview beside Ace. Requires `ADMIN.EDITOR=True` and the `editor` extra; invalid preview settings raise `dj_hyperview.E020`. |
-| `ADMIN.PREVIEW.SCENARIOS` | Ordered mapping | Default `empty` scenario | Server-configured scenario IDs to `LABEL`, `CONTEXT`, and optional `ROOT_TEMPLATE`. IDs contain 1–64 ASCII letters, digits, hyphens or underscores. |
-| `ADMIN.PREVIEW.SCENARIOS[id].LABEL` | Non-empty string | Required | Human-readable scenario label. |
-| `ADMIN.PREVIEW.SCENARIOS[id].CONTEXT` | Mapping, callable, or dotted callable path | Required | Explicit fixture data or trusted `provider(request, template_name) -> Mapping`; never selected as code by the browser. |
-| `ADMIN.PREVIEW.SCENARIOS[id].ROOT_TEMPLATE` | Canonical template name or `None` | `None` | Optional wrapper root that must actually include or extend the unsaved draft. |
 | `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.110.0 registry and completion catalog. URLs are rejected. |
 | `SCHEMA_PROFILE` | `upstream-0.110.0` or `compatible-0.110.0` | `"upstream-0.110.0"` | Selects the bundled validator and editor profile. Compatibility adds percentage margins only; invalid values raise `dj_hyperview.E019`. |
 
@@ -273,91 +268,3 @@ Continue with [Filesystem](filesystem.md), [Database and admin](database-admin.m
 [Testing](testing.md), [Release and rollback](release-rollback.md), or the
 [public Python API](api-reference.md). Return to the
 [documentation home](index.md).
-
-
-## Unsaved template preview scenarios
-
-Enable preview with explicit example data. It renders the original editor buffer
-without saving, publishing, incrementing revisions, or writing the shared raw
-Hyperview template cache. The visual result is a **static browser approximation**,
-not a native Hyperview client; it does not execute behaviors or load media.
-
-```python
-HYPERVIEW = {
-    # Keep your existing SOURCES and other settings.
-    "ADMIN": {
-        "EDITOR": True,
-        "PREVIEW": {
-            "ENABLED": True,
-            "SCENARIOS": {
-                "with_tasks": {
-                    "LABEL": "With tasks",
-                    "CONTEXT": {"tasks": [{"title": "Review the draft"}]},
-                },
-                "empty_list": {
-                    "LABEL": "Empty list",
-                    "CONTEXT": {"tasks": []},
-                },
-            },
-        },
-    },
-}
-```
-
-An omitted or empty `SCENARIOS` mapping supplies `empty`, labelled **No example
-data**. It warns that Django can silently render missing variables as empty;
-preview does not infer fixtures or enumerate every missing variable. Static
-mapping contexts are deep-copied for every preview, including nested fixtures;
-values that cannot be copied produce a controlled context diagnostic.
-
-For request-specific examples, configure a trusted callable directly or by its
-dotted import path:
-
-```python
-def preview_tasks(request, template_name):
-    return {
-        "title": "Task example",
-        "author_label": request.user.get_username() if request else "Example author",
-        "tasks": [{"title": "Review the draft"}],
-    }
-```
-
-The callback receives the current Admin request and canonical draft name. Only
-its returned mapping enters the template: request, user, session, and Django
-context processors are **not added automatically**. Return only data intended
-for display. A provider owns the lifetime of objects it returns; unlike static
-fixtures its mapping values are not deep-copied. Provider failures never return
-exception text or context dumps to the browser. The browser submits only a
-configured scenario ID, not an import path, query, or editable context.
-
-### Previewing an included fragment
-
-Set a scenario's `ROOT_TEMPLATE` to an existing complete wrapper such as
-`screens/example.xml` that includes the draft's canonical name. The unsaved
-source wins for that name; every other dependency retains configured source
-precedence. A wrapper that never resolves the draft fails with
-`wrapper_missing_draft` rather than displaying an unrelated saved document.
-Extending the draft's own name does not fall through to its published version.
-Each render fixes a dependency at its first lookup, not an atomic release of all
-dependencies.
-
-### Validation and safety boundaries
-
-Preview always applies source safety, UTF-8 byte limits, final XML depth/node
-limits, and XSD validation, even with normal `VALIDATION.MODE="publish"`. It uses
-`VALIDATION.SCHEMA` when configured; otherwise it uses the bundled validator with
-`SCHEMA_PROFILE` and `EXTRA_SCHEMAS`. It preserves the original buffer and output
-whitespace; Format remains a separate action. Syntax/runtime diagnostics identify
-logical source templates when possible. XML/XSD diagnostics identify rendered
-output coordinates, not guessed lines in the editor. Only the first reliable
-blocking error is promised. Bounded, UTF-8-encodable failed output is available
-only as escaped read-only HXML for diagnostics, never as a visual preview.
-Oversized or unencodable output is omitted.
-
-A new resolver and Django engine are used for each preview; the global engine
-and shared raw-template cache are not reused. Schema/settings caches remain
-ordinary process-local implementation caches. Configured template tags, sources,
-schema callbacks, and context providers remain trusted Python code: they may
-perform queries or external side effects. Preview is **not a sandbox** and its
-post-render size checks do not bound execution time or pre-validation memory
-allocation. Existing add/change permissions and CSRF protection still apply.
