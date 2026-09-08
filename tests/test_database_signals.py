@@ -8,6 +8,7 @@ import pytest
 from django.core.cache import caches
 from django.db import connection, connections, transaction
 from django.db.models import Model, QuerySet
+from django.db.models.signals import pre_delete
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext
 
@@ -521,3 +522,77 @@ def test_optional_app_ready_imports_signals_without_queries(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == expected
+
+
+@pytest.mark.parametrize("fields", [["content"], ["name"], ["content", "name"], []])
+def test_save_accepts_single_use_update_fields(
+    signal_model: type[Model], fields: list[str]
+) -> None:
+    """Iterables retain every requested field and keep name identities aligned."""
+    from dj_hyperview.contrib.database._identity import template_name_identity
+
+    template = signal_model.objects.create(name="old.xml", content="<old />")
+    template.name = "new.xml"
+    template.content = "<new />"
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        template.save(update_fields=(field for field in fields))
+    template.refresh_from_db()
+
+    expected_name = "new.xml" if "name" in fields else "old.xml"
+    assert template.name == expected_name
+    assert template.name_identity == template_name_identity(expected_name)
+    assert template.content == ("<new />" if "content" in fields else "<old />")
+    if "name" in fields:
+        schedule.assert_called_once_with("old.xml", "new.xml", using="default")
+    elif fields:
+        schedule.assert_called_once_with("old.xml", using="default")
+    else:
+        schedule.assert_not_called()
+
+
+@pytest.mark.django_db(transaction=True, databases=ALIASES)
+@pytest.mark.parametrize("rollback", [False, True])
+def test_nested_cross_database_delete_with_matching_primary_key(
+    dual_signal_model: type[Model], rollback: bool
+) -> None:
+    """Batch suppression applies only to rows in the same database alias."""
+    default = dual_signal_model.objects.using("default").create(
+        name="default.xml", content="<default />"
+    )
+    replica = dual_signal_model.objects.using("replica").create(
+        pk=default.pk, name="replica.xml", content="<replica />"
+    )
+    replica_pk = replica.pk
+
+    def cleanup_replica(sender: type[Model], using: str, **kwargs: Any) -> None:
+        if using == "default":
+            replica.delete(using="replica")
+
+    pre_delete.connect(cleanup_replica, sender=dual_signal_model, weak=False)
+    try:
+        with patch(
+            "dj_hyperview.contrib.database._invalidation.invalidate_templates"
+        ) as invalidate:
+            with transaction.atomic(using="default"):
+                with transaction.atomic(using="replica"):
+                    dual_signal_model.objects.using("default").filter(
+                        pk=default.pk
+                    ).delete()
+                    invalidate.assert_not_called()
+                    transaction.set_rollback(rollback, using="replica")
+                if rollback:
+                    invalidate.assert_not_called()
+                else:
+                    invalidate.assert_called_once_with("replica.xml")
+                transaction.set_rollback(rollback, using="default")
+            expected = [] if rollback else [("replica.xml",), ("default.xml",)]
+            assert [call.args for call in invalidate.call_args_list] == expected
+    finally:
+        pre_delete.disconnect(cleanup_replica, sender=dual_signal_model)
+
+    default_rows = dual_signal_model.objects.using("default").filter(pk=default.pk)
+    replica_rows = dual_signal_model.objects.using("replica").filter(pk=replica_pk)
+    assert default_rows.exists() is rollback
+    assert replica_rows.exists() is rollback

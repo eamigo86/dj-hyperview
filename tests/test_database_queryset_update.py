@@ -232,31 +232,57 @@ def test_bulk_create_rejects_noncanonical_names_before_database_access(
     assert queryset_model.objects.count() == 0
 
 
-@override_settings(CACHES=CACHES, HYPERVIEW=HYPERVIEW)
-def test_bulk_upsert_invalidates_cached_template_content(
-    queryset_model: type[Model],
+@pytest.mark.parametrize("unique_fields", [["pk"], ["name_identity"], None])
+def test_bulk_upsert_is_rejected_before_consuming_objects_or_database_access(
+    queryset_model: type[Model], unique_fields: list[str] | None
 ) -> None:
-    """Conflict-updated rows become visible through the resolver after commit."""
-    caches["screens"].clear()
-    with (
-        patch("dj_hyperview.checks.apps.is_installed", return_value=True),
-        patch(
-            "dj_hyperview.contrib.database.sources._template_model",
-            return_value=queryset_model,
-        ),
-    ):
-        queryset_model.objects.create(name="screen.xml", content="<old />")
-        resolver = TemplateResolver.from_settings()
-        assert resolver.resolve("screen.xml").content == "<old />"
+    """Unsupported upserts must have no iterable, SQL, or cache side effects."""
+    consumed: list[bool] = []
 
+    def objects() -> Iterator[Model]:
+        consumed.append(True)
+        yield queryset_model(name="screen.xml", content="<new />")
+
+    with (
+        CaptureQueriesContext(connection) as queries,
+        patch(
+            "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+        ) as schedule,
+        pytest.raises(NotSupportedError, match="publication services"),
+    ):
         queryset_model.objects.bulk_create(
-            [queryset_model(name="screen.xml", content="<new />")],
+            objects(),
             update_conflicts=True,
             update_fields=["content"],
-            unique_fields=["name_identity"],
+            unique_fields=unique_fields,
         )
 
-        assert resolver.resolve("screen.xml").content == "<new />"
+    assert consumed == []
+    assert len(queries) == 0
+    schedule.assert_not_called()
+
+
+def test_bulk_insert_with_ignored_conflict_preserves_the_existing_row(
+    queryset_model: type[Model],
+) -> None:
+    """Imports may ignore duplicate names without silently publishing updates."""
+    existing = queryset_model.objects.create(name="screen.xml", content="<old />")
+
+    with patch(
+        "dj_hyperview.contrib.database.querysets._schedule_invalidation"
+    ) as schedule:
+        queryset_model.objects.bulk_create(
+            [
+                queryset_model(name="screen.xml", content="<new />"),
+                queryset_model(name="other.xml", content="<other />"),
+            ],
+            ignore_conflicts=True,
+        )
+
+    existing.refresh_from_db()
+    assert existing.content == "<old />"
+    assert queryset_model.objects.count() == 2
+    schedule.assert_called_once_with("screen.xml", "other.xml", using="default")
 
 
 def test_rename_schedules_old_and_actual_new_names(queryset_model: type[Model]) -> None:

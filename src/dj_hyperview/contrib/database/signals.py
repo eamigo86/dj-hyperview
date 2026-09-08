@@ -85,7 +85,7 @@ def _capture_delete(
     del kwargs
     instance.__dict__.pop(_STATE_ATTRIBUTE, None)
     batch = batch_delete_primary_keys.get()
-    if batch is not None and instance.pk in batch:
+    if batch is not None and (using, instance.pk) in batch:
         instance.__dict__[_STATE_ATTRIBUTE] = _BATCH_DELETE
         return
     persisted_name = _persisted_name(sender, instance, using)

@@ -5,7 +5,7 @@ from typing import Any, cast
 
 import django
 from django.core import exceptions
-from django.db import connections, models, transaction
+from django.db import NotSupportedError, connections, models, transaction
 from django.db.models import sql
 from django.db.models.sql.constants import ROW_COUNT
 
@@ -91,7 +91,7 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             objs: Unsaved template instances.
             batch_size: Maximum rows per insert statement.
             ignore_conflicts: Whether supported constraint conflicts are ignored.
-            update_conflicts: Whether supported conflicts update selected fields.
+            update_conflicts: Unsupported; updates require publication services.
             update_fields: Fields updated for conflict handling.
             unique_fields: Fields identifying conflicts.
 
@@ -99,9 +99,15 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             The created template instances.
 
         Raises:
+            NotSupportedError: If conflict updates are requested.
             ValueError: If Django rejects the bulk operation options.
             DatabaseError: If persistence fails.
         """
+        if update_conflicts:
+            raise NotSupportedError(
+                "Hyperview bulk conflict updates are unsupported; "
+                "use the publication services instead."
+            )
         prepared = list(objs)
         for template in prepared:
             canonicalize_template_name(template.name)
@@ -253,7 +259,7 @@ class HyperviewTemplateQuerySet(models.QuerySet):
             )
             names = _canonical_names((name for _, name in rows), ignore_invalid=True)
             token = batch_delete_primary_keys.set(
-                frozenset(row_primary_key for row_primary_key, _ in rows)
+                frozenset((using, row_primary_key) for row_primary_key, _ in rows)
             )
             try:
                 deleted = models.QuerySet.delete(self.using(using))

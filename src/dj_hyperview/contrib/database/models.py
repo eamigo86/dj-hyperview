@@ -63,6 +63,9 @@ class HyperviewTemplate(models.Model):
             DatabaseError: If persistence fails.
         """
         update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = frozenset(update_fields)
+            kwargs["update_fields"] = update_fields
         if self._state.adding or update_fields is None or "name" in update_fields:
             canonicalize_template_name(self.name)
             _assign_template_name_identity(self, update_fields)
