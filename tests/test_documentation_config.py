@@ -350,11 +350,12 @@ def test_changelog_prepares_the_0_1_0a14_release() -> None:
     assert "warning rather than a false success" in page
 
 
-def test_changelog_records_the_combined_admin_authoring_action() -> None:
-    """Unreleased notes explain the single format-and-validate workflow."""
+def test_changelog_prepares_the_0_1_0a15_release() -> None:
+    """Release notes explain the single format-and-validate workflow."""
     page = _documentation_pages()["changelog.md"]
     normalized = " ".join(page.split())
 
+    assert "## 0.1.0a15 — 2026-09-08" in page
     assert "Format and Validate" in page
     assert "unchanged source" in normalized
 

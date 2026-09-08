@@ -4,6 +4,8 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+## 0.1.0a15 — 2026-09-08
+
 ### Changed
 
 - The optional Admin editor now exposes one **Format and Validate** action. It
