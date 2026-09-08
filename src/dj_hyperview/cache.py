@@ -10,6 +10,7 @@ from typing import cast
 from django.conf import settings
 from django.core.cache import caches
 from django.core.cache.backends.base import BaseCache
+from django.core.cache.backends.filebased import FileBasedCache
 
 from .conf import get_settings
 from .exceptions import SourceUnavailable
@@ -19,6 +20,7 @@ _ABSENT = object()
 _FAILURE = object()
 _BACKEND_FAILURE = "backend failure"
 _INVALID_ALIAS = "invalid alias"
+_UNSUPPORTED_BACKEND = "unsupported backend"
 _FIELDS = {"name", "content", "origin", "source", "revision"}
 _MISS_FIELDS = {"version", "state", "source", "name", "revision"}
 _TEMPLATE_FIELDS = {"version", "state", "template"}
@@ -77,6 +79,8 @@ def _resolve_cache_alias(alias: object) -> tuple[BaseCache | None, str | None]:
         return None, _BACKEND_FAILURE
     if not isinstance(backend, BaseCache):
         return None, _INVALID_ALIAS
+    if isinstance(backend, FileBasedCache):
+        return None, _UNSUPPORTED_BACKEND
     return backend, None
 
 

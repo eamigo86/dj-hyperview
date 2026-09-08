@@ -12,7 +12,8 @@ from django.core.cache.backends.dummy import DummyCache
 from django.core.checks import CheckMessage, Error, Warning, register
 from django.utils.module_loading import import_string
 
-from .cache import _BACKEND_FAILURE, _resolve_cache_alias
+from .cache import _BACKEND_FAILURE, _UNSUPPORTED_BACKEND, _resolve_cache_alias
+from .conf import SCHEMA_PROFILES
 from .sources import FileSystemSource
 
 SETTING = "settings.HYPERVIEW"
@@ -200,6 +201,14 @@ def _check_cache(value: Any) -> list[CheckMessage]:
                 id="dj_hyperview.W001",
             )
         )
+    elif alias_error == _UNSUPPORTED_BACKEND:
+        errors.append(
+            _error(
+                "E018",
+                "CACHE.ALIAS",
+                "must use a backend with atomic add; FileBasedCache is unsupported",
+            )
+        )
     elif alias_error is not None:
         errors.append(_error("E004", "CACHE.ALIAS", "must name a configured cache"))
     elif isinstance(backend, DummyCache):
@@ -307,6 +316,18 @@ def _check_extra_schemas(value: Any) -> list[CheckMessage]:
     return errors
 
 
+def _check_schema_profile(value: Any) -> list[CheckMessage]:
+    if not isinstance(value, str) or value not in SCHEMA_PROFILES:
+        return [
+            _error(
+                "E019",
+                "SCHEMA_PROFILE",
+                "must be upstream-0.110.0 or compatible-0.110.0",
+            )
+        ]
+    return []
+
+
 def _check_admin(value: Any) -> list[CheckMessage]:
     if not isinstance(value, Mapping):
         return [_error("E014", "ADMIN", "must be a mapping")]
@@ -388,5 +409,6 @@ def check_hyperview_settings(
         *cache_errors,
         *_check_validation(raw.get("VALIDATION", {})),
         *_check_extra_schemas(raw.get("EXTRA_SCHEMAS", ())),
+        *_check_schema_profile(raw.get("SCHEMA_PROFILE", "upstream-0.110.0")),
         *_check_admin(raw.get("ADMIN", {})),
     ]

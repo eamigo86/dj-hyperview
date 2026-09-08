@@ -21,6 +21,25 @@ def test_settings_use_safe_optional_defaults() -> None:
     assert get_settings() == HyperviewSettings()
 
 
+@pytest.mark.parametrize("profile", ["upstream-0.110.0", "compatible-0.110.0"])
+def test_settings_normalize_schema_profile(profile: str) -> None:
+    """Only an explicit profile opt-in changes the schema registry selection."""
+    with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
+        assert get_settings().schema_profile == profile
+    with override_settings(HYPERVIEW={}):
+        assert get_settings().schema_profile == "upstream-0.110.0"
+
+
+@pytest.mark.parametrize(
+    "profile", ["compatible", "upstream-0.111.0", None, True, [], {}]
+)
+def test_invalid_schema_profiles_raise_e019(profile: object) -> None:
+    """Unknown or non-string schema profiles cannot silently change behavior."""
+    with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
+        with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E019"):
+            get_settings()
+
+
 def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
     def schema(document: str) -> None:
         del document

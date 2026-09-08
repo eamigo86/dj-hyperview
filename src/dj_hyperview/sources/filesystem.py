@@ -5,6 +5,7 @@ from errno import ELOOP, ENAMETOOLONG, ENOENT, ENOTDIR
 from hashlib import sha256
 from os import PathLike
 from pathlib import Path
+from stat import S_ISREG
 
 from dj_hyperview.exceptions import (
     HyperviewConfigurationError,
@@ -67,7 +68,7 @@ class FileSystemSource:
                 candidate = (root / canonical).resolve()
                 if not _is_within_root(candidate, root):
                     raise InvalidTemplateName(name)
-                if not candidate.is_file():
+                if not S_ISREG(candidate.stat().st_mode):
                     continue
                 data = candidate.read_bytes()
             except RuntimeError:

@@ -5,7 +5,7 @@ from dataclasses import dataclass, field, fields
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
+from typing import Any, Literal
 
 from django.conf import settings as django_settings
 from django.core.checks import ERROR
@@ -16,6 +16,11 @@ from django.utils.module_loading import import_string
 
 Schema = str | Path | Callable[[str], None] | None
 AdminPermission = Callable[[HttpRequest], bool]
+SchemaProfile = Literal["upstream-0.110.0", "compatible-0.110.0"]
+SCHEMA_PROFILES: tuple[SchemaProfile, ...] = (
+    "upstream-0.110.0",
+    "compatible-0.110.0",
+)
 _SETTING_DEPENDENCIES = frozenset(
     {"CACHES", "DATABASES", "HYPERVIEW", "INSTALLED_APPS"}
 )
@@ -81,6 +86,7 @@ class HyperviewSettings:
     validation: ValidationSettings = field(default_factory=ValidationSettings)
     admin: AdminSettings = field(default_factory=AdminSettings)
     extra_schemas: tuple[Path, ...] = ()
+    schema_profile: SchemaProfile = "upstream-0.110.0"
 
 
 DEFAULTS = HyperviewSettings()
@@ -136,6 +142,7 @@ def _settings_snapshot() -> HyperviewSettings:
         ),
         admin=_admin_settings(raw.get("ADMIN", {})),
         extra_schemas=tuple(Path(path) for path in raw.get("EXTRA_SCHEMAS", ())),
+        schema_profile=raw.get("SCHEMA_PROFILE", DEFAULTS.schema_profile),
     )
 
 

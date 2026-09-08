@@ -1,18 +1,23 @@
 """Opt-in Redis compatibility profile tests."""
 
 import os
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
 import pytest
 from django.core.cache import caches
 from django.test import override_settings
+from tests.compat.test_coverage_gate import write_report
 from tools import test_matrix
 
 
-def test_default_runner_removes_redis_configuration(monkeypatch: Any) -> None:
+def test_default_runner_removes_redis_configuration(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     """The canonical default gate never activates Redis implicitly."""
     environments: list[dict[str, str]] = []
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(test_matrix.REDIS_URL_ENV, "redis://sensitive.invalid/0")
     monkeypatch.setenv(test_matrix.REDIS_OPT_IN_ENV, "1")
 
@@ -20,6 +25,8 @@ def test_default_runner_removes_redis_configuration(monkeypatch: Any) -> None:
         command: tuple[str, ...], *, check: bool, env: dict[str, str]
     ) -> SimpleNamespace:
         environments.append(env)
+        if len(environments) == 2:
+            write_report(tmp_path / "coverage.xml")
         return SimpleNamespace(returncode=0)
 
     monkeypatch.setattr(test_matrix.subprocess, "run", _fake_run)
@@ -47,16 +54,24 @@ def test_redis_runner_requires_explicit_service_url(
     assert "Redis profile requires an explicit service URL." in capsys.readouterr().err
 
 
-def test_redis_runner_forwards_explicit_opt_in(monkeypatch: Any) -> None:
+def test_redis_runner_forwards_explicit_opt_in(
+    monkeypatch: Any, tmp_path: Path
+) -> None:
     """An explicit Redis profile activates the live test in subprocesses."""
     environments: list[dict[str, str]] = []
+    monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(test_matrix.REDIS_URL_ENV, "redis://127.0.0.1:6379/15")
+
+    def _fake_run(command, *, check, env):
+        environments.append(env)
+        if len(environments) == 2:
+            write_report(tmp_path / "coverage.xml")
+        return SimpleNamespace(returncode=0)
+
     monkeypatch.setattr(
         test_matrix.subprocess,
         "run",
-        lambda command, *, check, env: (
-            environments.append(env) or SimpleNamespace(returncode=0)
-        ),
+        _fake_run,
     )
 
     assert test_matrix.run_coverage(redis=True) == 0

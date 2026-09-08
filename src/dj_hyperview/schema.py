@@ -4,22 +4,25 @@ from __future__ import annotations
 
 import json
 from copy import deepcopy
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+from urllib.parse import unquote, urlparse
 
 from django.dispatch import receiver
 from django.test.signals import setting_changed
 from lxml import etree
 
-from .conf import get_settings
+from .conf import SchemaProfile, get_settings
 from .exceptions import TemplateValidationError
 
 HYPERVIEW_SCHEMA_VERSION = "0.110.0"
 HYPERVIEW_NAMESPACE = "https://hyperview.org/hyperview"
 XSD_NAMESPACE = "http://www.w3.org/2001/XMLSchema"
 _SCHEMA_ROOT = Path(__file__).with_name("schemas") / HYPERVIEW_SCHEMA_VERSION
+_MAX_SCHEMA_FILES = 256
+_OVERRIDE_TAG = f"{{{XSD_NAMESPACE}}}override"
 _REFERENCE_TAGS = frozenset(
     {
         f"{{{XSD_NAMESPACE}}}include",
@@ -29,6 +32,12 @@ _REFERENCE_TAGS = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class _SchemaDependencies:
+    root: str
+    files: tuple[tuple[str, int, int], ...]
+
+
 def get_hyperview_schema_path() -> Path:
     """Return the bundled root schema path.
 
@@ -36,6 +45,13 @@ def get_hyperview_schema_path() -> Path:
         Absolute path to the versioned Hyperview schema entry point.
     """
     return _SCHEMA_ROOT / "hyperview.xsd"
+
+
+def _profile_resources(profile: SchemaProfile) -> tuple[Path, Path]:
+    catalog_path = get_hyperview_schema_path().with_name("catalog.json")
+    if profile == "compatible-0.110.0":
+        return _SCHEMA_ROOT / "compatibility" / "hyperview.xsd", catalog_path
+    return get_hyperview_schema_path(), catalog_path
 
 
 def _xmlschema_module() -> Any:
@@ -106,12 +122,22 @@ def _schema_catalog(schema: Any, *, version: str | None = None) -> dict[str, Any
     return result
 
 
+def _require_complete_schema(compiled: Any) -> Any:
+    """Reject warnings that leave a root or imported schema only partly compiled."""
+    if any(schema.warnings for schema in compiled.maps.iter_schemas()):
+        raise TemplateValidationError("schema_invalid", "incomplete schema")
+    return compiled
+
+
 def _compile_schema(path: Path) -> Any:
     xmlschema = _xmlschema_module()
     try:
-        return xmlschema.XMLSchema11(path, allow="local")
+        compiled = xmlschema.XMLSchema11(
+            path, allow="local", use_fallback=False, defuse="always"
+        )
     except Exception as error:
         raise TemplateValidationError("schema_invalid", "invalid schema") from error
+    return _require_complete_schema(compiled)
 
 
 def build_hyperview_catalog() -> dict[str, Any]:
@@ -134,14 +160,19 @@ def _fingerprint(path: Path) -> tuple[str, int, int]:
     try:
         resolved = path.resolve(strict=True)
         metadata = resolved.stat()
-    except (OSError, TypeError) as error:
+    except (OSError, RuntimeError, TypeError, ValueError) as error:
         raise TemplateValidationError("schema_invalid", "invalid schema") from error
     return str(resolved), metadata.st_size, metadata.st_mtime_ns
 
 
 def _guard_local_references(path: Path) -> tuple[Path, ...]:
-    root = path.parent.resolve()
-    pending = [path.resolve()]
+    try:
+        root = path.parent.resolve(strict=True)
+        entrypoint = path.resolve(strict=True)
+    except (OSError, RuntimeError, ValueError) as error:
+        raise TemplateValidationError("schema_invalid", "invalid schema") from error
+    pending = [entrypoint]
+    scheduled = {entrypoint}
     visited: set[Path] = set()
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
     while pending:
@@ -153,7 +184,16 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
             document = etree.parse(current, parser)
         except (OSError, etree.XMLSyntaxError) as error:
             raise TemplateValidationError("schema_invalid", "invalid schema") from error
+        if document.docinfo.doctype:
+            raise TemplateValidationError(
+                "forbidden_declaration", "DTD and entity declarations are forbidden"
+            )
         for reference in document.getroot().iter():
+            if reference.tag == _OVERRIDE_TAG:
+                raise TemplateValidationError(
+                    "forbidden_schema_reference",
+                    "extra schemas must not override declarations",
+                )
             if reference.tag not in _REFERENCE_TAGS:
                 continue
             location = reference.get("schemaLocation")
@@ -165,21 +205,42 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
                     "forbidden_schema_reference",
                     "remote schema references are forbidden",
                 )
-            target = (current.parent / location).resolve()
+            if (
+                unquote(location) != location
+                or "\\" in location
+                or location != location.strip()
+            ):
+                raise TemplateValidationError(
+                    "forbidden_schema_reference",
+                    "schema references must use plain local paths",
+                )
+            try:
+                target = (current.parent / location).resolve()
+            except (OSError, RuntimeError, ValueError) as error:
+                raise TemplateValidationError(
+                    "schema_invalid", "invalid schema"
+                ) from error
             if not target.is_relative_to(root):
                 raise TemplateValidationError(
                     "forbidden_schema_reference",
                     "schema references must remain inside their local root",
                 )
-            pending.append(target)
+            if target not in scheduled:
+                if len(scheduled) >= _MAX_SCHEMA_FILES:
+                    raise TemplateValidationError(
+                        "schema_invalid", "schema exceeds the local file limit"
+                    )
+                scheduled.add(target)
+                pending.append(target)
     return tuple(sorted(visited))
 
 
 @lru_cache(maxsize=64)
-def _custom_catalog(fingerprint: tuple[str, int, int]) -> dict[str, Any]:
-    path = Path(fingerprint[0])
-    _guard_local_references(path)
-    return _schema_catalog(_compile_schema(path))
+def _custom_catalog(
+    profile: SchemaProfile, dependencies: _SchemaDependencies
+) -> dict[str, Any]:
+    del profile
+    return _schema_catalog(_compile_schema(Path(dependencies.root)))
 
 
 def _target_namespace(path: Path) -> str:
@@ -191,56 +252,63 @@ def _target_namespace(path: Path) -> str:
     return root.get("targetNamespace", "")
 
 
-def _registry_state() -> tuple[tuple[str, int, int], ...]:
-    state: list[tuple[str, int, int]] = []
+def _registry_state() -> tuple[_SchemaDependencies, ...]:
+    state: list[_SchemaDependencies] = []
     for configured in get_settings().extra_schemas:
-        root = configured.resolve()
-        for path in _guard_local_references(root):
-            name, size, modified = _fingerprint(path)
-            marker = "root:" if path == root else "dependency:"
-            state.append((f"{marker}{name}", size, modified))
-    return tuple(sorted(state))
+        paths = _guard_local_references(configured)
+        state.append(
+            _SchemaDependencies(
+                str(configured.resolve()), tuple(_fingerprint(path) for path in paths)
+            )
+        )
+    return tuple(state)
 
 
 @lru_cache(maxsize=64)
-def _compile_registry(state: tuple[tuple[str, int, int], ...]) -> Any:
+def _compile_registry(
+    profile: SchemaProfile, state: tuple[_SchemaDependencies, ...]
+) -> Any:
     xmlschema = _xmlschema_module()
-    roots = [
-        Path(name.removeprefix("root:"))
-        for name, _, _ in state
-        if name.startswith("root:")
-    ]
+    schema_path, _ = _profile_resources(profile)
+    roots = [Path(dependencies.root) for dependencies in state]
     locations = [(_target_namespace(path), str(path)) for path in roots]
     try:
-        return xmlschema.XMLSchema11(
-            get_hyperview_schema_path(),
+        compiled = xmlschema.XMLSchema11(
+            schema_path,
             allow="local",
             locations=locations,
+            use_fallback=False,
+            defuse="always",
         )
     except Exception as error:
         raise TemplateValidationError("schema_invalid", "invalid schema") from error
+    return _require_complete_schema(compiled)
 
 
-@lru_cache(maxsize=1)
-def _official_catalog() -> dict[str, Any]:
-    path = get_hyperview_schema_path().with_name("catalog.json")
+@lru_cache(maxsize=2)
+def _official_catalog(profile: SchemaProfile) -> dict[str, Any]:
+    _, path = _profile_resources(profile)
     return json.loads(path.read_text(encoding="utf-8"))
 
 
 def get_hyperview_catalog() -> dict[str, Any]:
-    """Return official completion metadata merged with configured local schemas.
+    """Return profile completion metadata merged with configured local schemas.
 
     Returns:
-        A detached JSON-compatible catalog safe for caller mutation.
+        A detached JSON-compatible catalog with schema profile metadata, safe
+        for caller mutation.
 
     Raises:
         TemplateValidationError: If an extra schema is unsafe, invalid, or
             declares an incompatible duplicate element.
     """
-    catalog = deepcopy(_official_catalog())
+    profile = get_settings().schema_profile
+    state = _registry_state()
+    catalog = deepcopy(_official_catalog(profile))
+    catalog["schema_profile"] = profile
     elements = catalog["elements"]
-    for configured in get_settings().extra_schemas:
-        extra = _custom_catalog(_fingerprint(configured))
+    for dependencies in state:
+        extra = _custom_catalog(profile, dependencies)
         for name, definition in extra["elements"].items():
             existing = elements.get(name)
             if existing is not None and existing != definition:
@@ -254,7 +322,7 @@ def get_hyperview_catalog() -> dict[str, Any]:
 
 
 def validate_hyperview_schema(document: str) -> None:
-    """Validate rendered HXML against Hyperview 0.110.0 and local extensions.
+    """Validate rendered HXML against the selected profile and local extensions.
 
     Args:
         document: Rendered HXML document or fragment.
@@ -266,7 +334,7 @@ def validate_hyperview_schema(document: str) -> None:
     from .validation import _parse
 
     root = _parse(document, get_settings().validation)
-    validator = _compile_registry(_registry_state())
+    validator = _compile_registry(get_settings().schema_profile, _registry_state())
     try:
         error = next(validator.iter_errors(root), None)
     except Exception as failure:

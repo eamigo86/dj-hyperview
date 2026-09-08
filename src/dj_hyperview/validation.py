@@ -2,6 +2,7 @@
 
 import codecs
 import re
+from collections.abc import Callable
 from pathlib import Path
 from threading import RLock
 from typing import Any
@@ -21,9 +22,11 @@ XSD_NAMESPACE = "{http://www.w3.org/2001/XMLSchema}"
 RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
 IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"))
 XML_ENCODING = re.compile(
-    r"^\s*<\?xml\b[^>]*\bencoding\s*=\s*(['\"])([^'\"]+)\1",
+    r"^\ufeff?\s*<\?xml\b[^>]*\bencoding\s*=\s*(['\"])([^'\"]+)\1",
     re.IGNORECASE,
 )
+DJANGO_COMMENT = re.compile(r"{%\s*comment(?=\s|%})")
+DJANGO_ENDCOMMENT = re.compile(r"{%\s*endcomment(?=\s|%})")
 _SCHEMA_CACHE: dict[Path, tuple[tuple[int, int], etree.XMLSchema]] = {}
 _SCHEMA_LOCK = RLock()
 
@@ -55,56 +58,71 @@ def _parser() -> etree.XMLParser:
     )
 
 
-def _django_comment_end(document: str, index: int) -> int | None:
-    if not document.startswith("{%", index):
+def _django_comment_end(
+    document: str, index: int, find: Callable[[str, int], int]
+) -> int | None:
+    if DJANGO_COMMENT.match(document, index) is None:
         return None
-    tag_end = document.find("%}", index + 2)
+    tag_end = find("%}", index + 2)
     if tag_end < 0:
-        return None
-    bits = document[index + 2 : tag_end].strip().split()
-    if not bits or bits[0] != "comment":
         return None
     cursor = tag_end + 2
     while cursor < len(document):
-        tag_start = document.find("{%", cursor)
+        tag_start = find("{%", cursor)
         if tag_start < 0:
             return len(document)
-        tag_end = document.find("%}", tag_start + 2)
+        tag_end = find("%}", tag_start + 2)
         if tag_end < 0:
             return len(document)
-        bits = document[tag_start + 2 : tag_end].strip().split()
-        if bits and bits[0] == "endcomment":
+        if DJANGO_ENDCOMMENT.match(document, tag_start) is not None:
             return tag_end + 2
         cursor = tag_end + 2
     return len(document)
 
 
-def _inline_django_comment_end(document: str, index: int) -> int | None:
+def _inline_django_comment_end(
+    document: str, index: int, find: Callable[[str, int], int]
+) -> int | None:
     if not document.startswith("{#", index):
         return None
-    end = document.find("#}", index + 2)
+    end = find("#}", index + 2)
     if end < 0:
         return None
-    newline = document.find("\n", index + 2)
+    newline = find("\n", index + 2)
     if 0 <= newline < end:
         return None
     return end + 2
 
 
-def _contains_forbidden_declaration(document: str) -> bool:
+def _contains_forbidden_declaration(
+    document: str, *, template_source: bool = False
+) -> bool:
+    """Scan forward, reusing delimiter searches rather than rescanning suffixes."""
     if "<!DOCTYPE" not in document and "<!ENTITY" not in document:
         return False
+    positions: dict[str, int] = {}
+
+    def find(marker: str, start: int) -> int:
+        # Callers advance monotonically for each marker. A previous hit remains
+        # valid until consumed; a previous miss covers every later suffix.
+        position = positions.get(marker)
+        if position is None or 0 <= position < start:
+            position = positions[marker] = document.find(marker, start)
+        return position
+
     index = 0
     while index < len(document):
         for opening, closing in IGNORED_BLOCKS:
             if document.startswith(opening, index):
-                end = document.find(closing, index + len(opening))
+                end = find(closing, index + len(opening))
                 index = len(document) if end < 0 else end + len(closing)
                 break
         else:
-            comment_end = _inline_django_comment_end(document, index)
-            if comment_end is None:
-                comment_end = _django_comment_end(document, index)
+            comment_end = None
+            if template_source:
+                comment_end = _inline_django_comment_end(document, index, find)
+                if comment_end is None:
+                    comment_end = _django_comment_end(document, index, find)
             if comment_end is not None:
                 index = comment_end
             elif document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
@@ -138,11 +156,13 @@ def _guard_declarations(document: str) -> bytes:
     return encoded
 
 
-def _guard_document(document: str, config: ValidationSettings) -> bytes:
+def _guard_document(
+    document: str, config: ValidationSettings, *, template_source: bool = False
+) -> bytes:
     encoded = _encode_utf8(document)
     if len(encoded) > config.max_bytes:
         _fail("max_bytes", "document exceeds MAX_BYTES")
-    if _contains_forbidden_declaration(document):
+    if _contains_forbidden_declaration(document, template_source=template_source):
         _fail("forbidden_declaration", FORBIDDEN_MESSAGE)
     return encoded
 
@@ -159,7 +179,7 @@ def validate_template_source(
     Returns:
         The unchanged validated source.
     """
-    _guard_document(document, config or get_settings().validation)
+    _guard_document(document, config or get_settings().validation, template_source=True)
     return document
 
 

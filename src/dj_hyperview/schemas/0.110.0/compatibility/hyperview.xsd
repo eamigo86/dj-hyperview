@@ -1,0 +1,378 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+  xmlns:hv="https://hyperview.org/hyperview"
+  targetNamespace="https://hyperview.org/hyperview" elementFormDefault="qualified">
+  <xs:override schemaLocation="../hyperview.xsd">
+    <xs:element name="style">
+      <xs:complexType>
+        <xs:sequence>
+          <xs:element minOccurs="0" maxOccurs="unbounded" ref="hv:modifier" />
+        </xs:sequence>
+
+        <xs:attribute name="alignContent">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="flex-start" />
+              <xs:enumeration value="flex-end" />
+              <xs:enumeration value="center" />
+              <xs:enumeration value="stretch" />
+              <xs:enumeration value="space-between" />
+              <xs:enumeration value="space-around" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="alignItems">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="flex-start" />
+              <xs:enumeration value="flex-end" />
+              <xs:enumeration value="center" />
+              <xs:enumeration value="stretch" />
+              <xs:enumeration value="baseline" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="alignSelf">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="flex-start" />
+              <xs:enumeration value="flex-end" />
+              <xs:enumeration value="center" />
+              <xs:enumeration value="stretch" />
+              <xs:enumeration value="baseline" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="aspectRatio" type="hv:floatOrRatio" />
+
+        <xs:attribute name="backgroundColor" type="hv:color" />
+
+        <xs:attribute name="borderBottomColor" type="hv:color" />
+
+        <xs:attribute name="borderBottomEndRadius" type="xs:nonNegativeInteger" />
+
+        <xs:attribute
+          name="borderBottomLeftRadius"
+          type="xs:nonNegativeInteger"
+        />
+        <xs:attribute
+          name="borderBottomRightRadius"
+          type="xs:nonNegativeInteger"
+        />
+        <xs:attribute
+          name="borderBottomStartRadius"
+          type="xs:nonNegativeInteger"
+        />
+
+        <xs:attribute name="borderBottomWidth" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderEndWidth" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderColor" type="hv:color" />
+
+        <xs:attribute name="borderBlockColor" type="hv:color" />
+        <xs:attribute name="borderBlockEndColor" type="hv:color" />
+        <xs:attribute name="borderBlockStartColor" type="hv:color" />
+
+        <xs:attribute name="borderEndColor" type="hv:color" />
+        <xs:attribute name="borderEndEndRadius" type="xs:nonNegativeInteger" />
+        <xs:attribute name="borderEndStartRadius" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderLeftColor" type="hv:color" />
+
+        <xs:attribute name="borderLeftWidth" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderRadius" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderRightColor" type="hv:color" />
+
+        <xs:attribute name="borderRightWidth" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderStartColor" type="hv:color" />
+        <xs:attribute name="borderStartEndRadius" type="xs:nonNegativeInteger" />
+        <xs:attribute
+          name="borderStartStartRadius"
+          type="xs:nonNegativeInteger"
+        />
+        <xs:attribute name="borderStartWidth" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderStyle">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="solid" />
+              <xs:enumeration value="dotted" />
+              <xs:enumeration value="dashed" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="borderTopColor" type="hv:color" />
+
+        <xs:attribute name="borderTopEndRadius" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderTopLeftRadius" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderTopRightRadius" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderTopStartRadius" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderTopWidth" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderWidth" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="borderCurve" type="xs:string" />
+
+        <xs:attribute name="bottom" type="xs:integer" />
+
+        <xs:attribute name="boxShadow" type="xs:string" />
+        <xs:attribute name="boxSizing" type="xs:string" />
+
+        <xs:attribute name="color" type="hv:color" />
+
+        <xs:attribute name="columnGap" type="xs:integer" />
+
+        <xs:attribute name="cursor" type="xs:string" />
+
+        <xs:attribute name="direction" type="xs:string" />
+
+        <xs:attribute name="display">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="none" />
+              <xs:enumeration value="flex" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="elevation" type="xs:nonNegativeInteger" />
+
+        <xs:attribute name="end" type="xs:string" />
+
+        <xs:attribute name="flex">
+          <xs:simpleType>
+            <xs:restriction base="xs:integer">
+              <xs:minInclusive value="-1" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="flexBasis" type="hv:sizing" />
+
+        <xs:attribute name="flexDirection">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="row" />
+              <xs:enumeration value="row-reverse" />
+              <xs:enumeration value="column" />
+              <xs:enumeration value="column-reverse" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="flexGrow" type="xs:integer" />
+
+        <xs:attribute name="flexShrink" type="xs:integer" />
+
+        <xs:attribute name="flexWrap">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="wrap" />
+              <xs:enumeration value="nowrap" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="filter" type="xs:string" />
+
+        <xs:attribute name="fontFamily" type="xs:string" />
+        <xs:attribute name="fontSize" type="xs:positiveInteger" />
+        <xs:attribute name="fontStyle">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="normal" />
+              <xs:enumeration value="italic" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="fontVariant" type="xs:string" />
+        <xs:attribute name="fontWeight">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="normal" />
+              <xs:enumeration value="bold" />
+              <xs:enumeration value="100" />
+              <xs:enumeration value="200" />
+              <xs:enumeration value="300" />
+              <xs:enumeration value="400" />
+              <xs:enumeration value="500" />
+              <xs:enumeration value="600" />
+              <xs:enumeration value="700" />
+              <xs:enumeration value="800" />
+              <xs:enumeration value="900" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="gap" type="xs:integer" />
+
+        <xs:attribute name="height" type="hv:pointsOrPercent" />
+
+        <xs:attribute name="id" type="xs:NCName" />
+
+        <xs:attribute name="justifyContent">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="flex-start" />
+              <xs:enumeration value="flex-end" />
+              <xs:enumeration value="center" />
+              <xs:enumeration value="space-between" />
+              <xs:enumeration value="space-around" />
+              <xs:enumeration value="space-evenly" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="left" type="hv:pointsOrPercent" />
+        <xs:attribute name="letterSpacing" type="hv:sizing" />
+        <xs:attribute name="lineHeight" type="xs:integer" />
+        <xs:attribute name="margin" type="hv:marginSizing" />
+        <xs:attribute name="marginBottom" type="hv:marginSizing" />
+        <xs:attribute name="marginHorizontal" type="hv:marginSizing" />
+        <xs:attribute name="marginLeft" type="hv:marginSizing" />
+        <xs:attribute name="marginRight" type="hv:marginSizing" />
+        <xs:attribute name="marginTop" type="hv:marginSizing" />
+        <xs:attribute name="marginEnd" type="hv:marginSizing" />
+        <xs:attribute name="marginStart" type="hv:marginSizing" />
+        <xs:attribute name="marginVertical" type="hv:marginSizing" />
+        <xs:attribute name="maxHeight" type="hv:pointsOrPercent" />
+        <xs:attribute name="maxWidth" type="hv:pointsOrPercent" />
+        <xs:attribute name="minHeight" type="hv:pointsOrPercent" />
+        <xs:attribute name="minWidth" type="hv:pointsOrPercent" />
+        <xs:attribute name="numberOfLines" type="xs:integer" />
+
+        <xs:attribute name="opacity">
+          <xs:simpleType>
+            <xs:restriction base="xs:decimal">
+              <xs:minInclusive value="0.0" />
+              <xs:maxInclusive value="1.0" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="overflow">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="visible" />
+              <xs:enumeration value="hidden" />
+              <xs:enumeration value="scroll" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="padding" type="hv:pointsOrPercent" />
+        <xs:attribute name="paddingBottom" type="hv:pointsOrPercent" />
+        <xs:attribute name="paddingHorizontal" type="hv:pointsOrPercent" />
+        <xs:attribute name="paddingLeft" type="hv:pointsOrPercent" />
+        <xs:attribute name="paddingRight" type="hv:pointsOrPercent" />
+        <xs:attribute name="paddingTop" type="hv:pointsOrPercent" />
+        <xs:attribute name="paddingEnd" type="hv:pointsOrPercent" />
+        <xs:attribute name="paddingStart" type="hv:pointsOrPercent" />
+        <xs:attribute name="paddingVertical" type="hv:pointsOrPercent" />
+
+        <xs:attribute name="pointerEvents" type="xs:string" />
+
+        <xs:attribute name="position">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="absolute" />
+              <xs:enumeration value="relative" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="right" type="hv:pointsOrPercent" />
+        <xs:attribute name="rowGap" type="xs:integer" />
+        <xs:attribute name="start" type="xs:string" />
+        <xs:attribute name="shadowColor" type="hv:color" />
+        <xs:attribute name="shadowOffsetX" type="xs:integer" />
+        <xs:attribute name="shadowOffsetY" type="xs:decimal" />
+        <xs:attribute name="shadowOpacity" type="xs:decimal" />
+        <xs:attribute name="shadowRadius" type="xs:decimal" />
+
+        <xs:attribute name="textAlign">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="auto" />
+              <xs:enumeration value="left" />
+              <xs:enumeration value="right" />
+              <xs:enumeration value="center" />
+              <xs:enumeration value="justify" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="textAlignVertical">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="auto" />
+              <xs:enumeration value="top" />
+              <xs:enumeration value="bottom" />
+              <xs:enumeration value="center" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+
+        <xs:attribute name="textDecorationColor" type="hv:color" />
+        <xs:attribute name="textDecorationLine" type="xs:NCName" />
+        <xs:attribute name="textDecorationStyle" type="xs:string" />
+        <xs:attribute name="textShadowOffsetX" type="xs:integer" />
+        <xs:attribute name="textShadowOffsetY" type="xs:integer" />
+        <xs:attribute name="textShadowRadius" type="xs:decimal" />
+        <xs:attribute name="textTransform" type="xs:string" />
+        <xs:attribute name="top" type="hv:pointsOrPercent" />
+        <xs:attribute name="width" type="hv:pointsOrPercent" />
+        <xs:attribute name="zIndex" type="xs:positiveInteger" />
+
+        <xs:attribute name="resizeMode" type="hv:resizeMode" />
+
+        <xs:attribute name="outlineColor" type="hv:color" />
+        <xs:attribute name="outlineOffset" type="xs:integer" />
+        <xs:attribute name="outlineStyle">
+          <xs:simpleType>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="none" />
+              <xs:enumeration value="dotted" />
+              <xs:enumeration value="solid" />
+              <xs:enumeration value="groove" />
+              <xs:enumeration value="inset" />
+            </xs:restriction>
+          </xs:simpleType>
+        </xs:attribute>
+        <xs:attribute name="outlineWidth" type="hv:sizing" />
+
+        <xs:attribute name="includeFontPadding" type="xs:string" />
+        <xs:attribute name="userSelect" type="xs:string" />
+        <xs:attribute name="verticalAlign" type="xs:string" />
+        <xs:attribute name="writingDirection" type="xs:string" />
+
+        <xs:attribute name="backfaceVisibility" type="xs:string" />
+        <xs:attribute name="objectFit" type="xs:string" />
+        <xs:attribute name="overlayColor" type="hv:color" />
+        <xs:attribute name="tintColor" type="hv:color" />
+      </xs:complexType>
+    </xs:element>
+  </xs:override>
+  <xs:simpleType name="marginSizing">
+    <xs:union memberTypes="hv:sizing">
+      <xs:simpleType>
+        <xs:restriction base="xs:string">
+          <xs:pattern value="[-+]?([0-9]+(\.[0-9]*)?|\.[0-9]+)%"/>
+        </xs:restriction>
+      </xs:simpleType>
+    </xs:union>
+  </xs:simpleType>
+</xs:schema>

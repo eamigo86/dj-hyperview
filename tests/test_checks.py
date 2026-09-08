@@ -8,6 +8,51 @@ from dj_hyperview.checks import check_hyperview_settings
 from dj_hyperview.resolver import TemplateResolver
 
 
+@pytest.mark.parametrize("profile", ["unknown", None, True, [], {}])
+def test_invalid_schema_profile_returns_e019(profile: object) -> None:
+    """Invalid profile values are deterministic system-check errors."""
+    with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
+        messages = check_hyperview_settings()
+    assert [message.id for message in messages] == ["dj_hyperview.E019"]
+    assert messages[0].hint and "SCHEMA_PROFILE" in messages[0].msg
+
+
+@pytest.mark.parametrize("mode", ["raise", "bypass"])
+@pytest.mark.parametrize("entrypoint", ["checks", "settings", "resolver"])
+@pytest.mark.parametrize(
+    "backend",
+    [
+        "django.core.cache.backends.filebased.FileBasedCache",
+        "tests.test_runtime_cache_backend.ConsumerFileCache",
+    ],
+)
+def test_filebased_cache_rejected_by_configuration_even_in_bypass(
+    tmp_path: Path, mode: str, entrypoint: str, backend: str
+) -> None:
+    """Unsafe generation backends are configuration errors, never read bypasses."""
+    from dj_hyperview.conf import get_settings
+    from dj_hyperview.exceptions import HyperviewConfigurationError
+
+    caches = {
+        "files": {
+            "BACKEND": backend,
+            "LOCATION": str(tmp_path),
+        }
+    }
+    configured = {"CACHE": {"ALIAS": "files", "FAILURE_MODE": mode}}
+    with override_settings(CACHES=caches, HYPERVIEW=configured):
+        if entrypoint == "checks":
+            messages = check_hyperview_settings()
+            assert [message.id for message in messages] == ["dj_hyperview.E018"]
+        else:
+            with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E018"):
+                (
+                    get_settings
+                    if entrypoint == "settings"
+                    else TemplateResolver.from_settings
+                )()
+
+
 @override_settings(HYPERVIEW={})
 def test_minimal_installation_requires_no_optional_services() -> None:
     messages = check_hyperview_settings()
