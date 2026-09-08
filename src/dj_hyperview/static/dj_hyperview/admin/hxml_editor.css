@@ -21,3 +21,22 @@
   min-width: 0;
   width: 100%;
 }
+
+.djhv-source-validation-status {
+  color: var(--body-quiet-color);
+}
+
+.djhv-source-validation-diagnostics {
+  margin-top: 0.75rem;
+}
+
+.djhv-source-validation-diagnostic {
+  border-left: 3px solid var(--error-fg);
+  color: var(--error-fg);
+  margin: 0;
+  padding: 0.5rem 0.75rem;
+}
+
+.djhv-source-validation-diagnostic .button {
+  margin-left: 0.75rem;
+}

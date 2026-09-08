@@ -4,6 +4,12 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+### Added
+
+- **Validate source** in the optional Admin editor checks an unsaved template name
+  and source without context, rendering, persistence, or revision changes. It
+  reports safe source diagnostics and Django syntax line numbers when available.
+
 ### Removed
 
 - The experimental static Admin template preview and its server-configured

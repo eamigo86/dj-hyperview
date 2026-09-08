@@ -36,6 +36,7 @@ _ADMIN_COVERAGE = (
     "-q",
     "--ds=tests.settings_database_admin",
     "tests/test_database_admin.py",
+    "tests/test_database_admin_validation.py",
     "tests/test_database_admin_publication.py",
     "--cov=dj_hyperview",
     "--cov-branch",

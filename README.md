@@ -82,7 +82,8 @@ uv add "dj-hyperview[schema]"
 uv add "dj-hyperview[editor]"
 ```
 
-The editor profile includes XSD validation. Enable it explicitly:
+The editor profile includes XSD validation, HXML completion and formatting, and
+context-free validation of unsaved source. Enable it explicitly:
 
 ```python
 INSTALLED_APPS = [

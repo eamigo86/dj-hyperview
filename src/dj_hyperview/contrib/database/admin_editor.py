@@ -54,6 +54,7 @@ class HyperviewAceWidget(AceWidget):
                 "django_ace/ace/theme-monokai.js",
                 "dj_hyperview/admin/hxml_mode.js",
                 "dj_hyperview/admin/hxml_editor.js",
+                "dj_hyperview/admin/hxml_validation.js",
             ),
         )
         return super().media + package_media
@@ -85,11 +86,23 @@ class HyperviewAceWidget(AceWidget):
         except NoReverseMatch:
             catalog_url = ""
         resolved_attrs["data-hyperview-catalog-url"] = catalog_url
+        try:
+            validation_url = reverse(
+                "admin:dj_hyperview_database_hyperviewtemplate_hxml_validate"
+            )
+        except NoReverseMatch:
+            validation_url = ""
+        resolved_attrs["data-hyperview-validation-url"] = validation_url
         editor = super().render(name, value, resolved_attrs, renderer)
         return format_html(
             '{}<div class="djhv-editor-actions">'
             '<button type="button" class="button djhv-format-hxml">Format HXML</button>'
+            '<button type="button" class="button djhv-validate-source">'
+            "Validate source</button>"
             '<span class="djhv-editor-status" role="status" aria-live="polite"></span>'
-            "</div>",
+            '<span class="djhv-source-validation-status" role="status" '
+            'aria-live="polite"></span>'
+            '</div><div class="djhv-source-validation-diagnostics" '
+            'aria-live="polite"></div>',
             editor,
         )

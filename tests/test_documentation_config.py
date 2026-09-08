@@ -484,3 +484,15 @@ def test_repository_readme_presents_the_public_package_journey() -> None:
     )
     assert "does not ship application screens" in readme
     assert "Every successfully claimed root or successor token" not in readme
+
+
+def test_database_admin_documents_context_free_draft_validation() -> None:
+    """The editor guide states exactly what Validate source can and cannot prove."""
+    page = _documentation_pages()["database-admin.md"]
+    normalized = " ".join(page.split())
+
+    assert "Validate source" in page
+    assert "does not render" in normalized
+    assert "does not run XSD" in normalized
+    assert "does not save" in normalized
+    assert "Django template syntax" in normalized

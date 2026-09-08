@@ -50,6 +50,7 @@ def test_coverage_commands_enforce_the_aggregate_after_admin() -> None:
     assert "coverage.xml" in (ROOT / ".gitignore").read_text().splitlines()
     assert {
         "tests/test_database_admin.py",
+        "tests/test_database_admin_validation.py",
         "tests/test_database_admin_publication.py",
     }.issubset(admin)
 

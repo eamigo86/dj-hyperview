@@ -13,10 +13,11 @@ from django.urls import path
 from django.utils.datastructures import MultiValueDict
 
 from dj_hyperview.conf import get_settings
-from dj_hyperview.exceptions import InvalidTemplateName
+from dj_hyperview.exceptions import HyperviewConfigurationError, InvalidTemplateName
 from dj_hyperview.schema import get_hyperview_catalog
 
 from ._identity import template_name_identity
+from .admin_validation import _error, validate_draft_source, validation_payload
 from .models import HyperviewTemplate
 from .services import (
     PublicationConflict,
@@ -240,12 +241,54 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         name = f"{opts.app_label}_{opts.model_name}_hxml_catalog"
         custom = [
             path(
+                "hxml-validate/",
+                self.admin_site.admin_view(self.hxml_validate_view),
+                name=f"{opts.app_label}_{opts.model_name}_hxml_validate",
+            ),
+            path(
                 "hxml-catalog/",
                 self.admin_site.admin_view(self.hxml_catalog_view),
                 name=name,
-            )
+            ),
         ]
         return custom + super().get_urls()
+
+    def hxml_validate_view(self, request: HttpRequest) -> JsonResponse:
+        """Validate an authorized unsaved draft without rendering it.
+
+        Args:
+            request: Authenticated, CSRF-protected Admin request.
+
+        Returns:
+            Safe source diagnostics without persistence or rendered output.
+        """
+        if request.method != "POST":
+            response = _error("method_not_allowed", "Use POST for validation.", 405)
+            response["Allow"] = "POST"
+            return response
+        try:
+            if not get_settings().admin.editor:
+                return _error(
+                    "validation_disabled", "Template validation is not enabled.", 404
+                )
+        except HyperviewConfigurationError:
+            return _error(
+                "configuration_error", "Template validation is unavailable.", 500
+            )
+        if not self._has_mutation_permission(request):
+            return _error(
+                "permission_denied", "Template validation is not permitted.", 403
+            )
+        payload = validation_payload(request)
+        if isinstance(payload, JsonResponse):
+            return payload
+        try:
+            result = validate_draft_source(payload["name"], payload["content"])
+        except HyperviewConfigurationError:
+            return _error(
+                "configuration_error", "Template validation is unavailable.", 500
+            )
+        return JsonResponse(result)
 
     def hxml_catalog_view(self, request: HttpRequest) -> JsonResponse:
         """Return completion metadata to authorized template editors.

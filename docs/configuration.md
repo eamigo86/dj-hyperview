@@ -63,7 +63,7 @@ empty mapping disables Hyperview caching.
 | `VALIDATION.MAX_DEPTH` | Positive integer | 64 levels | Maximum final XML element depth, with an absolute maximum of 256 imposed by the parser safety ceiling. |
 | `VALIDATION.MAX_NODES` | Positive integer | 20,000 nodes | Maximum number of elements in the final parsed XML document. |
 | `ADMIN` | Mapping | `{}` | Optional Django Admin enhancements. |
-| `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
+| `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor, conservative formatter, and context-free source-validation action. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
 | `ADMIN.PERMISSION` | Callable or dotted callable path | Superuser-only callback | Authoritative mutation policy for adding, changing, and deleting stored templates. The callable receives the current `HttpRequest` and must return the literal boolean `True`; exceptions and non-boolean results deny access. |
 | `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.110.0 registry and completion catalog. URLs are rejected. |
 | `SCHEMA_PROFILE` | `upstream-0.110.0` or `compatible-0.110.0` | `"upstream-0.110.0"` | Selects the bundled validator and editor profile. Compatibility adds percentage margins only; invalid values raise `dj_hyperview.E019`. |

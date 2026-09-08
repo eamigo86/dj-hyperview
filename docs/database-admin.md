@@ -206,6 +206,20 @@ formatter is not a substitute for publish-time template validation. Ace
 synchronizes back to Django's textarea before submission, so standard form
 processing remains the source of truth.
 
+**Validate source** checks the current unsaved name and Ace buffer without
+publishing or mutating the stored template. It verifies the canonical name,
+nonempty source, UTF-8 and size limits, forbidden declarations, and Django
+template syntax. Safe diagnostics include the source line when Django provides
+one. The request uses the existing Admin CSRF and `ADMIN.PERMISSION` boundaries;
+it does not save content, increment `revision`, or invalidate caches.
+
+This action deliberately does not render the template and therefore does not
+run XSD validation. It cannot prove the final XML structure, resolve includes,
+exercise conditional branches, or detect context-dependent failures. Those
+checks still occur through normal publication and rendered-response validation.
+A successful draft check means that the source can be safely compiled without
+context, not that every possible rendered document is valid.
+
 Publication compiles Django template syntax before writing or incrementing a
 revision. Invalid tags, variables, or blocks are reported next to `content`.
 This check does not render the template: context-dependent XML and schema
