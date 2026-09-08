@@ -9,14 +9,16 @@ from django.contrib import admin, messages
 from django.db import DEFAULT_DB_ALIAS, connections, models, router
 from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
 from django.template.response import TemplateResponse
-from django.urls import path
+from django.urls import NoReverseMatch, path, reverse
 from django.utils.datastructures import MultiValueDict
 
 from dj_hyperview.conf import get_settings
-from dj_hyperview.exceptions import InvalidTemplateName
+from dj_hyperview.exceptions import HyperviewConfigurationError, InvalidTemplateName
+from dj_hyperview.preview import render_preview
 from dj_hyperview.schema import get_hyperview_catalog
 
 from ._identity import template_name_identity
+from .admin_preview import _error, _payload
 from .models import HyperviewTemplate
 from .services import (
     PublicationConflict,
@@ -91,7 +93,30 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
         if get_settings().admin.editor and "content" in self.fields:
             from .admin_editor import HyperviewAceWidget
 
-            self.fields["content"].widget = HyperviewAceWidget()
+            preview = get_settings().admin.preview
+            preview_url = ""
+            if preview.enabled:
+                prefix = (
+                    f"{getattr(self, '_preview_namespace', 'admin')}:"
+                    "dj_hyperview_database_hyperviewtemplate_hxml_preview_"
+                )
+                try:
+                    preview_url = reverse(
+                        prefix + ("add" if self.instance.pk is None else "change"),
+                        args=None if self.instance.pk is None else [self.instance.pk],
+                    )
+                except NoReverseMatch:
+                    pass
+            self.fields["content"].widget = HyperviewAceWidget(
+                preview_url=preview_url,
+                draft_name=self.instance.name,
+                preview_scenarios=tuple(
+                    (identifier, scenario.label)
+                    for identifier, scenario in preview.scenarios.items()
+                )
+                if preview_url
+                else (),
+            )
         if self.instance.pk is None:
             self.fields.pop("expected_revision", None)
         else:
@@ -172,6 +197,28 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         "admin/dj_hyperview_database/hyperviewtemplate/delete_confirmation.html"
     )
 
+    def get_form(
+        self,
+        request: HttpRequest,
+        obj: HyperviewTemplate | None = None,
+        change: bool = False,
+        **kwargs: Any,
+    ) -> type[forms.ModelForm]:
+        """Bind preview routes to this AdminSite's generated form class.
+
+        Args:
+            request: Current Admin request.
+            obj: Stored object being edited, or None for creation.
+            change: Whether this is a change form.
+            **kwargs: Standard model form factory options.
+
+        Returns:
+            Request-local form class using this site's preview namespace.
+        """
+        form = super().get_form(request, obj, change=change, **kwargs)
+        form._preview_namespace = self.admin_site.name
+        return form
+
     def has_add_permission(self, request: HttpRequest) -> bool:
         """Apply the configured mutation policy to template creation.
 
@@ -243,9 +290,65 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
                 "hxml-catalog/",
                 self.admin_site.admin_view(self.hxml_catalog_view),
                 name=name,
-            )
+            ),
+            path(
+                "hxml-preview/add/",
+                self.admin_site.admin_view(self.hxml_preview_view),
+                name=f"{opts.app_label}_{opts.model_name}_hxml_preview_add",
+            ),
+            path(
+                "<path:object_id>/hxml-preview/",
+                self.admin_site.admin_view(self.hxml_preview_view),
+                name=f"{opts.app_label}_{opts.model_name}_hxml_preview_change",
+            ),
         ]
         return custom + super().get_urls()
+
+    def hxml_preview_view(
+        self, request: HttpRequest, object_id: str | None = None
+    ) -> JsonResponse:
+        """Render an authorized unsaved draft without publishing it.
+
+        Args:
+            request: Authenticated CSRF-protected Admin request.
+            object_id: Stored object whose change permission is required, or None.
+
+        Returns:
+            Preview diagnostics, or a safe transport and permission error.
+        """
+        if request.method != "POST":
+            response = _error("method_not_allowed", "Use POST for preview.", 405)
+            response["Allow"] = "POST"
+            return response
+        config = get_settings()
+        if not config.admin.editor or not config.admin.preview.enabled:
+            return _error("preview_disabled", "Template preview is not enabled.", 404)
+        if object_id is None:
+            allowed = self.has_add_permission(request)
+        else:
+            obj = self.get_object(request, object_id)
+            if obj is None:
+                return _error("not_found", "Template was not found.", 404)
+            allowed = self.has_change_permission(request, obj)
+        if not allowed:
+            return _error(
+                "permission_denied", "Template preview is not permitted.", 403
+            )
+        payload = _payload(request)
+        if isinstance(payload, JsonResponse):
+            return payload
+        try:
+            result = render_preview(
+                payload["name"],
+                payload["content"],
+                payload["scenario"],
+                request=request,
+            )
+        except HyperviewConfigurationError:
+            return _error(
+                "configuration_error", "Template preview is unavailable.", 500
+            )
+        return JsonResponse(result)
 
     def hxml_catalog_view(self, request: HttpRequest) -> JsonResponse:
         """Return completion metadata to authorized template editors.
@@ -299,7 +402,11 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
             request.method == "POST"
             and match is not None
             and match.url_name is not None
-            and match.url_name.endswith(("_change", "_delete"))
+            and match.url_name
+            in {
+                f"{self.opts.app_label}_{self.opts.model_name}_change",
+                f"{self.opts.app_label}_{self.opts.model_name}_delete",
+            }
         ):
             alias = router.db_for_write(self.model) or DEFAULT_DB_ALIAS
             return queryset.using(alias).select_for_update()
