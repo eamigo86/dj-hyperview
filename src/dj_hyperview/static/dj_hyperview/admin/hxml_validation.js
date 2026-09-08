@@ -81,6 +81,16 @@
     };
   }
 
+  function formatDraft(editor, formatter) {
+    const source = editor.getValue();
+    const result = formatter(source);
+    const changed = result.ok && result.value !== source;
+    if (changed) {
+      editor.setValue(result.value, -1);
+    }
+    return {ok: result.ok, value: result.value, changed: changed};
+  }
+
   function sourceLocation(diagnostic, name) {
     if (
       diagnostic.coordinate_space !== "source" ||
@@ -105,11 +115,12 @@
     if (!editor || !actions || !form || textarea.dataset.validationInstalled) {
       return;
     }
-    const button = actions.querySelector(".djhv-validate-source");
+    const button = actions.querySelector(".djhv-format-validate");
+    const formatStatus = actions.querySelector(".djhv-editor-status");
     const status = actions.querySelector(".djhv-source-validation-status");
     const diagnostics = actions.nextElementSibling;
     const name = form.querySelector('[name="name"]');
-    if (!button || !status || !diagnostics || !name) {
+    if (!button || !formatStatus || !status || !diagnostics || !name) {
       return;
     }
     textarea.dataset.validationInstalled = "true";
@@ -180,7 +191,23 @@
       },
     });
 
-    button.addEventListener("click", controller.validate);
+    button.addEventListener("click", function () {
+      const editorApi = window.djHyperviewEditor;
+      if (editorApi && typeof editorApi.formatHxml === "function") {
+        const result = formatDraft(editor, editorApi.formatHxml);
+        if (result.ok) {
+          formatStatus.textContent = result.changed ?
+            "HXML formatted." : "HXML was already formatted.";
+        } else {
+          formatStatus.textContent =
+            "HXML could not be formatted safely; validation used the unchanged source.";
+        }
+      } else {
+        formatStatus.textContent =
+          "HXML formatting is unavailable; validation used the unchanged source.";
+      }
+      controller.validate();
+    });
     editor.getSession().on("change", controller.changed);
     name.addEventListener("input", controller.changed);
   }
@@ -195,6 +222,7 @@
 
   return {
     createController: createController,
+    formatDraft: formatDraft,
     readDraft: readDraft,
     sourceLocation: sourceLocation,
   };

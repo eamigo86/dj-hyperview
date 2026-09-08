@@ -96,9 +96,8 @@ class HyperviewAceWidget(AceWidget):
         editor = super().render(name, value, resolved_attrs, renderer)
         return format_html(
             '{}<div class="djhv-editor-actions">'
-            '<button type="button" class="button djhv-format-hxml">Format HXML</button>'
-            '<button type="button" class="button djhv-validate-source">'
-            "Validate source</button>"
+            '<button type="button" class="button djhv-format-validate">'
+            "Format and Validate</button>"
             '<span class="djhv-editor-status" role="status" aria-live="polite"></span>'
             '<span class="djhv-source-validation-status" role="status" '
             'aria-live="polite"></span>'

@@ -122,7 +122,7 @@ def test_database_admin_guide_matches_public_services_and_optional_apps() -> Non
     assert "case-insensitive" in page
     assert 'uv add "dj-hyperview[editor]"' in page
     assert '"django_ace"' in page
-    assert "Format HXML" in page
+    assert "Format and Validate" in page
     assert "not history or rollback" in normalized
     assert "does not render" in page
     assert len(blocks) >= 2

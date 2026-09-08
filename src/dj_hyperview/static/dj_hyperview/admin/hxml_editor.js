@@ -452,17 +452,7 @@
       });
     }
     const actions = textarea.closest(".django-ace-editor").nextElementSibling;
-    const button = actions.querySelector(".djhv-format-hxml");
     const status = actions.querySelector(".djhv-editor-status");
-    button.addEventListener("click", function () {
-      const result = formatHxml(editor.getValue());
-      if (result.ok) {
-        editor.setValue(result.value, -1);
-        status.textContent = "HXML formatted.";
-      } else {
-        status.textContent = "HXML could not be formatted safely; no changes were made.";
-      }
-    });
 
     const setTheme = function () {
       const selected = document.documentElement.dataset.theme;

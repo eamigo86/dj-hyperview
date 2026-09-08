@@ -4,6 +4,13 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+### Changed
+
+- The optional Admin editor now exposes one **Format and Validate** action. It
+  applies conservative formatting first and then validates the resulting Ace
+  buffer. When formatting is unsafe, validation still runs against the unchanged
+  source and reports both outcomes independently.
+
 ## 0.1.0a14 — 2026-09-08
 
 ### Added

@@ -91,7 +91,7 @@ def test_enabled_admin_editor_uses_local_strict_csp_assets() -> None:
     assert 'data-mode="xml"' in rendered
     assert 'data-usestrictcsp="true"' in rendered
     assert 'data-hyperview-catalog-url="/admin/' in rendered
-    assert "Format HXML" in rendered
+    assert "Format and Validate" in rendered
     assert "https://" not in media
     assert "dj_hyperview/admin/hxml_mode.js" in media
     assert "dj_hyperview/admin/hxml_editor.js" in media
@@ -459,7 +459,7 @@ def test_view_only_staff_can_open_template_without_edit_controls(
     assert response.context["has_delete_permission"] is False
     assert b'name="_save"' not in response.content
     assert b'class="deletelink"' not in response.content
-    assert b"djhv-format-hxml" not in response.content
+    assert b"djhv-format-validate" not in response.content
     assert b"&lt;view /&gt;" in response.content
     assert rejected.status_code == 403
     template.refresh_from_db()

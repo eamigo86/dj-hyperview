@@ -3,7 +3,7 @@ import test from "node:test";
 
 import validationApi from "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_validation.js";
 
-const {createController, readDraft, sourceLocation} = validationApi;
+const {createController, formatDraft, readDraft, sourceLocation} = validationApi;
 
 
 test("validation reads the unsaved name and current Ace buffer", () => {
@@ -14,6 +14,44 @@ test("validation reads the unsaved name and current Ace buffer", () => {
     name: "screens/draft.xml",
     content: "<view>{{ draft }}</view>",
   });
+});
+
+
+test("combined action formats the Ace buffer before validation reads it", () => {
+  let value = '<view><text>Ready</text></view>';
+  const writes = [];
+  const editor = {
+    getValue: () => value,
+    setValue: (next, cursor) => {
+      value = next;
+      writes.push([next, cursor]);
+    },
+  };
+
+  const result = formatDraft(editor, () => ({
+    ok: true,
+    value: '<view>\n  <text>Ready</text>\n</view>',
+  }));
+
+  assert.equal(result.ok, true);
+  assert.deepEqual(writes, [['<view>\n  <text>Ready</text>\n</view>', -1]]);
+  assert.equal(readDraft(editor, {value: "screen.xml"}).content, result.value);
+});
+
+
+test("combined action still validates unchanged source when formatting is unsafe", () => {
+  const source = '<view><text>{{ label }}</view>';
+  const writes = [];
+  const editor = {
+    getValue: () => source,
+    setValue: (...args) => writes.push(args),
+  };
+
+  const result = formatDraft(editor, () => ({ok: false, value: source}));
+
+  assert.deepEqual(result, {ok: false, value: source, changed: false});
+  assert.deepEqual(writes, []);
+  assert.equal(readDraft(editor, {value: "screen.xml"}).content, source);
 });
 
 

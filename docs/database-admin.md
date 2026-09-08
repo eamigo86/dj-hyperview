@@ -189,14 +189,14 @@ contextual completion for elements, unused attributes, enumerated values, and
 configured namespace prefixes. Its catalog endpoint requires authentication
 and view permission for the template model.
 
-**Format HXML** indents only structural whitespace in known element-only
-Hyperview containers. It preserves original opening tags, quoted attribute
-values, significant text and mixed content, CDATA, custom component subtrees,
-and preformatted or `xml:space`-preserving content. Django tokens and complete
-`comment`/`verbatim` bodies remain byte-for-byte unchanged; no replacement
-markers or XML reserialization are used. Would-be Django tokens whose delimiters
-span an LF newline are rejected unchanged; raw `comment`/`verbatim` bodies may
-still span multiple lines.
+**Format and Validate** first indents only structural whitespace in known
+element-only Hyperview containers. It preserves original opening tags, quoted
+attribute values, significant text and mixed content, CDATA, custom component
+subtrees, and preformatted or `xml:space`-preserving content. Django tokens and
+complete `comment`/`verbatim` bodies remain byte-for-byte unchanged; no
+replacement markers or XML reserialization are used. Would-be Django tokens
+whose delimiters span an LF newline are rejected unchanged; raw
+`comment`/`verbatim` bodies may still span multiple lines.
 
 Balanced conditional branches containing complete elements can be formatted.
 Ambiguous or incomplete markup, branch-dependent opening/closing tags, and
@@ -206,8 +206,11 @@ formatter is not a substitute for publish-time template validation. Ace
 synchronizes back to Django's textarea before submission, so standard form
 processing remains the source of truth.
 
-**Validate source** checks the current unsaved name and Ace buffer without
-publishing or mutating the stored template. It verifies the canonical name,
+After formatting, the same action checks the current unsaved name and Ace
+buffer without publishing or mutating the stored template. If conservative
+formatting cannot safely rewrite the source, validation still runs against the
+unchanged source and the Admin reports both results. Validation verifies the
+canonical name,
 nonempty source, UTF-8 and size limits, forbidden declarations, and Django
 template syntax. It also performs static XSD catalog checks for element names,
 attribute names, required attributes, and literal enumerated values. The catalog

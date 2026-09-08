@@ -350,6 +350,15 @@ def test_changelog_prepares_the_0_1_0a14_release() -> None:
     assert "warning rather than a false success" in page
 
 
+def test_changelog_records_the_combined_admin_authoring_action() -> None:
+    """Unreleased notes explain the single format-and-validate workflow."""
+    page = _documentation_pages()["changelog.md"]
+    normalized = " ".join(page.split())
+
+    assert "Format and Validate" in page
+    assert "unchanged source" in normalized
+
+
 def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:
     """Security guidance covers callable and dotted mutation policies."""
     pages = _documentation_pages()
@@ -497,11 +506,12 @@ def test_repository_readme_presents_the_public_package_journey() -> None:
 
 
 def test_database_admin_documents_context_free_draft_validation() -> None:
-    """The editor guide states exactly what Validate source can and cannot prove."""
+    """The editor guide states what the combined authoring action can prove."""
     page = _documentation_pages()["database-admin.md"]
     normalized = " ".join(page.split())
 
-    assert "Validate source" in page
+    assert "Format and Validate" in page
+    assert "unchanged source" in normalized
     assert "does not render" in normalized
     assert "static XSD" in normalized
     assert "full rendered XSD" in normalized

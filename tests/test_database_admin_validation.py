@@ -48,8 +48,9 @@ def test_enabled_editor_exposes_context_free_validation_control() -> None:
     media = str(widget.media)
 
     assert 'data-hyperview-validation-url="/admin/' in rendered
-    assert 'class="button djhv-validate-source"' in rendered
-    assert "Validate source" in rendered
+    assert 'class="button djhv-format-validate"' in rendered
+    assert "Format and Validate" in rendered
+    assert rendered.count('<button type="button"') == 1
     assert "dj_hyperview/admin/hxml_validation.js" in media
     assert "preview" not in rendered.casefold()
     assert "preview" not in media.casefold()
