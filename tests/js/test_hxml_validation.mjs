@@ -3,7 +3,13 @@ import test from "node:test";
 
 import validationApi from "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_validation.js";
 
-const {createController, formatDraft, readDraft, sourceLocation} = validationApi;
+const {
+  createController,
+  createSavePreflight,
+  formatDraft,
+  readDraft,
+  sourceLocation,
+} = validationApi;
 
 
 test("validation reads the unsaved name and current Ace buffer", () => {
@@ -87,10 +93,11 @@ test("validation reports a current successful response", async () => {
     onResult: (result) => results.push(result),
   });
 
-  await controller.validate();
+  const result = await controller.validate();
 
   assert.deepEqual(states, ["loading", "valid"]);
   assert.deepEqual(results, [response]);
+  assert.equal(result, response);
 });
 
 
@@ -110,6 +117,133 @@ test("validation distinguishes an incomplete static schema check", async () => {
   await controller.validate();
 
   assert.deepEqual(states, ["loading", "partial"]);
+});
+
+
+test("validation returns a fail-closed result when transport is unavailable", async () => {
+  const states = [];
+  const results = [];
+  const controller = createController({
+    read: () => ({name: "screen.xml", content: "<view />"}),
+    send: async () => { throw new Error("offline"); },
+    onState: (state) => states.push(state),
+    onResult: (result) => results.push(result),
+  });
+
+  const result = await controller.validate();
+
+  assert.equal(result.ok, false);
+  assert.equal(result.diagnostics[0].code, "transport_error");
+  assert.deepEqual(states, ["loading", "error"]);
+  assert.deepEqual(results, [result]);
+});
+
+
+test("save preflight resumes the exact Django Admin submit action", async () => {
+  for (const name of ["_save", "_addanother", "_continue"]) {
+    const submitter = {name};
+    const resumed = [];
+    const preflight = createSavePreflight({
+      run: async () => ({ok: true, diagnostics: []}),
+      resume: (button) => resumed.push(button),
+    });
+    let prevented = false;
+
+    await preflight.handleSubmit({
+      submitter,
+      preventDefault: () => { prevented = true; },
+    });
+
+    assert.equal(prevented, true);
+    assert.deepEqual(resumed, [submitter]);
+  }
+});
+
+
+test("save preflight blocks invalid and unavailable validation", async () => {
+  for (const result of [
+    {ok: false, diagnostics: [{severity: "error"}]},
+    null,
+  ]) {
+    let resumed = false;
+    const preflight = createSavePreflight({
+      run: async () => result,
+      resume: () => { resumed = true; },
+    });
+
+    await preflight.handleSubmit({
+      submitter: {name: "_save"},
+      preventDefault: () => {},
+    });
+
+    assert.equal(resumed, false);
+  }
+});
+
+
+test("save preflight allows warning-only validation", async () => {
+  let resumed = false;
+  const preflight = createSavePreflight({
+    run: async () => ({
+      ok: true,
+      diagnostics: [{severity: "warning"}],
+    }),
+    resume: () => { resumed = true; },
+  });
+
+  await preflight.handleSubmit({
+    submitter: {name: "_continue"},
+    preventDefault: () => {},
+  });
+
+  assert.equal(resumed, true);
+});
+
+
+test("save preflight does not recurse while resuming native submission", async () => {
+  let runs = 0;
+  let resumed = 0;
+  let preflight;
+  const submitter = {name: "_save"};
+  preflight = createSavePreflight({
+    run: async () => {
+      runs += 1;
+      return {ok: true, diagnostics: []};
+    },
+    resume: () => {
+      resumed += 1;
+      void preflight.handleSubmit({
+        submitter,
+        preventDefault: () => assert.fail("native resume was intercepted"),
+      });
+    },
+  });
+
+  await preflight.handleSubmit({submitter, preventDefault: () => {}});
+
+  assert.equal(runs, 1);
+  assert.equal(resumed, 1);
+});
+
+
+test("save preflight ignores unrelated form submit actions", async () => {
+  let ran = false;
+  const preflight = createSavePreflight({
+    run: async () => {
+      ran = true;
+      return {ok: true, diagnostics: []};
+    },
+    resume: () => assert.fail("unrelated submit must stay native"),
+  });
+  let prevented = false;
+
+  await preflight.handleSubmit({
+    submitter: {name: "_delete"},
+    preventDefault: () => { prevented = true; },
+  });
+
+  assert.equal(ran, false);
+  assert.equal(prevented, false);
 });
 
 

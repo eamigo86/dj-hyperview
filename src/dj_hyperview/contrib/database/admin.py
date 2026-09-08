@@ -99,7 +99,7 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
             self.fields["expected_revision"].initial = self.instance.revision
 
     def clean(self) -> dict[str, Any]:
-        """Reject edits based on a stale persisted revision.
+        """Validate editor drafts and reject stale persisted revisions.
 
         Returns:
             Values cleaned by the standard model form boundary.
@@ -108,6 +108,7 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
             ValidationError: If the revision token is missing, ambiguous, or stale.
         """
         cleaned = super().clean()
+        self._validate_editor_draft(cleaned)
         if self.instance.pk is None:
             return cleaned
         try:
@@ -122,6 +123,38 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
         if not revision_matches:
             raise forms.ValidationError(_CONFLICT_MESSAGE, code="publication_conflict")
         return cleaned
+
+    def _validate_editor_draft(self, cleaned: dict[str, Any]) -> None:
+        """Apply the editor's source checks at the authoritative form boundary.
+
+        Args:
+            cleaned: Values accepted by field-level form validation.
+        """
+        if not get_settings().admin.editor:
+            return
+        name = cleaned.get("name")
+        content = cleaned.get("content")
+        if not isinstance(name, str) or not isinstance(content, str):
+            return
+        try:
+            result = validate_draft_source(name, content)
+        except HyperviewConfigurationError:
+            self.add_error(
+                None,
+                forms.ValidationError(
+                    "Template validation is unavailable.",
+                    code="configuration_error",
+                ),
+            )
+            return
+        for diagnostic in result["diagnostics"]:
+            if diagnostic["severity"] != "error":
+                continue
+            field = "name" if diagnostic["code"] == "invalid_name" else "content"
+            self.add_error(
+                field,
+                forms.ValidationError(diagnostic["message"], code=diagnostic["code"]),
+            )
 
     def clean_name(self) -> str:
         """Reject another row with the same byte-exact name identity.

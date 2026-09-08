@@ -36,22 +36,23 @@
       try {
         const result = await options.send(snapshot, pending.signal);
         if (current !== generation) {
-          return;
+          return null;
         }
         if (identity !== JSON.stringify(options.read())) {
           options.onState("stale");
-          return;
+          return null;
         }
         options.onResult(result, snapshot);
         const partial = result.diagnostics.some(function (item) {
           return item.severity === "warning";
         });
         options.onState(result.ok ? (partial ? "partial" : "valid") : "error");
+        return result;
       } catch (_error) {
         if (current !== generation) {
-          return;
+          return null;
         }
-        options.onResult({
+        const result = {
           ok: false,
           diagnostics: [{
             severity: "error",
@@ -62,8 +63,10 @@
             line: null,
             column: null,
           }],
-        }, snapshot);
+        };
+        options.onResult(result, snapshot);
         options.onState("error");
+        return result;
       } finally {
         if (current === generation) {
           pending = null;
@@ -72,6 +75,32 @@
     }
 
     return {changed: changed, validate: validate};
+  }
+
+  const SAVE_ACTIONS = new Set(["_save", "_addanother", "_continue"]);
+
+  function createSavePreflight(options) {
+    let resuming = false;
+
+    async function handleSubmit(event) {
+      const submitter = event.submitter;
+      if (resuming || !submitter || !SAVE_ACTIONS.has(submitter.name)) {
+        return;
+      }
+      event.preventDefault();
+      const result = await options.run();
+      if (!result || result.ok !== true) {
+        return;
+      }
+      resuming = true;
+      try {
+        options.resume(submitter);
+      } finally {
+        resuming = false;
+      }
+    }
+
+    return {handleSubmit: handleSubmit};
   }
 
   function readDraft(editor, name) {
@@ -191,7 +220,7 @@
       },
     });
 
-    button.addEventListener("click", function () {
+    function formatAndValidate() {
       const editorApi = window.djHyperviewEditor;
       if (editorApi && typeof editorApi.formatHxml === "function") {
         const result = formatDraft(editor, editorApi.formatHxml);
@@ -206,8 +235,19 @@
         formatStatus.textContent =
           "HXML formatting is unavailable; validation used the unchanged source.";
       }
-      controller.validate();
+      return controller.validate();
+    }
+
+    button.addEventListener("click", function () {
+      void formatAndValidate();
     });
+    const savePreflight = createSavePreflight({
+      run: formatAndValidate,
+      resume: function (submitter) {
+        form.requestSubmit(submitter);
+      },
+    });
+    form.addEventListener("submit", savePreflight.handleSubmit);
     editor.getSession().on("change", controller.changed);
     name.addEventListener("input", controller.changed);
   }
@@ -222,6 +262,7 @@
 
   return {
     createController: createController,
+    createSavePreflight: createSavePreflight,
     formatDraft: formatDraft,
     readDraft: readDraft,
     sourceLocation: sourceLocation,

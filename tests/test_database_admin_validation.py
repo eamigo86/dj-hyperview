@@ -118,6 +118,113 @@ def test_validation_rejects_static_attribute_missing_from_xsd_catalog(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize("submit_action", ["_save", "_addanother", "_continue"])
+def test_admin_save_actions_reject_invalid_static_schema_without_javascript(
+    admin_client, submit_action: str
+) -> None:
+    """The server form remains authoritative when browser checks are bypassed."""
+    _, model = _admin_types()
+    add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
+    source = (
+        '<styles xmlns="https://hyperview.org/hyperview">\n'
+        '  <style id="card" kk="1" />\n'
+        "</styles>"
+    )
+
+    response = admin_client.post(
+        add,
+        {
+            "name": "screens/draft.xml",
+            "content": source,
+            "active": "on",
+            submit_action: "Save",
+        },
+    )
+
+    errors = response.context["adminform"].form.errors.as_data()
+    assert response.status_code == 200
+    assert model.objects.count() == 0
+    assert errors["content"][0].code == "schema_attribute"
+    assert 'Attribute "kk" is not allowed on element "style".' in str(
+        errors["content"][0].message
+    )
+    assert source not in str(errors)
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_admin_save_allows_warning_only_static_schema_result() -> None:
+    """Incomplete static analysis warns in the browser but does not block save."""
+    module, _ = _admin_types()
+    source = '<image xmlns="https://hyperview.org/hyperview" {{ attributes }} />'
+    form = module.HyperviewTemplateAdminForm(
+        data={
+            "name": "screens/dynamic.xml",
+            "content": source,
+            "active": True,
+        }
+    )
+
+    assert form.is_valid(), form.errors.as_data()
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_admin_form_skips_draft_validation_when_required_fields_failed(
+    monkeypatch,
+) -> None:
+    """Field errors remain authoritative and never pass partial values onward."""
+    module, _ = _admin_types()
+
+    def unexpected_validation(name: str, content: str) -> dict[str, Any]:
+        raise AssertionError((name, content))
+
+    monkeypatch.setattr(module, "validate_draft_source", unexpected_validation)
+    form = module.HyperviewTemplateAdminForm(data={"active": True})
+
+    assert form.is_valid() is False
+    assert {"name", "content"} <= set(form.errors)
+
+
+@pytest.mark.django_db
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_admin_form_maps_invalid_draft_name_to_name_field() -> None:
+    module, _ = _admin_types()
+    form = module.HyperviewTemplateAdminForm(
+        data={"name": "../private.xml", "content": "<view />", "active": True}
+    )
+
+    assert form.is_valid() is False
+    assert form.errors.as_data()["name"][0].code == "invalid_name"
+
+
+@pytest.mark.django_db
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_admin_form_fails_closed_when_draft_validation_is_unavailable(
+    monkeypatch,
+) -> None:
+    module, _ = _admin_types()
+    from dj_hyperview.exceptions import HyperviewConfigurationError
+
+    def unavailable(name: str, content: str) -> dict[str, Any]:
+        raise HyperviewConfigurationError(["unsafe internal detail"])
+
+    monkeypatch.setattr(module, "validate_draft_source", unavailable)
+    form = module.HyperviewTemplateAdminForm(
+        data={"name": "screen.xml", "content": "<view />", "active": True}
+    )
+
+    assert form.is_valid() is False
+    error = form.non_field_errors().as_data()[0]
+    assert error.code == "configuration_error"
+    assert str(error.message) == "Template validation is unavailable."
+    assert "unsafe internal detail" not in str(form.errors.as_data())
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize(
     ("source", "code", "message"),
     [

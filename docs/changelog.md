@@ -4,6 +4,13 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+### Changed
+
+- The optional Admin editor now runs **Format and Validate** before **Save**,
+  **Save and add another**, and **Save and continue editing**. Errors block the
+  write with inline diagnostics, warning-only results continue the selected
+  action, and the server form repeats validation when JavaScript is bypassed.
+
 ## 0.1.0a15 — 2026-09-08
 
 ### Changed

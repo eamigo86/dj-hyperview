@@ -220,6 +220,18 @@ diagnostics include the source line when it is available. The request uses the
 existing Admin CSRF and `ADMIN.PERMISSION` boundaries; it does not save content,
 increment `revision`, or invalidate caches.
 
+The standard **Save**, **Save and add another**, and **Save and continue
+editing** actions run this same format-and-validate preflight automatically.
+Validation errors keep the form open and display the diagnostics; warning-only
+results allow the selected Django Admin action to continue. The exact submit
+action is preserved. If formatting is unsafe, the unchanged source is validated
+and can still be saved when valid.
+
+The browser preflight improves feedback but is not the trust boundary. With the
+editor enabled, the Django `ModelForm` repeats the source and static-schema
+checks before every write, so bypassing or disabling JavaScript cannot persist a
+draft that those checks reject.
+
 This action deliberately does not render the template and therefore does not
 run full rendered XSD validation. Dynamic attribute values are deferred, and the
 check cannot prove the final XML structure, resolve includes, exercise one final
