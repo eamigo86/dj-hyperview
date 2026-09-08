@@ -305,7 +305,9 @@ def test_workflow_audit_ignores_mapping_key_order() -> None:
 def test_workflow_audit_preserves_sequence_order() -> None:
     """Reordering an execution dependency remains a semantic change."""
     mutated = WORKFLOW.read_text().replace(
-        "needs: [quality, compatibility]", "needs: [compatibility, quality]", 1
+        "needs: [quality, compatibility, browser]",
+        "needs: [compatibility, quality, browser]",
+        1,
     )
 
     assert _audit_workflow(mutated) == ["workflow: semantic contract is not approved"]
@@ -425,6 +427,13 @@ def _tagged_workflow_signature(text: str) -> tuple[object, ...]:
 
 
 APPROVED_RUN_CONTRACT = {
+    "browser": (
+        "uv sync --locked --group browser --no-build",
+        "uv run --locked --group browser python -m playwright "
+        "install --with-deps chromium",
+        "DJHV_TEST_BROWSER=1 uv run --locked --group browser python -m pytest -q "
+        "--ds=tests.settings_browser tests/browser",
+    ),
     "quality": (
         "uv sync --locked",
         "node --test tests/js/*.mjs",
@@ -496,6 +505,7 @@ APPROVED_RUN_CONTRACT = {
 }
 
 APPROVED_JOB_KEYS = {
+    "browser": {"runs-on", "timeout-minutes", "steps"},
     "quality": {"runs-on", "timeout-minutes", "steps"},
     "compatibility": {"runs-on", "timeout-minutes", "strategy", "steps"},
     "redis": {"if", "needs", "runs-on", "timeout-minutes", "env", "services", "steps"},
@@ -503,6 +513,14 @@ APPROVED_JOB_KEYS = {
 }
 
 APPROVED_STEP_KEYS = {
+    "browser": (
+        {"uses"},
+        {"uses", "with"},
+        {"uses", "with"},
+        {"name", "run"},
+        {"name", "run"},
+        {"name", "run"},
+    ),
     "quality": (
         {"uses"},
         {"uses", "with"},
@@ -769,7 +787,7 @@ def test_artifact_job_builds_checks_and_smokes_one_immutable_candidate() -> None
         if "actions/upload-artifact" in step.get("uses", "")
     )
 
-    assert job["needs"] == ["quality", "compatibility"]
+    assert job["needs"] == ["quality", "compatibility", "browser"]
     assert "uv build" in script
     assert "uv run python -m tools.package_guard dist/*.whl" in script
     assert "uv run zensical build --clean --strict -f zensical.yml" in script
