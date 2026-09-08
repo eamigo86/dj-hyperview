@@ -47,15 +47,33 @@ Publish validation rejects unsafe declarations before Django compiles a
 template. Render validation then parses the final UTF-8 XML with entity
 resolution and network access disabled, applying byte, depth, node, and schema
 limits. DTD declarations and entities are forbidden. The optional bundled
-validator uses XSD 1.1 and the official Hyperview 0.110.0 schemas.
+validator uses XSD 1.1. The default `SCHEMA_PROFILE="upstream-0.110.0"` preserves
+the official schemas; opt-in `compatible-0.110.0` permits percentages only in
+the nine style margin attributes. It does not relax unrelated style types.
+
+Declaration scanning is linear in document length, including repeated unclosed
+Django delimiters. Only the source scan recognizes Django comments: after
+rendering, values such as `{% comment %}` are literal data, not template syntax.
+XML comments, CDATA and processing instructions remain inert in both passes.
+Source inline comments follow Django's LF-only boundary; malformed block
+comments are left for template compilation to reject. Keep byte limits enabled
+as a separate bound on memory and parser work.
 
 Configured extra schemas may use local includes, imports, and redefines within
 their own directory. Remote schema references and traversal outside that root
-are rejected before compilation. Duplicate declarations must be identical.
+are rejected before compilation. References must use plain local paths:
+percent-encoded locations are rejected so URL decoding cannot redirect the
+compiler to a different dependency than the guard inspected. Each extra schema
+is bounded to 256 distinct canonical files, with include cycles visited once.
+`xs:override` is forbidden in extra schemas;
+only the fixed, packaged compatibility adaptation uses it. Duplicate
+declarations must be identical.
 The registry never fetches schemas from the network or exposes schema paths in
 public errors. `MAX_DEPTH` cannot exceed the libxml2 safety ceiling of 256.
-Compiled schemas are reused until their path, size, modification time, or the
-relevant Django setting changes.
+Validation and editor catalogs check the complete transitive dependency graph
+before reusing cached results. Changes to dependency paths, sizes, modification
+times, or settings invalidate the shared identity, so completion cannot retain
+a stale included schema while validation uses its replacement.
 
 ## Render a Hyperview CSRF field
 
@@ -74,6 +92,8 @@ Load the package tag library and render `hv_csrf_token` inside a form:
 The tag emits an escaped hidden Hyperview text field. Render validation removes
 leading whitespace produced before an XML declaration, and Hyperview responses
 require UTF-8 in both the declaration and HTTP charset.
+An initial UTF-8 BOM is preserved, but cannot hide a contradictory encoding
+declaration such as `ISO-8859-1`.
 
 Use Django template variables for dynamic values so autoescaping remains active;
 do not concatenate untrusted text into XML markup. `TemplateValidationError`

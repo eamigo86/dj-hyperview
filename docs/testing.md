@@ -41,6 +41,13 @@ uv run python -m tools.test_matrix --django-version 5.2.17
 uv run python -m tools.test_matrix --django-version 6.1.1
 ```
 
+Each compatibility cell runs the complete base suite followed by the optional
+Admin profile, then requires **line coverage ≥95% and branch coverage ≥95%**
+independently. The runner compares exact counters in the fresh `coverage.xml`,
+not rounded percentages, and rejects missing or invalid reports. It also keeps
+the combined 95% threshold. Use this runner rather than a plain `pytest` command
+when checking the complete coverage contract.
+
 The default profile requires no Redis service or network. Live Redis acceptance
 is explicit and opt-in. Keep source/backend failures deterministic rather than
 using sleeps in transaction or race tests.

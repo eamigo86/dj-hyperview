@@ -21,8 +21,9 @@ screens into the package.
 - **Live database publication** — edit validated templates through Django admin
   and expose committed changes on the next request, with an optional HXML-aware
   Ace editor.
-- **Cache consistency** — opt into any Django cache backend, including Redis,
-  with source-aware keys and generation-based invalidation.
+- **Cache consistency** — opt into a compatible Django cache backend, including
+  Redis, with source-aware keys and generation-based invalidation.
+  [File-based caches are not supported](docs/cache-consistency.md).
 - **Django-native HTTP integration** — use lazy template responses, class-based
   views, validated fragment responses, request metadata, content negotiation,
   and standard CSRF protection.
@@ -33,6 +34,14 @@ screens into the package.
 > dj-hyperview does not ship application screens, runtime application HXML,
 > mobile components, Redis, or a required database app. Those choices remain
 > under the consumer project's control.
+
+## Example application
+
+**[HyperTodo](https://github.com/eamigo86/HyperTodo)** is the maintained test
+application for dj-hyperview. It combines a Django backend with an Expo mobile
+client and demonstrates filesystem and database templates, fragment updates,
+shared caching, custom HXML components, themes, localization, biometrics, and
+file uploads.
 
 ## Requirements
 

@@ -9,6 +9,8 @@ application screens into the package.
 2. [Serve your first screen](quickstart.md).
 3. [Configure template resolution](configuration.md) for your deployment.
 4. Resolve a canonical template name through the public package API.
+5. Explore [HyperTodo](https://github.com/eamigo86/HyperTodo), the maintained
+   Django and Expo test application for dj-hyperview.
 
 The package owns resolution, validation, raw-template caching, HTTP responses,
 and optional database publication. Your Django project owns every screen,
@@ -33,7 +35,8 @@ Choose the next guide for your source:
 - [Add custom HXML elements](custom-schemas.md) when a mobile client extends
   the Hyperview vocabulary.
 - [Return documents and fragments](http-responses.md) with the right client contract.
-- [Create a mobile client](mobile-getting-started.md) without cloning an example app.
+- [Create a mobile client](mobile-getting-started.md), or compare the result with
+  the HyperTodo test application.
 - [Test a consumer integration](testing.md) across supported Django versions.
 - [Release and roll back](release-rollback.md) with reproducible gates.
 - [Review release changes](changelog.md) before upgrading.

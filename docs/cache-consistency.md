@@ -4,6 +4,13 @@ Enable raw-template caching only when repeated source reads justify another
 stateful dependency. With no `CACHE` section, resolution never initializes a
 Django cache backend.
 
+The backend must provide atomic `add()` and coherent reads for generation
+barriers. Django's `FileBasedCache` and its subclasses are rejected with
+`dj_hyperview.E018`: their separate existence check and write can resurrect an
+invalidated template. Direct `TemplateCache` use raises `SourceUnavailable` with
+reason `unsupported backend`. `FAILURE_MODE="bypass"` does not override this
+configuration error.
+
 Do not point `CACHE.ALIAS` at Django's `DummyCache`. That backend intentionally
 stores nothing and cannot satisfy generation or invalidation guarantees. Omit
 the `CACHE` section when caching should be disabled.
@@ -39,9 +46,11 @@ revision, and generation keep entries isolated.
 
 ## Select a Redis database
 
-`CACHE.ALIAS` can point to any stateful cache configured in Django. Redis host,
-credentials, logical database, and transport belong in `CACHES`; dj-hyperview
-only resolves the alias.
+`CACHE.ALIAS` can point to a compatible stateful cache configured in Django.
+Redis host, credentials, logical database, and transport belong in `CACHES`;
+dj-hyperview only resolves the alias. `LocMemCache` provides atomic operations
+inside one process, but a multi-process deployment needs a shared backend such
+as Redis so every worker observes invalidations.
 
 For example, dedicate Redis logical database 3 to Hyperview templates:
 
@@ -68,6 +77,11 @@ Change the final URL segment to select another logical database supported by
 the configured Redis deployment. A separate alias may also point to another
 Redis server or cluster. Backend-specific restrictions still apply; the
 package does not bypass limitations imposed by Django's backend or Redis.
+
+When upgrading from `FileBasedCache`, either remove the Hyperview `CACHE`
+section or configure a compatible backend before deployment. Use a fresh
+Hyperview namespace rather than copying old cache entries; do not clear a
+shared Django cache to migrate this package's entries.
 
 `bypass` returns authoritative source data when ordinary cache reads or writes
 fail. `raise` reports `SourceUnavailable` instead. Neither mode hides a real

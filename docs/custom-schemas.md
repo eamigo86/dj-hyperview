@@ -204,10 +204,41 @@ schema/
 <xs:include schemaLocation="components/swipe.xsd" />
 ```
 
-URLs, network retrieval, and paths such as `../shared.xsd` are rejected. The
-registry cache follows each file's resolved path, size, and nanosecond
-modification time, so saving a referenced local schema invalidates the compiled
-state without restarting Django.
+URLs, network retrieval, and paths such as `../shared.xsd` are rejected.
+`schemaLocation` must use a plain local path: percent encoding, backslashes,
+and surrounding whitespace are rejected because URI normalization could make
+the compiler load a different file from the one inspected by the safety guard. Symlinks cannot authorize
+dependencies outside the configured root directory. Each root is limited to
+256 distinct referenced files, including itself; local include cycles are
+visited once rather than recursively expanded forever.
+
+The registry and custom completion caches share the complete transitive graph
+of resolved paths, sizes, and nanosecond modification times, keyed by profile.
+They inspect references before cache hits. Saving a deeply included schema
+therefore refreshes both validation and autocomplete without restarting Django.
+
+DTD and entity declarations are forbidden in root and included schemas. Both
+compiler paths also disable entity expansion and reject compilation warnings,
+including warnings on imported schemas, rather than silently dropping a
+configured dependency and validating against an incomplete registry.
+
+Do not use `xs:override` in `EXTRA_SCHEMAS`: it is rejected with the stable
+`forbidden_schema_reference` validation code (`dj_hyperview.E012` during
+configuration checks). The only allowed override belongs to the package's fixed
+compatibility profile, not to arbitrary project schemas.
+
+## Choose the bundled validation profile
+
+`SCHEMA_PROFILE` defaults to `upstream-0.110.0`. The opt-in
+`compatible-0.110.0` profile adds signed decimal percentage values only to the
+nine Hyperview style margin attributes, preserving all other upstream types.
+Custom elements still participate in either profile's validation and catalog.
+See [percentage margin compatibility](configuration.md#opt-in-to-compatible-percentage-margins)
+for configuration and the exact boundary.
+
+Both profiles reuse the unchanged upstream completion catalog; runtime
+catalog responses identify the selection in `schema_profile`. Arbitrary extra
+schemas cannot replace the fixed overlay or broaden unrelated Hyperview types.
 
 ## Know the boundary
 

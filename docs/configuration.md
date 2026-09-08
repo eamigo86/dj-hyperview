@@ -32,6 +32,11 @@ initialization.
 generation state. To disable caching, omit `CACHE` instead of selecting a dummy
 cache alias.
 
+`FileBasedCache` and its subclasses are rejected with `dj_hyperview.E018`, even
+when `CACHE.FAILURE_MODE` is `bypass`: their non-atomic `add()` cannot protect
+template generations. Select a backend with atomic add and coherent reads, or
+omit `CACHE`. This is a configuration error, not a recoverable backend outage.
+
 ## Settings reference
 
 All keys are optional except the fields inside each configured source. Cache
@@ -46,7 +51,7 @@ empty mapping disables Hyperview caching.
 | `SOURCES[].BACKEND` | Dotted import path | Required | Importable source class for one entry. Built-in paths are shown below. |
 | `SOURCES[].OPTIONS` | Mapping | `{}` | Keyword arguments passed to that source class constructor. Supported keys are backend-specific. |
 | `CACHE` | Mapping | Omitted (disabled) | Enables raw-source and source-miss caching when non-empty. It does not cache compiled templates. |
-| `CACHE.ALIAS` | String | `"default"` | Configured stateful Django cache alias. `DummyCache` is unsupported. |
+| `CACHE.ALIAS` | String | `"default"` | Django cache alias with atomic add and coherent reads. `DummyCache` and `FileBasedCache` are unsupported. |
 | `CACHE.NAMESPACE` | Non-empty string | `"dj-hyperview"` | Prefix domain that isolates all Hyperview cache keys. Change it to abandon previously published cache state. |
 | `CACHE.TTL` | Integer greater than or equal to 1 | 300 seconds | Lifetime of successful raw-template and resolved-source entries. Generation keys do not expire. |
 | `CACHE.NEGATIVE_TTL` | Integer greater than or equal to 0 | 15 seconds | Lifetime of explicit source misses. Zero disables effective negative-entry retention. |
@@ -61,6 +66,7 @@ empty mapping disables Hyperview caching.
 | `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
 | `ADMIN.PERMISSION` | Callable or dotted callable path | Superuser-only callback | Authoritative mutation policy for adding, changing, and deleting stored templates. The callable receives the current `HttpRequest` and must return the literal boolean `True`; exceptions and non-boolean results deny access. |
 | `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.110.0 registry and completion catalog. URLs are rejected. |
+| `SCHEMA_PROFILE` | `upstream-0.110.0` or `compatible-0.110.0` | `"upstream-0.110.0"` | Selects the bundled validator and editor profile. Compatibility adds percentage margins only; invalid values raise `dj_hyperview.E019`. |
 
 Raw-source size, encoding, and forbidden-declaration checks cannot be disabled
 by `VALIDATION.MODE`. Final parsing, depth, node, and schema checks run only for
@@ -86,13 +92,50 @@ HYPERVIEW = {
 The validator uses the versioned Hyperview 0.110.0 XSD registry included in the
 wheel. Project schemas can declare namespaced custom elements and import the
 Hyperview namespace. Includes, imports, and redefines may reference only local
-files below the configured schema's own directory. Remote references and paths
-that escape that directory are rejected.
+files below the configured schema's own directory. Remote references, paths
+that escape that directory, percent-encoded reference locations, and arbitrary
+`xs:override` declarations are rejected. Reference locations must use plain
+local paths so the guard and compiler resolve the same file. Each extra schema
+may reference at most 256 distinct files, including its root; include cycles
+are visited once and symlink escapes are rejected.
 
-Schema registries and completion catalogs are loaded lazily and cached by
-resolved path, file size, and nanosecond modification time. Changes to
-`HYPERVIEW` clear those caches. An editor process notices a saved schema file on
-its next request because the file fingerprint changes.
+Schema registries and custom completion catalogs use the same complete
+transitive dependency fingerprints: resolved paths, file sizes, nanosecond
+modification times, and selected profile. References are checked for safety
+before cache hits, including after a dependency changes. Changes to `HYPERVIEW`
+clear both caches. Saving a referenced local schema refreshes validation and
+editor suggestions on their next request without restarting Django.
+
+### Opt in to compatible percentage margins
+
+The default `upstream-0.110.0` profile preserves the original XSD behavior.
+Choose the narrowly scoped compatibility profile only when the client uses
+percentage margins:
+
+```python
+HYPERVIEW = {
+    "SCHEMA_PROFILE": "compatible-0.110.0",
+    "VALIDATION": {
+        "SCHEMA": "dj_hyperview.validate_hyperview_schema",
+    },
+}
+```
+
+This accepts signed decimal percentages such as `margin="50%"` and
+`marginTop="-12.5%"`, while retaining integer and `auto` values. The only
+broadened attributes are `margin`, `marginBottom`, `marginHorizontal`,
+`marginLeft`, `marginRight`, `marginTop`, `marginEnd`, `marginStart`, and
+`marginVertical`. Types for `letterSpacing`, `outlineWidth`, `flexGrow`, and all
+other attributes remain upstream-defined; this is not general client/XSD
+parity. Selecting a profile does not enable final schema validation by itself:
+keep the `VALIDATION.SCHEMA` callable shown above.
+
+The package uses one fixed trusted overlay and leaves upstream XSD files and
+`catalog.json` unchanged. Both profiles reuse that completion catalog; tests
+prove the overlay generates identical suggestions. `get_hyperview_catalog()`
+includes the selected `schema_profile` alongside `schema_version`. The public
+`get_hyperview_schema_path()` and `build_hyperview_catalog()` functions always
+inspect upstream resources, independently of Django settings.
 
 Follow [Add custom HXML elements](custom-schemas.md) for the complete namespace,
 registration, validation, and autocomplete workflow. Its

@@ -26,8 +26,10 @@ uv run python -m tools.test_matrix --django-version 6.1.1
 3. Refactor while keeping the test green.
 4. Run the relevant regression suite.
 
-Total and branch coverage must remain at or above 95%. Tests belong in the same
-work unit as the behavior they protect.
+Line coverage and branch coverage must each remain at or above 95%. The canonical
+runner checks the exact XML counters independently after combining the base and
+Admin profiles; a passing combined percentage cannot compensate for either
+shortfall. Tests belong in the same work unit as the behavior they protect.
 
 ## Python contract
 

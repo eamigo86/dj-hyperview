@@ -44,6 +44,8 @@ It receives the current `HttpRequest` and grants access only by returning the
 literal boolean `True`. Exceptions and non-boolean results fail closed. Admin
 login still requires an active staff user, while ordinary Django model view
 permission can provide read-only access without granting template mutation.
+Read-only template pages display escaped content without edit, delete, or format
+controls, including when the optional Ace editor is enabled.
 
 ## Enable the database source
 
@@ -187,11 +189,22 @@ contextual completion for elements, unused attributes, enumerated values, and
 configured namespace prefixes. Its catalog endpoint requires authentication
 and view permission for the template model.
 
-**Format HXML** temporarily protects Django variables, tags, and comments,
-formats the XML, and restores the exact template tokens. Unsafe or incomplete
-input is left untouched and reported beside the editor. Ace synchronizes back
-to Django's textarea before submission, so standard form processing remains the
-source of truth.
+**Format HXML** indents only structural whitespace in known element-only
+Hyperview containers. It preserves original opening tags, quoted attribute
+values, significant text and mixed content, CDATA, custom component subtrees,
+and preformatted or `xml:space`-preserving content. Django tokens and complete
+`comment`/`verbatim` bodies remain byte-for-byte unchanged; no replacement
+markers or XML reserialization are used. Would-be Django tokens whose delimiters
+span an LF newline are rejected unchanged; raw `comment`/`verbatim` bodies may
+still span multiple lines.
+
+Balanced conditional branches containing complete elements can be formatted.
+Ambiguous or incomplete markup, branch-dependent opening/closing tags, and
+unsupported template constructs are left untouched and reported beside the
+editor. Repeated successful formatting is idempotent. This conservative
+formatter is not a substitute for publish-time template validation. Ace
+synchronizes back to Django's textarea before submission, so standard form
+processing remains the source of truth.
 
 Publication compiles Django template syntax before writing or incrementing a
 revision. Invalid tags, variables, or blocks are reported next to `content`.
@@ -204,10 +217,53 @@ for validated publication. The package QuerySet batches `update()` and `delete()
 while scheduling one commit-aware invalidation for all canonical affected names.
 `bulk_create()` rejects unsafe names and schedules invalidation, but still
 bypasses content compilation, validation, and revision semantics. It is an
-import primitive, not a substitute for the publication services. Raw SQL
-provides no automatic publication contract.
+import primitive, not a substitute for the publication services. Normal inserts
+and `ignore_conflicts=True` remain supported; ignored conflicts never update
+existing content. `update_conflicts=True` raises `NotSupportedError` before
+consuming the supplied iterable, executing SQL, or scheduling invalidation.
+Replace conflict-updating imports with `publish_template()` for content changes
+and `rename_template()` for name changes, passing the expected revision.
+Raw SQL provides no automatic publication contract.
+
+`save(update_fields=...)` accepts single-use iterables, including generators,
+and includes the matching identity when saving a new name. Batch deletion
+tracks the database alias together with each primary key: nested deletions
+with matching primary keys in another database retain their own commit-aware
+invalidation. A rollback on either alias discards only that alias's callbacks.
 
 A row imported by raw SQL or an older release can contain a name that is no
 longer canonical. Such a row is never resolved, but it remains recoverable:
 individual admin deletion works, and a literal canonical `QuerySet.update()` can
 repair its name. New invalid names remain rejected.
+
+
+## Check historical template integrity
+
+Before deploying an upgrade from a release that allowed conflict-updating bulk
+inserts, inspect each explicitly authorized template database:
+
+```console
+python manage.py check_hyperview_templates --database default
+```
+
+The database alias is required. The command reads only primary keys, names, and
+identities in batches; it never loads template content, writes data, increments
+revisions, or invalidates caches. Diagnostics are ordered by primary key and
+contain identifiers and issue codes, not template names or source content:
+
+```text
+pk=20: identity_mismatch, duplicate_identity (first_pk=10)
+```
+
+It reports unsafe/noncanonical or overlong names, identities that do not match
+the stored name's SHA-256, and duplicate expected identities even when the
+stored identity column contains different values. A nonzero exit status means
+integrity issues were found or the check could not complete. A successful check
+does not validate template content or its revision history.
+
+If issues are reported, stop deployment and take a backup before any repair.
+Have a maintainer determine the intended names and content, especially for
+duplicates; the command never picks a winning row or repairs data automatically.
+Once an authorized repair is complete, run the check again and rotate only
+`HYPERVIEW["CACHE"]["NAMESPACE"]` consistently across Hyperview workers. Never
+flush an entire shared Django cache to recover template state.

@@ -133,7 +133,8 @@ def test_repository_header_displays_stable_and_prerelease_versions() -> None:
     assert config["extra_javascript"] == ["javascripts/source-facts.js"]
     assert "data-dj-hyperview-source" in source
     assert 'data-md-component="source"' not in source
-    assert "/releases?per_page=1" in script
+    assert "/releases?per_page=100" in script
+    assert "published_at" in script
     assert "tag_name" in script
     assert "stargazers_count" in script
     assert "forks_count" in script
@@ -329,6 +330,15 @@ def test_changelog_describes_the_0_1_0a10_release() -> None:
     assert "Django 6.1" in page
 
 
+def test_changelog_prepares_the_0_1_0a11_release() -> None:
+    """Release notes identify the audited compatibility and integrity fixes."""
+    page = _documentation_pages()["changelog.md"]
+
+    assert "## 0.1.0a11 — 2026-09-08" in page
+    assert "SCHEMA_PROFILE" in page
+    assert "check_hyperview_templates" in page
+
+
 def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:
     """Security guidance covers callable and dotted mutation policies."""
     pages = _documentation_pages()
@@ -466,5 +476,10 @@ def test_repository_readme_presents_the_public_package_journey() -> None:
     )
     assert "https://pypi.org/project/dj-hyperview/" in readme
     assert "https://eamigo86.github.io/dj-hyperview/" in readme
+    assert "https://github.com/eamigo86/HyperTodo" in readme
+    assert (
+        "https://github.com/eamigo86/HyperTodo"
+        in (ROOT / "docs" / "index.md").read_text()
+    )
     assert "does not ship application screens" in readme
     assert "Every successfully claimed root or successor token" not in readme

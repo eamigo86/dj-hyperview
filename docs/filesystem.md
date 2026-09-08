@@ -55,6 +55,12 @@ normal miss. Missing configured roots also emit the non-blocking
 redacted `SourceUnavailable` contract, while non-UTF-8 files raise
 `TemplateValidationError` with the stable `invalid_encoding` code.
 
+Permission and I/O errors are failures, not misses, on every supported Python
+version, including 3.14. If the first root contains an inaccessible template,
+resolution stops with `SourceUnavailable` rather than silently serving a
+lower-priority version. Check directory search permissions as well as file read
+permissions when diagnosing deployment access failures.
+
 Root symlink changes affect uncached lookups immediately. Cached templates stay
 unchanged until their TTL, explicit invalidation, or a cache namespace rotation.
 See [cache consistency](cache-consistency.md) before a filesystem deploy.

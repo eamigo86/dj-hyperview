@@ -2,6 +2,61 @@
 
 This page records user-visible changes for each published version.
 
+## Unreleased
+
+No changes yet.
+
+## 0.1.0a11 — 2026-09-08
+
+### Upgrade notes
+
+- Django `FileBasedCache` and its subclasses are rejected because their
+  non-atomic `add()` cannot protect invalidation barriers. Configure a compatible
+  backend or disable Hyperview caching; `bypass` does not suppress this error.
+  See [cache migration guidance](cache-consistency.md).
+- `bulk_create(update_conflicts=True)` now raises `NotSupportedError` before
+  consuming input or writing. Normal inserts and `ignore_conflicts` remain
+  supported; use [publication services](database-admin.md) for updates.
+- Run the read-only `check_hyperview_templates --database ALIAS` command only on
+  authorized databases before deployment. Invalid names, incorrect identities,
+  or duplicates require a backed-up, human-reviewed repair, not an automatic
+  migration. See [historical integrity checks](database-admin.md#check-historical-template-integrity).
+
+### Added
+
+- Opt-in `SCHEMA_PROFILE="compatible-0.110.0"` permits percentages in the nine
+  style margin attributes without broadening unrelated types. The default
+  `upstream-0.110.0` and standalone upstream helpers retain their existing
+  meaning. Validation and autocomplete use the selected profile together. See
+  [custom schemas](custom-schemas.md).
+- The package README and documentation landing page now link to
+  [HyperTodo](https://github.com/eamigo86/HyperTodo), the maintained Django and
+  Expo test application.
+
+### Fixed
+
+- Declaration scanning is linear, including unclosed Django delimiters; only
+  raw template sources interpret Django comments. Rendered XML retains its
+  independent safety checks and escaping. See [XML security](security.md).
+- An initial BOM no longer conceals incompatible XML encoding declarations;
+  valid UTF-8 BOM content remains unchanged.
+- Filesystem permission and I/O failures remain `SourceUnavailable` on Python
+  3.14 instead of selecting a lower-priority template. See [filesystem sources](filesystem.md).
+- Read-only Admin users can view templates while the Ace editor is enabled.
+- HXML formatting preserves meaningful whitespace, mixed content, CDATA,
+  preformatted text and Django syntax, including `blocktranslate` and
+  `blocktrans` bodies; ambiguous input remains unchanged. See [Admin
+  authoring](database-admin.md).
+- Nested deletions use both database alias and primary key when tracking
+  invalidations; commit and rollback keep their existing guarantees.
+- Generator-based `update_fields` is consumed once without dropping fields.
+- Extra XSDs reject `xs:override`; only the fixed bundled compatibility
+  adaptation uses it. Validation and completion both inspect transitive local
+  references before reusing dependency-aware caches. See [schema safety](security.md).
+- The compatibility runner enforces **lines ≥95% and branches ≥95%** separately
+  after combining base and Admin coverage, while retaining the combined gate.
+  Missing, malformed and stale reports cannot pass. See [testing](testing.md).
+
 ## 0.1.0a10 — 2026-09-07
 
 ### Added
