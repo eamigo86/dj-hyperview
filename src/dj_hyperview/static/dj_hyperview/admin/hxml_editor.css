@@ -37,6 +37,11 @@
   padding: 0.5rem 0.75rem;
 }
 
+.djhv-source-validation-warning {
+  border-left-color: var(--message-warning-bg, #f0ad4e);
+  color: var(--body-fg);
+}
+
 .djhv-source-validation-diagnostic .button {
   margin-left: 0.75rem;
 }

@@ -3,31 +3,41 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import RequestDataTooBig
 from django.http import HttpRequest, JsonResponse
 from django.template import TemplateSyntaxError
+from lxml import etree
 
 from dj_hyperview.conf import get_settings
 from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import InvalidTemplateName, TemplateValidationError
+from dj_hyperview.schema import HYPERVIEW_NAMESPACE, _get_static_validation_catalog
 from dj_hyperview.sources import canonicalize_template_name
 from dj_hyperview.validation import validate_template_source
+
+_STATIC_ROOT = "djhv-static-validation-root"
+_DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"
+_DJANGO_TOKEN = re.compile(r"({{[\s\S]*?}}|{%[\s\S]*?%}|{#[\s\S]*?#})")
+_XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)[\s\S]*?\?>", re.IGNORECASE)
+_RAW_BLOCK = re.compile(r"{%\s*(comment|verbatim)(?:\s+([^\s%]+))?\s*%}")
 
 
 def _diagnostic(
     code: str,
     message: str,
     *,
+    severity: str = "error",
     template: str | None = None,
     line: int | None = None,
     column: int | None = None,
 ) -> dict[str, Any]:
     """Create one safe source-coordinate diagnostic."""
     return {
-        "severity": "error",
+        "severity": severity,
         "code": code,
         "message": message,
         "template": template,
@@ -52,6 +62,183 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
             raise ValueError("Duplicate JSON key")
         result[key] = value
     return result
+
+
+def _blank_preserving_lines(value: str, marker: str = "") -> str:
+    """Replace source text while preserving its line-coordinate space."""
+    return marker + "".join("\n" if character == "\n" else " " for character in value)
+
+
+def _mask_raw_blocks(content: str) -> str:
+    """Hide comment and verbatim bodies that Django excludes from rendering."""
+    cursor = 0
+    masked = content
+    while match := _RAW_BLOCK.search(masked, cursor):
+        command, name = match.groups()
+        suffix = rf"\s+{re.escape(name)}" if name else ""
+        closing = re.compile(rf"{{%\s*end{command}{suffix}\s*%}}")
+        end = closing.search(masked, match.end())
+        if end is None:
+            return masked
+        span = masked[match.start() : end.end()]
+        replacement = _blank_preserving_lines(span)
+        masked = masked[: match.start()] + replacement + masked[end.end() :]
+        cursor = match.start() + len(replacement)
+    return masked
+
+
+def _mask_template_syntax(content: str) -> tuple[str, str, bool]:
+    """Make Django tokens and XML declarations safe inside a synthetic root."""
+
+    marker = _DYNAMIC_VALUE
+    while marker in content:
+        marker += "_"
+    masked_raw = _mask_raw_blocks(content)
+    dynamic = _DJANGO_TOKEN.search(masked_raw) is not None
+
+    def replace_token(match: re.Match[str]) -> str:
+        token = match.group(0)
+        return _blank_preserving_lines(token, marker)
+
+    masked = _DJANGO_TOKEN.sub(replace_token, masked_raw)
+    return (
+        _XML_DECLARATION.sub(
+            lambda match: _blank_preserving_lines(match.group(0)), masked
+        ),
+        marker,
+        dynamic,
+    )
+
+
+def _incomplete_schema_diagnostic(name: str, line: int | None) -> dict[str, Any]:
+    """Report dynamic source that cannot be checked completely without rendering."""
+    return _diagnostic(
+        "schema_static_incomplete",
+        "Static schema validation could not analyze the complete dynamic "
+        "template structure.",
+        severity="warning",
+        template=name,
+        line=line,
+    )
+
+
+def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
+    """Check statically visible elements and attributes against the XSD catalog."""
+    parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
+    masked, dynamic_marker, has_dynamic_syntax = _mask_template_syntax(content)
+    wrapped = f'<{_STATIC_ROOT} xmlns="{HYPERVIEW_NAMESPACE}">{masked}</{_STATIC_ROOT}>'
+    try:
+        root = etree.fromstring(wrapped.encode(), parser)
+    except etree.XMLSyntaxError as error:
+        line = error.position[0] if error.position else None
+        if has_dynamic_syntax:
+            return [_incomplete_schema_diagnostic(name, line)]
+        return [
+            _diagnostic(
+                "xml_syntax",
+                "Template source is not well-formed XML.",
+                template=name,
+                line=line,
+            )
+        ]
+
+    elements = _get_static_validation_catalog()["elements"]
+    known_namespaces = {item["namespace"] for item in elements.values()}
+    diagnostics = []
+    incomplete_line = None
+    for element in root.iterdescendants():
+        if not isinstance(element.tag, str):
+            continue
+        qualified_name = etree.QName(element)
+        namespace = qualified_name.namespace or ""
+        local_name = qualified_name.localname
+        if local_name == dynamic_marker:
+            incomplete_line = incomplete_line or element.sourceline
+            continue
+        key = (
+            local_name
+            if namespace == HYPERVIEW_NAMESPACE
+            else f"{{{namespace}}}{local_name}"
+        )
+        definition = elements.get(key)
+        if definition is None:
+            if not namespace or namespace in known_namespaces:
+                diagnostics.append(
+                    _diagnostic(
+                        "schema_element",
+                        f'Element "{local_name}" is not declared by the selected '
+                        "schema.",
+                        template=name,
+                        line=element.sourceline,
+                    )
+                )
+            continue
+        allowed = definition["attributes"]
+        present = set()
+        dynamic_attributes = False
+        for raw_name in element.attrib:
+            attribute = etree.QName(raw_name)
+            attribute_name = attribute.localname
+            if attribute_name == dynamic_marker:
+                dynamic_attributes = True
+                incomplete_line = incomplete_line or element.sourceline
+                continue
+            attribute_key = (
+                raw_name if attribute.namespace is not None else attribute_name
+            )
+            present.add(attribute_key)
+            attribute_definition = allowed.get(attribute_key)
+            if attribute_definition is None:
+                if (
+                    attribute.namespace is not None
+                    and definition["allows_custom_attributes"]
+                ):
+                    continue
+                diagnostics.append(
+                    _diagnostic(
+                        "schema_attribute",
+                        f'Attribute "{attribute_name}" is not allowed on '
+                        f'element "{local_name}".',
+                        template=name,
+                        line=element.sourceline,
+                    )
+                )
+                continue
+            value = element.attrib[raw_name]
+            allowed_values = attribute_definition["enum"]
+            if (
+                allowed_values
+                and dynamic_marker not in value
+                and value not in allowed_values
+            ):
+                diagnostics.append(
+                    _diagnostic(
+                        "schema_attribute_value",
+                        f'Attribute "{attribute_name}" on element "{local_name}" '
+                        "has a value not allowed by the selected schema.",
+                        template=name,
+                        line=element.sourceline,
+                    )
+                )
+        for attribute_key, attribute_definition in sorted(allowed.items()):
+            if (
+                not dynamic_attributes
+                and attribute_definition["required"]
+                and attribute_key not in present
+            ):
+                attribute_name = etree.QName(attribute_key).localname
+                diagnostics.append(
+                    _diagnostic(
+                        "schema_required_attribute",
+                        f'Required attribute "{attribute_name}" is missing from '
+                        f'element "{local_name}".',
+                        template=name,
+                        line=element.sourceline,
+                    )
+                )
+    if incomplete_line is not None:
+        diagnostics.append(_incomplete_schema_diagnostic(name, incomplete_line))
+    return diagnostics
 
 
 def validation_payload(request: HttpRequest) -> dict[str, str] | JsonResponse:
@@ -164,5 +351,22 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
                     column=error.column,
                 )
             ],
+        }
+    try:
+        diagnostics = _static_schema_diagnostics(name, content)
+    except TemplateValidationError as error:
+        return {
+            "ok": False,
+            "diagnostics": [
+                _diagnostic(
+                    error.code,
+                    "Static schema validation is unavailable.",
+                )
+            ],
+        }
+    if diagnostics:
+        return {
+            "ok": not any(item["severity"] == "error" for item in diagnostics),
+            "diagnostics": diagnostics,
         }
     return {"ok": True, "diagnostics": []}

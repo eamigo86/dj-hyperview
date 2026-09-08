@@ -493,6 +493,7 @@ def test_database_admin_documents_context_free_draft_validation() -> None:
 
     assert "Validate source" in page
     assert "does not render" in normalized
-    assert "does not run XSD" in normalized
+    assert "static XSD" in normalized
+    assert "full rendered XSD" in normalized
     assert "does not save" in normalized
     assert "Django template syntax" in normalized

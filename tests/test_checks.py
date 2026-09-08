@@ -351,6 +351,24 @@ def test_enabled_editor_reports_a_missing_optional_dependency() -> None:
     assert "dj-hyperview[editor]" in relevant[0].hint
 
 
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_enabled_editor_requires_schema_dependency_for_static_validation() -> None:
+    """The editor fails startup when its static XSD dependency is incomplete."""
+
+    def dependency(name: str):
+        return None if name == "xmlschema" else object()
+
+    with (
+        patch("dj_hyperview.checks.find_spec", side_effect=dependency),
+        patch("dj_hyperview.checks.apps.is_installed", return_value=True),
+    ):
+        messages = check_hyperview_settings()
+
+    relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
+    assert [message.id for message in relevant] == ["dj_hyperview.E020"]
+    assert "dj-hyperview[editor]" in relevant[0].hint
+
+
 @pytest.mark.parametrize(
     "permission",
     [object(), "missing.permission_callback", lambda: True],

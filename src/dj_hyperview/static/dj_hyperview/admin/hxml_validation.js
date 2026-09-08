@@ -43,7 +43,10 @@
           return;
         }
         options.onResult(result, snapshot);
-        options.onState(result.ok ? "valid" : "error");
+        const partial = result.diagnostics.some(function (item) {
+          return item.severity === "warning";
+        });
+        options.onState(result.ok ? (partial ? "partial" : "valid") : "error");
       } catch (_error) {
         if (current !== generation) {
           return;
@@ -114,7 +117,8 @@
     function showState(state) {
       const labels = {
         loading: "Validating…",
-        valid: "Template source is valid.",
+        valid: "Source and static schema checks passed.",
+        partial: "Source checks passed; static schema validation was incomplete.",
         error: "Template source is invalid.",
         stale: "Template changed; validate again.",
       };
@@ -126,9 +130,12 @@
       diagnostics.replaceChildren();
       for (const item of items) {
         const row = document.createElement("p");
-        row.className = "djhv-source-validation-diagnostic";
+        const warning = item.severity === "warning";
+        row.className = "djhv-source-validation-diagnostic" +
+          (warning ? " djhv-source-validation-warning" : "");
         const coordinate = item.line ? " · source line " + item.line : "";
-        row.textContent = "Error: " + item.message + coordinate;
+        row.textContent = (warning ? "Warning: " : "Error: ") +
+          item.message + coordinate;
         const location = sourceLocation(item, snapshot.name);
         if (location) {
           const jump = document.createElement("button");

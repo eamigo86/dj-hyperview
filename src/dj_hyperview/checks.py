@@ -354,6 +354,15 @@ def _check_admin(value: Any) -> list[CheckMessage]:
                     id="dj_hyperview.E016",
                 )
             )
+        elif find_spec("xmlschema") is None:
+            errors.append(
+                Error(
+                    "ADMIN.EDITOR static XSD validation requires xmlschema.",
+                    hint="Install dj-hyperview[editor] before enabling ADMIN.EDITOR.",
+                    obj=SETTING,
+                    id="dj_hyperview.E020",
+                )
+            )
 
     permission = value.get("PERMISSION", lambda request: True)
     if isinstance(permission, str):

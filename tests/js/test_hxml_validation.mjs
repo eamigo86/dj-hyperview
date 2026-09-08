@@ -56,6 +56,25 @@ test("validation reports a current successful response", async () => {
 });
 
 
+test("validation distinguishes an incomplete static schema check", async () => {
+  const states = [];
+  const response = {
+    ok: true,
+    diagnostics: [{severity: "warning", code: "schema_static_incomplete"}],
+  };
+  const controller = createController({
+    read: () => ({name: "screen.xml", content: "<view {{ attrs }} />"}),
+    send: async () => response,
+    onState: (state) => states.push(state),
+    onResult: () => {},
+  });
+
+  await controller.validate();
+
+  assert.deepEqual(states, ["loading", "partial"]);
+});
+
+
 test("source coordinates navigate only within the current draft", () => {
   assert.deepEqual(
     sourceLocation(

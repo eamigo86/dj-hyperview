@@ -4,7 +4,13 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
-No changes yet.
+### Added
+
+- **Validate source** now checks statically visible HXML elements, attributes,
+  required attributes, and literal enumerations against the selected XSD catalog,
+  including project `EXTRA_SCHEMAS`. Dynamic values remain deferred to full
+  rendered-response validation, and incomplete static analysis is reported as a
+  warning rather than a false success.
 
 ## 0.1.0a13 — 2026-09-08
 

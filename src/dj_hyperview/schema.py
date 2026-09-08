@@ -122,6 +122,32 @@ def _schema_catalog(schema: Any, *, version: str | None = None) -> dict[str, Any
     return result
 
 
+def _static_validation_catalog(schema: Any) -> dict[str, Any]:
+    """Build namespace-preserving metadata for Admin source validation."""
+    elements = {}
+    declarations = sorted(
+        schema.maps.elements.values(), key=lambda item: item.name or ""
+    )
+    for element in declarations:
+        if not element.name or element.target_namespace == XSD_NAMESPACE:
+            continue
+        namespace = element.target_namespace or ""
+        declared_attributes = tuple(element.type.attributes.items())
+        attributes = {
+            name: _attribute_definition(attribute)
+            for name, attribute in sorted(declared_attributes)
+            if name is not None
+        }
+        elements[_catalog_key(element.name, namespace)] = {
+            "allows_custom_attributes": any(
+                name is None for name, _attribute in declared_attributes
+            ),
+            "attributes": attributes,
+            "namespace": namespace,
+        }
+    return {"elements": dict(sorted(elements.items()))}
+
+
 def _require_complete_schema(compiled: Any) -> Any:
     """Reject warnings that leave a root or imported schema only partly compiled."""
     if any(schema.warnings for schema in compiled.maps.iter_schemas()):
@@ -321,6 +347,21 @@ def get_hyperview_catalog() -> dict[str, Any]:
     return catalog
 
 
+@lru_cache(maxsize=64)
+def _cached_static_validation_catalog(
+    profile: SchemaProfile, state: tuple[_SchemaDependencies, ...]
+) -> dict[str, Any]:
+    """Compile namespace-preserving schema metadata for one registry state."""
+    return _static_validation_catalog(_compile_registry(profile, state))
+
+
+def _get_static_validation_catalog() -> dict[str, Any]:
+    """Return detached schema metadata for context-free Admin validation."""
+    profile = get_settings().schema_profile
+    state = _registry_state()
+    return deepcopy(_cached_static_validation_catalog(profile, state))
+
+
 def validate_hyperview_schema(document: str) -> None:
     """Validate rendered HXML against the selected profile and local extensions.
 
@@ -362,3 +403,4 @@ def _clear_schema_registry_cache(*, setting: str, **kwargs: Any) -> None:
         _official_catalog.cache_clear()
         _custom_catalog.cache_clear()
         _compile_registry.cache_clear()
+        _cached_static_validation_catalog.cache_clear()
