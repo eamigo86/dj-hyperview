@@ -4,6 +4,8 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+## 0.1.0a14 — 2026-09-08
+
 ### Added
 
 - **Validate source** now checks statically visible HXML elements, attributes,

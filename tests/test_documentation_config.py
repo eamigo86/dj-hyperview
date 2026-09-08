@@ -340,6 +340,16 @@ def test_changelog_prepares_the_0_1_0a13_release() -> None:
     assert "experimental static Admin template preview" in page
 
 
+def test_changelog_prepares_the_0_1_0a14_release() -> None:
+    """Release notes identify static XSD validation of unsaved drafts."""
+    page = _documentation_pages()["changelog.md"]
+
+    assert "## 0.1.0a14 — 2026-09-08" in page
+    assert "statically visible HXML elements" in page
+    assert "EXTRA_SCHEMAS" in page
+    assert "warning rather than a false success" in page
+
+
 def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:
     """Security guidance covers callable and dotted mutation policies."""
     pages = _documentation_pages()
