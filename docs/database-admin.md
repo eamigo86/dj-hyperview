@@ -210,13 +210,32 @@ formatting cannot safely rewrite the source, validation still runs against the
 unchanged source and the Admin reports both results. Validation verifies the
 canonical name,
 nonempty source, UTF-8 and size limits, forbidden declarations, and Django
-template syntax. It also performs static XSD catalog checks for element names,
-attribute names, required attributes, and literal typed values. The catalog
-uses the automatic corrected schema and merges configured `EXTRA_SCHEMAS`, so the
-same project components offered by autocomplete participate in this check. Safe
-diagnostics include the source line when it is available. The request uses the
-existing Admin CSRF and `ADMIN.PERMISSION` boundaries; it does not save content,
-increment `revision`, or invalidate caches.
+template syntax. Django's parser checks block closure and each installed tag's
+grammar and arguments, including tags contributed by configured template
+libraries; dj-hyperview does not maintain a second hard-coded tag list. The
+parser's actionable error is shown beside the source. It also performs
+static XSD catalog checks for element names,
+attribute names, required attributes, literal typed values, and statically
+visible child placement and order. A Django expression used as element text or
+as a quoted attribute value is treated as an unknown scalar: its concrete value
+is deferred, while the owning element, attribute, position, and surrounding
+structure are still checked. The catalog uses the automatic corrected schema
+and merges configured `EXTRA_SCHEMAS`, so the same project components offered
+by autocomplete participate in this check. Safe diagnostics include the source
+line when it is available. The request uses the existing Admin CSRF and
+`ADMIN.PERMISSION` boundaries; it does not save content, increment `revision`,
+or invalidate caches. Literal `{% include "..." %}` targets are resolved through
+the configured Hyperview source precedence, recursively compiled, and checked
+both independently and in their parent position. Missing targets and include
+cycles are errors; expansion is bounded to 64 include edges.
+
+A warning that begins **Static checks passed** is not a validation failure. It
+means the visible HXML is valid, but Django markup such as a conditional branch,
+template inheritance, or an include whose target is a variable can add or remove
+nodes beginning at the reported line. Literal includes are the structural tag
+that this static pass composes; they are not deferred merely because they are
+includes. The package validates final rendered HXML when the response is served.
+Actual source or schema errors remain errors and block the Admin save actions.
 
 The standard **Save**, **Save and add another**, and **Save and continue
 editing** actions run this same format-and-validate preflight automatically.
@@ -232,13 +251,13 @@ draft that those checks reject.
 
 This action deliberately does not render the template and therefore does not
 run full rendered XSD validation. Dynamic attribute values are deferred, and the
-check cannot prove the final XML structure, resolve includes, exercise one final
-conditional branch, or evaluate type restrictions and XSD assertions that depend
-on rendered values. If dynamic markup prevents safe static analysis, the Admin
-reports a warning instead of claiming a complete result. Authoritative checks
-still occur through rendered-response validation. A successful draft check means
-that the source compiles and its statically visible schema declarations pass; it
-does not mean that every possible rendered document is valid.
+check cannot resolve variable-selected includes, choose one final conditional
+branch, or evaluate type restrictions and XSD assertions that depend on rendered
+values. If dynamic markup prevents safe static analysis, the Admin reports a
+warning instead of claiming a complete result. Authoritative checks still occur
+through rendered-response validation. A successful draft check means that the
+source compiles and its statically visible schema declarations pass; it does not
+mean that every possible rendered document is valid.
 
 ### Register application schema extensions
 
@@ -274,8 +293,9 @@ from the unqualified custom `message`, including when prefixes are shadowed.
 The source checker and rendered validator share the compiled registry and
 conditional behavior types. In addition to required attributes and enums, the checker
 checks literal primitive values and type restrictions, including width syntax.
-Dynamic values, actions, includes, and branches produce an incomplete-analysis
-warning; valid static declarations can still be checked without rendering.
+Dynamic action names, variable-selected includes, and structural branches produce
+an incomplete-analysis warning; dynamic scalar values do not. Valid static
+declarations can still be checked without rendering.
 Warnings do not block the existing save workflow. Exact rendered XSD validation
 remains authoritative for composed structure, assertions, and runtime values.
 Neither autocomplete nor source validation rewrites template XML.

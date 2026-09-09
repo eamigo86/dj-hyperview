@@ -9,27 +9,38 @@ from typing import Any
 from django.conf import settings
 from django.core.exceptions import RequestDataTooBig
 from django.http import HttpRequest, JsonResponse
-from django.template import TemplateSyntaxError
+from django.template import Origin, TemplateSyntaxError
+from django.template.base import DebugLexer, Parser
+from django.template.loader_tags import IncludeNode
 from lxml import etree
 
 from dj_hyperview.conf import get_settings
 from dj_hyperview.engine import HyperviewEngine
-from dj_hyperview.exceptions import InvalidTemplateName, TemplateValidationError
+from dj_hyperview.exceptions import (
+    InvalidTemplateName,
+    SourceUnavailable,
+    TemplateNotFound,
+    TemplateValidationError,
+)
+from dj_hyperview.loaders import template_snapshot
 from dj_hyperview.schema import (
     HYPERVIEW_NAMESPACE,
     _get_compiled_registry,
     _get_declaration_type,
     _get_static_validation_catalog,
+    _schema_validation_message,
 )
 from dj_hyperview.sources import canonicalize_template_name
 from dj_hyperview.validation import validate_template_source
 
 _STATIC_ROOT = "djhv-static-validation-root"
 _DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"
+_DYNAMIC_STRUCTURE = "DJHVSTATICSTRUCTURE"
 _DJANGO_TOKEN = re.compile(r"({{[\s\S]*?}}|{%[\s\S]*?%}|{#[\s\S]*?#})")
 _XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)[\s\S]*?\?>", re.IGNORECASE)
 _RAW_BLOCK = re.compile(r"{%\s*(comment|verbatim)(?:\s+([^\s%]+))?\s*%}")
 _LOAD_TAG = re.compile(r"{%\s*load(?:\s|%)")
+_MAX_LITERAL_INCLUDES = 64
 
 
 def _diagnostic(
@@ -93,43 +104,98 @@ def _mask_raw_blocks(content: str) -> str:
     return masked
 
 
-def _requires_runtime_analysis(token: str) -> bool:
-    """Return whether one Django token can affect the rendered HXML."""
-    return not token.startswith("{#") and _LOAD_TAG.match(token) is None
+def _xml_token_context(content: str, start: int) -> str:
+    """Locate a Django token in XML text, a tag, or a quoted attribute value."""
+    in_tag = False
+    quote = None
+    for character in content[:start]:
+        if not in_tag:
+            if character == "<":
+                in_tag = True
+            continue
+
+        if quote is not None:
+            if character == quote:
+                quote = None
+            continue
+
+        if character in {'"', "'"}:
+            quote = character
+        elif character == ">":
+            in_tag = False
+
+    if not in_tag:
+        return "text"
+    return "attribute" if quote is not None else "tag"
+
+
+def _requires_runtime_analysis(content: str, match: re.Match[str]) -> bool:
+    """Return whether one Django token can change statically visible markup."""
+    token = match.group(0)
+    if token.startswith("{#") or _LOAD_TAG.match(token):
+        return False
+    context = _xml_token_context(content, match.start())
+    if context == "attribute":
+        return False
+    if token.startswith("{{"):
+        return context == "tag"
+    command = token[2:-2].strip().split(maxsplit=1)[0]
+    scalar_tags = {
+        "blocktranslate",
+        "endblocktranslate",
+        "firstof",
+        "now",
+        "static",
+        "trans",
+        "translate",
+        "url",
+        "widthratio",
+    }
+    return command not in scalar_tags
 
 
 def _first_runtime_token_line(content: str) -> int | None:
-    """Find the first Django token whose output cannot be checked statically."""
+    """Find the first Django token that can alter visible XML structure."""
     masked_raw = _mask_raw_blocks(content)
     for match in _DJANGO_TOKEN.finditer(masked_raw):
-        if _requires_runtime_analysis(match.group(0)):
+        if _requires_runtime_analysis(masked_raw, match):
             return content.count("\n", 0, match.start()) + 1
     return None
 
 
-def _mask_template_syntax(content: str) -> tuple[str, str, bool]:
+def _mask_template_syntax(content: str) -> tuple[str, str, str, bool]:
     """Make Django tokens and XML declarations safe inside a synthetic root."""
 
-    marker = _DYNAMIC_VALUE
-    while marker in content:
-        marker += "_"
+    value_marker = _DYNAMIC_VALUE
+    while value_marker in content:
+        value_marker += "_"
+    structure_marker = _DYNAMIC_STRUCTURE
+    while structure_marker in content or structure_marker == value_marker:
+        structure_marker += "_"
     masked_raw = _mask_raw_blocks(content)
-    dynamic = any(
-        _requires_runtime_analysis(match.group(0))
+    dynamic_structure = any(
+        _requires_runtime_analysis(masked_raw, match)
         for match in _DJANGO_TOKEN.finditer(masked_raw)
     )
 
     def replace_token(match: re.Match[str]) -> str:
         token = match.group(0)
-        return _blank_preserving_lines(token, marker)
+        if token.startswith("{#") or _LOAD_TAG.match(token):
+            prefix = ""
+        elif _requires_runtime_analysis(masked_raw, match):
+            prefix = structure_marker
+        else:
+            prefix = value_marker
+        return _blank_preserving_lines(token, prefix)
 
     masked = _DJANGO_TOKEN.sub(replace_token, masked_raw)
     return (
         _XML_DECLARATION.sub(
             lambda match: _blank_preserving_lines(match.group(0)), masked
         ),
-        marker,
-        dynamic,
+        value_marker,
+        structure_marker,
+        dynamic_structure,
     )
 
 
@@ -137,18 +203,247 @@ def _incomplete_schema_diagnostic(name: str, line: int | None) -> dict[str, Any]
     """Report dynamic source that cannot be checked completely without rendering."""
     return _diagnostic(
         "schema_static_incomplete",
-        "Static schema validation could not analyze the complete dynamic "
-        "template structure.",
+        "Static checks passed. Django markup beginning here can add or remove "
+        "XML structure; the final HXML will be validated when served.",
         severity="warning",
         template=name,
         line=line,
     )
 
 
+def _django_syntax_message(error: TemplateSyntaxError) -> str:
+    """Expose bounded parser guidance without template origins or source excerpts."""
+    raw = getattr(error, "raw_error_message", None)
+    if not isinstance(raw, str):
+        raw = str(error)
+    message = " ".join(raw.split())
+    if not message or len(message) > 500:
+        return "Invalid Django template syntax."
+    return f"Django template syntax error: {message}"
+
+
+def _django_syntax_diagnostic(name: str, error: TemplateSyntaxError) -> dict[str, Any]:
+    """Return one source-scoped diagnostic from Django's own parser."""
+    token = getattr(error, "token", None)
+    return _diagnostic(
+        "django_syntax",
+        _django_syntax_message(error),
+        template=name,
+        line=getattr(token, "lineno", None),
+    )
+
+
+def _compile_django_source(engine: HyperviewEngine, name: str, content: str) -> Any:
+    """Compile source with exact token spans and a canonical template origin."""
+    django_engine = engine.backend.engine
+    origin = Origin(f"hyperview:{name}", template_name=name)
+    parser = Parser(
+        DebugLexer(content).tokenize(),
+        django_engine.template_libraries,
+        django_engine.template_builtins,
+        origin,
+    )
+    return parser.parse()
+
+
+def _literal_include_name(node: IncludeNode) -> str | None:
+    """Return a context-independent include target, or None for dynamic input."""
+    expression = node.template
+    value = expression.var
+    if expression.filters or not isinstance(value, str):
+        return None
+    return value
+
+
+def _flatten_include(content: str, replaced_token: str) -> str:
+    """Inline structural content without shifting the parent's source lines."""
+    flattened = re.sub(r"\r\n|\r|\n", " ", content)
+    line_endings = "".join(re.findall(r"\r\n|\r|\n", replaced_token))
+    return flattened + line_endings
+
+
+def _include_error(
+    code: str, message: str, *, template: str, line: int | None
+) -> dict[str, Any]:
+    """Create one actionable literal-include diagnostic."""
+    return _diagnostic(code, message, template=template, line=line)
+
+
+def _expand_literal_includes(
+    engine: HyperviewEngine,
+    name: str,
+    content: str,
+    *,
+    stack: tuple[str, ...],
+    budget: list[int],
+    hxml_context: bool = True,
+) -> tuple[str, list[dict[str, Any]]]:
+    """Resolve and recursively validate context-independent Django includes."""
+    nodelist = _compile_django_source(engine, name, content)
+    replacements = []
+    diagnostics = []
+    for node in nodelist.get_nodes_by_type(IncludeNode):
+        start, end = node.token.position
+        target = _literal_include_name(node)
+        if target is None:
+            continue
+        line = node.token.lineno
+        if target in stack:
+            diagnostics.append(
+                _include_error(
+                    "django_include_cycle",
+                    f'Literal include cycle detected through "{target}".',
+                    template=name,
+                    line=line,
+                )
+            )
+            continue
+        budget[0] += 1
+        if budget[0] > _MAX_LITERAL_INCLUDES:
+            diagnostics.append(
+                _include_error(
+                    "django_include_limit",
+                    "Literal include expansion exceeds the validation limit.",
+                    template=name,
+                    line=line,
+                )
+            )
+            continue
+        try:
+            template = engine.get_template(target)
+        except InvalidTemplateName:
+            diagnostics.append(
+                _include_error(
+                    "django_include_invalid",
+                    "Included template name is invalid.",
+                    template=name,
+                    line=line,
+                )
+            )
+            continue
+        except TemplateNotFound:
+            diagnostics.append(
+                _include_error(
+                    "django_include_missing",
+                    f'Included template "{target}" was not found.',
+                    template=name,
+                    line=line,
+                )
+            )
+            continue
+        except SourceUnavailable:
+            diagnostics.append(
+                _include_error(
+                    "django_include_unavailable",
+                    "Included template source is unavailable.",
+                    template=name,
+                    line=line,
+                )
+            )
+            continue
+        except TemplateSyntaxError as error:
+            diagnostics.append(_django_syntax_diagnostic(target, error))
+            continue
+        resolved = template.origin.resolved
+        child_hxml_context = (
+            hxml_context and _xml_token_context(content, start) == "text"
+        )
+        expanded, child_diagnostics = _expand_literal_includes(
+            engine,
+            resolved.name,
+            resolved.content,
+            stack=(*stack, target),
+            budget=budget,
+            hxml_context=child_hxml_context,
+        )
+        diagnostics.extend(child_diagnostics)
+        if child_hxml_context:
+            diagnostics.extend(_static_schema_diagnostics(resolved.name, expanded))
+            replacements.append(
+                (start, end, _flatten_include(expanded, content[start:end]))
+            )
+
+    for start, end, replacement in sorted(replacements, reverse=True):
+        content = content[:start] + replacement + content[end:]
+    return content, diagnostics
+
+
+def _unique_diagnostics(
+    diagnostics: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Preserve diagnostic order while removing repeated recursive findings."""
+    result = []
+    seen = set()
+    for diagnostic in diagnostics:
+        identity = tuple(diagnostic.items())
+        if identity in seen:
+            continue
+        seen.add(identity)
+        result.append(diagnostic)
+    return result
+
+
+def _static_structure_diagnostics(
+    name: str, root: Any, compiled: Any
+) -> list[dict[str, Any]]:
+    """Validate statically visible child order and placement with the real XSD."""
+    diagnostics = []
+    seen = set()
+    for candidate in root:
+        if not isinstance(candidate.tag, str):
+            continue
+        try:
+            errors = compiled.iter_errors(candidate)
+            for error in errors:
+                invalid_child = getattr(error, "invalid_child", None)
+                reason = getattr(error, "reason", "") or ""
+                structural = invalid_child is not None or (
+                    isinstance(reason, str)
+                    and (
+                        "is not complete" in reason
+                        or "character data between child elements not allowed" in reason
+                    )
+                )
+                if not structural:
+                    continue
+                if invalid_child is not None:
+                    line = getattr(invalid_child, "sourceline", None)
+                else:
+                    line = getattr(error, "sourceline", None)
+                if line is None:
+                    line = getattr(getattr(error, "elem", None), "sourceline", None)
+                message = _schema_validation_message(error)
+                if reason == "character data between child elements not allowed":
+                    element = etree.QName(error.elem).localname
+                    message = f'text content is not allowed inside element "{element}"'
+                message = message[:1].upper() + message[1:]
+                if not message.endswith("."):
+                    message += "."
+                identity = (line, message)
+                if identity in seen:
+                    continue
+                seen.add(identity)
+                diagnostics.append(
+                    _diagnostic(
+                        "schema_structure",
+                        message,
+                        template=name,
+                        line=line,
+                    )
+                )
+        except Exception as failure:
+            raise TemplateValidationError(
+                "schema_invalid", "invalid schema"
+            ) from failure
+    return diagnostics
+
+
 def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     """Check statically visible elements and attributes against the XSD catalog."""
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
-    masked, dynamic_marker, has_dynamic_syntax = _mask_template_syntax(content)
+    masked, value_marker, structure_marker, has_dynamic_syntax = _mask_template_syntax(
+        content
+    )
     wrapped = f'<{_STATIC_ROOT} xmlns="{HYPERVIEW_NAMESPACE}">{masked}</{_STATIC_ROOT}>'
     try:
         root = etree.fromstring(wrapped.encode(), parser)
@@ -182,7 +477,7 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
         qualified_name = etree.QName(element)
         namespace = qualified_name.namespace or ""
         local_name = qualified_name.localname
-        if local_name == dynamic_marker:
+        if local_name == structure_marker:
             incomplete_line = incomplete_line or element.sourceline
             continue
         key = (
@@ -203,9 +498,9 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
                     )
                 )
             continue
-        dynamic_action = key == "behavior" and dynamic_marker in element.get(
-            "action", ""
-        )
+        dynamic_action = key == "behavior" and value_marker in element.get("action", "")
+        if dynamic_action:
+            incomplete_line = incomplete_line or element.sourceline
         if key == "behavior" and not dynamic_action:
             definition = catalog["behavior_variants"].get(
                 element.get("action"), definition
@@ -219,7 +514,7 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
         for raw_name in element.attrib:
             attribute = etree.QName(raw_name)
             attribute_name = attribute.localname
-            if attribute_name == dynamic_marker:
+            if attribute_name == structure_marker:
                 dynamic_attributes = True
                 incomplete_line = incomplete_line or element.sourceline
                 continue
@@ -249,7 +544,7 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
                 continue
             value = element.attrib[raw_name]
             invalid_value = False
-            if dynamic_marker not in value:
+            if value_marker not in value and structure_marker not in value:
                 declared_attribute = selected_type.attributes[attribute_key]
                 invalid_value = not declared_attribute.type.is_valid(value)
             if invalid_value:
@@ -278,6 +573,8 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
                         line=element.sourceline,
                     )
                 )
+    if not has_dynamic_syntax:
+        diagnostics.extend(_static_structure_diagnostics(name, root, compiled))
     if incomplete_line is not None:
         diagnostics.append(_incomplete_schema_diagnostic(name, incomplete_line))
     return diagnostics
@@ -365,21 +662,21 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
         }
 
     config = get_settings().validation
+    engine = HyperviewEngine(validation=config)
     try:
         validate_template_source(content, config=config)
-        HyperviewEngine(validation=config).backend.from_string(content)
+        with template_snapshot(engine.resolver):
+            expanded, include_diagnostics = _expand_literal_includes(
+                engine,
+                name,
+                content,
+                stack=(name,),
+                budget=[0],
+            )
     except TemplateSyntaxError as error:
-        token = getattr(error, "token", None)
         return {
             "ok": False,
-            "diagnostics": [
-                _diagnostic(
-                    "django_syntax",
-                    "Invalid Django template syntax.",
-                    template=name,
-                    line=getattr(token, "lineno", None),
-                )
-            ],
+            "diagnostics": [_django_syntax_diagnostic(name, error)],
         }
     except TemplateValidationError as error:
         return {
@@ -395,7 +692,31 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
             ],
         }
     try:
-        diagnostics = _static_schema_diagnostics(name, content)
+        source_diagnostics = _static_schema_diagnostics(name, content)
+        if expanded == content:
+            diagnostics = [*source_diagnostics, *include_diagnostics]
+        else:
+            composed_diagnostics = _static_schema_diagnostics(name, expanded)
+            diagnostics = [
+                *(
+                    item
+                    for item in source_diagnostics
+                    if item["code"] != "schema_static_incomplete"
+                ),
+                *include_diagnostics,
+                *(
+                    item
+                    for item in composed_diagnostics
+                    if item["code"] in {"schema_structure", "schema_static_incomplete"}
+                ),
+            ]
+        diagnostics = _unique_diagnostics(diagnostics)
+        diagnostics.sort(key=lambda item: item["severity"] != "error")
+        if any(
+            item["severity"] == "error" and item["code"].startswith("django_include_")
+            for item in diagnostics
+        ):
+            diagnostics = [item for item in diagnostics if item["severity"] == "error"]
     except TemplateValidationError as error:
         return {
             "ok": False,

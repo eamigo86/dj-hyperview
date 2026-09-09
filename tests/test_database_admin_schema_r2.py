@@ -121,11 +121,9 @@ def test_r2_static_and_rendered_validation_reject_the_same_literal_types(
         '<behavior action="{{ action }}" message="Hello"/>',
         '<behavior action="{% if ready %}show-toast{% else %}push{% endif %}" '
         'message="Hello"/>',
-        '<behavior action="show-toast" message="Hello" count="{{ count }}"/>',
         '{% if ready %}<behavior action="show-toast" message="Hello"/>{% else %}'
         '<behavior action="store-token" token="abc"/>{% endif %}',
-        "<text>{{ label }}</text>",
-        '{% include "fragments/message.xml" %}',
+        "{% include message_template %}",
         '{% verbatim %}<behavior action="{{ literal }}"/>{% endverbatim %}',
     ],
 )
@@ -138,6 +136,20 @@ def test_r2_dynamic_registry_source_warns_instead_of_claiming_full_validation(
     assert result["diagnostics"]
     assert all(item["severity"] == "warning" for item in result["diagnostics"])
     assert result["diagnostics"][-1]["code"] == "schema_static_incomplete"
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        '<behavior action="show-toast" message="Hello" count="{{ count }}"/>',
+        "<text>{{ label }}</text>",
+    ],
+)
+@override_settings(HYPERVIEW=CONFIG)
+def test_r2_dynamic_scalar_values_do_not_hide_static_schema_results(
+    admin_client, source
+):
+    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
 
 
 @override_settings(HYPERVIEW=CONFIG)

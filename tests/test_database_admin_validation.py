@@ -40,6 +40,24 @@ def _validate(
 
 
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_static_validation_uses_collision_safe_dynamic_markers() -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
+    source = (
+        f"{module._DYNAMIC_VALUE} {module._DYNAMIC_STRUCTURE} "
+        '<text xmlns="https://hyperview.org/hyperview">{{ label }}</text>'
+    )
+
+    masked, value_marker, structure_marker, dynamic = module._mask_template_syntax(
+        source
+    )
+
+    assert value_marker not in {module._DYNAMIC_VALUE, module._DYNAMIC_STRUCTURE}
+    assert structure_marker not in {module._DYNAMIC_VALUE, module._DYNAMIC_STRUCTURE}
+    assert value_marker in masked
+    assert dynamic is False
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_enabled_editor_exposes_context_free_validation_control() -> None:
     module, _ = _admin_types()
 
@@ -70,7 +88,7 @@ def test_validation_accepts_compilable_source_without_context_or_schema_render(
     _, model = _admin_types()
     source = (
         '<doc xmlns="https://hyperview.org/hyperview">'
-        "<styles/><screen><body><text>{{ missing }}</text></body></screen></doc>"
+        "<screen><styles/><body><text>{{ missing }}</text></body></screen></doc>"
     )
 
     response = admin_client.post(
@@ -80,10 +98,7 @@ def test_validation_accepts_compilable_source_without_context_or_schema_render(
     )
 
     assert response.status_code == 200
-    assert response.json()["ok"] is True
-    assert [item["code"] for item in response.json()["diagnostics"]] == [
-        "schema_static_incomplete"
-    ]
+    assert response.json() == {"ok": True, "diagnostics": []}
     assert model.objects.count() == 0
 
 
@@ -278,6 +293,7 @@ def test_validation_checks_static_xsd_declarations(
     [
         "{{ direction }}",
         "{% if horizontal %}horizontal{% else %}vertical{% endif %}",
+        "literal > {% if horizontal %}horizontal{% else %}vertical{% endif %}",
     ],
 )
 def test_validation_defers_dynamic_xsd_values_until_render(
@@ -288,10 +304,7 @@ def test_validation_defers_dynamic_xsd_values_until_render(
     )
 
     result = _validate(admin_client, source)
-    assert result["ok"] is True
-    assert [item["code"] for item in result["diagnostics"]] == [
-        "schema_static_incomplete"
-    ]
+    assert result == {"ok": True, "diagnostics": []}
 
 
 @pytest.mark.django_db
@@ -329,8 +342,9 @@ def test_static_validation_degrades_unclosed_raw_block_to_warning() -> None:
             "severity": "warning",
             "code": "schema_static_incomplete",
             "message": (
-                "Static schema validation could not analyze the complete "
-                "dynamic template structure."
+                "Static checks passed. Django markup beginning here can add or "
+                "remove XML structure; the final HXML will be validated when "
+                "served."
             ),
             "template": "screens/draft.xml",
             "coordinate_space": "source",
@@ -385,7 +399,7 @@ def test_validation_does_not_treat_load_as_an_incomplete_schema_gap(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_points_incomplete_schema_at_the_first_runtime_value(
+def test_validation_treats_a_dynamic_attribute_value_as_an_unknown_scalar(
     admin_client,
 ) -> None:
     source = "\n".join(
@@ -396,20 +410,370 @@ def test_validation_points_incomplete_schema_at_the_first_runtime_value(
         )
     )
 
+    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_dynamic_scalar_does_not_hide_an_invalid_attribute_name(admin_client) -> None:
+    source = (
+        '<style xmlns="https://hyperview.org/hyperview" id="card" '
+        'backgroundColor="{{ theme.canvas }}" kk="1" />'
+    )
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"][0]["code"] == "schema_attribute"
+    assert result["diagnostics"][0]["message"] == (
+        'Attribute "kk" is not allowed on element "style".'
+    )
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_checks_the_position_of_dynamic_scalar_text(admin_client) -> None:
+    source = "\n".join(
+        (
+            '<screen xmlns="https://hyperview.org/hyperview">',
+            "  {{ unexpected_text }}",
+            "  <body />",
+            "</screen>",
+        )
+    )
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "schema_structure",
+            "message": 'Text content is not allowed inside element "screen".',
+            "template": "screens/draft.xml",
+            "coordinate_space": "source",
+            "line": 1,
+            "column": None,
+        }
+    ]
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    "dynamic_markup",
+    [
+        "{% include optional_template %}",
+        "<{{ element_name }} />",
+    ],
+)
+def test_structural_django_markup_is_deferred_without_false_schema_errors(
+    admin_client, dynamic_markup: str
+) -> None:
+    source = (
+        '<doc xmlns="https://hyperview.org/hyperview">'
+        f"{dynamic_markup}<screen><body /></screen></doc>"
+    )
+
     result = _validate(admin_client, source)
 
     assert result["ok"] is True
+    assert [item["code"] for item in result["diagnostics"]] == [
+        "schema_static_incomplete"
+    ]
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_mutually_exclusive_valid_branches_do_not_create_structure_errors(
+    admin_client,
+) -> None:
+    source = (
+        '<doc xmlns="https://hyperview.org/hyperview"><screen>'
+        "{% if dark %}<styles />{% else %}<styles />{% endif %}"
+        "<body /></screen></doc>"
+    )
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is True
+    assert [item["code"] for item in result["diagnostics"]] == [
+        "schema_static_incomplete"
+    ]
+
+
+def _filesystem_admin_config(tmp_path) -> dict[str, Any]:
+    return {
+        "ADMIN": {"EDITOR": True},
+        "TEMPLATE_DIRS": [tmp_path],
+        "SOURCES": [{"BACKEND": "dj_hyperview.sources.FileSystemSource"}],
+    }
+
+
+@pytest.mark.django_db
+def test_validation_expands_a_literal_include_from_configured_sources(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "label.xml").write_text("<text>{{ label }}</text>", encoding="utf-8")
+    source = (
+        '<view xmlns="https://hyperview.org/hyperview">'
+        '{% include "partials/label.xml" %}'
+        "</view>"
+    )
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+def test_validation_resolves_a_literal_include_relative_to_the_draft_name(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "screens" / "partials"
+    partials.mkdir(parents=True)
+    (partials / "label.xml").write_text("<text>Label</text>", encoding="utf-8")
+    source = (
+        '<view xmlns="https://hyperview.org/hyperview">'
+        '{% include "./partials/label.xml" %}'
+        "</view>"
+    )
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+def test_validation_reports_a_missing_literal_include(admin_client, tmp_path) -> None:
+    source = '{% include "partials/missing.xml" %}'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
     assert result["diagnostics"] == [
         {
-            "severity": "warning",
-            "code": "schema_static_incomplete",
+            "severity": "error",
+            "code": "django_include_missing",
+            "message": 'Included template "partials/missing.xml" was not found.',
+            "template": "screens/draft.xml",
+            "coordinate_space": "source",
+            "line": 1,
+            "column": None,
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_validation_rejects_an_unsafe_literal_include_without_echoing_it(
+    admin_client, tmp_path
+) -> None:
+    source = '{% include "/private/secret.xml" %}'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"][0]["code"] == "django_include_invalid"
+    assert result["diagnostics"][0]["message"] == "Included template name is invalid."
+    assert "/private/secret.xml" not in json.dumps(result)
+
+
+@pytest.mark.django_db
+def test_validation_reports_schema_errors_in_a_literal_include(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "invalid.xml").write_text(
+        '<style xmlns="https://hyperview.org/hyperview" id="card" kk="1" />',
+        encoding="utf-8",
+    )
+    source = '{% include "partials/invalid.xml" %}'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"][0] == {
+        "severity": "error",
+        "code": "schema_attribute",
+        "message": 'Attribute "kk" is not allowed on element "style".',
+        "template": "partials/invalid.xml",
+        "coordinate_space": "source",
+        "line": 1,
+        "column": None,
+    }
+
+
+@pytest.mark.django_db
+def test_validation_reports_django_syntax_in_a_literal_include(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "invalid.xml").write_text("{% if ready %}<text />", encoding="utf-8")
+    source = '{% include "partials/invalid.xml" %}'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"][0]["code"] == "django_syntax"
+    assert result["diagnostics"][0]["template"] == "partials/invalid.xml"
+    assert "Unclosed tag" in result["diagnostics"][0]["message"]
+
+
+@pytest.mark.django_db
+def test_validation_checks_literal_include_content_in_its_parent_position(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "styles.xml").write_text("<styles />", encoding="utf-8")
+    source = "\n".join(
+        (
+            '<doc xmlns="https://hyperview.org/hyperview">',
+            "  <screen>",
+            "    <body />",
+            '    {% include "partials/styles.xml" %}',
+            "  </screen>",
+            "</doc>",
+        )
+    )
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"][0]["code"] == "schema_structure"
+    assert result["diagnostics"][0]["template"] == "screens/draft.xml"
+    assert result["diagnostics"][0]["line"] == 4
+
+
+@pytest.mark.django_db
+def test_validation_rejects_literal_include_cycles(admin_client, tmp_path) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "loop.xml").write_text(
+        '{% include "partials/loop.xml" %}', encoding="utf-8"
+    )
+    source = '{% include "partials/loop.xml" %}'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"][0]["code"] == "django_include_cycle"
+    assert result["diagnostics"][0]["template"] == "partials/loop.xml"
+
+
+@pytest.mark.django_db
+def test_validation_limits_literal_include_expansion(admin_client, tmp_path) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "label.xml").write_text("<text>Label</text>", encoding="utf-8")
+    source = "".join('{% include "partials/label.xml" %}' for _ in range(65))
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "django_include_limit",
+            "message": "Literal include expansion exceeds the validation limit.",
+            "template": "screens/draft.xml",
+            "coordinate_space": "source",
+            "line": 1,
+            "column": None,
+        }
+    ]
+
+
+@pytest.mark.django_db
+def test_validation_deduplicates_findings_from_a_repeated_literal_include(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "invalid.xml").write_text(
+        '<style xmlns="https://hyperview.org/hyperview" id="card" kk="1" />',
+        encoding="utf-8",
+    )
+    source = '{% include "partials/invalid.xml" %}' * 2
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert [item["code"] for item in result["diagnostics"]] == ["schema_attribute"]
+
+
+@pytest.mark.django_db
+def test_validation_reports_an_unavailable_literal_include_source_safely(
+    admin_client, monkeypatch, tmp_path
+) -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
+    from dj_hyperview.exceptions import SourceUnavailable
+
+    def fail_source(self, name):
+        raise SourceUnavailable("private:source", "private failure")
+
+    monkeypatch.setattr(module.HyperviewEngine, "get_template", fail_source)
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, '{% include "partials/label.xml" %}')
+
+    assert result["ok"] is False
+    assert result["diagnostics"][0]["code"] == "django_include_unavailable"
+    assert "private" not in json.dumps(result)
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_static_structure_validation_ignores_non_element_top_level_nodes(
+    admin_client,
+) -> None:
+    source = (
+        '<!-- Documentation only. --><view xmlns="https://hyperview.org/hyperview" />'
+    )
+
+    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_rejects_statically_visible_child_order(admin_client) -> None:
+    source = "\n".join(
+        (
+            '<doc xmlns="https://hyperview.org/hyperview">',
+            '  <styles><style id="screen" color="{{ theme.ink }}" /></styles>',
+            "  <screen><body /></screen>",
+            "</doc>",
+        )
+    )
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert result["diagnostics"] == [
+        {
+            "severity": "error",
+            "code": "schema_structure",
             "message": (
-                "Static schema validation could not analyze the complete "
-                "dynamic template structure."
+                'Element "styles" is not allowed inside "doc" at this position; '
+                'expected "screen" or "navigator".'
             ),
             "template": "screens/draft.xml",
             "coordinate_space": "source",
-            "line": 3,
+            "line": 2,
             "column": None,
         }
     ]
@@ -466,8 +830,9 @@ def test_validation_warns_when_dynamic_markup_prevents_complete_static_lint(
             "severity": "warning",
             "code": "schema_static_incomplete",
             "message": (
-                "Static schema validation could not analyze the complete "
-                "dynamic template structure."
+                "Static checks passed. Django markup beginning here can add or "
+                "remove XML structure; the final HXML will be validated when "
+                "served."
             ),
             "template": "fragments/image.xml",
             "coordinate_space": "source",
@@ -564,7 +929,10 @@ def test_validation_reports_django_syntax_at_source_line_without_writing(
             {
                 "severity": "error",
                 "code": "django_syntax",
-                "message": "Invalid Django template syntax.",
+                "message": (
+                    "Django template syntax error: Unclosed tag on line 2: "
+                    "'if'. Looking for one of: elif, else, endif."
+                ),
                 "template": "screens/draft.xml",
                 "coordinate_space": "source",
                 "line": 2,
@@ -573,6 +941,28 @@ def test_validation_reports_django_syntax_at_source_line_without_writing(
         ],
     }
     assert model.objects.count() == 0
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_explains_invalid_arguments_to_a_django_tag(admin_client) -> None:
+    result = _validate(admin_client, '{% include "partial.xml" banana %}')
+
+    assert result["ok"] is False
+    assert result["diagnostics"][0]["code"] == "django_syntax"
+    assert result["diagnostics"][0]["message"] == (
+        "Django template syntax error: Unknown argument for 'include' tag: 'banana'."
+    )
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_django_syntax_diagnostic_redacts_unbounded_parser_messages() -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
+    from django.template import TemplateSyntaxError
+
+    assert module._django_syntax_message(TemplateSyntaxError("x" * 501)) == (
+        "Invalid Django template syntax."
+    )
 
 
 @pytest.mark.django_db
