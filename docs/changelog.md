@@ -4,6 +4,35 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+## 0.1.0a18 — 2026-09-09
+
+### Added
+
+- Context-free Admin validation uses Django's parser for actionable syntax
+  diagnostics and recursively resolves every literal `{% include %}` through
+  the configured Hyperview source precedence. Included source is checked both
+  independently and in its parent position; missing, unsafe, unavailable,
+  cyclic, and excessive expansion is rejected without exposing private source
+  details.
+- Statically visible HXML child placement and order are validated against the
+  same corrected schema used for rendered responses. Django expressions in
+  text or quoted attributes are treated as an unknown scalar, preserving
+  structural validation without inventing runtime values.
+
+### Changed
+
+- The Admin HXML editor uses a 15-pixel font and two-space soft tabs.
+- Runtime schema failures now explain unexpected children, incomplete content,
+  forbidden or missing attributes, and invalid typed values without including
+  rendered data or internal paths.
+
+### Fixed
+
+- Mutually exclusive Django branches no longer create false child-order errors.
+  Conditional structure, inheritance, and variable-selected includes instead
+  produce an explicit incomplete-analysis warning and remain subject to final
+  rendered-response validation.
+
 ## 0.1.0a17 — 2026-09-08
 
 ### Fixed

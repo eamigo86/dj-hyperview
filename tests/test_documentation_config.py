@@ -383,6 +383,17 @@ def test_changelog_prepares_the_0_1_0a17_release() -> None:
     assert "template preamble" in normalized
 
 
+def test_changelog_prepares_the_0_1_0a18_release() -> None:
+    """Release notes explain Django-aware static validation and diagnostics."""
+    page = _documentation_pages()["changelog.md"]
+    normalized = " ".join(page.split())
+
+    assert "## 0.1.0a18 — 2026-09-09" in page
+    assert "literal `{% include %}`" in normalized
+    assert "unknown scalar" in normalized
+    assert "two-space soft tabs" in normalized
+
+
 def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:
     """Security guidance covers callable and dotted mutation policies."""
     pages = _documentation_pages()
