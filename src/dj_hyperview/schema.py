@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
@@ -517,14 +518,82 @@ def _validate_schema_root(root: Any, validator: Any) -> None:
         raise TemplateValidationError("schema_invalid", "invalid schema") from failure
     if error is None:
         return
-    line = getattr(error, "sourceline", None)
+    invalid_child = getattr(error, "invalid_child", None)
+    line = getattr(invalid_child, "sourceline", None)
+    if line is None:
+        line = getattr(error, "sourceline", None)
     if line is None:
         line = getattr(getattr(error, "elem", None), "sourceline", None)
     raise TemplateValidationError(
         "schema",
-        "document does not match schema",
+        _schema_validation_message(error),
         line=line,
     ) from None
+
+
+def _schema_local_name(value: Any) -> str | None:
+    """Return a safe local XML name from an element or schema declaration."""
+    name = getattr(value, "name", None) or getattr(value, "tag", None)
+    if not isinstance(name, str):
+        return None
+    if name.startswith("{"):
+        return name.rsplit("}", 1)[-1]
+    return name.rsplit(":", 1)[-1]
+
+
+def _quoted_choices(values: list[str]) -> str:
+    """Format safe schema element names as a short human-readable choice."""
+    quoted = [f'"{value}"' for value in values]
+    if len(quoted) < 2:
+        return "".join(quoted)
+    return ", ".join(quoted[:-1]) + f" or {quoted[-1]}"
+
+
+def _schema_validation_message(error: Any) -> str:
+    """Translate common xmlschema failures without echoing source values."""
+    element = _schema_local_name(getattr(error, "elem", None))
+    invalid_child = getattr(error, "invalid_child", None)
+    child = _schema_local_name(invalid_child)
+    expected = [
+        name
+        for item in (getattr(error, "expected", None) or ())
+        if (name := _schema_local_name(item)) is not None
+    ]
+    if child and element:
+        message = (
+            f'element "{child}" is not allowed inside "{element}" at this position'
+        )
+        if expected:
+            message += f"; expected {_quoted_choices(expected)}"
+        return message
+
+    reason = getattr(error, "reason", "")
+    if element and expected and "is not complete" in reason:
+        return (
+            f'element "{element}" is incomplete; expected child '
+            f"{_quoted_choices(expected)}"
+        )
+
+    disallowed = re.fullmatch(r"'([^']+)' attribute not allowed for element", reason)
+    if disallowed and element:
+        attribute = disallowed.group(1)
+        return f'attribute "{attribute}" is not allowed on element "{element}"'
+
+    invalid_value = re.match(r"attribute ([\w.:-]+)=", reason)
+    if invalid_value and element:
+        return (
+            f'attribute "{invalid_value.group(1)}" on element "{element}" has a '
+            "value not allowed by the schema"
+        )
+
+    missing = re.fullmatch(r"missing required attribute '([^']+)'", reason)
+    if missing and element:
+        return (
+            f'required attribute "{missing.group(1)}" is missing from element '
+            f'"{element}"'
+        )
+
+    return "document does not match schema"
 
 
 def validate_hyperview_schema(document: str) -> None:
