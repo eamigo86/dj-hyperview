@@ -373,6 +373,16 @@ def test_changelog_prepares_the_0_1_0a16_release() -> None:
     assert "validation cannot be disabled" in normalized
 
 
+def test_changelog_prepares_the_0_1_0a17_release() -> None:
+    """Release notes explain the corrected static diagnostic coordinate."""
+    page = _documentation_pages()["changelog.md"]
+    normalized = " ".join(page.split())
+
+    assert "## 0.1.0a17 — 2026-09-08" in page
+    assert "non-rendering `{% load %}`" in normalized
+    assert "template preamble" in normalized
+
+
 def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:
     """Security guidance covers callable and dotted mutation policies."""
     pages = _documentation_pages()

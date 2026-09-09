@@ -4,6 +4,15 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+## 0.1.0a17 — 2026-09-08
+
+### Fixed
+
+- Context-free Admin validation no longer treats non-rendering `{% load %}` tags
+  or inline Django comments as incomplete dynamic HXML. When later runtime
+  values remain, the warning points to the first value that actually requires
+  rendering instead of blaming the template preamble.
+
 ## 0.1.0a16 — 2026-09-08
 
 ### Added
