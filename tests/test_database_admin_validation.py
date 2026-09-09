@@ -366,6 +366,55 @@ def test_validation_lints_static_markup_inside_real_django_source(admin_client) 
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_does_not_treat_load_as_an_incomplete_schema_gap(
+    admin_client,
+) -> None:
+    source = "\n".join(
+        (
+            '{% load i18n %}<?xml version="1.0" encoding="UTF-8"?>',
+            '<doc xmlns="https://hyperview.org/hyperview">',
+            "  <screen><body /></screen>",
+            "</doc>",
+        )
+    )
+
+    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_points_incomplete_schema_at_the_first_runtime_value(
+    admin_client,
+) -> None:
+    source = "\n".join(
+        (
+            '{% load i18n %}<?xml version="1.0" encoding="UTF-8"?>',
+            '<view xmlns="https://hyperview.org/hyperview"',
+            '  scroll-orientation="{{ direction }}" />',
+        )
+    )
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is True
+    assert result["diagnostics"] == [
+        {
+            "severity": "warning",
+            "code": "schema_static_incomplete",
+            "message": (
+                "Static schema validation could not analyze the complete "
+                "dynamic template structure."
+            ),
+            "template": "screens/draft.xml",
+            "coordinate_space": "source",
+            "line": 3,
+            "column": None,
+        }
+    ]
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize(
     ("source", "code"),
     [

@@ -29,6 +29,7 @@ _DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"
 _DJANGO_TOKEN = re.compile(r"({{[\s\S]*?}}|{%[\s\S]*?%}|{#[\s\S]*?#})")
 _XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)[\s\S]*?\?>", re.IGNORECASE)
 _RAW_BLOCK = re.compile(r"{%\s*(comment|verbatim)(?:\s+([^\s%]+))?\s*%}")
+_LOAD_TAG = re.compile(r"{%\s*load(?:\s|%)")
 
 
 def _diagnostic(
@@ -92,6 +93,20 @@ def _mask_raw_blocks(content: str) -> str:
     return masked
 
 
+def _requires_runtime_analysis(token: str) -> bool:
+    """Return whether one Django token can affect the rendered HXML."""
+    return not token.startswith("{#") and _LOAD_TAG.match(token) is None
+
+
+def _first_runtime_token_line(content: str) -> int | None:
+    """Find the first Django token whose output cannot be checked statically."""
+    masked_raw = _mask_raw_blocks(content)
+    for match in _DJANGO_TOKEN.finditer(masked_raw):
+        if _requires_runtime_analysis(match.group(0)):
+            return content.count("\n", 0, match.start()) + 1
+    return None
+
+
 def _mask_template_syntax(content: str) -> tuple[str, str, bool]:
     """Make Django tokens and XML declarations safe inside a synthetic root."""
 
@@ -99,7 +114,10 @@ def _mask_template_syntax(content: str) -> tuple[str, str, bool]:
     while marker in content:
         marker += "_"
     masked_raw = _mask_raw_blocks(content)
-    dynamic = _DJANGO_TOKEN.search(masked_raw) is not None
+    dynamic = any(
+        _requires_runtime_analysis(match.group(0))
+        for match in _DJANGO_TOKEN.finditer(masked_raw)
+    )
 
     def replace_token(match: re.Match[str]) -> str:
         token = match.group(0)
@@ -152,10 +170,12 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     compiled = _get_compiled_registry()
     known_namespaces = {item["namespace"] for item in elements.values()}
     diagnostics = []
-    incomplete_line = None
-    if has_dynamic_syntax or re.search(r"{%\s*verbatim(?:\s|%)", content):
-        token = _DJANGO_TOKEN.search(content)
-        incomplete_line = content.count("\n", 0, token.start()) + 1 if token else 1
+    incomplete_line = _first_runtime_token_line(content) if has_dynamic_syntax else None
+    if verbatim := re.search(r"{%\s*verbatim(?:\s|%)", content):
+        verbatim_line = content.count("\n", 0, verbatim.start()) + 1
+        incomplete_line = (
+            min(incomplete_line, verbatim_line) if incomplete_line else verbatim_line
+        )
     for element in root.iterdescendants():
         if not isinstance(element.tag, str):
             continue
