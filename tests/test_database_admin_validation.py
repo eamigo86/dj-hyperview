@@ -530,6 +530,34 @@ def test_validation_expands_a_literal_include_from_configured_sources(
 
 
 @pytest.mark.django_db
+def test_literal_include_with_dynamic_structure_is_deferred_without_false_errors(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "panel.xml").write_text(
+        '<view xmlns="https://hyperview.org/hyperview">'
+        "{% if error %}<text>{{ error }}</text>{% endif %}"
+        "</view>",
+        encoding="utf-8",
+    )
+    source = (
+        '<view xmlns="https://hyperview.org/hyperview">'
+        "<!-- The owner's dynamic panel. -->"
+        '{% include "partials/panel.xml" %}'
+        "</view>"
+    )
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is True
+    assert {item["code"] for item in result["diagnostics"]} == {
+        "schema_static_incomplete"
+    }
+
+
+@pytest.mark.django_db
 def test_validation_resolves_a_literal_include_relative_to_the_draft_name(
     admin_client, tmp_path
 ) -> None:

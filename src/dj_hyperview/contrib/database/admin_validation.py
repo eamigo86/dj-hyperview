@@ -38,6 +38,10 @@ _DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"
 _DYNAMIC_STRUCTURE = "DJHVSTATICSTRUCTURE"
 _DJANGO_TOKEN = re.compile(r"({{[\s\S]*?}}|{%[\s\S]*?%}|{#[\s\S]*?#})")
 _XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)[\s\S]*?\?>", re.IGNORECASE)
+_XML_OPAQUE_BLOCK = re.compile(
+    r"<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>",
+    re.IGNORECASE,
+)
 _RAW_BLOCK = re.compile(r"{%\s*(comment|verbatim)(?:\s+([^\s%]+))?\s*%}")
 _LOAD_TAG = re.compile(r"{%\s*load(?:\s|%)")
 _MAX_LITERAL_INCLUDES = 64
@@ -106,9 +110,16 @@ def _mask_raw_blocks(content: str) -> str:
 
 def _xml_token_context(content: str, start: int) -> str:
     """Locate a Django token in XML text, a tag, or a quoted attribute value."""
+    lexical = _mask_raw_blocks(content)
+    lexical = _DJANGO_TOKEN.sub(
+        lambda match: _blank_preserving_lines(match.group(0)), lexical
+    )
+    lexical = _XML_OPAQUE_BLOCK.sub(
+        lambda match: _blank_preserving_lines(match.group(0)), lexical
+    )
     in_tag = False
     quote = None
-    for character in content[:start]:
+    for character in lexical[:start]:
         if not in_tag:
             if character == "<":
                 in_tag = True
