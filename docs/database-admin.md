@@ -184,7 +184,8 @@ The editor uses package-owned assets, django-ace strict CSP mode, automatic
 light and dark themes, line numbers, search, wrapping, full screen, and
 contextual completion for elements, unused attributes, enumerated values, and
 configured namespace prefixes. Its catalog endpoint requires authentication
-and view permission for the template model.
+and view permission for the template model. The source uses a 15-pixel editor
+font and inserts two-space soft tabs; pressing Tab never writes a literal tab.
 
 **Format and Validate** first indents only structural whitespace in known
 element-only Hyperview containers. It preserves original opening tags, quoted

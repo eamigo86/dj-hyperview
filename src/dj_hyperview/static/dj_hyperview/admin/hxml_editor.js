@@ -524,6 +524,13 @@
     textarea.value = editor.getValue();
   }
 
+  function configureEditor(editor) {
+    editor.setFontSize(15);
+    const session = editor.getSession();
+    session.setTabSize(2);
+    session.setUseSoftTabs(true);
+  }
+
   function installEditor(textarea) {
     const widget = textarea.previousElementSibling;
     const editor = widget && widget.editor;
@@ -532,6 +539,7 @@
     }
     const HxmlMode = window.ace.require("ace/mode/hxml").Mode;
     editor.getSession().setMode(new HxmlMode());
+    configureEditor(editor);
     const form = textarea.closest("form");
     if (form) {
       form.addEventListener("submit", function () {
@@ -588,6 +596,7 @@
   }
 
   return {
+    configureEditor: configureEditor,
     formatHxml: formatHxml,
     getCompletions: getCompletions,
     protectDjango: protectDjango,

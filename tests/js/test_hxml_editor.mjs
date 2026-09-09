@@ -4,6 +4,7 @@ import test from "node:test";
 import editorApi from "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_editor.js";
 
 const {
+  configureEditor,
   formatHxml,
   getCompletions,
   protectDjango,
@@ -105,6 +106,26 @@ test("submit synchronization copies the latest Ace value", () => {
   syncEditor(textarea, editor);
 
   assert.equal(textarea.value, "new");
+});
+
+test("editor uses readable text and two-space soft tabs", () => {
+  const calls = [];
+  const session = {
+    setTabSize: (value) => calls.push(["tabSize", value]),
+    setUseSoftTabs: (value) => calls.push(["softTabs", value]),
+  };
+  const editor = {
+    getSession: () => session,
+    setFontSize: (value) => calls.push(["fontSize", value]),
+  };
+
+  configureEditor(editor);
+
+  assert.deepEqual(calls, [
+    ["fontSize", 15],
+    ["tabSize", 2],
+    ["softTabs", true],
+  ]);
 });
 
 for (const [name, source, preserved] of [
