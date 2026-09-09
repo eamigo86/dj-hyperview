@@ -4,6 +4,15 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+## 0.1.0a19 — 2026-09-09
+
+### Fixed
+
+- Context-free Admin validation now ignores XML comments, CDATA sections, and
+  processing instructions while locating Django tokens. Literal
+  `{% include %}` tags that follow documentation containing quotes are expanded
+  correctly instead of producing false text-content schema errors.
+
 ## 0.1.0a18 — 2026-09-09
 
 ### Added

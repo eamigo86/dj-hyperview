@@ -394,6 +394,16 @@ def test_changelog_prepares_the_0_1_0a18_release() -> None:
     assert "two-space soft tabs" in normalized
 
 
+def test_changelog_prepares_the_0_1_0a19_release() -> None:
+    """Release notes explain reliable XML lexical context detection."""
+    page = _documentation_pages()["changelog.md"]
+    normalized = " ".join(page.split())
+
+    assert "## 0.1.0a19 — 2026-09-09" in page
+    assert "XML comments" in normalized
+    assert "literal `{% include %}`" in normalized
+
+
 def test_admin_permission_policy_is_documented_with_both_configuration_forms() -> None:
     """Security guidance covers callable and dotted mutation policies."""
     pages = _documentation_pages()
