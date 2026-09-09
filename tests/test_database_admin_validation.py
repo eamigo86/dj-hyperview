@@ -369,6 +369,7 @@ def test_validation_lints_static_markup_inside_real_django_source(admin_client) 
 def test_validation_does_not_treat_load_as_an_incomplete_schema_gap(
     admin_client,
 ) -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     source = "\n".join(
         (
             '{% load i18n %}<?xml version="1.0" encoding="UTF-8"?>',
@@ -379,6 +380,7 @@ def test_validation_does_not_treat_load_as_an_incomplete_schema_gap(
     )
 
     assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+    assert module._first_runtime_token_line(source) is None
 
 
 @pytest.mark.django_db
