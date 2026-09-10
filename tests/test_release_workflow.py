@@ -94,10 +94,10 @@ def test_release_validates_metadata_before_one_reusable_ci_build() -> None:
     ]
     assert ci == {
         "needs": "metadata",
-        "permissions": {"contents": "read"},
+        "permissions": {"contents": "read", "actions": "read", "statuses": "read"},
         "uses": "./.github/workflows/ci.yml",
         "secrets": {"CODECOV_TOKEN": "${{ secrets.CODECOV_TOKEN }}"},
-        "with": {"redis": "true"},
+        "with": {"redis": "true", "coverage_reuse_only": "true"},
     }
     text = WORKFLOW.read_text()
     assert "uv build" not in text

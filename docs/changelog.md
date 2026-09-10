@@ -2,6 +2,23 @@
 
 This page records user-visible release changes, including unpublished attempts.
 
+## Unreleased
+
+### Fixed
+
+- Normal CI now includes the live Redis profile while preserving all six
+  no-Redis compatibility cells and explicit base-only callers. The coverage
+  collector verifies current-run artifact identities, exact counters and
+  report digests before uploading both actual XML reports together; previously
+  the executed Redis coverage was absent from the upload. External Codecov
+  acceptance remains distinct from successful upload.
+- Release now requires an exact-SHA successful main CI acceptance receipt plus
+  current successful Codecov project/patch statuses before staging. Ordinary CI
+  explicitly assesses merged reports; identical evidence can reuse or promote
+  an immutable assessment without duplicate uploads. Bounded waits occur outside
+  the SHA lock for producers, and missing, expired or changed proof fails closed.
+  Coverage thresholds and Codecov automatic targets are unchanged.
+
 ## 0.1.0a21 — 2026-09-09
 
 ### Added

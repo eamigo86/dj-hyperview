@@ -9,6 +9,10 @@ on:
       redis:
         description: Run live Redis acceptance
         type: boolean
+        default: true
+      coverage_reuse_only:
+        description: Require a successful canonical main coverage receipt
+        type: boolean
         default: false
     secrets:
       CODECOV_TOKEN:
@@ -19,7 +23,7 @@ on:
       redis:
         description: Run live Redis acceptance
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: read
@@ -30,7 +34,7 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
-      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: "24"
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
@@ -75,24 +79,31 @@ jobs:
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
         with:
           version: "0.12.6"
+      - name: Mark coverage start
+        if: ${{ matrix.python == '3.12' && matrix.django == '6.1.1' }}
+        run: echo "COVERAGE_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - name: Run aggregate branch coverage
         run: >-
           uv run --locked --python ${{ matrix.python }}
           --with Django==${{ matrix.django }}
           python -m tools.test_matrix
           --django-version ${{ matrix.django }}
-      - name: Upload canonical coverage to Codecov
+      - name: Seal canonical coverage
         if: ${{ matrix.python == '3.12' && matrix.django == '6.1.1' }}
-        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        run: >-
+          uv run --locked --python 3.12 --with Django==6.1.1
+          python -m tools.coverage_artifacts seal --profile default
+      - name: Retain canonical coverage
+        if: ${{ matrix.python == '3.12' && matrix.django == '6.1.1' }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
         with:
-          disable_search: true
-          fail_ci_if_error: true
-          files: ./coverage.xml
-          token: ${{ secrets.CODECOV_TOKEN }}
-          verbose: true
+          name: coverage-default-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage-reports/default/
+          if-no-files-found: error
+          retention-days: 7
 
   redis:
-    if: ${{ inputs.redis == true }}
+    if: ${{ toJSON(inputs.redis) != 'false' }}
     needs: quality
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -117,10 +128,139 @@ jobs:
         with:
           version: "0.12.6"
       - run: uv sync --locked --group redis
+      - name: Mark coverage start
+        run: echo "COVERAGE_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"
       - name: Run live Redis acceptance
         run: >-
           uv run --locked --group redis python -m tools.test_matrix --redis
           --django-version 6.1.1
+      - name: Seal Redis coverage
+        run: >-
+          uv run --locked --group redis python -m tools.coverage_artifacts
+          seal --profile redis
+      - name: Retain Redis coverage
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: coverage-redis-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage-reports/redis/
+          if-no-files-found: error
+          retention-days: 7
+
+  coverage-receipt:
+    needs: [quality, compatibility]
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Order assessment producers outside the SHA lock
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          COVERAGE_REUSE_ONLY: ${{ inputs.coverage_reuse_only == true }}
+          COVERAGE_REDIS: ${{ toJSON(inputs.redis) != 'false' }}
+          COVERAGE_PULL: ${{ github.event.pull_request.number || '' }}
+          COVERAGE_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}
+          COVERAGE_PR_BASE: ${{ github.event.pull_request.base.sha || '' }}
+        run: python -m tools.check_codecov prepare
+
+  coverage:
+    needs: [quality, compatibility, redis, coverage-receipt]
+    if: ${{ !cancelled() && needs.quality.result == 'success' && needs.compatibility.result == 'success' && ((toJSON(inputs.redis) != 'false' && needs.redis.result == 'success') || (toJSON(inputs.redis) == 'false' && needs.redis.result == 'skipped')) && needs.coverage-receipt.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      actions: read
+      statuses: read
+    concurrency:
+      group: codecov-${{ github.repository }}-${{ github.sha }}
+      cancel-in-progress: false
+      queue: max
+    env:
+      GITHUB_TOKEN: ${{ github.token }}
+      COVERAGE_REUSE_ONLY: ${{ inputs.coverage_reuse_only == true }}
+      COVERAGE_REDIS: ${{ toJSON(inputs.redis) != 'false' }}
+      COVERAGE_PULL: ${{ github.event.pull_request.number || '' }}
+      COVERAGE_PR_HEAD: ${{ github.event.pull_request.head.sha || '' }}
+      COVERAGE_PR_BASE: ${{ github.event.pull_request.base.sha || '' }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - name: Download current canonical report
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: coverage-default-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage-reports/default
+          digest-mismatch: error
+      - name: Download current Redis report
+        if: ${{ toJSON(inputs.redis) != 'false' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: coverage-redis-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage-reports/redis
+          digest-mismatch: error
+      - name: Verify selected current reports
+        id: verify
+        env:
+          COVERAGE_REDIS: ${{ toJSON(inputs.redis) != 'false' }}
+        run: python -m tools.coverage_artifacts verify
+      - name: Find an eligible completed acceptance
+        id: discover
+        run: python -m tools.check_codecov discover
+      - name: Download the exact trusted receipt
+        if: ${{ steps.discover.outputs.artifact_id != '' }}
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          artifact-ids: ${{ steps.discover.outputs.artifact_id }}
+          run-id: ${{ steps.discover.outputs.run_id }}
+          repository: ${{ github.repository }}
+          github-token: ${{ github.token }}
+          path: .codecov-prior
+          digest-mismatch: error
+      - name: Verify reuse or prepare first assessment
+        id: plan
+        run: python -m tools.check_codecov plan
+      - name: Upload verified coverage to Codecov
+        if: ${{ inputs.coverage_reuse_only != true && steps.plan.outputs.reused == 'false' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          disable_search: true
+          fail_ci_if_error: true
+          files: ${{ steps.verify.outputs.files }}
+          name: ${{ steps.verify.outputs.name }}
+          override_commit: ${{ github.sha }}
+          override_build_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}/attempts/${{ github.run_attempt }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          verbose: true
+      - name: Confirm the current upload merged
+        if: ${{ inputs.coverage_reuse_only != true && steps.plan.outputs.reused == 'false' }}
+        run: python -m tools.check_codecov merged
+      - name: Explicitly request the first assessment
+        if: ${{ inputs.coverage_reuse_only != true && steps.plan.outputs.reused == 'false' }}
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          run_command: send-notifications
+          override_commit: ${{ github.sha }}
+          token: ${{ secrets.CODECOV_TOKEN }}
+          fail_ci_if_error: true
+      - name: Require Codecov project and patch acceptance
+        if: ${{ inputs.coverage_reuse_only != true && steps.plan.outputs.reused == 'false' }}
+        run: python -m tools.check_codecov accept
+      - name: Retain acceptance receipt
+        if: ${{ inputs.coverage_reuse_only != true && toJSON(inputs.redis) != 'false' && (github.event_name == 'push' || github.event_name == 'pull_request') }}
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: codecov-acceptance-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: coverage-acceptance/receipt.json
+          if-no-files-found: error
+          retention-days: 30
 
   artifacts:
     needs: [quality, compatibility]

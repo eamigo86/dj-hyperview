@@ -1,0 +1,6 @@
+# Notification ordering only; coverage targets and parser defaults are unchanged.
+codecov:
+  require_ci_to_pass: false
+  notify:
+    wait_for_ci: false
+    manual_trigger: true

@@ -14,6 +14,7 @@ ACTION_PINS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",
     "actions/setup-node": "249970729cb0ef3589644e2896645e5dc5ba9c38",
+    "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "astral-sh/setup-uv": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
     "codecov/codecov-action": "fb8b3582c8e4def4969c97caa2f19720cb33a72f",
@@ -189,9 +190,9 @@ def test_workflow_audit_rejects_job_execution_controls(mutation: str) -> None:
 
 
 def test_workflow_audit_rejects_changed_redis_condition() -> None:
-    """The Redis job keeps its exact reviewed opt-in condition."""
+    """The Redis job keeps its reviewed explicit-false condition."""
     mutated = WORKFLOW.read_text().replace(
-        "if: ${{ inputs.redis == true }}", "if: ${{ always() }}", 1
+        "if: ${{ toJSON(inputs.redis) != 'false' }}", "if: ${{ always() }}", 1
     )
 
     assert _audit_workflow(mutated) == ["redis: execution shape is not approved"]
@@ -269,7 +270,7 @@ def test_workflow_audit_accepts_semantically_empty_yaml_changes() -> None:
 @pytest.mark.parametrize(
     ("old", "new"),
     [
-        ("default: false", 'default: "false"'),
+        ("default: true", 'default: "true"'),
         ("fail-fast: false", 'fail-fast: "false"'),
         ("timeout-minutes: 15", 'timeout-minutes: "15"'),
         ('python: ["3.12", "3.13", "3.14"]', 'python: [3.12, "3.13", "3.14"]'),
@@ -429,117 +430,156 @@ APPROVED_RUN_CONTRACT = {
         "uv sync --locked",
         "node --test tests/js/*.mjs",
         "uv lock --check\nuv run ruff check .\nuv run ruff format --check .",
-        (
-            "PYTHONPATH=.:src uv run python -m django check --settings=tests.settings\n"
-            "PYTHONPATH=.:src uv run python -m django check "
-            "--settings=tests.settings_database\n"
-            "PYTHONPATH=.:src uv run python -m django check "
-            "--settings=tests.settings_database_admin\n"
-            "PYTHONPATH=.:src uv run python -m django makemigrations "
-            "dj_hyperview_database --check --dry-run "
-            "--settings=tests.settings_database"
-        ),
-        (
-            "uv run pytest -q tests/test_dependency_policy.py "
-            "tests/test_package_boundary.py\n"
-            "uv run pytest -q tests/test_public_api_quality.py"
-        ),
+        "PYTHONPATH=.:src uv run python -m django check "
+        "--settings=tests.settings\n"
+        "PYTHONPATH=.:src uv run python -m django check "
+        "--settings=tests.settings_database\n"
+        "PYTHONPATH=.:src uv run python -m django check "
+        "--settings=tests.settings_database_admin\n"
+        "PYTHONPATH=.:src uv run python -m django makemigrations "
+        "dj_hyperview_database --check --dry-run "
+        "--settings=tests.settings_database",
+        "uv run pytest -q tests/test_dependency_policy.py "
+        "tests/test_package_boundary.py\n"
+        "uv run pytest -q tests/test_public_api_quality.py",
     ),
     "compatibility": (
-        (
-            "uv run --locked --python ${{ matrix.python }} "
-            "--with Django==${{ matrix.django }} python -m tools.test_matrix "
-            "--django-version ${{ matrix.django }}"
-        ),
+        'echo "COVERAGE_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"',
+        "uv run --locked --python ${{ matrix.python }} --with Django==${{ "
+        "matrix.django }} python -m tools.test_matrix --django-version ${{ "
+        "matrix.django }}",
+        "uv run --locked --python 3.12 --with Django==6.1.1 python -m "
+        "tools.coverage_artifacts seal --profile default",
     ),
     "redis": (
         "uv sync --locked --group redis",
-        (
-            "uv run --locked --group redis python -m tools.test_matrix --redis "
-            "--django-version 6.1.1"
-        ),
+        'echo "COVERAGE_STARTED_AT=$(date +%s)" >> "$GITHUB_ENV"',
+        "uv run --locked --group redis python -m tools.test_matrix --redis "
+        "--django-version 6.1.1",
+        "uv run --locked --group redis python -m tools.coverage_artifacts seal "
+        "--profile redis",
+    ),
+    "coverage": (
+        "python -m tools.coverage_artifacts verify",
+        "python -m tools.check_codecov discover",
+        "python -m tools.check_codecov plan",
+        "python -m tools.check_codecov merged",
+        "python -m tools.check_codecov accept",
     ),
     "artifacts": (
         "uv sync --locked",
         "uv build\nuv run python -m tools.package_guard dist/*.whl",
-        (
-            'smoke_dir="$(mktemp -d)"\nuv venv "$smoke_dir/venv" --pytho'
-            'n 3.12\nuv pip install --python "$smoke_dir/venv/bin/python'
-            '" dist/*.whl\n(\ncd "$smoke_dir"\nunset PYTHONPATH\n"$smoke_di'
-            "r/venv/bin/python\" -I -c 'from pathlib import Path; import"
-            " xmlschema; import dj_hyperview; from django.conf import s"
-            "ettings; settings.configure(HYPERVIEW={}); assert Path(dj_"
-            "hyperview.__file__).resolve().is_relative_to(Path.cwd() / "
-            '"venv"); assert xmlschema.__version__; assert dj_hyperview'
-            '.HYPERVIEW_VALIDATION_CONTRACT == "automatic-xsd-v1"; asse'
-            'rt dj_hyperview.validate_hxml("<view xmlns=\\"https://hyper'
-            'view.org/hyperview\\"/>")\'\n)'
-        ),
-        (
-            'wheel="$(echo dist/*.whl)"\n'
-            'schema_dir="$(mktemp -d)"\n'
-            'uv venv "$schema_dir/venv" --python 3.12\n'
-            'uv pip install --python "$schema_dir/venv/bin/python" "${wheel}[schema]"\n'
-            'editor_dir="$(mktemp -d)"\n'
-            'uv venv "$editor_dir/venv" --python 3.12\n'
-            'uv pip install --python "$editor_dir/venv/bin/python" "${wheel}[editor]"\n'
-            '(cd "$schema_dir" && unset PYTHONPATH && '
-            '"$schema_dir/venv/bin/python" -I -c '
-            "'import xmlschema; from dj_hyperview import "
-            "validate_hyperview_schema; assert xmlschema.__version__')\n"
-            '(cd "$editor_dir" && unset PYTHONPATH && '
-            '"$editor_dir/venv/bin/python" -I -c '
-            "'import django_ace; from dj_hyperview.contrib.database.admin_editor "
-            "import HyperviewAceWidget; assert django_ace and HyperviewAceWidget')"
-        ),
+        'smoke_dir="$(mktemp -d)"\n'
+        'uv venv "$smoke_dir/venv" --python 3.12\n'
+        'uv pip install --python "$smoke_dir/venv/bin/python" dist/*.whl\n'
+        "(\n"
+        'cd "$smoke_dir"\n'
+        "unset PYTHONPATH\n"
+        '"$smoke_dir/venv/bin/python" -I -c \'from pathlib import Path; import '
+        "xmlschema; import dj_hyperview; from django.conf import settings; "
+        "settings.configure(HYPERVIEW={}); assert "
+        "Path(dj_hyperview.__file__).resolve().is_relative_to(Path.cwd() / "
+        '"venv"); assert xmlschema.__version__; assert '
+        'dj_hyperview.HYPERVIEW_VALIDATION_CONTRACT == "automatic-xsd-v1"; '
+        'assert dj_hyperview.validate_hxml("<view '
+        'xmlns=\\"https://hyperview.org/hyperview\\"/>")\'\n'
+        ")",
+        'wheel="$(echo dist/*.whl)"\n'
+        'schema_dir="$(mktemp -d)"\n'
+        'uv venv "$schema_dir/venv" --python 3.12\n'
+        'uv pip install --python "$schema_dir/venv/bin/python" '
+        '"${wheel}[schema]"\n'
+        'editor_dir="$(mktemp -d)"\n'
+        'uv venv "$editor_dir/venv" --python 3.12\n'
+        'uv pip install --python "$editor_dir/venv/bin/python" '
+        '"${wheel}[editor]"\n'
+        '(cd "$schema_dir" && unset PYTHONPATH && "$schema_dir/venv/bin/python" '
+        "-I -c 'import xmlschema; from dj_hyperview import "
+        "validate_hyperview_schema; assert xmlschema.__version__')\n"
+        '(cd "$editor_dir" && unset PYTHONPATH && "$editor_dir/venv/bin/python" '
+        "-I -c 'import django_ace; from "
+        "dj_hyperview.contrib.database.admin_editor import HyperviewAceWidget; "
+        "assert django_ace and HyperviewAceWidget')",
         "uv run zensical build --clean --strict -f zensical.yml",
     ),
+    "coverage-receipt": ("python -m tools.check_codecov prepare",),
 }
 
 APPROVED_JOB_KEYS = {
-    "quality": {"runs-on", "timeout-minutes", "steps"},
-    "compatibility": {"runs-on", "timeout-minutes", "strategy", "steps"},
-    "redis": {"if", "needs", "runs-on", "timeout-minutes", "env", "services", "steps"},
-    "artifacts": {"needs", "runs-on", "timeout-minutes", "steps"},
+    "quality": {"runs-on", "steps", "timeout-minutes"},
+    "compatibility": {"runs-on", "steps", "strategy", "timeout-minutes"},
+    "redis": {"timeout-minutes", "if", "needs", "steps", "env", "runs-on", "services"},
+    "artifacts": {"runs-on", "needs", "steps", "timeout-minutes"},
+    "coverage": {
+        "concurrency",
+        "env",
+        "if",
+        "needs",
+        "runs-on",
+        "steps",
+        "timeout-minutes",
+    },
+    "coverage-receipt": {"runs-on", "needs", "steps", "timeout-minutes"},
 }
 
 APPROVED_STEP_KEYS = {
     "quality": (
         {"uses"},
-        {"uses", "with"},
-        {"uses", "with"},
-        {"uses", "with"},
-        {"name", "run"},
-        {"name", "run"},
-        {"name", "run"},
-        {"name", "run"},
-        {"name", "run"},
+        {"with", "uses"},
+        {"with", "uses"},
+        {"with", "uses"},
+        {"run", "name"},
+        {"run", "name"},
+        {"run", "name"},
+        {"run", "name"},
+        {"run", "name"},
     ),
     "compatibility": (
         {"uses"},
-        {"uses", "with"},
-        {"uses", "with"},
-        {"name", "run"},
-        {"name", "if", "uses", "with"},
+        {"with", "uses"},
+        {"with", "uses"},
+        {"if", "run", "name"},
+        {"run", "name"},
+        {"if", "run", "name"},
+        {"if", "with", "name", "uses"},
     ),
     "redis": (
         {"uses"},
-        {"uses", "with"},
-        {"uses", "with"},
+        {"with", "uses"},
+        {"with", "uses"},
         {"run"},
-        {"name", "run"},
+        {"run", "name"},
+        {"run", "name"},
+        {"run", "name"},
+        {"with", "name", "uses"},
+    ),
+    "coverage": (
+        {"uses"},
+        {"with", "uses"},
+        {"with", "name", "uses"},
+        {"if", "with", "name", "uses"},
+        {"id", "run", "name", "env"},
+        {"id", "run", "name"},
+        {"if", "with", "name", "uses"},
+        {"id", "run", "name"},
+        {"if", "with", "name", "uses"},
+        {"if", "run", "name"},
+        {"if", "with", "name", "uses"},
+        {"if", "run", "name"},
+        {"if", "with", "name", "uses"},
     ),
     "artifacts": (
         {"uses"},
-        {"uses", "with"},
-        {"uses", "with"},
+        {"with", "uses"},
+        {"with", "uses"},
         {"run"},
-        {"name", "run"},
-        {"name", "run"},
-        {"name", "run"},
-        {"name", "run"},
-        {"name", "uses", "with"},
+        {"run", "name"},
+        {"run", "name"},
+        {"run", "name"},
+        {"run", "name"},
+        {"with", "name", "uses"},
     ),
+    "coverage-receipt": ({"uses"}, {"with", "uses"}, {"env", "run", "name"}),
 }
 
 
@@ -567,7 +607,7 @@ def _execution_shape_is_approved(name: str, job: dict[str, object]) -> bool:
         return False
     if set(job) - {"permissions"} != APPROVED_JOB_KEYS[name]:
         return False
-    if name == "redis" and job.get("if") != "${{ inputs.redis == true }}":
+    if name == "redis" and job.get("if") != "${{ toJSON(inputs.redis) != 'false' }}":
         return False
     steps = job.get("steps")
     if not isinstance(steps, list) or any(not isinstance(step, dict) for step in steps):
@@ -691,37 +731,70 @@ def test_compatibility_matrix_runs_every_supported_runtime_with_coverage() -> No
     assert "--django-version ${{ matrix.django }}" in script
 
 
-def test_canonical_compatibility_cell_uploads_one_strict_codecov_report() -> None:
-    """Only the canonical aggregate report is uploaded with repository auth."""
+def test_current_reports_are_verified_before_one_strict_upload() -> None:
+    """The collector uploads only verified current-run selected XML files."""
     workflow = _workflow()
-    job = workflow["jobs"]["compatibility"]
-    upload = next(
-        (
-            step
-            for step in job["steps"]
-            if "codecov/codecov-action" in step.get("uses", "")
-        ),
-        None,
+    job = workflow["jobs"]["coverage"]
+    assert job["needs"] == ["quality", "compatibility", "redis", "coverage-receipt"]
+    assert job["if"] == (
+        "${{ !cancelled() && needs.quality.result == 'success' && "
+        "needs.compatibility.result == 'success' && "
+        "((toJSON(inputs.redis) != 'false' && needs.redis.result == 'success') || "
+        "(toJSON(inputs.redis) == 'false' && needs.redis.result == 'skipped')) && "
+        "needs.coverage-receipt.result == 'success' }}"
     )
+    uploads = [
+        (name, step)
+        for name, candidate in workflow["jobs"].items()
+        for step in candidate["steps"]
+        if "codecov/codecov-action" in step.get("uses", "")
+        and step.get("with", {}).get("run_command") != "send-notifications"
+    ]
+    assert len(uploads) == 1
+    name, upload = uploads[0]
+    assert name == "coverage"
+    assert upload["with"]["files"] == "${{ steps.verify.outputs.files }}"
+    assert upload["with"]["name"] == "${{ steps.verify.outputs.name }}"
+    assert upload["with"]["override_commit"] == "${{ github.sha }}"
+    assert upload["with"]["disable_search"] == "true"
+    assert upload["with"]["fail_ci_if_error"] == "true"
+    assert "python -m tools.coverage_artifacts verify" in _run_script(job)
+    verify = next(
+        i for i, step in enumerate(job["steps"]) if step.get("id") == "verify"
+    )
+    assert verify < job["steps"].index(upload)
+    for name in ("compatibility", "redis"):
+        scripts = _run_script(workflow["jobs"][name])
+        assert scripts.index("COVERAGE_STARTED_AT") < scripts.index(
+            "python -m tools.test_matrix"
+        )
+        assert scripts.index("python -m tools.test_matrix") < scripts.index(
+            "python -m tools.coverage_artifacts seal"
+        )
 
-    assert workflow["on"]["workflow_call"]["secrets"] == {
-        "CODECOV_TOKEN": {
-            "description": "Authenticate coverage uploads to Codecov",
-            "required": "true",
-        }
-    }
-    assert upload == {
-        "name": "Upload canonical coverage to Codecov",
-        "if": "${{ matrix.python == '3.12' && matrix.django == '6.1.1' }}",
-        "uses": ("codecov/codecov-action@" + ACTION_PINS["codecov/codecov-action"]),
-        "with": {
-            "disable_search": "true",
-            "fail_ci_if_error": "true",
-            "files": "./coverage.xml",
-            "token": "${{ secrets.CODECOV_TOKEN }}",
-            "verbose": "true",
-        },
-    }
+
+@pytest.mark.parametrize(
+    ("old", "new"),
+    [
+        ("files: ${{ steps.verify.outputs.files }}", "files: ./historical.xml"),
+        ("override_commit: ${{ github.sha }}", "override_commit: main"),
+        (
+            "coverage-default-${{ github.run_id }}-${{ github.run_attempt }}",
+            "coverage-default-old",
+        ),
+        ("needs.redis.result == 'success'", "needs.redis.result != 'cancelled'"),
+        (
+            "python -m tools.coverage_artifacts verify",
+            "python -m tools.coverage_artifacts verify || true",
+        ),
+    ],
+)
+def test_workflow_rejects_coverage_provenance_bypasses(old: str, new: str) -> None:
+    """No old report, moving ref or swallowed producer/verifier failure is allowed."""
+    text = WORKFLOW.read_text()
+    mutated = text.replace(old, new, 1)
+    assert mutated != text
+    assert _audit_workflow(mutated)
 
 
 def test_quality_job_checks_lock_style_settings_migrations_and_boundaries() -> None:
@@ -791,20 +864,20 @@ def test_artifact_job_builds_checks_and_smokes_one_immutable_candidate() -> None
     }
 
 
-def test_redis_job_is_versioned_real_and_strictly_opt_in() -> None:
-    """Redis runs only for an explicit reusable or manual workflow input."""
+def test_redis_job_runs_normally_but_honors_explicit_false() -> None:
+    """Normal CI measures Redis without adding it to the no-Redis base cells."""
     workflow = _workflow()
     redis_input = {
         "description": "Run live Redis acceptance",
         "type": "boolean",
-        "default": "false",
+        "default": "true",
     }
     job = workflow["jobs"]["redis"]
     script = _run_script(job)
 
     assert workflow["on"]["workflow_call"]["inputs"]["redis"] == redis_input
     assert workflow["on"]["workflow_dispatch"]["inputs"]["redis"] == redis_input
-    assert job["if"] == "${{ inputs.redis == true }}"
+    assert job["if"] == "${{ toJSON(inputs.redis) != 'false' }}"
     assert job["services"]["redis"]["image"] == "redis:8.2.9-alpine"
     assert job["env"]["DJHV_REDIS_URL"] == "redis://127.0.0.1:6379/15"
     assert "--group redis" in script
