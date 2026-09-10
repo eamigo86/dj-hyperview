@@ -2,7 +2,9 @@
 
 import importlib
 import json
+import os
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 
 import pytest
 from django.db import transaction
@@ -171,10 +173,13 @@ def test_bad_envelope_never_schedules(monkeypatch):
     assert not calls
 
 
-def test_fresh_process_import_and_construction_need_no_redis_or_worker():
+def test_fresh_process_import_and_construction_need_no_redis_or_worker(monkeypatch):
     import subprocess
     import sys
 
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    assert (source_root / "dj_hyperview" / "__init__.py").is_file()
     program = """
 import builtins, threading
 original = builtins.__import__
@@ -193,6 +198,8 @@ print("lazy-import-ok")
         text=True,
         capture_output=True,
         check=False,
+        timeout=10,
+        env={**os.environ, "PYTHONPATH": str(source_root)},
     )
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == "lazy-import-ok"

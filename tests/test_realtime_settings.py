@@ -4,6 +4,7 @@ import os
 import subprocess
 import sys
 from dataclasses import FrozenInstanceError
+from pathlib import Path
 from types import MappingProxyType
 
 import pytest
@@ -152,7 +153,12 @@ def test_realtime_public_type_snapshot_and_override_restore():
 
 
 @pytest.mark.parametrize("enabled", [False, True])
-def test_fresh_process_checks_never_import_optional_redis_or_start_network(enabled):
+def test_fresh_process_checks_never_import_optional_redis_or_start_network(
+    enabled, monkeypatch
+):
+    monkeypatch.delenv("PYTHONPATH", raising=False)
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    assert (source_root / "dj_hyperview" / "__init__.py").is_file()
     code = """
 import builtins
 import socket
@@ -194,6 +200,10 @@ assert "dj_hyperview.realtime" not in sys.modules
         capture_output=True,
         text=True,
         timeout=10,
-        env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"},
+        env={
+            **os.environ,
+            "PYTHONDONTWRITEBYTECODE": "1",
+            "PYTHONPATH": str(source_root),
+        },
     )
     assert result.returncode == 0, result.stderr
