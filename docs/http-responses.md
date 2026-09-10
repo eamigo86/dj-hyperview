@@ -134,3 +134,53 @@ The normal mutation then validates a complete candidate before atomically
 clearing gzip transport and its old `Content-Length`. Invalid updates leave the
 previous representation and transport bytes intact. `response.text` decodes
 transport bytes, matching Django; it does not transparently decompress gzip.
+
+## Owned asynchronous SSE responses
+
+Use `dj_hyperview.realtime.sse_response(async_events, *, aclose)` for transport
+hints, **not HXML or successful-refresh acknowledgements**. It returns Django's
+`StreamingHttpResponse`, with `text/event-stream`, `Cache-Control: no-cache,
+no-transform` and `X-Accel-Buffering: no`. Redis is not required to import or use
+this response adapter.
+
+Wrap the outer ASGI application once with
+`application = realtime_asgi(get_asgi_application())`, importing the wrapper
+from `dj_hyperview.realtime`. Construct the response inside that active HTTP
+scope, on the subscription's live event loop. Django sync-only middleware is
+supported: an adapted view task ending does not end the HTTP request. Outside
+an active scope construction fails before ownership transfers. The mandatory
+asynchronous `aclose` callback owns the
+subscription and admission permit immediately, before the first iteration.
+Release admission in `finally`, even if closing the subscription fails. If
+construction raises, ownership remains with the caller.
+
+Iteration accepts only these closed envelopes:
+
+- `{"event":"invalidate","data":{"version":1,"resources":["tasks"]}}`
+- `{"event":"resync","data":{"version":1}}`
+- `{"event":"auth-required","data":{"version":1}}`
+- `None` writes a heartbeat comment, never an event acknowledgement.
+
+Resources are 1–32 distinct logical ASCII names matching
+`[a-z][a-z0-9_-]{0,63}`. Data JSON is bounded to 4096 UTF-8 bytes. Extra keys,
+URLs, HXML, identifiers, cursors, and unknown event names are not accepted.
+The application must constrain resource names further and authorize before
+headers and each event/heartbeat; this adapter does not authenticate users or
+make delivery durable. It implements no event ID, replay or automatic retry.
+
+Normal exhaustion, iterator errors, cancellation and Django's public `close()`
+path close the iterator and invoke the explicit owner callback exactly once.
+The public ASGI wrapper closes remaining owners in `finally`, including a
+send failure before iteration where Django may not call response close. A
+ContextVar carries the mutable request scope through Django's sync adapters.
+Normal cleanup unregisters the owner; closed scopes reject new owners, and
+non-HTTP scopes pass through. Same-loop `close()` schedules cleanup;
+it cannot synchronously wait on its own event loop. ASGI's other-thread close
+waits for the bounded cleanup task.
+
+Cleanup permits two seconds and requires cancellation-cooperative callbacks.
+Errors/timeouts log only fixed codes, never exception contents. A callback that
+ignores cancellation, or a loop shut down before cleanup, cannot be guaranteed
+closed by Python; a timeout is **not** a successful cleanup acknowledgement.
+Run `pytest -q tests/test_realtime_response.py` for actual Django ASGI pre-frame
+error/disconnect/cancellation and never-iterated ownership regressions.

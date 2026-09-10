@@ -1,19 +1,79 @@
 # Configuration
 
-Point dj-hyperview at templates owned by your Django project:
-
 ```python
+# settings.py: complete development example; does not start services.
 from pathlib import Path
+
+from django.http import HttpRequest
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
+
+def can_edit_hyperview(request: HttpRequest) -> bool:
+    return request.user.is_superuser is True
+
+
 HYPERVIEW = {
-    "TEMPLATE_DIRS": [BASE_DIR / "hyperview"],
+    "TEMPLATE_DIRS": [BASE_DIR / "hyperview"],  # Create this directory in your project.
     "SOURCES": [
-        {"BACKEND": "dj_hyperview.sources.FileSystemSource"},
+        {"BACKEND": "dj_hyperview.sources.FileSystemSource", "OPTIONS": {}},
     ],
+    "CACHE": {  # Optional: omit this section or use {} to disable caching.
+        "ALIAS": "default",  # Must exist in CACHES and use a compatible backend.
+        "NAMESPACE": "my-app-templates-dev",
+        "TTL": 300,
+        "NEGATIVE_TTL": 15,
+        "FAILURE_MODE": "bypass",
+    },
+    "VALIDATION": {
+        "MAX_BYTES": 1_000_000,
+        "MAX_DEPTH": 64,
+        "MAX_NODES": 20_000,
+    },
+    "ADMIN": {
+        "EDITOR": False,  # Does not require the optional editor extra.
+        "PERMISSION": can_edit_hyperview,
+    },
+    "EXTRA_SCHEMAS": [],  # No additional XSD files in this example.
+    "SCHEMA_EXTENSIONS": {
+        "BEHAVIORS": {
+            "show-snackbar": {
+                "ATTRIBUTES": {
+                    "message": {"TYPE": "string", "REQUIRED": True},
+                    "tone": {"TYPE": "string", "ENUM": ["success", "error"]},
+                },
+            },
+        },
+        "ELEMENT_ATTRIBUTES": {
+            "image": {
+                "variant": {"TYPE": "string", "ENUM": ["face", "fingerprint"]},
+            },
+        },
+    },
+    "REALTIME": {  # Optional: omit this section or use None to disable SSE.
+        "REDIS_URL": "redis://127.0.0.1:6379/0",  # Development Redis, if you use it.
+        "NAMESPACE": "my-app-dev",
+    },
 }
 ```
+
+This example shows **every public section**, not every possible combination.
+Adjust paths and names to your project. Before using it:
+
+1. Install the package and add `dj_hyperview` to `INSTALLED_APPS`, as described in
+   [installation](installation.md). Create your project's `hyperview/` directory.
+2. Keep a compatible `default` alias in `CACHES`. Django defaults to LocMemCache
+   when you do not configure it: suitable for this single-process example, not
+   for coherence across workers. Do not overwrite deployment caches when copying.
+3. `EXTRA_SCHEMAS=[]` needs no additional files. The `show-snackbar` and
+   `image.variant` declarations only validate XML; implement their mobile behavior
+   before using them. They do not install features into Hyperview.
+4. `REALTIME` **does not connect to Redis when settings are read**. Using the
+   transport requires `[realtime]`, a reachable Redis service and the ASGI/client
+   integration in the [SSE guide](realtime.md). This example starts no services.
+5. Run `python manage.py check`. Create `hyperview/screens/home.xml` before trying
+   the resolver below. Later snippets update one section, keeping the rest of
+   `HYPERVIEW` intact unless explicitly stated otherwise.
 
 Resolve a canonical relative POSIX name through the public API:
 
@@ -41,7 +101,8 @@ omit `CACHE`. This is a configuration error, not a recoverable backend outage.
 
 All keys are optional except the fields inside each configured source. Cache
 defaults apply only when `CACHE` is a non-empty mapping; omitting it or using an
-empty mapping disables Hyperview caching.
+empty mapping disables Hyperview caching. `REALTIME` omitted or `None` is disabled;
+an empty realtime mapping is an error, not another disabled form.
 
 | Setting | Type | Default | Meaning |
 | --- | --- | --- | --- |
@@ -65,6 +126,9 @@ empty mapping disables Hyperview caching.
 | `ADMIN.PERMISSION` | Callable or dotted callable path | Superuser-only callback | Authoritative mutation policy for adding, changing, and deleting stored templates. The callable receives the current `HttpRequest` and must return the literal boolean `True`; exceptions and non-boolean results deny access. |
 | `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.110.0 registry and completion catalog. URLs are rejected. |
 | `SCHEMA_EXTENSIONS` | Mapping | `{}` | Typed app-owned behavior and element-attribute declarations; standard declarations cannot be replaced. |
+| `REALTIME` | Exact mapping or None | `None` | Optional SSE transport configuration. Does not create an endpoint, client or connection. |
+| `REALTIME.REDIS_URL` | String | Required when enabled | Validated server-owned Redis URL; not a cache alias. Excluded from the normalized object's repr. |
+| `REALTIME.NAMESPACE` | String | Required when enabled | App/environment domain: `[a-z0-9][a-z0-9_-]{0,63}`. |
 
 ## Automatic Hyperview XSD 1.1 validation
 
@@ -80,10 +144,11 @@ values. Delete them rather than replacing them with a new selector. Register
 only application extensions when needed:
 
 ```python
-HYPERVIEW = {
-    "TEMPLATE_DIRS": [BASE_DIR / "hyperview"],
-    "EXTRA_SCHEMAS": [BASE_DIR / "schema" / "hypertodo.xsd"],
-}
+# First create this local schema using the custom-schemas guide.
+HYPERVIEW["EXTRA_SCHEMAS"] = [
+    *HYPERVIEW["EXTRA_SCHEMAS"],
+    BASE_DIR / "schema" / "hypertodo.xsd",
+]
 ```
 
 Project schemas can declare namespaced custom elements and import the Hyperview
@@ -118,18 +183,9 @@ uv add "dj-hyperview[editor]"
 ```
 
 ```python
-INSTALLED_APPS = [
-    "django_ace",
-    "dj_hyperview",
-    "dj_hyperview.contrib.database",
-]
-
-HYPERVIEW = {
-    "ADMIN": {
-        "EDITOR": True,
-        "PERMISSION": "sample_app.permissions.can_edit_hyperview",
-    },
-}
+# Add django_ace to your existing INSTALLED_APPS; retain other applications.
+# Keep dj_hyperview.contrib.database if using database templates.
+HYPERVIEW["ADMIN"] = {**HYPERVIEW["ADMIN"], "EDITOR": True}
 ```
 
 Enabling the setting without the extra, or without `django_ace` in
@@ -141,14 +197,14 @@ superusers even when a staff user holds the model's ordinary add, change, or
 delete permissions. A project can replace that policy with an inline callable:
 
 ```python
-HYPERVIEW = {
-    "ADMIN": {
-        "PERMISSION": lambda request: request.user.is_superuser,
-    },
+HYPERVIEW["ADMIN"] = {
+    **HYPERVIEW["ADMIN"],
+    "PERMISSION": lambda request: request.user.is_superuser,
 }
 ```
 
-For reusable and testable production configuration, prefer a dotted path:
+For reusable and testable production configuration, create this module first,
+then reference its dotted path:
 
 ```python
 # sample_app/permissions.py
@@ -161,10 +217,9 @@ def can_edit_hyperview(request: HttpRequest) -> bool:
 ```
 
 ```python
-HYPERVIEW = {
-    "ADMIN": {
-        "PERMISSION": "sample_app.permissions.can_edit_hyperview",
-    },
+HYPERVIEW["ADMIN"] = {
+    **HYPERVIEW["ADMIN"],
+    "PERMISSION": "sample_app.permissions.can_edit_hyperview",
 }
 ```
 
@@ -194,17 +249,13 @@ resolution continues through later roots.
 For example, one filesystem source can override the global roots:
 
 ```python
-HYPERVIEW = {
-    "TEMPLATE_DIRS": [BASE_DIR / "hyperview"],
-    "SOURCES": [
-        {
-            "BACKEND": "dj_hyperview.sources.FileSystemSource",
-            "OPTIONS": {
-                "template_dirs": [BASE_DIR / "tenant-hyperview"],
-            },
-        },
-    ],
-}
+# Create tenant-hyperview/ first. This changes SOURCES, not other sections.
+HYPERVIEW["SOURCES"] = [
+    {
+        "BACKEND": "dj_hyperview.sources.FileSystemSource",
+        "OPTIONS": {"template_dirs": [BASE_DIR / "tenant-hyperview"]},
+    },
+]
 ```
 
 A custom backend defines its own supported `OPTIONS` through its constructor.
@@ -273,22 +324,14 @@ pinned client source plus package tests, not device E2E testing.
 `dj_hyperview.E021`. Registration describes server validation
 and editor metadata, not executable mobile implementations.
 
-```python
-HYPERVIEW["SCHEMA_EXTENSIONS"] = {
-    "BEHAVIORS": {
-        "show-snackbar": {
-            "ATTRIBUTES": {
-                "message": {"TYPE": "string"},
-                "tone": {"TYPE": "string", "ENUM": ["success", "error"]},
-            },
-        },
-    },
-    "ELEMENT_ATTRIBUTES": {
-        "image": {
-            "variant": {"TYPE": "string", "ENUM": ["face", "fingerprint"]},
-        },
-    },
-}
+The complete example at the top declares a required `message`, a `tone` enum,
+and an `image.variant` enum. Merge new declarations into your existing registry;
+do not replace unrelated behaviors or attributes. This valid fragment uses them:
+
+```xml
+<view xmlns="https://hyperview.org/hyperview">
+  <behavior trigger="load" action="show-snackbar" message="Saved" tone="success" />
+</view>
 ```
 
 A descriptor requires `TYPE`: `string`, `boolean`, `integer`, or `decimal`.
@@ -311,3 +354,84 @@ identifiers as strings when they may reference a host outside the current
 fragment; registration does not impose document-wide `xs:IDREF` existence.
 See [custom schema contracts](custom-schemas.md#typed-registrations-and-registry-identity)
 for validation, catalog and trust boundaries.
+
+## Optional realtime broker
+
+`HYPERVIEW["REALTIME"]` centralizes the Redis URL and namespace. Omitted or `None`
+means disabled. An enabled mapping must contain **exactly** `REDIS_URL` and
+`NAMESPACE`; empty mappings, extra keys, `ALIAS` or invalid values produce
+`dj_hyperview.E022` and `HyperviewConfigurationError` when reading settings.
+Configuration errors never silently fall back to disabled. Diagnostics do not
+include the secret URL.
+
+```python
+from dj_hyperview.conf import get_settings
+from dj_hyperview.realtime import RedisBroker
+
+realtime = get_settings().realtime
+broker = (
+    RedisBroker(realtime.redis_url, realtime.namespace)
+    if realtime is not None
+    else None
+)
+```
+
+`get_settings().realtime` returns immutable `RealtimeSettings` or `None`; its repr
+excludes `redis_url`. Reading settings, running checks and constructing the broker
+**do not import redis-py or connect**. Subscription/publication requires the
+`[realtime]` extra. Configuration alone creates no endpoint, producer or mobile
+listener. To disable this section without losing template sources or schemas:
+
+```python
+HYPERVIEW["REALTIME"] = None
+```
+
+There is no `REALTIME.ALIAS` adapter. `CACHE.ALIAS` selects a Django cache, not a
+Pub/Sub transport. Use a distinct app/environment namespace: Redis database
+numbers do not isolate Pub/Sub. A namespace prevents collisions, not unauthorized
+access. Use `rediss://` for remote services; TLS certificate verification and
+hostname checks remain required. See the [complete SSE guide](realtime.md) for
+application integration and the [cache comparison](realtime.md#9-cache-aliases-and-namespaces).
+
+URLs support `redis://`, `rediss://` and `unix:///absolute/socket`. The only query
+option is one canonical `db=0` (or another nonnegative database number), without
+a conflicting TCP URL database path. Retry, timeout, SSL and unknown query
+options are rejected: redis-py URL options can otherwise override safe kwargs.
+Namespace syntax is `[a-z0-9][a-z0-9_-]{0,63}`; topics are at most 32 supplied
+items matching `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`. Duplicates are coalesced, but
+still count toward that input bound. Topics are server-selected, never query
+parameters. The broker prefixes them with `namespace:`.
+
+Call `publish_after_commit(event, topics, using="default")` with an explicit
+Django database alias. It snapshots the closed envelope and topics before
+scheduling. Rollback publishes nothing; invalid inputs fail before scheduling.
+Publication failure never fails the committed business operation and logs only
+a fixed code. A per-process daemon worker has a queue of 32 jobs; each commit
+caller waits at most two seconds including queue time. Expired queued jobs do
+not start I/O. Forked children create their own worker, not an inherited client.
+
+**The caller deadline is not a total I/O deadline.** DNS resolution cannot be
+preempted; socket timeouts apply per operation, including multiple pipeline
+responses. One slow worker can block later hints until they expire. An in-flight
+hint may finish late or partially. There is no retry, rollback, delivery receipt,
+EVAL requirement or durability claim. No thread is created per hint.
+
+`await broker.subscribe(topics)` waits for each actual SUBSCRIBE acknowledgement
+within a two-second setup budget. Only then does it return an owned async
+iterator, beginning with one `resync`; pre-ACK data is conservatively covered by
+that resync. Cleanup has a separate two-second cooperative budget, so failed
+setup plus cleanup can take longer than the setup deadline. Cancellation does
+not forcibly stop an OS resolver already running in asyncio's executor.
+Repeated cancellation during failed setup waits for the same owned cleanup
+budget before propagating cancellation; it does not restart that budget.
+
+Each subscription owns its client/one-connection pool and queue of at most 32
+closed JSON payloads (each at most 4096 bytes). Overflow discards pending hints
+and retains one resync until consumed. This is a logical retained-payload bound,
+not a peak allocation guarantee inside redis-py. No transparent reconnection is
+allowed: a lost connection closes the iterator; the application may subscribe
+again and must reauthorize before its new resync. A cancelled `__anext__` wait
+(for example a heartbeat deadline) does not close ownership; call `aclose()`.
+Idle connections have no two-second socket read timeout. The application owns
+heartbeat cadence, stream lifetime, authorization, connection admission caps,
+and `realtime_asgi`/`sse_response` composition.

@@ -40,6 +40,7 @@ from .schema import (
     HYPERVIEW_VALIDATION_CONTRACT,
     validate_hyperview_schema,
 )
+from .signals import TemplateInvalidation, template_invalidated
 from .sources import FileSystemSource, ResolvedTemplate, TemplateSource
 from .validation import validate_fragment_hxml, validate_hxml, validate_template_source
 from .views import HyperviewTemplateView
@@ -74,6 +75,7 @@ __all__ = [
     "ResolverLoader",
     "SourceUnavailable",
     "TemplateCache",
+    "TemplateInvalidation",
     "TemplateNotFound",
     "TemplateResolver",
     "TemplateSource",
@@ -83,6 +85,7 @@ __all__ = [
     "resolve_template",
     "render_template",
     "template_cache_key",
+    "template_invalidated",
     "validate_hxml",
     "validate_fragment_hxml",
     "validate_hyperview_schema",

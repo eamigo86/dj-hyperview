@@ -1,5 +1,10 @@
 # Name and XML security
 
+`template_invalidated` is an in-process invalidation hint, not authorization.
+Its canonical names and database alias must not be forwarded to clients as
+trusted topics. Consumers own tenant/session checks and topic mapping; never
+publish template contents or assume a hint proves a user-visible change.
+
 Treat template names and render-context values as untrusted input. Template
 source is executable Django template code, not untrusted data: installed tags,
 filters, and objects exposed through the render context can access sensitive
@@ -129,3 +134,28 @@ from dj_hyperview import validate_hxml
 
 validated = validate_hxml(candidate_document)
 ```
+
+### Realtime boundaries
+
+Store server-owned transport configuration under `HYPERVIEW["REALTIME"]`, using
+exactly `REDIS_URL` and `NAMESPACE`. Supply credentials through your deployment's
+secret handling, never request/XML data. Reading settings performs no Redis I/O;
+invalid values fail closed with sanitized `dj_hyperview.E022`, rather than
+silently disabling realtime. Normalized `RealtimeSettings` excludes the URL
+from repr; that is not permission to log the raw Django settings mapping.
+
+Authenticate before opening SSE and recheck persisted authority before each
+hint/heartbeat. Select topics only from server-owned identity; never forward
+client topic names. The generic package does not implement authorization,
+connection quotas or app resource policy. Use a distinct app/environment
+namespace, TLS for remote Redis, and Redis ACLs permitting only the required
+Pub/Sub commands. No scripting permission is required. A database index does
+not isolate Redis Pub/Sub channels.
+
+Only closed logical envelopes cross the transport, never HXML, template names,
+user identifiers, URLs, credentials or request bodies. Limit app resource names
+further than the generic ASCII grammar. Logs use fixed codes without Redis URL,
+topic, payload or exception representations. `realtime_asgi` owns cleanup for
+pre-iteration disconnects and adapted views; release admission in the explicit
+cleanup callback's `finally`. Do not interpret a timeout, resync or broker
+publish return as successful delivery or completed client rendering.

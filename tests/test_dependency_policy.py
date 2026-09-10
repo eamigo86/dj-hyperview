@@ -34,6 +34,7 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
     assert metadata["project"]["optional-dependencies"] == {
         "schema": [],
         "editor": ["django-ace>=1.44,<2"],
+        "realtime": ["redis>=7.4.1,<9"],
     }
     assert metadata["project"]["urls"] == {
         "Documentation": "https://eamigo86.github.io/dj-hyperview/",
@@ -96,3 +97,19 @@ def test_versioned_lock_pins_audited_tools_without_legacy_names() -> None:
     manifests = (ROOT / "pyproject.toml").read_text() + (ROOT / "uv.lock").read_text()
     assert "django-hyperview" not in manifests
     assert "django_hv" not in manifests
+
+
+def test_realtime_extra_lock_metadata_reuses_existing_redis_resolution() -> None:
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    package = next(item for item in lock["package"] if item["name"] == "dj-hyperview")
+    assert package["optional-dependencies"]["realtime"] == [{"name": "redis"}]
+    assert {
+        "name": "redis",
+        "marker": "extra == 'realtime'",
+        "specifier": ">=7.4.1,<9",
+    } in package["metadata"]["requires-dist"]
+    assert "realtime" in package["metadata"]["provides-extras"]
+    assert (
+        next(item for item in lock["package"] if item["name"] == "redis")["version"]
+        == "8.1.0"
+    )

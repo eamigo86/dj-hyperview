@@ -121,6 +121,9 @@ dependencies = [
 editor = [
     { name = "django-ace" },
 ]
+realtime = [
+    { name = "redis" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -144,9 +147,10 @@ requires-dist = [
     { name = "django", specifier = ">=5.2,<6.2" },
     { name = "django-ace", marker = "extra == 'editor'", specifier = ">=1.44,<2" },
     { name = "lxml", specifier = ">=6.1.3,<7" },
+    { name = "redis", marker = "extra == 'realtime'", specifier = ">=7.4.1,<9" },
     { name = "xmlschema", specifier = ">=4.3,<5" },
 ]
-provides-extras = ["schema", "editor"]
+provides-extras = ["schema", "editor", "realtime"]
 
 [package.metadata.requires-dev]
 dev = [

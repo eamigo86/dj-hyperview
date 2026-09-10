@@ -4,6 +4,26 @@ This page records user-visible changes for each published version.
 
 ## Unreleased
 
+### Added
+
+- Centralized optional `HYPERVIEW.REALTIME` configuration with exact `REDIS_URL`
+  and `NAMESPACE`, frozen `get_settings().realtime`, sanitized `E022` checks and
+  no Redis import/network during settings access. Omitted/None disables it;
+  cache-alias adaptation is not implemented. The configuration guide now opens
+  with a complete executable example, then explains each section in plain English.
+- Step-by-step SSE guide with verified ASGI/publication snippets, typed
+  list/form examples and an explicit package-versus-application integration boundary.
+- Optional `[realtime]` Redis broker with immutable after-commit capture, actual
+  subscription ACK admission, bounded queues and conservative resync hints.
+- Public `realtime_asgi` request ownership and `sse_response` closed framing;
+  cleanup survives sync middleware adaptation and pre-frame disconnects.
+  These are transport primitives, not application authorization or replay.
+
+- Public frozen `TemplateInvalidation` events and robust `template_invalidated`
+  signal for supported database template mutations after commit. Notifications
+  share the cache callback, including disabled/failing cache paths, without
+  suppressing existing cache exceptions or requiring Redis/network transport.
+
 ## 0.1.0a19 — 2026-09-09
 
 ### Fixed

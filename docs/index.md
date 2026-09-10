@@ -1,5 +1,7 @@
 # dj-hyperview
 
+[Step-by-step SSE guide](realtime.md): candidate setup, lists, forms and host responsibilities.
+
 Serve consumer-owned Hyperview markup through Django without bundling
 application screens into the package.
 

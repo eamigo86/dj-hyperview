@@ -14,6 +14,7 @@ from django.http import HttpRequest
 from django.test.signals import setting_changed
 from django.utils.module_loading import import_string
 
+from ._realtime_config import RealtimeSettings, _realtime_settings
 from ._schema_extensions import _normalize_extensions, _SchemaExtensions
 
 AdminPermission = Callable[[HttpRequest], bool]
@@ -95,6 +96,7 @@ class HyperviewSettings:
     admin: AdminSettings = field(default_factory=AdminSettings)
     extra_schemas: tuple[Path, ...] = ()
     schema_extensions: _SchemaExtensions = field(default_factory=_SchemaExtensions)
+    realtime: RealtimeSettings | None = None
 
 
 DEFAULTS = HyperviewSettings()
@@ -151,6 +153,7 @@ def _settings_snapshot() -> HyperviewSettings:
         admin=_admin_settings(raw.get("ADMIN", {})),
         extra_schemas=tuple(Path(path) for path in raw.get("EXTRA_SCHEMAS", ())),
         schema_extensions=_normalize_extensions(raw.get("SCHEMA_EXTENSIONS", {})),
+        realtime=_realtime_settings(raw.get("REALTIME")),
     )
 
 

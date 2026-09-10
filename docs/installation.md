@@ -1,5 +1,7 @@
 # Installation
 
+[Step-by-step SSE guide](realtime.md): candidate setup, lists, forms and host responsibilities.
+
 Install dj-hyperview into a supported Django project:
 
 ```bash
@@ -46,3 +48,18 @@ overrides as well as filesystem templates before adoption; follow the
 
 Continue with the [Quick Start](quickstart.md) to serve a filesystem-backed
 screen, or open the complete [configuration reference](configuration.md).
+
+## Optional realtime hints
+
+Configure it under `HYPERVIEW["REALTIME"]` with `REDIS_URL` and `NAMESPACE`;
+omit the section or use `None` to leave it disabled. Preserve the other HYPERVIEW
+sections when adding it. The [complete settings example](configuration.md) shows
+all sections together. Reading settings or running checks does not connect Redis.
+
+`uv add "dj-hyperview[realtime]"` adds redis-py `>=7.4.1,<9`. Redis remains
+optional: package startup, template signals and SSE framing do not import the
+client or connect. The supplied lock continues to resolve the existing 8.1.0;
+transport capability tests also exercise 7.4.1. No Redis server is installed by
+this extra. Provide a separately operated Redis service only when enabling
+application-owned realtime. See [SSE ownership](http-responses.md#owned-asynchronous-sse-responses)
+and [broker configuration](configuration.md#optional-realtime-broker).

@@ -1,5 +1,7 @@
 # API Reference
 
+[Step-by-step SSE guide](realtime.md): candidate setup, lists, forms and host responsibilities.
+
 Import stable public objects from `dj_hyperview`; catalog helpers are in
 `dj_hyperview.schema`. Modules and names beginning
 with an underscore remain implementation details.
@@ -68,6 +70,38 @@ for bodyless statuses, HEAD request context, and lazy callback semantics.
 | `template_cache_key` | Produce a namespaced cache key. |
 | `invalidate_templates` | Invalidate one or more canonical names. |
 
+## Committed template invalidations
+
+`TemplateInvalidation` and `template_invalidated` are public in `dj_hyperview`
+and `dj_hyperview.signals`. The frozen event has `names: frozenset[str]` and
+`using: str`; construction validates canonical names and snapshots mutable inputs.
+
+```python
+from django.dispatch import receiver
+from dj_hyperview.signals import template_invalidated
+
+
+@receiver(template_invalidated)
+def templates_changed(sender, event, **kwargs):
+    # Map event.names and event.using to application-owned invalidation policy.
+    pass
+```
+
+The optional database contribution sends `sender=HyperviewTemplate, event=event`
+after commit on the mutation alias. Model saves/deletes, publication services,
+controlled QuerySet updates/deletes and bulk operations share the existing
+invalidation scheduler. Renames include old and new names. Empty/irrelevant writes
+and rollbacks emit nothing; conflict-ignored inserts can conservatively include
+names that did not change. Multiple callbacks in a transaction are not coalesced.
+
+Cache invalidation runs first; `send_robust` runs in the same callback's `finally`,
+even with caching disabled or a cache exception. Receiver exceptions are isolated
+by Django; the original cache exception still propagates after the database commit.
+These are best-effort hints, not durable delivery or proof that content changed.
+Earlier failing commit callbacks can prevent later callbacks, as in Django itself.
+No Redis, watcher, filesystem-deploy hook or network transport is enabled.
+Calling `invalidate_templates()` directly still only invalidates cache.
+
 ## Exceptions
 
 `HyperviewError` is the package base exception. Its public specializations are
@@ -80,3 +114,34 @@ includes rejected source content or internal filesystem paths.
 
 Database publication is an optional contribution with its own service boundary.
 See [Database source and admin](database-admin.md) for those imports.
+
+## Realtime transport (optional)
+
+`from dj_hyperview.conf import RealtimeSettings, get_settings` exposes the
+normalized `HYPERVIEW["REALTIME"]` configuration. `get_settings().realtime` is
+`None` when omitted/disabled, or frozen `RealtimeSettings(redis_url, namespace)`.
+The URL is excluded from repr. An enabled mapping requires exactly `REDIS_URL`
+and `NAMESPACE`; invalid settings produce check `dj_hyperview.E022` and raise
+`HyperviewConfigurationError`, not a disabled fallback. `REALTIME.ALIAS` is not
+supported. Reading these settings neither imports redis-py nor connects.
+
+Import from `dj_hyperview.realtime`; none of these symbols connects at import:
+
+- `RedisBroker(url, namespace)` validates immutable server configuration.
+- `broker.publish_after_commit(event, topics, *, using)` captures input and
+  schedules a bounded, best-effort committed hint; return value is `None`, not a
+  delivery acknowledgement. Invalid inputs raise `ValueError` before scheduling.
+- `await broker.subscribe(topics)` returns the `Subscription` protocol only
+  after all ACKs; its first envelope is `resync`. Transport/setup failures raise
+  `RealtimeUnavailable` with a fixed message. `async for` consumes closed
+  envelopes; `await subscription.aclose()` closes ownership once.
+- `realtime_asgi(application)` wraps the outer Django ASGI application once;
+  this owns request cleanup across synchronous middleware adapters.
+- `sse_response(async_events, *, aclose)` transfers an iterator and explicit
+  owner inside that active scope. `None` emits a heartbeat comment.
+
+Envelope fields, framing and cooperative cleanup requirements are in
+[HTTP responses](http-responses.md#owned-asynchronous-sse-responses).
+[Broker configuration](configuration.md#optional-realtime-broker) defines URL,
+namespace, topic, queue and deadline limits. None of these APIs selects users,
+grants authorization, transports HXML or acknowledges a mobile layout commit.

@@ -73,6 +73,7 @@ nav:
       - Cache consistency: cache-consistency.md
       - Security: security.md
       - HTTP responses: http-responses.md
+      - Realtime (SSE): realtime.md
   - API Reference:
       - Public Python API: api-reference.md
   - Development:

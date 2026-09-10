@@ -12,6 +12,7 @@ from django.core.cache.backends.dummy import DummyCache
 from django.core.checks import CheckMessage, Error, Warning, register
 from django.utils.module_loading import import_string
 
+from ._realtime_config import _realtime_settings
 from .cache import _BACKEND_FAILURE, _UNSUPPORTED_BACKEND, _resolve_cache_alias
 from .sources import FileSystemSource
 
@@ -337,6 +338,20 @@ def _check_admin(value: Any) -> list[CheckMessage]:
     return errors
 
 
+def _check_realtime(value: object) -> list[CheckMessage]:
+    try:
+        _realtime_settings(value)
+    except ValueError:
+        return [
+            _error(
+                "E022",
+                "REALTIME",
+                "must be None or a mapping with exactly valid REDIS_URL and NAMESPACE",
+            )
+        ]
+    return []
+
+
 @register("dj_hyperview")
 def check_hyperview_settings(
     app_configs: Any = None, **kwargs: Any
@@ -373,6 +388,7 @@ def check_hyperview_settings(
         *_check_sources(raw.get("SOURCES", ())),
         *_source_consistency_warnings(raw, template_dir_messages),
         *cache_errors,
+        *_check_realtime(raw.get("REALTIME")),
         *_check_validation(raw.get("VALIDATION", {})),
         *_check_extra_schemas(raw.get("EXTRA_SCHEMAS", ())),
         *(

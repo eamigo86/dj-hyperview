@@ -23,6 +23,7 @@ DOCS = (
     "cache-consistency.md",
     "security.md",
     "http-responses.md",
+    "realtime.md",
     "api-reference.md",
     "testing.md",
     "contributing.md",
@@ -105,6 +106,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
                 {"Cache consistency": "cache-consistency.md"},
                 {"Security": "security.md"},
                 {"HTTP responses": "http-responses.md"},
+                {"Realtime (SSE)": "realtime.md"},
             ]
         },
         {"API Reference": [{"Public Python API": "api-reference.md"}]},
@@ -254,8 +256,12 @@ def test_configuration_documents_every_setting_contract() -> None:
         "`VALIDATION.MAX_NODES`",
         "`ADMIN`",
         "`ADMIN.EDITOR`",
+        "`ADMIN.PERMISSION`",
         "`EXTRA_SCHEMAS`",
         "`SCHEMA_EXTENSIONS`",
+        "`REALTIME`",
+        "`REALTIME.REDIS_URL`",
+        "`REALTIME.NAMESPACE`",
     ):
         assert f"| {setting} |" in page
 

@@ -3,6 +3,7 @@
 from django.db import transaction
 
 from dj_hyperview.cache import invalidate_templates
+from dj_hyperview.signals import TemplateInvalidation, template_invalidated
 from dj_hyperview.sources import canonicalize_template_name
 
 
@@ -21,8 +22,14 @@ def _schedule_invalidation(*names: str, using: str) -> None:
     canonical = tuple(dict.fromkeys(canonicalize_template_name(name) for name in names))
     if not canonical:
         return
+    event = TemplateInvalidation(names=frozenset(canonical), using=using)
 
     def invalidate() -> None:
-        invalidate_templates(*canonical)
+        from .models import HyperviewTemplate
+
+        try:
+            invalidate_templates(*canonical)
+        finally:
+            template_invalidated.send_robust(sender=HyperviewTemplate, event=event)
 
     transaction.on_commit(invalidate, using=using, robust=False)

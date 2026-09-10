@@ -34,6 +34,13 @@ escaping, and the response media type. When database or cache profiles are
 enabled, cover commit and rollback separately; use SQLite and LocMemCache unless
 the deployment depends on another backend.
 
+For `template_invalidated`, use `TransactionTestCase`/transactional pytest tests
+to verify real commit, rollback, and each database alias. Ordinary `TestCase`
+does not commit its outer transaction; `captureOnCommitCallbacks(execute=True)`
+can exercise callback behavior but is not a real commit. Disconnect test receivers
+afterward, and cover cache failure plus a failing receiver without losing the
+original post-commit exception. No Redis is needed for this signal contract.
+
 Package contributors can reproduce the supported aggregate coverage gate:
 
 ```console
@@ -63,3 +70,21 @@ CI smoke-tests the built wheel in three isolated profiles: no extras,
 the deprecated empty `[schema]` alias, and optional `[editor]`. Wheel construction
 remains a CI responsibility;
 local quality checks do not need to build a distribution.
+
+### Realtime transport profiles
+
+The base suite tests immutable capture, rollback/alias behavior, a finite
+publisher worker, ACK/queue/cancellation ports and actual Django ASGI lifecycle,
+including sync-only middleware. It needs no Redis client or server; a fresh
+subprocess asserts startup imports neither Redis nor a worker.
+
+The existing Redis opt-in additionally runs
+`tests/compat/test_realtime_redis.py` with `DJHV_TEST_REDIS=1` and an explicit
+`DJHV_REDIS_URL`. Use a dedicated service or approved loopback test instance;
+all test subscriptions use fresh UUID namespaces and never flush. One test
+closes **only its own** Redis connection using CLIENT ID/KILL to verify that the
+real PubSub client does not reconnect. Production ACLs do not need that test-only
+permission. The profiles exercise redis-py 7.4.1 and 8.1.0 against the actual
+service, and the canonical `tools.test_matrix --redis` appends both base/admin
+coverage before independently checking line and branch thresholds. Unit-port
+controls do not claim real Redis or native mobile proof.
