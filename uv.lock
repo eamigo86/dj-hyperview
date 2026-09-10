@@ -109,7 +109,7 @@ wheels = [
 
 [[package]]
 name = "dj-hyperview"
-version = "0.1.0a19"
+version = "0.1.0a20"
 source = { virtual = "." }
 dependencies = [
     { name = "django" },

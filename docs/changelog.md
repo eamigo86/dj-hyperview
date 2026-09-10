@@ -2,7 +2,7 @@
 
 This page records user-visible changes for each published version.
 
-## Unreleased
+## 0.1.0a20 — 2026-09-09
 
 ### Added
 
