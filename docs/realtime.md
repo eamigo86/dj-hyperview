@@ -1,7 +1,8 @@
 # Realtime with SSE: from a Django change to the screen
 
 **Goal:** save a task in Django Admin and see its title update in an open list,
-without navigating away and back. An open form should instead show a notice,
+without navigating away and back. With the coordinated contextual client, own
+changes stay quiet and a dirty form warns only for relevant remote changes,
 without automatically losing what the user is typing.
 
 This guide targets **0.1.0a21**, which introduces the optional SSE primitives.
@@ -23,7 +24,8 @@ Admin or a form saves a task
     → Django commits the transaction
     → Redis distributes “tasks may have changed”
     → the session's SSE connection receives that hint
-    → the client chooses: reload the list or show Update
+    → the client distinguishes resync, its own operation and remote changes
+    → the client refreshes a safe screen or protects a dirty form
     → an authenticated GET fetches the current HXML document
     → the client confirms that response reached the screen layout
 ```
@@ -48,6 +50,92 @@ means fetching current data again, rather than assuming what changed.
 **SSE is server → client.** Forms still use ordinary POST requests. There is no
 WebSocket, durable replay or guarantee that every individual change is received.
 
+## Contextual changes: package contract versus application policy
+
+The package accepts exact v1 envelopes and negotiated v2 invalidate envelopes.
+`INVALIDATION_VERSIONS == (1, 2)` advertises this capability without importing or
+connecting to Redis. It does **not** negotiate HTTP headers, generate identities,
+or implement form/viewport behavior. The application owns those steps.
+
+A valid v2 example, using deliberately fictitious opaque values:
+
+<!-- example: invalidate-v2 -->
+```json
+{
+  "event": "invalidate",
+  "data": {
+    "version": 2,
+    "resources": ["tasks"],
+    "mutation_id": "0123456789abcdef0123456789abcdef00000001",
+    "entities": {
+      "epoch": "0123456789abcdef",
+      "items": [
+        {"resource": "tasks", "key": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"}
+      ]
+    }
+  }
+}
+```
+
+The application projects it for an old client to this **exact v1** shape:
+
+<!-- example: invalidate-v1 -->
+```json
+{"event": "invalidate", "data": {"version": 1, "resources": ["tasks"]}}
+```
+
+`mutation_id` may be null; otherwise it is exactly 40 lowercase hex characters.
+`entities` may be null; otherwise its epoch is 16 lowercase hex characters and
+its 1–32 distinct resource/key pairs use 64-lowercase-hex keys. Each resource must
+also appear in the event's resource list. The existing 4096-byte payload limit
+still applies, even below 32 items. No raw model IDs, session identifiers, user
+identity, navigation URL or document belongs in the payload. Control events
+`resync` and `auth-required` remain v1. See [the complete wire contract](http-responses.md#negotiated-change-metadata).
+
+HyperTodo's coordinated backend/client integration uses:
+
+1. `X-HyperTodo-Realtime-Features: changes-v2` on its already-owned requests.
+   Missing support retains v1 behavior; it is not proof of an own-operation echo.
+2. A fresh `X-HyperTodo-Mutation-Seed` response header (128 random bits, 32hex)
+   plus a client-local uint32 counter (8hex) to form the 40hex operation token.
+   It uses ordinary verified responses, not an extra token request. A repeated
+   seed must not reset the counter; missing/exhausted state disables correlation.
+3. Opaque HMAC entity keys for comparison. Unknown metadata, key-epoch changes
+   and oversized batches conservatively invalidate the resource. Entity keys and
+   mutation tokens **never authorize** a read, write or subscription.
+4. Immutable metadata captured before `on_commit`. An echo can arrive before or
+   after the POST response; matching it silences duplicate presentation, not the
+   invalidation or the need for a real HTTP/layout acknowledgement. Another
+   device on the same account has different operations and is not silenced.
+
+These are **HyperTodo conventions**, not new `HYPERVIEW` settings or automatic
+package headers. Resources remain generic in the package; HyperTodo restricts
+them to `tasks`, `categories` and `ui`.
+
+### Expected behavior with the coordinated contextual client
+
+| Situation | Expected behavior |
+| --- | --- |
+| Own successful Task/profile operation | Preserve ordinary success feedback; no duplicate SSE message |
+| Relevant remote change on a visible safe list/readonly screen | Complete-document refresh; remote-change toast only after visible layout acknowledgement |
+| Return to a stale screen or reconnect/resync | Reconcile silently after session confirmation; no login/resync banner |
+| Dirty form for Task X, remote Task Y only | Do not warn solely because both are tasks; unknown precision still falls back conservatively |
+| Dirty form with a matching entity/current selected category, including another device on the same account | Keep the draft; warn and require explicit discard/reload consent; no merge or autosave |
+| List with 1–20 loaded pages | Full-document prefix refresh keeps filters, counters/chips/styles and actual page markers |
+| More than 20 loaded pages | Fresh canonical first-page GET with filters; do not request an unbounded prefix or require a manual SSE banner |
+
+The mobile client owns draft baselines, later edits during in-flight requests and
+consent. Backend acceptance alone does not prove native scroll retention or UI
+presentation. Existing v1-only clients retain the notice/list policy documented
+in the compatibility examples below.
+
+Deploy the package, producer and backend readers together before enabling rich
+publication. An old a21 Redis reader cannot consume v2 on a shared namespace;
+client projection alone does not make mixed backend workers safe. On rollback,
+disable rich publication and coordinate reader/producer rollback; never claim
+that a package downgrade alone preserves an in-flight rich stream. No additional
+configuration knob or cache alias is introduced.
+
 ## 2. What `[realtime]` installs and what you must provide
 
 `[realtime]` is a **Python dependency extra**: it adds `redis>=7.4.1,<9`, the
@@ -58,7 +146,7 @@ client library for talking to a Redis server. It does not install:
 - Django Channels or a WebSocket server;
 - mobile code or HyperTodo's `app:realtime` components.
 
-The SSE APIs are part of the candidate code; the extra supplies their optional
+The SSE APIs are part of the package; the extra supplies their optional
 dependency. Without Redis usage, the ordinary package still works and does not
 import the Redis client at Django startup.
 
@@ -184,25 +272,37 @@ commands using `runserver` serve ordinary HXML, **not this authenticated SSE end
 4. In Django Admin, edit the title of a visible task belonging to **that user**
    and save the ordinary Admin form.
 
-**Expected result:** the focused page-one list performs an automatic document GET
-and shows the new title, keeping the filter. Admin does not need to send
+**Expected result:** the focused list performs an automatic full-document GET
+and shows the new title, keeping the filter. With the contextual client, the
+remote-change toast follows visible layout acknowledgement. Admin does not need to send
 `notify-resources`: the model write triggers the producer. A different user must
 not receive that private hint.
 
 ### Step 4: test a form without automatically losing its draft
 
-Open New task and type without saving. Change related information in Admin.
-A notice should appear, not an automatic reload or POST.
+Open an existing task, edit its title without saving, then change that **same
+task** in Admin. A warning should appear, not an automatic reload or POST.
+Changing an unrelated task should not prompt this precise dirty form. Changing
+the currently selected category, or an event with unknown precision, remains
+conservative. A change from another device on the same account is still remote.
 
 !!! warning "Update does not save the form"
-    The notice retains the draft. **Pressing Update performs a document GET and
-    may discard unsaved input.** This policy implements no merging, autosave
-    or confirmation before discarding a draft.
+    The contextual client requires explicit discard/reload consent and protects
+    edits made after a POST began; a 200/422 response alone is not permission to
+    erase them. There is no merge or autosave. The older v1 notice example below
+    has a simpler Update action that can discard input without that protection;
+    do not mistake compatibility XML for the complete contextual host.
 
 After a local test, stop the processes you started. This guide assumes neither
 running demo services nor shared credentials are left behind.
 
-## 4. Add another list in HyperTodo
+## 4. Compatibility recipe: add a v1 list in HyperTodo
+
+These executable XML/registry examples preserve the supported v1 fallback. For
+contextual integration, use the coordinated backend metadata producer and mobile
+host rather than copying these simpler policies as v2. The client, not this
+package, supports `readonly`/`form` modes, entity dependencies and loaded-prefix
+refreshes. No custom mode is added to the vendor Hyperview schema automatically.
 
 A new page using `tasks`, `categories` or `ui` **does not need another SSE
 connection**. Each session has its connection; pages declare dependencies.
@@ -324,7 +424,7 @@ Placement rules:
 5. Keep Django autoescape enabled: filter ampersands become `&amp;`, and user text
    does not become XML. Do not apply `safe` to these values.
 
-### Step 4: verify policy, not just XML
+### Step 4: verify the v1 fallback policy, not just XML
 
 | Screen state | On a relevant hint |
 | --- | --- |
@@ -338,7 +438,7 @@ A GET is not confirmation of rendering: the host waits for correlated layout.
 Refresh does not promise scrolling to the top. Add filter, empty-list, append
 and layout cases to the existing backend/mobile tests.
 
-## 5. Add a form
+## 5. Compatibility recipe: add a v1 form
 
 The main difference is **`mode="notice"`**. Register the screen and a valid GET
 URL in `backend/todo/realtime_templates.py`: `/hv/tasks/new/` or an authorized
@@ -653,7 +753,7 @@ not the same as sharing a cache contract.
 | --- | --- |
 | HXML works but there is no stream | Real ASGI server, active wrapper, opt-in and authorized session |
 | Admin saves but another screen does not change | Correct owner, producer through `save()`, matching namespace and declared dependencies |
-| Hint arrives without a reload | Form/notice, multiple pages, focus, pause or pending layout may correctly defer it |
+| Hint arrives without a reload | Check negotiated policy, dirty draft, session confirmation and pending layout; v1 multipage/notice behavior differs from contextual v2 |
 | XSD rejects the page | Registered components, unqualified attributes, exact enum, placement and valid marker |
 | Update reveals no change | Hints/resync are conservative; data may be unchanged |
 | Reconnection or return from background | Confirm session and reconcile; never adopt another identity automatically or replay a POST |
@@ -678,7 +778,7 @@ to make a test pass.
 
 - [ ] GET/POST retain authentication, ownership, CSRF and 422 values/errors.
 - [ ] A commit notifies once per producer; rollback does not; other accounts receive no private data.
-- [ ] Page-one lists refresh the document while keeping filters; append retains a notice until Update.
+- [ ] Contextual lists refresh the complete loaded prefix up to 20 pages, then fall back to a fresh first page; verify the simpler v1 notice fallback separately.
 - [ ] Forms keep drafts when notified; the user understands what Update does.
 - [ ] Real layout correlation, pause/foreground and late responses cannot switch identity.
 - [ ] Disconnect/error/cancellation release subscription and admission.

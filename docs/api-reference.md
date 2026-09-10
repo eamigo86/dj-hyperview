@@ -1,6 +1,6 @@
 # API Reference
 
-[Step-by-step SSE guide](realtime.md): candidate setup, lists, forms and host responsibilities.
+[Step-by-step SSE guide](realtime.md): setup, negotiated changes, compatibility examples and host responsibilities.
 
 Import stable public objects from `dj_hyperview`; catalog helpers are in
 `dj_hyperview.schema`. Modules and names beginning
@@ -127,6 +127,8 @@ supported. Reading these settings neither imports redis-py nor connects.
 
 Import from `dj_hyperview.realtime`; none of these symbols connects at import:
 
+- `INVALIDATION_VERSIONS == (1, 2)` lists supported invalidate schemas as an immutable tuple;
+  it does not enable client negotiation automatically.
 - `RedisBroker(url, namespace)` validates immutable server configuration.
 - `broker.publish_after_commit(event, topics, *, using)` captures input and
   schedules a bounded, best-effort committed hint; return value is `None`, not a

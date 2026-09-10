@@ -1,6 +1,6 @@
 # Installation
 
-[Step-by-step SSE guide](realtime.md): candidate setup, lists, forms and host responsibilities.
+[Step-by-step SSE guide](realtime.md): setup, negotiated changes, compatibility examples and host responsibilities.
 
 Install dj-hyperview into a supported Django project:
 

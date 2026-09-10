@@ -46,7 +46,7 @@ class RedisBroker:
         """Capture one bounded hint and publish only after the selected commit.
 
         Args:
-            event: A closed version-one event envelope, never application payload.
+            event: A closed supported event envelope, never application document data.
             topics: Up to 32 server-selected logical topics, captured before commit.
             using: Explicit database alias whose commit owns publication.
 

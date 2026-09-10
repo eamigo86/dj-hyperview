@@ -4,6 +4,15 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+### Added
+
+- Realtime invalidate v2 adds bounded opaque mutation/entity metadata
+  and the public `INVALIDATION_VERSIONS` capability while preserving exact v1
+  envelopes and after-commit capture. Applications must negotiate/project for
+  old clients and deploy backend workers together. Updated guidance separates
+  package primitives, coordinated application behavior and exact v1 fallback;
+  package tests alone are not native acceptance.
+
 ### Fixed
 
 - Normal CI now includes the live Redis profile while preserving all six

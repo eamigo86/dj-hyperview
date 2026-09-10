@@ -154,7 +154,7 @@ subscription and admission permit immediately, before the first iteration.
 Release admission in `finally`, even if closing the subscription fails. If
 construction raises, ownership remains with the caller.
 
-Iteration accepts only these closed envelopes:
+Version-one iteration accepts these closed envelopes:
 
 - `{"event":"invalidate","data":{"version":1,"resources":["tasks"]}}`
 - `{"event":"resync","data":{"version":1}}`
@@ -163,10 +163,41 @@ Iteration accepts only these closed envelopes:
 
 Resources are 1–32 distinct logical ASCII names matching
 `[a-z][a-z0-9_-]{0,63}`. Data JSON is bounded to 4096 UTF-8 bytes. Extra keys,
-URLs, HXML, identifiers, cursors, and unknown event names are not accepted.
+URLs, HXML, raw model/session identifiers, cursors and unknown event names are
+not accepted.
 The application must constrain resource names further and authorize before
 headers and each event/heartbeat; this adapter does not authenticate users or
 make delivery durable. It implements no event ID, replay or automatic retry.
+
+### Negotiated change metadata
+
+`INVALIDATION_VERSIONS == (1, 2)` advertises validator support, not client
+negotiation. The a21 API supports only version one. This release adds validator
+support, not application adaptation or new native acceptance. Applications must negotiate
+before sending version two and project an exact version-one invalidate to old
+clients. Control events (`resync`, `auth-required`) remain version one.
+
+A version-two invalidate has exactly `version: 2`, `resources`, `mutation_id`
+and `entities`. `mutation_id` is null or 40 lowercase hexadecimal characters.
+`entities` is null or exactly `{"epoch": "<16 lowercase hex>", "items": [...]}`;
+each of 1–32 distinct items contains only `resource` and a 64-lowercase-hex `key`.
+The item's resource must appear in `resources`. The same 4096-byte limits apply;
+32 long resource names plus keys may exceed that bound and are rejected.
+
+Applications generate opaque keys, never public raw primary keys or session
+identifiers. Unknown entity sets, key-epoch rotation and producer overflow must
+be represented as `entities: null`, which means conservative resource-level
+invalidation, not "nothing changed". Neither key nor mutation token authorizes
+anything. Version-two values are deeply captured before `on_commit`, exactly
+like version-one resources: subsequent mutations cannot rewrite a queued hint.
+
+HyperTodo's negotiated client uses a fresh 128-bit response seed followed by a
+32-bit operation counter; this is not a new independently random token per
+operation. A matching token can silence own-change presentation, but must not
+skip invalidation or manufacture a successful document/layout acknowledgement.
+Missing metadata has no own-echo proof. Backend workers must be deployed or
+rolled back together: old a21 broker readers cannot consume rich events on the
+same namespace. Client compatibility does not imply mixed-backend compatibility.
 
 Normal exhaustion, iterator errors, cancellation and Django's public `close()`
 path close the iterator and invoke the explicit owner callback exactly once.

@@ -24,6 +24,10 @@ screens into the package.
 - **Cache consistency** — opt into a compatible Django cache backend, including
   Redis, with source-aware keys and generation-based invalidation.
   [File-based caches are not supported](docs/cache-consistency.md).
+- **Optional realtime hints** — use `[realtime]` for Redis-backed after-commit
+  SSE invalidation, with exact v1 compatibility and negotiated opaque v2 change
+  metadata. The application still owns authentication, client adaptation and
+  safe screen refresh. Follow the [SSE guide](docs/realtime.md).
 - **Django-native HTTP integration** — use lazy template responses, class-based
   views, validated fragment responses, request metadata, content negotiation,
   and standard CSRF protection.

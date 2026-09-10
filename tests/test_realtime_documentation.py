@@ -258,3 +258,36 @@ def test_documented_local_behavior_has_typed_unqualified_resources(schema_settin
         )
     with pytest.raises(TemplateValidationError):
         validate_hyperview_schema(xml.replace(' resources="tasks"', ""))
+
+
+@pytest.mark.django_db(transaction=True, databases=["default", "replica"])
+@pytest.mark.parametrize("version", [1, 2])
+def test_documented_wire_examples_capture_exact_negotiated_or_legacy_event(
+    monkeypatch, version
+):
+    """Documented envelopes use public after-commit capture, not invented APIs."""
+    calls = []
+    module = importlib.import_module("dj_hyperview.realtime._broker")
+    monkeypatch.setattr(module, "_dispatch", lambda *args: calls.append(args))
+    event = json.loads(example(f"invalidate-v{version}", "json"))
+    expected = json.loads(json.dumps(event))
+    broker = RedisBroker("redis://localhost:6379/0", "docs-wire")
+    with transaction.atomic(using="replica"):
+        broker.publish_after_commit(event, ["private.owner"], using="replica")
+        event["data"]["resources"].append("ui")
+        if version == 2:
+            event["data"]["entities"]["items"][0]["key"] = "f" * 64
+        assert calls == []
+    assert len(calls) == 1
+    assert json.loads(calls[0][2]) == expected
+    assert calls[0][1] == ("docs-wire:private.owner",)
+    assert expected["data"]["resources"] == ["tasks"]
+    if version == 1:
+        assert set(expected["data"]) == {"version", "resources"}
+    else:
+        assert set(expected["data"]) == {
+            "version",
+            "resources",
+            "mutation_id",
+            "entities",
+        }
