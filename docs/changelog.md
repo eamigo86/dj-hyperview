@@ -1,8 +1,8 @@
 # Changelog
 
-This page records user-visible changes for each published version.
+This page records user-visible release changes, including unpublished attempts.
 
-## 0.1.0a20 — 2026-09-09
+## 0.1.0a21 — 2026-09-09
 
 ### Added
 
@@ -23,6 +23,18 @@ This page records user-visible changes for each published version.
   signal for supported database template mutations after commit. Notifications
   share the cache callback, including disabled/failing cache paths, without
   suppressing existing cache exceptions or requiring Redis/network transport.
+
+### Fixed
+
+- Fresh-process realtime tests now explicitly locate the repository source,
+  independent of an inherited `PYTHONPATH`. Redis-import and network prohibitions
+  remain enforced; no runtime transport behavior changed.
+
+## 0.1.0a20 — 2026-09-09 (not published)
+
+- Release checks failed before artifact staging and publication because three
+  fresh-process tests could not import the source package in CI. The tag is
+  retained unchanged; the corrected SSE release is a21 above.
 
 ## 0.1.0a19 — 2026-09-09
 

@@ -4,10 +4,11 @@
 without navigating away and back. An open form should instead show a notice,
 without automatically losing what the user is typing.
 
-This guide targets **0.1.0a20**, which introduces the optional SSE primitives.
-See the [a20 release notes](changelog.md#010a20-2026-09-09). Until its release
+This guide targets **0.1.0a21**, which introduces the optional SSE primitives.
+See the [a21 release notes](changelog.md#010a21-2026-09-09). Until its release
 workflow completes, use the reviewed candidate checkout together with its
 application integration. Installing a19 from the registry does not include SSE.
+The a20 attempt was not published because its release checks failed.
 
 !!! important "The package does not adapt your application automatically"
     `dj-hyperview` provides Python transport primitives. It does not automatically
