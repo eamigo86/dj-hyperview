@@ -4,6 +4,8 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+## 0.1.0a22 — 2026-09-10
+
 ### Added
 
 - Realtime invalidate v2 adds bounded opaque mutation/entity metadata

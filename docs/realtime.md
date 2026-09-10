@@ -5,11 +5,13 @@ without navigating away and back. With the coordinated contextual client, own
 changes stay quiet and a dirty form warns only for relevant remote changes,
 without automatically losing what the user is typing.
 
-This guide targets **0.1.0a21**, which introduces the optional SSE primitives.
-See the [a21 release notes](changelog.md#010a21-2026-09-09). Until its release
-workflow completes, use the reviewed candidate checkout together with its
-application integration. Installing a19 from the registry does not include SSE.
-The a20 attempt was not published because its release checks failed.
+This guide targets **0.1.0a22**, adding negotiated contextual invalidation to the
+SSE primitives introduced in a21. See the [a22 release notes](changelog.md#010a22-2026-09-10).
+Do not assume publication from this source tree: adopt the registry version only
+after the release workflow and its required CI/Codecov checks succeed and PyPI
+lists it. Until then, use a reviewed source checkout for isolated evaluation.
+Installing a21 supports v1, not the new rich envelope. The a20 attempt remains
+unpublished because its release checks failed.
 
 !!! important "The package does not adapt your application automatically"
     `dj-hyperview` provides Python transport primitives. It does not automatically
@@ -150,18 +152,21 @@ The SSE APIs are part of the package; the extra supplies their optional
 dependency. Without Redis usage, the ordinary package still works and does not
 import the Redis client at Django startup.
 
-### Adopt the candidate
+### Adopt the verified release
 
-In **your application's Python environment**, not a global environment, install
-the reviewed checkout. Replace this path with your actual candidate checkout:
+After confirming that a22 is published, install it in **your application's
+Python environment**, not a global environment, and update that application's
+reviewed lock through its normal workflow:
 
 ```console
-python -m pip install -e '/path/to/candidate/django-hv[realtime]'
+python -m pip install 'dj-hyperview[realtime]==0.1.0a22'
 ```
 
-This is an adoption command, not a new release. Verify the checkout and installed
-package provenance. Do not change the pin to an invented version. If you choose
-Uvicorn and it is not installed in that environment, install it **separately**:
+Before publication, use an explicit reviewed source checkout only for isolated
+evaluation (`python -m pip install -e '/path/to/candidate/django-hv[realtime]'`).
+Verify source versus installed distribution provenance; they are not equivalent
+acceptance profiles. If you choose Uvicorn and it is not installed in that
+environment, install it **separately**:
 
 ```console
 python -m pip install uvicorn
