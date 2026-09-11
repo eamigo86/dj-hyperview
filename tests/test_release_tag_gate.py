@@ -26,6 +26,7 @@ def test_normal_ci_pushes_exclude_tags() -> None:
     [
         ("1.2.3", "v1.2.3"),
         ("0.1.0a1", "v0.1.0a1"),
+        ("0.1.0b1", "v0.1.0b1"),
         ("1!2.0.post1+linux.1", "v1!2.0.post1+linux.1"),
     ],
 )
@@ -138,7 +139,7 @@ def test_repository_release_version_is_synchronized() -> None:
         package for package in lock["package"] if package["name"] == "dj-hyperview"
     )
 
-    assert project_version == "0.1.0a22"
+    assert project_version == "0.1.0b1"
     assert locked_project["version"] == project_version
 
 
@@ -152,3 +153,14 @@ def _project_file(tmp_path: Path, version: str) -> Path:
     path = tmp_path / "pyproject.toml"
     path.write_text(f'[project]\nname = "example"\nversion = "{version}"\n')
     return path
+
+
+def test_beta_release_declares_beta_development_status() -> None:
+    """The first beta advertises beta rather than production-stable metadata."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    maturity = [
+        classifier
+        for classifier in project["classifiers"]
+        if classifier.startswith("Development Status ::")
+    ]
+    assert maturity == ["Development Status :: 4 - Beta"]

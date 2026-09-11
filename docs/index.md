@@ -1,6 +1,6 @@
 # dj-hyperview
 
-[Step-by-step SSE guide](realtime.md): candidate setup, lists, forms and host responsibilities.
+[Step-by-step SSE guide](realtime.md): setup, lists, forms and host responsibilities.
 
 Serve consumer-owned Hyperview markup through Django without bundling
 application screens into the package.
@@ -17,6 +17,14 @@ application screens into the package.
 The package owns resolution, validation, raw-template caching, HTTP responses,
 and optional database publication. Your Django project owns every screen,
 schema, route, and application decision.
+
+## Release maturity
+
+**0.1.0b1** is the first beta in the 0.1 line. Review the
+[beta compatibility policy](api-reference.md#beta-compatibility-policy),
+[verified scope](testing.md#verified-scope) and [roadmap](roadmap.md) before
+adoption. Confirm that a source candidate has passed release checks and is
+published before installing it; beta is not universal production proof.
 
 ## Supported baseline
 

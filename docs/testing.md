@@ -41,6 +41,50 @@ can exercise callback behavior but is not a real commit. Disconnect test receive
 afterward, and cover cache failure plus a failing receiver without losing the
 original post-commit exception. No Redis is needed for this signal contract.
 
+## Verified scope
+
+Use this table to decide which deployment-specific checks you must add. It
+summarizes the package's configured acceptance profiles, not a guarantee that
+any combination outside them works. Exact targets live in `pyproject.toml` and
+CI; dependency ranges alone are not a test result.
+
+| Contract | Verified baseline | What it establishes |
+| --- | --- | --- |
+| Python | `3.12`, `3.13`, `3.14` | Six Python/Django compatibility cells, with deprecations treated as errors. |
+| Django | `5.2.17`, `6.1.1` | The base suite and separate optional database/Admin profile in each cell. |
+| Database engines | `django.db.backends.sqlite3` | Isolated in-memory default/replica databases, alias routing, commit/rollback and publication controls. |
+| Editor JavaScript | `24` | Node tests for the package's editor and documentation JavaScript, not a native app runner. |
+| Redis client | `7.4.1`, `8.1.0` | The scoped real-Redis transport compatibility profiles plus deterministic failure/lifecycle controls. |
+
+The default profile does not require Redis. The Redis profile adds an actual
+service with unique test namespaces; it does not replace the default profile.
+The current CI service image is declared in the workflow, not a promise to
+support every Redis server topology or version.
+
+**Not established by this matrix:** PostgreSQL or MySQL behavior, production
+load/soak capacity, arbitrary cache backends, or universal iOS/Android/Expo
+compatibility. SQLite tests do not establish another database's locking or
+isolation behavior. Qualify the database, cache/Redis topology, ASGI server and
+proxy used by your deployment, and test your own authentication/authorization,
+CSRF, forms, component registration and native lifecycle. Consumer test results
+must identify their exact package/client/platform versions separately.
+
+XSD acceptance proves the checked XML/schema contract, not that a native
+component or route is registered, a JSON-valued custom attribute passes its
+application validator, or the resulting screen is usable. Static Admin checks
+cannot substitute for rendering representative contexts. Use the public
+[validation and response APIs](api-reference.md) and the
+[custom-schema recipe](custom-schemas.md) in consumer tests.
+
+SSE carries best-effort invalidation hints, not authoritative content. Delivery
+is at-most-once, with no durable replay guarantee. Queue overflow/reconnect can
+require a conservative resync and an authenticated HTTP reload; publish return
+is not a delivery or layout acknowledgement. Auth, private topics, admission
+limits and safe mobile refresh remain consumer responsibilities. See
+[realtime profiles](#realtime-transport-profiles) and [security](security.md).
+
+## Run the package quality gates
+
 Package contributors can reproduce the supported aggregate coverage gate:
 
 ```console
@@ -216,3 +260,34 @@ permission. The profiles exercise redis-py 7.4.1 and 8.1.0 against the actual
 service, and the canonical `tools.test_matrix --redis` appends both base/admin
 coverage before independently checking line and branch thresholds. Unit-port
 controls do not claim real Redis or native mobile proof.
+
+## Hyperview 0.110.0 compatibility
+
+`dj-hyperview` produces HXML and HTTP responses checked against a focused,
+test-only contract for Hyperview 0.110.0. The contract covers the official
+`https://hyperview.org/hyperview` namespace, full documents, independent
+fragments, form behaviors and references, Django CSRF, the Hyperview media type,
+and UTF-8 output.
+
+The [version manifest](https://github.com/eamigo86/dj-hyperview/blob/main/tests/contracts/hyperview/0.110.0/manifest.json)
+pins the official
+[Hyperview 0.110.0 npm release](https://www.npmjs.com/package/hyperview/v/0.110.0),
+the [official Hyperview repository](https://github.com/Instawork/hyperview),
+repository tag `v0.110.0`, upstream commit
+`f715ae5cdf07733a4b846d7744518e42dff40407`, artifact hashes, and relevant
+[Hyperview documentation](https://hyperview.org).
+
+### Validated boundary
+
+- Response bytes and XML declarations must agree on strict UTF-8.
+- DTD and entity declarations are rejected before schema validation.
+- A focused XSD validates shape; a separate check enforces exact ID references.
+- Full, fragment and form responses exercise media type, status, escaping and CSRF.
+
+### Limits
+
+This verifies the HXML and HTTP contract produced by the Django backend. It
+does not execute the Hyperview client and is not a mobile, React Native, Expo,
+or binary-compatibility test. The focused test-only contract covers only the
+synthetic fixtures committed under `tests/`; it is not the complete upstream
+schema and no fixture is shipped as runtime UI.

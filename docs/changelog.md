@@ -4,6 +4,27 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+## 0.1.0b1 — 2026-09-10
+
+### Changed
+
+- Start the 0.1 beta line with `Development Status :: 4 - Beta` metadata and an
+  explicit within-line public-API compatibility commitment. Incompatible changes
+  require migration guidance, changelog disclosure and regression tests;
+  security fixes may require an accelerated, documented exception.
+- Formalize the tested contract already shipped in a22. This release introduces
+  no new package SSE runtime behavior; HyperTodo mobile fixes and its platform
+  acceptance belong to that application's own release and tests.
+
+### Documentation
+
+- Consolidate superseded local plans into one current roadmap, preserve pending
+  upstream and capability work, and keep the old Hyperview compatibility URL as
+  a link to the canonical testing section.
+- State the exact Python/Django, Admin, SQLite, Redis and HXML test scope and
+  deployment limits. Beta does not imply PostgreSQL/MySQL, load/soak or universal
+  native-platform proof; SSE remains best-effort with no durable replay guarantee.
+
 ## 0.1.0a22 — 2026-09-10
 
 ### Added

@@ -47,6 +47,16 @@ client and demonstrates filesystem and database templates, fragment updates,
 shared caching, custom HXML components, themes, localization, biometrics, and
 file uploads.
 
+## Release maturity
+
+This documentation targets **0.1.0b1**, the first beta in the 0.1 line. Read the
+[beta compatibility policy](docs/api-reference.md#beta-compatibility-policy)
+and [verified scope and deployment limits](docs/testing.md#verified-scope).
+The [roadmap](docs/roadmap.md) separates current capabilities from future work.
+Beta invites integration feedback; it does not guarantee production suitability.
+For a source candidate, confirm publication and the required release checks
+before installing the registry version.
+
 ## Requirements
 
 - **Python:** 3.12, 3.13, or 3.14

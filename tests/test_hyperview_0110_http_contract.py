@@ -21,7 +21,7 @@ from tests.hyperview_contract import (
 )
 
 CONTRACT = Path(__file__).parent / "contracts" / "hyperview" / "0.110.0"
-COMPATIBILITY_NOTE = Path(__file__).parents[1] / "docs" / "hyperview-0.110.0.md"
+COMPATIBILITY_NOTE = Path(__file__).parents[1] / "docs" / "testing.md"
 NAMESPACE = "https://hyperview.org/hyperview"
 HTTP_SETTINGS = {
     "ROOT_URLCONF": "tests.consumer_project.urls",

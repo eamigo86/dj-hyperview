@@ -80,6 +80,7 @@ nav:
       - Testing integrations: testing.md
       - Contributing: contributing.md
       - Release and rollback: release-rollback.md
+      - Roadmap: roadmap.md
       - Changelog: changelog.md
 
 extra:

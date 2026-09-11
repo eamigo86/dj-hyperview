@@ -20,6 +20,15 @@ Before the first release:
 PyPI and Pages jobs receive OIDC only within their own jobs.
 Only Pages receives `pages: write`; validation and staging remain read-only.
 
+## Compatibility review
+
+For every beta, review the [compatibility commitment](api-reference.md#beta-compatibility-policy),
+[verified scope](testing.md#verified-scope) and [current roadmap](roadmap.md).
+Record incompatible changes, migrations and any security exception in the
+changelog. A version bump or documented policy does not publish a release or
+waive the gates below; tag creation and publication still require an explicit
+release decision.
+
 ## Release order
 
 1. Update `[project].version`, commit the lock if it changes, and merge only

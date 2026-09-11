@@ -1,13 +1,16 @@
 """Documentation-site configuration contract tests."""
 
 import re
+import tomllib
 from importlib.metadata import version
 from pathlib import Path
 
+import pytest
 import xmlschema
 import yaml
 
 from dj_hyperview import __all__ as public_api
+from tests.settings import DATABASES
 
 ROOT = Path(__file__).parents[1]
 DOCS = (
@@ -28,6 +31,7 @@ DOCS = (
     "testing.md",
     "contributing.md",
     "release-rollback.md",
+    "roadmap.md",
     "changelog.md",
 )
 
@@ -115,6 +119,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
                 {"Testing integrations": "testing.md"},
                 {"Contributing": "contributing.md"},
                 {"Release and rollback": "release-rollback.md"},
+                {"Roadmap": "roadmap.md"},
                 {"Changelog": "changelog.md"},
             ]
         },
@@ -173,7 +178,9 @@ def test_readme_introduces_automatic_schema_and_optional_editor() -> None:
 
 def test_hyperview_manifest_link_targets_the_public_repository() -> None:
     """The compatibility manifest remains reachable from the hosted site."""
-    page = _documentation_pages()["hyperview-0.110.0.md"]
+    pages = _documentation_pages()
+    assert "(testing.md#hyperview-01100-compatibility)" in pages["hyperview-0.110.0.md"]
+    page = pages["testing.md"]
 
     assert (
         "https://github.com/eamigo86/dj-hyperview/blob/main/"
@@ -601,3 +608,68 @@ def test_automatic_schema_adoption_requires_effective_database_review() -> None:
         "no validation toggle",
     ):
         assert phrase in normalized
+
+
+@pytest.mark.parametrize(
+    "contract", ["Python", "Django", "Database engines", "Editor JavaScript"]
+)
+def test_documented_verification_scope_matches_configured_profiles(
+    contract: str,
+) -> None:
+    """Compare published scope rows with executable matrix and database settings."""
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
+    matrix = workflow["jobs"]["compatibility"]["strategy"]["matrix"]
+    node = next(
+        step["with"]["node-version"]
+        for step in workflow["jobs"]["quality"]["steps"]
+        if step.get("uses", "").startswith("actions/setup-node@")
+    )
+    expected = {
+        "Python": metadata["tool"]["dj-hyperview"]["supported-python"],
+        "Django": metadata["tool"]["dj-hyperview"]["supported-django"],
+        "Database engines": sorted({value["ENGINE"] for value in DATABASES.values()}),
+        "Editor JavaScript": [node],
+    }
+    assert matrix["python"] == expected["Python"]
+    assert matrix["django"] == expected["Django"]
+    rows = {
+        columns[0].strip(): re.findall(r"`([^`]+)`", columns[1])
+        for line in (ROOT / "docs/testing.md").read_text().splitlines()
+        if line.startswith("| ") and len(columns := line.strip("|").split("|")) == 3
+    }
+    assert rows.get(contract) == expected[contract]
+
+
+def test_every_public_page_is_discoverable_after_consolidation() -> None:
+    """Navigation cannot orphan an operational guide or retain a deleted page."""
+    config = yaml.safe_load((ROOT / "zensical.yml").read_text())
+    targets = _navigation_targets(config["nav"])
+    public_paths = {
+        str(path.relative_to(ROOT / "docs")) for path in _public_markdown_paths()
+    }
+    assert set(targets) == public_paths
+    assert "roadmap.md" in targets
+    assert not any(target.startswith("development/") for target in targets)
+
+
+@pytest.mark.parametrize("entry", ["README.md", "docs/index.md", "docs/roadmap.md"])
+def test_beta_entrypoints_link_to_existing_canonical_contract_sections(
+    entry: str,
+) -> None:
+    """Readers can reach the compatibility commitment and its measured limits."""
+    source = ROOT / entry
+    text = source.read_text()
+    for filename, anchor, heading in (
+        (
+            "api-reference.md",
+            "beta-compatibility-policy",
+            "## Beta compatibility policy",
+        ),
+        ("testing.md", "verified-scope", "## Verified scope"),
+    ):
+        target = f"docs/{filename}" if source.parent == ROOT else filename
+        assert f"]({target}#{anchor})" in text
+        destination = (source.parent / target).resolve()
+        assert destination == ROOT / "docs" / filename
+        assert heading in destination.read_text().splitlines()

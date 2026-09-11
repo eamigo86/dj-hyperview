@@ -44,8 +44,10 @@ docstrings. Do not place backticks inside Python docstrings.
 - Keep consumer-owned application screens outside package source.
 - Add every public page to `zensical.yml` and keep local links portable.
 - Update tests whenever navigation, commands, settings, or public imports change.
-- Keep private planning notes outside the published documentation; public guides
-  describe only the current supported behavior.
+- Keep private planning notes outside the published documentation. Canonical guides
+  describe current behavior; the single [roadmap](roadmap.md) labels future work.
+- Apply the [beta compatibility policy](api-reference.md#beta-compatibility-policy)
+  to public contract changes; document migrations and retain regression coverage.
 
 Use Conventional Commits and never include generated-author attribution. See
 [Release and rollback](release-rollback.md) before changing publication code.

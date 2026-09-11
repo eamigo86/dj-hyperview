@@ -2,13 +2,54 @@
 
 [Step-by-step SSE guide](realtime.md): setup, negotiated changes, compatibility examples and host responsibilities.
 
-Import stable public objects from `dj_hyperview`; catalog helpers are in
+Import documented public objects from `dj_hyperview`; catalog helpers are in
 `dj_hyperview.schema`. Modules and names beginning
 with an underscore remain implementation details.
 
 | Symbol | Purpose |
 | --- | --- |
 | `__version__` | Installed `dj-hyperview` distribution version. |
+
+## Beta compatibility policy
+
+**Use the documented public APIs; test your integration before upgrading.**
+**0.1.0b1 starts the 0.1 beta line.** This is a prerelease for integration
+feedback, not a blanket production-readiness guarantee. Verify the published
+version and its release checks before adopting a source candidate.
+
+Within the 0.1 beta line, maintainers will preserve the documented public Python
+imports and call contracts, configuration keys, source protocol, HTTP media
+types, and versioned schema/SSE contracts. Additive APIs may be introduced;
+existing documented integrations should not require changes simply to upgrade
+to the next beta in the same line. Supported Python/Django removals also count
+as compatibility changes. The [verified scope](testing.md#verified-scope) limits
+what has actually been tested; it is not a guarantee for every deployment.
+
+If an incompatible change is necessary, the same release must:
+
+1. Mark it explicitly as a **Breaking change** in the [changelog](changelog.md).
+2. Explain the affected APIs/clients, migration steps and rollback constraints.
+3. Include regression tests for the replacement and the retained compatibility
+   path, or for an explicit rejection when that old path cannot remain safe.
+
+Security fixes may require a faster incompatible change without a normal
+advance deprecation period. They still require a documented security rationale,
+upgrade guidance and regression tests; unsafe behavior is not preserved merely
+to keep an old integration working.
+
+This commitment covers the surfaces documented here and in the linked
+[configuration](configuration.md), [database services](database-admin.md),
+[schema extensions](custom-schemas.md) and [HTTP](http-responses.md) guides.
+Underscore-prefixed internals, cache serialization, Admin DOM/editor internals
+and test helpers are not extension APIs unless explicitly documented as such.
+A template `revision` is a concurrency/cache identity, not a stored history or
+an application-version selector.
+
+The consumer still owns authentication, authorization, CSRF, business data,
+routes, native components and capability negotiation. An untrusted client
+version or mutation marker never grants permissions. SSE v2 requires compatible
+backend readers and an adapted client; preserve v1 projection during a
+coordinated rollout or rollback. See the [SSE guide](realtime.md).
 
 ## Resolution and sources
 
