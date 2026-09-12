@@ -1,5 +1,7 @@
 # Return Hyperview documents and fragments
 
+New to Hyperview? Start with the [Django-to-Hyperview request lifecycle](quickstart.md#request-lifecycle), including a screen-to-fragment example.
+
 Use a full-document response for navigation and a fragment response for an
 in-place update. dj-hyperview applies the correct media type and validates the
 final XML against the bundled corrected schema before bytes reach the client.

@@ -4,6 +4,12 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+### Documentation
+
+- Explain the Django-to-Hyperview request lifecycle in the Quick Start, with an
+  executable full-screen and tap-to-fragment example, server/client responsibilities
+  and direct links from the landing, mobile and HTTP response guides.
+
 ## 0.1.0b1 — 2026-09-10
 
 ### Changed

@@ -1,5 +1,7 @@
 # dj-hyperview
 
+New to Hyperview? Start with the [Django-to-Hyperview request lifecycle](quickstart.md#request-lifecycle), including a screen-to-fragment example.
+
 [Step-by-step SSE guide](realtime.md): setup, lists, forms and host responsibilities.
 
 Serve consumer-owned Hyperview markup through Django without bundling

@@ -1,5 +1,7 @@
 # Create a Hyperview mobile client
 
+New to Hyperview? Start with the [Django-to-Hyperview request lifecycle](quickstart.md#request-lifecycle), including a screen-to-fragment example.
+
 Start with a normal blank Expo application and install Hyperview as a
 dependency. You do not need to clone the Hyperview repository or copy its
 example application.
