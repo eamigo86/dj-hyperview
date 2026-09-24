@@ -22,6 +22,13 @@ This page records user-visible release changes, including unpublished attempts.
 
 - The optional Admin HXML editor stays dark from initialization, regardless of the Admin theme, theme toggles, or system color preference.
 
+### Changed
+
+- Admin **Format and Validate** reports expected dynamic-template limits as a
+  short, neutral informational note (`schema_static_incomplete`, severity `info`)
+  rather than a warning. Source navigation, blocking errors, save checks, and
+  mandatory validation of rendered HXML are unchanged.
+
 ### Documentation
 
 - Explain the Django-to-Hyperview request lifecycle in the Quick Start, with an

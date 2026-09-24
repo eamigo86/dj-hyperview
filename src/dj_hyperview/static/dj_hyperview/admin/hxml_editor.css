@@ -42,6 +42,11 @@
   color: var(--body-fg);
 }
 
+.djhv-source-validation-info {
+  border-left-color: transparent;
+  color: var(--body-quiet-color);
+}
+
 .djhv-source-validation-diagnostic .button {
   margin-left: 0.75rem;
 }

@@ -214,9 +214,8 @@ def _incomplete_schema_diagnostic(name: str, line: int | None) -> dict[str, Any]
     """Report dynamic source that cannot be checked completely without rendering."""
     return _diagnostic(
         "schema_static_incomplete",
-        "Static checks passed. Django markup beginning here can add or remove "
-        "XML structure; the final HXML will be validated when served.",
-        severity="warning",
+        "Static checks passed. Final HXML will be validated when served.",
+        severity="info",
         template=name,
         line=line,
     )

@@ -128,13 +128,13 @@ def test_r2_static_and_rendered_validation_reject_the_same_literal_types(
     ],
 )
 @override_settings(HYPERVIEW=CONFIG)
-def test_r2_dynamic_registry_source_warns_instead_of_claiming_full_validation(
+def test_r2_dynamic_registry_source_informs_instead_of_claiming_full_validation(
     admin_client, source
 ):
     result = _validate(admin_client, source)
     assert result["ok"] is True
     assert result["diagnostics"]
-    assert all(item["severity"] == "warning" for item in result["diagnostics"])
+    assert all(item["severity"] == "info" for item in result["diagnostics"])
     assert result["diagnostics"][-1]["code"] == "schema_static_incomplete"
 
 

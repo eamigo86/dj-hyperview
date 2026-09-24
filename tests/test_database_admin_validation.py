@@ -171,8 +171,8 @@ def test_admin_save_actions_reject_invalid_static_schema_without_javascript(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_admin_save_allows_warning_only_static_schema_result() -> None:
-    """Incomplete static analysis warns in the browser but does not block save."""
+def test_admin_save_allows_informational_static_schema_result() -> None:
+    """Incomplete static analysis informs in the browser but does not block save."""
     module, _ = _admin_types()
     source = '<image xmlns="https://hyperview.org/hyperview" {{ attributes }} />'
     form = module.HyperviewTemplateAdminForm(
@@ -333,18 +333,16 @@ def test_validation_accepts_namespaced_attributes_allowed_by_xsd(admin_client) -
 
 
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_static_validation_degrades_unclosed_raw_block_to_warning() -> None:
+def test_static_validation_defers_unclosed_raw_block_analysis() -> None:
     module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     source = "{% comment %}\n<style kk=1>"
 
     assert module._static_schema_diagnostics("screens/draft.xml", source) == [
         {
-            "severity": "warning",
+            "severity": "info",
             "code": "schema_static_incomplete",
             "message": (
-                "Static checks passed. Django markup beginning here can add or "
-                "remove XML structure; the final HXML will be validated when "
-                "served."
+                "Static checks passed. Final HXML will be validated when served."
             ),
             "template": "screens/draft.xml",
             "coordinate_space": "source",
@@ -843,7 +841,7 @@ def test_validation_handles_literal_markers_and_static_xml_errors(
         '<image xmlns="https://hyperview.org/hyperview" {{ attribute }}="x" />',
     ],
 )
-def test_validation_warns_when_dynamic_markup_prevents_complete_static_lint(
+def test_validation_informs_when_dynamic_markup_prevents_complete_static_lint(
     admin_client, content: str
 ) -> None:
     result = _validate(
@@ -855,12 +853,10 @@ def test_validation_warns_when_dynamic_markup_prevents_complete_static_lint(
     assert result["ok"] is True
     assert result["diagnostics"] == [
         {
-            "severity": "warning",
+            "severity": "info",
             "code": "schema_static_incomplete",
             "message": (
-                "Static checks passed. Django markup beginning here can add or "
-                "remove XML structure; the final HXML will be validated when "
-                "served."
+                "Static checks passed. Final HXML will be validated when served."
             ),
             "template": "fragments/image.xml",
             "coordinate_space": "source",
@@ -1122,3 +1118,31 @@ def test_validation_endpoint_is_hidden_when_editor_is_disabled(admin_client) -> 
     )
 
     assert response.status_code == 404
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_conditional_structure_is_informational_without_hiding_errors(admin_client):
+    source = (
+        '<doc xmlns="https://hyperview.org/hyperview"><screen><body>\n'
+        "{% if enabled %}<view><text>Ready</text></view>{% endif %}\n"
+        "</body></screen></doc>"
+    )
+    result = _validate(admin_client, source)
+    assert result["ok"] is True
+    assert result["diagnostics"] == [
+        {
+            "severity": "info",
+            "code": "schema_static_incomplete",
+            "message": (
+                "Static checks passed. Final HXML will be validated when served."
+            ),
+            "template": "screens/draft.xml",
+            "coordinate_space": "source",
+            "line": 2,
+            "column": None,
+        }
+    ]
+    invalid = _validate(admin_client, source.replace("<view>", '<view forbidden="1">'))
+    assert invalid["ok"] is False
+    assert any(item["severity"] == "error" for item in invalid["diagnostics"])

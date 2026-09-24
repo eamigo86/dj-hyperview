@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import {readFileSync} from "node:fs";
+import vm from "node:vm";
 
 import validationApi from "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_validation.js";
 
@@ -105,7 +107,7 @@ test("validation distinguishes an incomplete static schema check", async () => {
   const states = [];
   const response = {
     ok: true,
-    diagnostics: [{severity: "warning", code: "schema_static_incomplete"}],
+    diagnostics: [{severity: "info", code: "schema_static_incomplete"}],
   };
   const controller = createController({
     read: () => ({name: "screen.xml", content: "<view {{ attrs }} />"}),
@@ -267,4 +269,99 @@ test("source coordinates navigate only within the current draft", () => {
     ),
     null,
   );
+});
+
+
+test("informational diagnostics allow saving but never override an invalid result", async () => {
+  for (const ok of [true, false]) {
+    let resumed = false;
+    const preflight = createSavePreflight({
+      run: async () => ({ok, diagnostics: [
+        {severity: "info", code: "schema_static_incomplete"},
+        ...(!ok ? [{severity: "error", code: "schema_attribute"}] : []),
+      ]}),
+      resume: () => { resumed = true; },
+    });
+    await preflight.handleSubmit({submitter: {name: "_save"}, preventDefault() {}});
+    assert.equal(resumed, ok);
+  }
+});
+
+function installedValidation(diagnostic, ok) {
+  const events = {};
+  const jumps = [];
+  const element = () => ({
+    children: [],
+    appendChild(child) { this.children.push(child); },
+    replaceChildren() { this.children = []; },
+    addEventListener(name, callback) { this[name] = callback; },
+  });
+  const diagnostics = element();
+  const button = element();
+  const status = element();
+  const formatStatus = element();
+  const name = {...element(), value: "screens/draft.xml"};
+  const form = {...element(), querySelector: (selector) => selector === '[name="name"]' ? name : {value: "csrf"}};
+  const actions = {
+    nextElementSibling: diagnostics,
+    querySelector: (selector) => ({
+      ".djhv-format-validate": button,
+      ".djhv-editor-status": formatStatus,
+      ".djhv-source-validation-status": status,
+    })[selector],
+  };
+  const textarea = {
+    dataset: {hyperviewValidationUrl: "/validate/"},
+    previousElementSibling: {editor: {
+      getValue: () => "draft",
+      getSession: () => ({on() {}}),
+      gotoLine: (...args) => jumps.push(args),
+      focus: () => jumps.push("focus"),
+    }},
+    closest: (selector) => selector === "form" ? form : {nextElementSibling: actions},
+  };
+  const context = {
+    AbortController,
+    window: {addEventListener: (name, callback) => { events[name] = callback; }},
+    document: {createElement: element, querySelectorAll: () => [textarea]},
+    fetch: async () => ({json: async () => ({ok, diagnostics: [diagnostic]})}),
+  };
+  vm.runInNewContext(readFileSync(new URL(
+    "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_validation.js", import.meta.url,
+  ), "utf8"), context);
+  events.load();
+  button.click();
+  return {diagnostics, status, jumps};
+}
+
+for (const severity of ["info", "warning", "error"]) {
+  test(`installed Admin renders ${severity} with correct presentation and source navigation`, async () => {
+    const {diagnostics, status, jumps} = installedValidation({
+      severity,
+      code: severity === "info" ? "schema_static_incomplete" : "other",
+      message: "Safe <text> message",
+      template: "screens/draft.xml",
+      coordinate_space: "source",
+      line: 3,
+      column: 2,
+    }, severity !== "error");
+    await new Promise(setImmediate);
+    const row = diagnostics.children[0];
+    assert.equal(row.className, "djhv-source-validation-diagnostic" +
+      (severity === "error" ? "" : ` djhv-source-validation-${severity}`));
+    assert.equal(row.textContent, ({info: "Info: ", warning: "Warning: ", error: "Error: "})[severity] +
+      "Safe <text> message · source line 3");
+    assert.equal(row.innerHTML, undefined);
+    if (severity === "info") assert.equal(status.textContent, "Source and static checks passed.");
+    if (severity === "error") assert.equal(status.textContent, "Template source is invalid.");
+    row.children[0].click();
+    assert.deepEqual(jumps, [[3, 1, true], "focus"]);
+  });
+}
+
+test("informational styling uses neutral colors instead of warning or error accents", () => {
+  const css = readFileSync(new URL(
+    "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_editor.css", import.meta.url,
+  ), "utf8");
+  assert.match(css, /\.djhv-source-validation-info\s*\{[^}]*border-left-color:\s*transparent;[^}]*color:\s*var\(--body-quiet-color\);/);
 });

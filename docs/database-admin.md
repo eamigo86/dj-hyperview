@@ -229,19 +229,24 @@ the configured Hyperview source precedence, recursively compiled, and checked
 both independently and in their parent position. Missing targets and include
 cycles are errors; expansion is bounded to 64 include edges.
 
-A warning that begins **Static checks passed** is not a validation failure. It
-means the visible HXML is valid, but Django markup such as a conditional branch,
-template inheritance, or an include whose target is a variable can add or remove
+An informational note — **Static checks passed. Final HXML will be validated
+when served.** — is normal for dynamic templates, not a warning or a validation
+failure. It means the static checks passed, but Django markup such as a
+conditional branch, template inheritance, or an include whose target is a variable
+can add or remove
 nodes beginning at the reported line. Literal includes are the structural tag
 that this static pass composes; they are not deferred merely because they are
 includes. The package validates final rendered HXML when the response is served.
-Actual source or schema errors remain errors and block the Admin save actions.
+The note keeps its source line and **Go to source** button but uses neutral
+styling rather than warning colors. Its diagnostic code remains
+`schema_static_incomplete`, with severity `info`. Actual source or schema errors
+remain errors and block the Admin save actions.
 
 The standard **Save**, **Save and add another**, and **Save and continue
 editing** actions run this same format-and-validate preflight automatically.
-Validation errors keep the form open and display the diagnostics; warning-only
-results allow the selected Django Admin action to continue. The exact submit
-action is preserved. If formatting is unsafe, the unchanged source is validated
+Validation errors keep the form open and display the diagnostics; informational
+notes and warning-only results allow the selected Django Admin action to
+continue. The exact submit action is preserved. If formatting is unsafe, the unchanged source is validated
 and can still be saved when valid.
 
 The browser preflight improves feedback but is not the trust boundary. With the
@@ -253,9 +258,9 @@ This action deliberately does not render the template and therefore does not
 run full rendered XSD validation. Dynamic attribute values are deferred, and the
 check cannot resolve variable-selected includes, choose one final conditional
 branch, or evaluate type restrictions and XSD assertions that depend on rendered
-values. If dynamic markup prevents safe static analysis, the Admin reports a
-warning instead of claiming a complete result. Authoritative checks still occur
-through rendered-response validation. A successful draft check means that the
+values. If dynamic markup prevents safe static analysis, the Admin reports an
+informational note instead of claiming a complete result. Authoritative checks
+still occur through rendered-response validation. A successful draft check means that the
 source compiles and its statically visible schema declarations pass; it does not
 mean that every possible rendered document is valid.
 
@@ -294,10 +299,10 @@ The source checker and rendered validator share the compiled registry and
 conditional behavior types. In addition to required attributes and enums, the checker
 checks literal primitive values and type restrictions, including width syntax.
 Dynamic action names, variable-selected includes, and structural branches produce
-an incomplete-analysis warning; dynamic scalar values do not. Valid static
-declarations can still be checked without rendering.
-Warnings do not block the existing save workflow. Exact rendered XSD validation
-remains authoritative for composed structure, assertions, and runtime values.
+an incomplete-analysis informational note; dynamic scalar values do not. Valid
+static declarations can still be checked without rendering.
+Informational notes do not block the existing save workflow. Exact rendered XSD
+validation remains authoritative for composed structure, assertions, and runtime values.
 Neither autocomplete nor source validation rewrites template XML.
 
 Publication compiles Django template syntax before writing or incrementing a
