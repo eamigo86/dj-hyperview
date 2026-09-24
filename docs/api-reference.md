@@ -101,7 +101,7 @@ for bodyless statuses, HEAD request context, and lazy callback semantics.
 | `validate_hxml` | Validate a final rendered HXML document against resource limits and the automatic corrected schema. |
 | `validate_fragment_hxml` | Validate fragment XML, limits, the automatic schema, and client-safe root shape. |
 | `validate_hyperview_schema` | Validate rendered HXML with the automatic corrected XSD 1.1 registry. |
-| `HYPERVIEW_SCHEMA_VERSION` | Active corrected validation contract version (`0.111.0` in this source candidate). |
+| `HYPERVIEW_SCHEMA_VERSION` | Active corrected validation contract version (`0.111.0` in 0.1.0b2). |
 | `HYPERVIEW_VALIDATION_CONTRACT` | Capability identifier `automatic-xsd-v1`. |
 | `schema.get_hyperview_catalog` | Inspect the corrected runtime declarations and registered extensions (catalog format 2). |
 | `schema.build_hyperview_catalog` | Inspect the archived upstream 0.110.0 declarations without selecting a runtime schema. |

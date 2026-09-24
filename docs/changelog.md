@@ -4,9 +4,13 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+No changes yet.
+
+## 0.1.0b2 — 2026-09-24
+
 ### Added
 
-- The source candidate validates against Hyperview 0.111.0, including optional
+- Validate against Hyperview 0.111.0, including optional
   boolean `content-insets` on scroll-capable elements. The 0.110.0 upstream
   resources and inspection helper remain available unchanged; the new corrected
   registry and its editor catalog share one 0.111.0 contract.

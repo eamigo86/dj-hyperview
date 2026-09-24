@@ -22,7 +22,8 @@ schema, route, and application decision.
 
 ## Release maturity
 
-**0.1.0b1** is the first beta in the 0.1 line. Review the
+**0.1.0b2** adds the corrected 0.111.0 contract and Admin improvements;
+0.1.0b1 began the beta line. Review the
 [beta compatibility policy](api-reference.md#beta-compatibility-policy),
 [verified scope](testing.md#verified-scope) and [roadmap](roadmap.md) before
 adoption. Confirm that a source candidate has passed release checks and is
@@ -32,7 +33,7 @@ published before installing it; beta is not universal production proof.
 
 - Python 3.12 through 3.14.
 - Django 5.2 and 6.1.
-- Hyperview markup contract 0.111.0 in this source candidate; published b1 remains 0.110.0.
+- Hyperview markup contract 0.111.0 in 0.1.0b2; earlier b1 used 0.110.0.
 
 dj-hyperview does not ship application screens, runtime application HXML,
 Redis, or a required database app.

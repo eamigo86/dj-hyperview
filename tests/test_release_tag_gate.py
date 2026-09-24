@@ -27,6 +27,7 @@ def test_normal_ci_pushes_exclude_tags() -> None:
         ("1.2.3", "v1.2.3"),
         ("0.1.0a1", "v0.1.0a1"),
         ("0.1.0b1", "v0.1.0b1"),
+        ("0.1.0b2", "v0.1.0b2"),
         ("1!2.0.post1+linux.1", "v1!2.0.post1+linux.1"),
     ],
 )
@@ -139,7 +140,7 @@ def test_repository_release_version_is_synchronized() -> None:
         package for package in lock["package"] if package["name"] == "dj-hyperview"
     )
 
-    assert project_version == "0.1.0b1"
+    assert project_version == "0.1.0b2"
     assert locked_project["version"] == project_version
 
 

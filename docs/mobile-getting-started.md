@@ -6,9 +6,9 @@ Start with a normal blank Expo application and install Hyperview as a
 dependency. You do not need to clone the Hyperview repository or copy its
 example application.
 
-This guide records the source-candidate reference matrix exercised by automated
-HyperTodo tests. Native device acceptance remains pending; published dj-hyperview
-0.1.0b1 still documents the older 0.110.0 contract:
+This guide records the 0.1.0b2 reference matrix exercised by automated
+HyperTodo tests. Native device acceptance remains pending; the earlier
+0.1.0b1 release used the 0.110.0 contract:
 
 | Dependency | Tested version |
 | --- | --- |

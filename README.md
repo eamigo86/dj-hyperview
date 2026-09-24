@@ -49,9 +49,9 @@ file uploads.
 
 ## Release maturity
 
-The published **0.1.0b1** beta uses Hyperview 0.110.0; this source
-candidate validates Hyperview 0.111.0. No newer package release is implied.
-This documentation targets the first beta in the 0.1 line. Read the
+This documentation covers **0.1.0b2**, which validates Hyperview 0.111.0.
+The earlier 0.1.0b1 release used Hyperview 0.110.0. Confirm b2 publication
+on PyPI before installing it. Read the
 [beta compatibility policy](docs/api-reference.md#beta-compatibility-policy)
 and [verified scope and deployment limits](docs/testing.md#verified-scope).
 The [roadmap](docs/roadmap.md) separates current capabilities from future work.
@@ -64,7 +64,7 @@ before installing the registry version.
 - **Python:** 3.12, 3.13, or 3.14
 - **Django:** 5.2 or 6.1
 - **lxml:** 6.1 or newer, below 7
-- **Hyperview contract (source candidate):** 0.111.0
+- **Hyperview contract (0.1.0b2):** 0.111.0
 
 ## Installation
 

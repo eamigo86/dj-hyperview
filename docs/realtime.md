@@ -5,10 +5,10 @@ without navigating away and back. With the coordinated contextual client, own
 changes stay quiet and a dirty form warns only for relevant remote changes,
 without automatically losing what the user is typing.
 
-This guide targets **0.1.0b1**, formalizing the existing a22 negotiated contextual
-invalidation contract and the SSE primitives introduced in a21. The beta adds no
-new SSE runtime behavior. See the
-[b1 release notes](changelog.md#010b1-2026-09-10),
+This guide targets **0.1.0b2**, retaining the negotiated contextual
+invalidation contract formalized in b1 and the SSE primitives introduced in a21.
+The beta adds no new SSE runtime behavior. See the
+[b2 release notes](changelog.md#010b2-2026-09-24),
 [compatibility policy](api-reference.md#beta-compatibility-policy) and
 [verified scope](testing.md#verified-scope). Installing a21 supports v1, not the
 new rich envelope. For a later source candidate, do not assume publication until
@@ -156,12 +156,12 @@ import the Redis client at Django startup.
 
 ### Adopt the verified release
 
-After confirming that b1 is published, install it in **your application's
+After confirming that b2 is published, install it in **your application's
 Python environment**, not a global environment, and update that application's
 reviewed lock through its normal workflow:
 
 ```console
-python -m pip install 'dj-hyperview[realtime]==0.1.0b1'
+python -m pip install 'dj-hyperview[realtime]==0.1.0b2'
 ```
 
 Before publication, use an explicit reviewed source checkout only for isolated
