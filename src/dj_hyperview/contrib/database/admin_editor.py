@@ -23,7 +23,7 @@ class HyperviewAceWidget(AceWidget):
         super().__init__(
             attrs=attrs,
             mode="xml",
-            theme="textmate",
+            theme="monokai",
             wordwrap=True,
             width="100%",
             height="32rem",
@@ -44,14 +44,8 @@ class HyperviewAceWidget(AceWidget):
             CSS and JavaScript required by the enhanced editor.
         """
         package_media = forms.Media(
-            css={
-                "screen": (
-                    "django_ace/ace/css/theme/monokai.css",
-                    "dj_hyperview/admin/hxml_editor.css",
-                )
-            },
+            css={"screen": ("dj_hyperview/admin/hxml_editor.css",)},
             js=(
-                "django_ace/ace/theme-monokai.js",
                 "dj_hyperview/admin/hxml_mode.js",
                 "dj_hyperview/admin/hxml_editor.js",
                 "dj_hyperview/admin/hxml_validation.js",

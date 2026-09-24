@@ -20,6 +20,8 @@ This page records user-visible release changes, including unpublished attempts.
   successful retry, and a dropped request. No server SSE protocol change or
   React Navigation migration is required.
 
+- The optional Admin HXML editor stays dark from initialization, regardless of the Admin theme, theme toggles, or system color preference.
+
 ### Documentation
 
 - Explain the Django-to-Hyperview request lifecycle in the Quick Start, with an

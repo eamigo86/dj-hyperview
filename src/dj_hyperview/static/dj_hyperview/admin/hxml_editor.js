@@ -549,17 +549,8 @@
     const actions = textarea.closest(".django-ace-editor").nextElementSibling;
     const status = actions.querySelector(".djhv-editor-status");
 
-    const setTheme = function () {
-      const selected = document.documentElement.dataset.theme;
-      const dark = selected === "dark" ||
-        (!selected && window.matchMedia("(prefers-color-scheme: dark)").matches);
-      editor.setTheme(dark ? "ace/theme/monokai" : "ace/theme/textmate");
-    };
-    setTheme();
-    new MutationObserver(setTheme).observe(document.documentElement, {
-      attributes: true,
-      attributeFilter: ["data-theme"],
-    });
+    // Keep the source editor dark, independently of the Django admin theme.
+    editor.setTheme("ace/theme/monokai");
 
     const catalogUrl = textarea.dataset.hyperviewCatalogUrl;
     if (!catalogUrl) {

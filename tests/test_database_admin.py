@@ -90,6 +90,10 @@ def test_enabled_admin_editor_uses_local_strict_csp_assets() -> None:
 
     assert type(widget).__name__ == "HyperviewAceWidget"
     assert 'data-mode="xml"' in rendered
+    assert 'data-theme="monokai"' in rendered
+    assert "django_ace/ace/theme-monokai.js" in media
+    assert "django_ace/ace/css/theme/monokai.css" in media
+    assert "textmate" not in media
     assert 'data-usestrictcsp="true"' in rendered
     assert 'data-hyperview-catalog-url="/admin/' in rendered
     assert "Format and Validate" in rendered
