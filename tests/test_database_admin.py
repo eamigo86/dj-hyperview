@@ -11,6 +11,7 @@ from django.contrib import admin
 from django.test import Client, RequestFactory, override_settings
 from django.urls import reverse
 
+from dj_hyperview import HYPERVIEW_SCHEMA_VERSION
 from tests.test_database_app import run_isolated
 
 pytestmark = pytest.mark.skipif(
@@ -130,7 +131,7 @@ def test_schema_catalog_admin_endpoint_requires_authentication_and_permission(
     assert anonymous.headers["Location"].startswith("/admin/login/?next=")
     assert forbidden.status_code == 403
     assert allowed.status_code == 200
-    assert allowed.json()["schema_version"] == "0.110.0"
+    assert allowed.json()["schema_version"] == HYPERVIEW_SCHEMA_VERSION
     assert "view" in allowed.json()["elements"]
 
 
