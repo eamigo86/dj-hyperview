@@ -21,12 +21,14 @@ from ._schema_overlay import _generated_overlay
 from .conf import get_settings
 from .exceptions import TemplateValidationError
 
-HYPERVIEW_SCHEMA_VERSION = "0.110.0"
+HYPERVIEW_SCHEMA_VERSION = "0.111.0"
+_LEGACY_UPSTREAM_VERSION = "0.110.0"
 HYPERVIEW_VALIDATION_CONTRACT = "automatic-xsd-v1"
-_SCHEMA_REVISION = "hyperview-0.110.0-corrected-r2"
+_SCHEMA_REVISION = "hyperview-0.111.0-corrected-r3"
 HYPERVIEW_NAMESPACE = "https://hyperview.org/hyperview"
 XSD_NAMESPACE = "http://www.w3.org/2001/XMLSchema"
-_SCHEMA_ROOT = Path(__file__).with_name("schemas") / HYPERVIEW_SCHEMA_VERSION
+_SCHEMAS_ROOT = Path(__file__).with_name("schemas")
+_SCHEMA_ROOT = _SCHEMAS_ROOT / HYPERVIEW_SCHEMA_VERSION
 _MAX_SCHEMA_FILES = 256
 _REGISTRY_LOCK = RLock()
 _OVERRIDE_TAG = f"{{{XSD_NAMESPACE}}}override"
@@ -46,12 +48,12 @@ class _SchemaDependencies:
 
 
 def get_hyperview_schema_path() -> Path:
-    """Return the unmodified upstream root schema path without Django settings.
+    """Return the archived 0.110.0 upstream schema without Django settings.
 
     Returns:
-        Absolute path to the versioned upstream Hyperview schema entry point.
+        Absolute path to the unchanged legacy upstream inspection entry point.
     """
-    return _SCHEMA_ROOT / "hyperview.xsd"
+    return _SCHEMAS_ROOT / _LEGACY_UPSTREAM_VERSION / "hyperview.xsd"
 
 
 def _xmlschema_module() -> Any:
@@ -217,7 +219,7 @@ def _compile_schema(path: Path) -> Any:
 
 
 def build_hyperview_catalog() -> dict[str, Any]:
-    """Build deterministic completion metadata from the bundled XSD set.
+    """Build deterministic metadata from the archived upstream XSD set.
 
     Returns:
         JSON-compatible schema catalog sorted by declaration name.
@@ -228,7 +230,7 @@ def build_hyperview_catalog() -> dict[str, Any]:
     """
     return _schema_catalog(
         _compile_schema(get_hyperview_schema_path()),
-        version=HYPERVIEW_SCHEMA_VERSION,
+        version=_LEGACY_UPSTREAM_VERSION,
     )
 
 
@@ -350,7 +352,7 @@ def _cached_registry(
         TemplateValidationError: If dependencies or declarations are invalid.
     """
     xmlschema = _xmlschema_module()
-    schema_path = _SCHEMA_ROOT / "r2" / "hyperview.xsd"
+    schema_path = _SCHEMA_ROOT / "r3" / "hyperview.xsd"
     roots = [Path(dependencies.root) for dependencies in state]
     locations = [(_target_namespace(path), str(path)) for path in roots]
     try:
@@ -480,7 +482,7 @@ def _active_catalog(
     state: tuple[_SchemaDependencies, ...],
     extensions: _SchemaExtensions,
 ) -> dict[str, Any]:
-    """Build qualified, action-specific metadata from the actual r2 registry.
+    """Build qualified, action-specific metadata from the actual active registry.
 
     Args:
         state: Guarded transitive dependency fingerprints.

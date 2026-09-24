@@ -29,7 +29,7 @@ def test_registry_bundles_the_exact_hyperview_0110_schemas() -> None:
     """The registry carries immutable upstream resources with known checksums."""
     root = get_hyperview_schema_path().parent
 
-    assert HYPERVIEW_SCHEMA_VERSION == "0.110.0"
+    assert HYPERVIEW_SCHEMA_VERSION == "0.111.0"
     assert {
         path.name: hashlib.sha256(path.read_bytes()).hexdigest()
         for path in root.glob("*.xsd")

@@ -6,12 +6,14 @@ Start with a normal blank Expo application and install Hyperview as a
 dependency. You do not need to clone the Hyperview repository or copy its
 example application.
 
-This guide records the reference matrix validated with dj-hyperview:
+This guide records the source-candidate reference matrix exercised by automated
+HyperTodo tests. Native device acceptance remains pending; published dj-hyperview
+0.1.0b1 still documents the older 0.110.0 contract:
 
 | Dependency | Tested version |
 | --- | --- |
 | Expo | `~57.0.20` |
-| Hyperview | `0.110.0` |
+| Hyperview | `0.111.0` |
 | React | `19.2.3` |
 | React Native | `0.86.3` |
 
@@ -31,7 +33,7 @@ corepack yarn set version classic
 Install the tested runtime matrix:
 
 ```console
-corepack yarn add expo@~57.0.20 hyperview@0.110.0 \
+corepack yarn add expo@~57.0.20 hyperview@0.111.0 \
   react@19.2.3 react-native@0.86.3 moment@2.30.1 \
   @react-native-community/datetimepicker@9.1.0 \
   @react-native-picker/picker@2.11.4 \

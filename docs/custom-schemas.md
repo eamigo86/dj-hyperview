@@ -130,7 +130,7 @@ HYPERVIEW = {
 
 `EXTRA_SCHEMAS` accepts multiple local root files. Give each independent custom
 vocabulary its own namespace. The package merges their declarations with the
-bundled Hyperview 0.110.0 registry lazily.
+bundled Hyperview 0.111.0 registry lazily.
 
 ## 4. Use the namespace in HXML
 
@@ -293,7 +293,8 @@ The packaged corrected catalog is generated deterministically from its fixed sch
 regressions compare it with fresh schema introspection and check the approved
 attribute deltas. Runtime variants are derived from the same compiled registry
 as validation. The config-free `get_hyperview_schema_path()` and
-`build_hyperview_catalog()` helpers retain their upstream inspection meaning and
+`build_hyperview_catalog()` helpers retain their archived 0.110.0 upstream
+inspection meaning and
 original catalog format. That inspection output is not the active runtime registry.
 
 ### Migration boundary

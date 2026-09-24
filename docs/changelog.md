@@ -4,6 +4,22 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+### Added
+
+- The source candidate validates against Hyperview 0.111.0, including optional
+  boolean `content-insets` on scroll-capable elements. The 0.110.0 upstream
+  resources and inspection helper remain available unchanged; the new corrected
+  registry and its editor catalog share one 0.111.0 contract.
+
+### Fixed
+
+- HyperTodo's mobile client now pins upstream Hyperview 0.111.0, whose
+  [#1348 fix](https://github.com/Instawork/hyperview/pull/1350) distinguishes
+  failed fragment fetches from intentional sync drops. Mounted client tests
+  cover HTTP 500, network rejection, indicator and pull-refresh cleanup,
+  successful retry, and a dropped request. No server SSE protocol change or
+  React Navigation migration is required.
+
 ### Documentation
 
 - Explain the Django-to-Hyperview request lifecycle in the Quick Start, with an

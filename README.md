@@ -33,7 +33,7 @@ screens into the package.
   and standard CSRF protection.
 - **Fail-closed validation** — enforce canonical names, UTF-8, XML safety,
   configurable resource limits, and automatic XSD 1.1 validation against one
-  corrected Hyperview 0.110.0 schema plus explicit project extensions.
+  corrected Hyperview 0.111.0 schema plus explicit project extensions.
 
 > dj-hyperview does not ship application screens, runtime application HXML,
 > mobile components, Redis, or a required database app. Those choices remain
@@ -49,7 +49,9 @@ file uploads.
 
 ## Release maturity
 
-This documentation targets **0.1.0b1**, the first beta in the 0.1 line. Read the
+The published **0.1.0b1** beta uses Hyperview 0.110.0; this source
+candidate validates Hyperview 0.111.0. No newer package release is implied.
+This documentation targets the first beta in the 0.1 line. Read the
 [beta compatibility policy](docs/api-reference.md#beta-compatibility-policy)
 and [verified scope and deployment limits](docs/testing.md#verified-scope).
 The [roadmap](docs/roadmap.md) separates current capabilities from future work.
@@ -62,7 +64,7 @@ before installing the registry version.
 - **Python:** 3.12, 3.13, or 3.14
 - **Django:** 5.2 or 6.1
 - **lxml:** 6.1 or newer, below 7
-- **Hyperview contract:** 0.110.0
+- **Hyperview contract (source candidate):** 0.111.0
 
 ## Installation
 

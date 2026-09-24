@@ -124,7 +124,7 @@ an empty realtime mapping is an error, not another disabled form.
 | `ADMIN` | Mapping | `{}` | Optional Django Admin enhancements. |
 | `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor with one conservative Format and Validate action. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
 | `ADMIN.PERMISSION` | Callable or dotted callable path | Superuser-only callback | Authoritative mutation policy for adding, changing, and deleting stored templates. The callable receives the current `HttpRequest` and must return the literal boolean `True`; exceptions and non-boolean results deny access. |
-| `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.110.0 registry and completion catalog. URLs are rejected. |
+| `EXTRA_SCHEMAS` | List or tuple of strings or `Path` objects | `()` | Local XSD roots merged into the bundled Hyperview 0.111.0 registry and completion catalog. URLs are rejected. |
 | `SCHEMA_EXTENSIONS` | Mapping | `{}` | Typed app-owned behavior and element-attribute declarations; standard declarations cannot be replaced. |
 | `REALTIME` | Exact mapping or None | `None` | Optional SSE transport configuration. Does not create an endpoint, client or connection. |
 | `REALTIME.REDIS_URL` | String | Required when enabled | Validated server-owned Redis URL; not a cache alias. Excluded from the normalized object's repr. |
@@ -133,7 +133,7 @@ an empty realtime mapping is an error, not another disabled form.
 ## Automatic Hyperview XSD 1.1 validation
 
 The package always validates final rendered documents and fragments against one
-corrected Hyperview 0.110.0 registry. Raw source remains context-free: safety and
+corrected Hyperview 0.111.0 registry. Raw source remains context-free: safety and
 Django compilation do not invent variables or render a scenario. Configuring
 `VALIDATION` changes only `MAX_BYTES`, `MAX_DEPTH`, and `MAX_NODES`; it cannot
 skip or replace standard validation.
@@ -167,7 +167,8 @@ settings refresh all consumers without restarting Django.
 The fixed trusted package overlay leaves upstream XSD artifacts unchanged.
 `get_hyperview_catalog()` returns active `catalog_format: 2` without public
 profile metadata. The config-free `get_hyperview_schema_path()` and
-`build_hyperview_catalog()` helpers still inspect upstream resources, not the
+`build_hyperview_catalog()` helpers still inspect the archived upstream 0.110.0
+resources, not the
 active corrected runtime registry.
 
 Follow [Add custom HXML elements](custom-schemas.md) for namespace registration

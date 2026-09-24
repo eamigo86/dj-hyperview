@@ -32,7 +32,7 @@ published before installing it; beta is not universal production proof.
 
 - Python 3.12 through 3.14.
 - Django 5.2 and 6.1.
-- Hyperview markup contract 0.110.0.
+- Hyperview markup contract 0.111.0 in this source candidate; published b1 remains 0.110.0.
 
 dj-hyperview does not ship application screens, runtime application HXML,
 Redis, or a required database app.

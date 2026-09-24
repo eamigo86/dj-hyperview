@@ -313,7 +313,7 @@ def test_mobile_getting_started_is_standalone_and_tested() -> None:
     assert "create-expo-app" in page
     assert "Hyperview repository" in page
     assert "do not need to clone" in page.lower()
-    assert "hyperview@0.110.0" in page
+    assert "hyperview@0.111.0" in page
     assert "expo start --go" in page
     assert "Continue with Google" in page
     assert "EXPO_PUBLIC_API_URL" in page

@@ -41,8 +41,8 @@ _EMPTY_EXTENSIONS = _SchemaExtensions()
 
 @lru_cache(maxsize=1)
 def _standards() -> dict[str, Any]:
-    """Read immutable r2 declarations without loading Django or xmlschema."""
-    path = Path(__file__).with_name("schemas") / "0.110.0" / "r2" / "catalog.json"
+    """Read the active corrected declarations without loading Django or xmlschema."""
+    path = Path(__file__).with_name("schemas") / "0.111.0" / "r3" / "catalog.json"
     return json.loads(path.read_text(encoding="utf-8"))["elements"]
 
 
