@@ -15,7 +15,7 @@ VIOLATION = "release: semantic contract is not approved"
 PINS = {
     "actions/checkout": "3d3c42e5aac5ba805825da76410c181273ba90b1",
     "actions/setup-python": "5fda3b95a4ea91299a34e894583c3862153e4b97",
-    "astral-sh/setup-uv": "20cfd1bf945f4377ade1205e4dbc17946fc9a30d",
+    "astral-sh/setup-uv": "c18668ad3cf93ea998bef934396af7bb5c839dc7",
     "actions/download-artifact": "3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c",
     "actions/upload-artifact": "043fb46d1a93c77aae656e7c1c64a875d1fc6a0a",
     "actions/upload-pages-artifact": "fc324d3547104276b827a68afc52ff2a11cc49c9",
@@ -33,9 +33,9 @@ def _audit(text: str) -> list[str]:
 
 def _move_setup_uv_after_gate(text: str) -> str:
     """Move environment setup after the version gate for one mutation."""
-    setup = """      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d
+    setup = """      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
-          version: "0.12.6"
+          version: "0.12.21"
 """
     gate = """      - name: Match tag to project version
         run: uv run --locked python -m tools.check_release_tag "${GITHUB_REF_NAME}"
@@ -80,7 +80,7 @@ def test_release_validates_metadata_before_one_reusable_ci_build() -> None:
         },
         {
             "uses": f"astral-sh/setup-uv@{PINS['astral-sh/setup-uv']}",
-            "with": {"version": "0.12.6"},
+            "with": {"version": "0.12.21"},
         },
         {
             "name": "Match tag to project version",

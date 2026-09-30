@@ -49,7 +49,10 @@ file uploads.
 
 ## Release maturity
 
-This documentation covers **0.1.0b2**, which validates Hyperview 0.111.0.
+This documentation covers **0.1.0b2**, whose corrected Hyperview 0.111.0
+schema remains compatible with the byte-identical upstream XSD resources in
+Hyperview 0.112.0. The mobile runtime's 0.112.0 test-ID change is client-side;
+no new dj-hyperview package release is implied.
 The earlier 0.1.0b1 release used Hyperview 0.110.0. Confirm b2 publication
 on PyPI before installing it. Read the
 [beta compatibility policy](docs/api-reference.md#beta-compatibility-policy)

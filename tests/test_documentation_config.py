@@ -75,7 +75,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
     """The checked-in configuration names every portable documentation page."""
     config = yaml.safe_load((ROOT / "zensical.yml").read_text())
 
-    assert version("zensical") == "0.0.59"
+    assert version("zensical") == "0.0.67"
     assert config["site_name"] == "dj-hyperview"
     assert config["site_url"] == "https://eamigo86.github.io/dj-hyperview/"
     assert config["repo_url"] == "https://github.com/eamigo86/dj-hyperview"

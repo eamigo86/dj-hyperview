@@ -4,7 +4,18 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
-No changes yet.
+### Compatibility
+
+- Hyperview 0.112.0 removes `createTestProps` and changes native test-ID behavior,
+  but does not change the upstream XSD resources or package peer dependencies.
+  The corrected 0.111.0 schema shipped in 0.1.0b2 remains the active server
+  contract; this local compatibility documentation does not publish a new beta.
+
+### Maintenance
+
+- Refresh compatible documentation/development dependencies, the pinned CI uv
+  patch, and verified setup-node/setup-uv action releases without changing the
+  published package's version or runtime dependency bounds.
 
 ## 0.1.0b2 — 2026-09-24
 

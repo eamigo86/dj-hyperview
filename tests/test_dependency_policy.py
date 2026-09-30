@@ -5,7 +5,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).parents[1]
 LOCKED_DIRECT = {
-    "coverage": "7.16.0",
+    "coverage": "7.16.2",
     "django": "6.1.1",
     "django-ace": "1.44.0",
     "lxml": "6.1.3",
@@ -14,10 +14,10 @@ LOCKED_DIRECT = {
     "pytest-cov": "7.1.0",
     "pytest-django": "4.14.0",
     "redis": "8.1.0",
-    "ruff": "0.16.6",
-    "uv-build": "0.12.9",
+    "ruff": "0.16.9",
+    "uv-build": "0.12.21",
     "xmlschema": "4.3.2",
-    "zensical": "0.0.59",
+    "zensical": "0.0.67",
 }
 
 
@@ -52,11 +52,11 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
         "ruff>=0.16.6,<0.17",
         "uv-build>=0.12.9,<0.13",
         "xmlschema>=4.3,<5",
-        "zensical==0.0.59",
+        "zensical==0.0.67",
     ]
     assert metadata["dependency-groups"]["redis"] == ["redis==8.1.0"]
     assert metadata["tool"]["dj-hyperview"] == {
-        "dependency-audit-date": "2026-09-07",
+        "dependency-audit-date": "2026-09-30",
         "supported-python": ["3.12", "3.13", "3.14"],
         "supported-django": ["5.2.17", "6.1.1"],
     }
@@ -93,6 +93,7 @@ def test_versioned_lock_pins_audited_tools_without_legacy_names() -> None:
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     versions = {package["name"]: package["version"] for package in lock["package"]}
     assert {name: versions[name] for name in LOCKED_DIRECT} == LOCKED_DIRECT
+    assert versions["pymdown-extensions"] == "12.1"
 
     manifests = (ROOT / "pyproject.toml").read_text() + (ROOT / "uv.lock").read_text()
     assert "django-hyperview" not in manifests
