@@ -128,6 +128,20 @@ def test_ack_timeout_and_cancellation_close_owned_clients(monkeypatch):
     asyncio.run(run())
 
 
+@pytest.mark.parametrize("signal", [SystemExit, KeyboardInterrupt])
+def test_setup_closes_clients_but_never_converts_process_exit_signals(
+    monkeypatch, signal
+):
+    async def run():
+        broker, pubsub, client = port(monkeypatch)
+        await pubsub.messages.put(signal())
+        with pytest.raises(signal):
+            await broker.subscribe(["a"])
+        assert pubsub.closed == client.closed == 1
+
+    asyncio.run(run())
+
+
 def test_queue32_overflow_retains_one_resync_and_heartbeat_timeout_does_not_close(
     monkeypatch,
 ):

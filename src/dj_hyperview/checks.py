@@ -408,13 +408,23 @@ def _check_admin(value: Any) -> list[CheckMessage]:
 
 def _check_realtime(value: object) -> list[CheckMessage]:
     try:
-        _realtime_settings(value)
+        configured = _realtime_settings(value) is not None
     except ValueError:
         return [
             _error(
                 "E022",
                 "REALTIME",
                 "must be None or a mapping with exactly valid REDIS_URL and NAMESPACE",
+            )
+        ]
+    if configured and find_spec("redis") is None:
+        return [
+            Warning(
+                "REALTIME is configured but the optional redis-py dependency is "
+                "not installed.",
+                hint='pip install "dj-hyperview[realtime]"',
+                obj=SETTING,
+                id="dj_hyperview.W007",
             )
         ]
     return []

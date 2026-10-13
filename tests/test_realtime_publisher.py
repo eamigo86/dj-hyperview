@@ -89,6 +89,7 @@ def test_worker_failure_is_contained_and_next_hint_progresses(monkeypatch, caplo
         assert dispatcher.submit(None, ("topic",), b"x") is True
         assert calls == [1, 1]
         assert "secret" not in caplog.text
+        assert "realtime_publish_failed error_type=RuntimeError" in caplog.text
     finally:
         dispatcher.close()
 

@@ -152,7 +152,10 @@ client library for talking to a Redis server. It does not install:
 
 The SSE APIs are part of the package; the extra supplies their optional
 dependency. Without Redis usage, the ordinary package still works and does not
-import the Redis client at Django startup.
+import the Redis client at Django startup. If `HYPERVIEW["REALTIME"]` is set but
+redis-py is not installed, `python manage.py check` warns with
+`dj_hyperview.W007` instead of leaving the missing extra to surface as a runtime
+log line.
 
 ### Adopt the verified release
 

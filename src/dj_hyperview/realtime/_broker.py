@@ -61,8 +61,11 @@ class RedisBroker:
         def publish() -> None:
             try:
                 _dispatch(self._config, channels, payload)
-            except Exception:
-                _LOGGER.warning("realtime_publish_failed")
+            except Exception as error:
+                # The type name is code-defined; the message may carry a URL.
+                _LOGGER.warning(
+                    "realtime_publish_failed error_type=%s", type(error).__name__
+                )
 
         transaction.on_commit(publish, using=using)
 

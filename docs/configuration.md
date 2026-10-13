@@ -398,7 +398,10 @@ broker = (
 `get_settings().realtime` returns immutable `RealtimeSettings` or `None`; its repr
 excludes `redis_url`. Reading settings, running checks and constructing the broker
 **do not import redis-py or connect**. Subscription/publication requires the
-`[realtime]` extra. Configuration alone creates no endpoint, producer or mobile
+`[realtime]` extra. When `REALTIME` is enabled but redis-py cannot be found,
+`python manage.py check` reports the warning `dj_hyperview.W007` with the hint
+`pip install "dj-hyperview[realtime]"`; the check only looks for the package and
+never imports it. Configuration alone creates no endpoint, producer or mobile
 listener. To disable this section without losing template sources or schemas:
 
 ```python
@@ -424,9 +427,11 @@ parameters. The broker prefixes them with `namespace:`.
 Call `publish_after_commit(event, topics, using="default")` with an explicit
 Django database alias. It snapshots the closed envelope and topics before
 scheduling. Rollback publishes nothing; invalid inputs fail before scheduling.
-Publication failure never fails the committed business operation and logs only
-a fixed code. A per-process daemon worker has a queue of 32 jobs; each commit
-caller waits at most two seconds including queue time. Expired queued jobs do
+Publication failure never fails the committed business operation. It logs only
+a fixed code and the exception type name, as
+`realtime_publish_failed error_type=<TypeName>`, never the exception message,
+which can contain the Redis URL. A per-process daemon worker has a queue of 32
+jobs; each commit caller waits at most two seconds including queue time. Expired queued jobs do
 not start I/O. Forked children create their own worker, not an inherited client.
 
 **The caller deadline is not a total I/O deadline.** DNS resolution cannot be

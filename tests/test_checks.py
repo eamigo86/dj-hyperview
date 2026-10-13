@@ -3,6 +3,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
+from django.core.checks import WARNING
 from django.test import override_settings
 
 from dj_hyperview.checks import check_hyperview_settings
@@ -346,6 +347,46 @@ def test_builtin_validator_requires_its_regular_dependency() -> None:
     relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
     assert [message.id for message in relevant] == ["dj_hyperview.E013"]
     assert "required dependency" in relevant[0].msg
+
+
+REALTIME = {"REALTIME": {"REDIS_URL": "redis://localhost/0", "NAMESPACE": "app"}}
+
+
+def _redis_spec(installed: bool):
+    """Report only redis-py as present or missing; everything else is installed."""
+    return lambda name: None if name == "redis" and not installed else object()
+
+
+@override_settings(HYPERVIEW=REALTIME)
+def test_configured_realtime_warns_when_redis_py_is_missing() -> None:
+    """A missing extra is visible at startup, not only as a runtime log line."""
+    with patch("dj_hyperview.checks.find_spec", side_effect=_redis_spec(False)):
+        messages = check_hyperview_settings()
+
+    relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
+    assert [message.id for message in relevant] == ["dj_hyperview.W007"]
+    assert relevant[0].level == WARNING
+    assert relevant[0].hint == 'pip install "dj-hyperview[realtime]"'
+    assert "localhost" not in relevant[0].msg
+
+
+@override_settings(HYPERVIEW=REALTIME)
+def test_configured_realtime_is_silent_when_redis_py_is_installed() -> None:
+    with patch("dj_hyperview.checks.find_spec", side_effect=_redis_spec(True)):
+        messages = check_hyperview_settings()
+
+    assert "dj_hyperview.W007" not in {message.id for message in messages}
+
+
+@pytest.mark.parametrize("raw", [{}, {"REALTIME": None}])
+def test_disabled_realtime_does_not_require_redis_py(raw) -> None:
+    with (
+        override_settings(HYPERVIEW=raw),
+        patch("dj_hyperview.checks.find_spec", side_effect=_redis_spec(False)),
+    ):
+        messages = check_hyperview_settings()
+
+    assert "dj_hyperview.W007" not in {message.id for message in messages}
 
 
 @pytest.mark.parametrize("admin_config", [True, [], {"EDITOR": "yes"}])

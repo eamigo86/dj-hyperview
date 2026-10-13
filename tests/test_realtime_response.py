@@ -88,7 +88,7 @@ def test_frames_headers_and_cleanup_are_real_django_response():
         response = response_api()(events, aclose=release)
         assert response.is_async
         assert response["Content-Type"] == "text/event-stream"
-        assert response["Cache-Control"] == "no-cache, no-transform"
+        assert response["Cache-Control"] == "no-store, no-transform"
         assert response["X-Accel-Buffering"] == "no"
         frames = [part async for part in response.streaming_content]
         assert frames == [

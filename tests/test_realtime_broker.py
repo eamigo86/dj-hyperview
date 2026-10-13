@@ -122,7 +122,7 @@ def test_rollback_has_no_publication_and_failure_does_not_change_commit(
         broker.publish_after_commit(event, ["topic"], using="default")
     assert calls == [1]
     assert "credential" not in caplog.text
-    assert "realtime_publish_failed" in caplog.text
+    assert "realtime_publish_failed error_type=RuntimeError" in caplog.text
 
 
 @pytest.mark.parametrize(

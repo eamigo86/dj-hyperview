@@ -141,9 +141,10 @@ transport bytes, matching Django; it does not transparently decompress gzip.
 
 Use `dj_hyperview.realtime.sse_response(async_events, *, aclose)` for transport
 hints, **not HXML or successful-refresh acknowledgements**. It returns Django's
-`StreamingHttpResponse`, with `text/event-stream`, `Cache-Control: no-cache,
-no-transform` and `X-Accel-Buffering: no`. Redis is not required to import or use
-this response adapter.
+`StreamingHttpResponse`, with `text/event-stream`, `Cache-Control: no-store,
+no-transform` and `X-Accel-Buffering: no`. A stream is normally scoped to one
+authenticated user, so no cache may store it. Redis is not required to import or
+use this response adapter.
 
 Wrap the outer ASGI application once with
 `application = realtime_asgi(get_asgi_application())`, importing the wrapper

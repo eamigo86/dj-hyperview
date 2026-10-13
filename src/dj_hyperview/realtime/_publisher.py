@@ -73,8 +73,11 @@ class _Dispatcher:
                 if time.monotonic() < job.deadline:
                     _send(job.config, job.channels, job.payload, job.deadline)
                     job.success = True
-            except Exception:
-                _LOGGER.warning("realtime_publish_failed")
+            except Exception as error:
+                # The type name is code-defined; the message may carry a URL.
+                _LOGGER.warning(
+                    "realtime_publish_failed error_type=%s", type(error).__name__
+                )
             finally:
                 job.done.set()
 

@@ -114,5 +114,5 @@ def sse_response(
     return StreamingHttpResponse(
         content,
         content_type="text/event-stream",
-        headers={"Cache-Control": "no-cache, no-transform", "X-Accel-Buffering": "no"},
+        headers={"Cache-Control": "no-store, no-transform", "X-Accel-Buffering": "no"},
     )

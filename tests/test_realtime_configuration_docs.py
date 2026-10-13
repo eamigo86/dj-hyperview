@@ -97,7 +97,9 @@ def test_complete_example_passes_actual_checks_without_redis_import_or_network(
             }
         },
     ):
-        assert check_hyperview_settings() == []
+        # Only the optional-extra warning depends on what is installed.
+        messages = check_hyperview_settings()
+        assert [item for item in messages if item.id != "dj_hyperview.W007"] == []
         current = get_settings()
         assert (
             current.realtime.redis_url == documented_settings["REALTIME"]["REDIS_URL"]

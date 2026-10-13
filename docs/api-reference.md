@@ -202,7 +202,9 @@ normalized `HYPERVIEW["REALTIME"]` configuration. `get_settings().realtime` is
 The URL is excluded from repr. An enabled mapping requires exactly `REDIS_URL`
 and `NAMESPACE`; invalid settings produce check `dj_hyperview.E022` and raise
 `HyperviewConfigurationError`, not a disabled fallback. `REALTIME.ALIAS` is not
-supported. Reading these settings neither imports redis-py nor connects.
+supported. Reading these settings neither imports redis-py nor connects. A valid
+configuration without redis-py installed produces the check warning
+`dj_hyperview.W007`.
 
 Import from `dj_hyperview.realtime`; none of these symbols connects at import:
 

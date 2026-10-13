@@ -201,6 +201,7 @@ async def _subscribe(config, channels) -> Subscription:
         return _Subscription(pubsub, client, expected)
     except BaseException as error:
         await _close_clients(pubsub, client)
-        if isinstance(error, asyncio.CancelledError):
+        # Cancellation and process-exit signals pass through once cleanup is done.
+        if not isinstance(error, Exception):
             raise
         raise RealtimeUnavailable("Realtime unavailable") from None

@@ -35,6 +35,9 @@ This page records user-visible release changes, including unpublished attempts.
   the compiler load a file outside the configured root. **A schema that relied on
   `..` inside its own root, for example `components/../shared.xsd`, must now use
   the plain path `shared.xsd`.**
+- `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
+  `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
+  still lets a shared cache store the response and revalidate it later.
 
 ### Added
 
@@ -50,6 +53,10 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
+- A `SystemExit`, `KeyboardInterrupt` or other non-`Exception` raised while
+  `RedisBroker.subscribe` opens a subscription is no longer converted into
+  `RealtimeUnavailable`. The owned clients are still closed first, then the original
+  exception propagates, as cancellation already did.
 - Saving or deleting a template through a proxy model of `HyperviewTemplate` now
   schedules cache invalidation. Django sends the model signals of a proxy instance
   with the proxy class as sender, so the handlers connected for `HyperviewTemplate`
@@ -95,6 +102,14 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Changed
 
+- A failed realtime publication now logs the exception type name as well:
+  `realtime_publish_failed error_type=<TypeName>`. The exception message is still
+  never logged because it can contain the Redis URL.
+- The new system check `dj_hyperview.W007` warns when `HYPERVIEW["REALTIME"]` is
+  configured and redis-py is not installed, with the hint
+  `pip install "dj-hyperview[realtime]"`. Before, a missing extra passed the checks
+  and only showed up at runtime as a fixed `realtime_publish_failed` log line. The
+  check looks the package up without importing it.
 - Unknown `HYPERVIEW` keys are now configuration errors (`dj_hyperview.E023`)
   instead of being ignored. The rule covers the top level, `SOURCES` entries,
   `CACHE`, `VALIDATION` and `ADMIN`, so a typo such as `MAX_BYTE`, `FAILURE_MODES`
