@@ -21,7 +21,6 @@ from .sources import (
 )
 
 _PATH_TYPES = (PurePosixPath, PureWindowsPath, PosixPath, WindowsPath)
-_MISSING_CACHE_MARKER = object()
 _MISSING_CACHE_SAFETY_HOOK = object()
 
 
@@ -105,19 +104,15 @@ def _source_fingerprint(index: int, backend: str, options: object) -> str | None
 
 
 def _source_cacheable(source: object) -> bool:
+    """Cache a source only when its cacheable attribute is exactly True.
+
+    The attribute is read dynamically, so forwarding proxies are honored. A missing,
+    non-bool or unreadable value never enables caching.
+    """
     try:
-        static_marker = getattr_static(
-            source, "_dj_hyperview_cacheable", _MISSING_CACHE_MARKER
-        )
+        return getattr(source, "cacheable", False) is True
     except Exception:
         return False
-    try:
-        value = getattr(source, "_dj_hyperview_cacheable", _MISSING_CACHE_MARKER)
-    except Exception:
-        return False
-    if value is _MISSING_CACHE_MARKER:
-        return static_marker is _MISSING_CACHE_MARKER
-    return type(value) is bool and value
 
 
 def _source_cache_safe(source: object) -> bool:

@@ -1,3 +1,9 @@
+"""Proxy sources keep the opt-in boundary: only a readable exact True enables caching.
+
+The attribute is read dynamically, so forwarding and __getattribute__ proxies are
+honored; unreadable, non-bool and absent values never enable caching.
+"""
+
 import traceback
 from collections.abc import Iterator
 from typing import Any
@@ -25,7 +31,7 @@ class _SharedSourceState:
         self.marker_reads = 0
         self.marker_error: str | None = None
         self.failure: SourceUnavailable | None = None
-        self._dj_hyperview_cacheable: object = False
+        self.cacheable: object = False
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
         self.calls += 1
@@ -42,18 +48,18 @@ _SECOND_STATE = _SharedSourceState()
 
 class _ForwardingSource:
     def __getattr__(self, name: str) -> Any:
-        if name == "_dj_hyperview_cacheable":
+        if name == "cacheable":
             _STATE.marker_reads += 1
         return getattr(_STATE, name)
 
 
 class _GetattributeSource:
     def __getattribute__(self, name: str) -> Any:
-        if name == "_dj_hyperview_cacheable":
+        if name == "cacheable":
             _STATE.marker_reads += 1
             if _STATE.marker_error is not None:
                 raise RuntimeError(_STATE.marker_error)
-            return _STATE._dj_hyperview_cacheable
+            return _STATE.cacheable
         return object.__getattribute__(self, name)
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
@@ -62,13 +68,15 @@ class _GetattributeSource:
 
 class _AbsentDynamicSource:
     def __getattr__(self, name: str) -> Any:
-        if name == "_dj_hyperview_cacheable":
+        if name == "cacheable":
             _STATE.marker_reads += 1
             raise AttributeError(name)
         return getattr(_STATE, name)
 
 
 class _CachedSource:
+    cacheable = True
+
     def resolve(self, name: str) -> ResolvedTemplate | None:
         return _SECOND_STATE.resolve(name)
 
@@ -83,7 +91,7 @@ def configured_cache() -> Iterator[None]:
             state.marker_reads = 0
             state.marker_error = None
             state.failure = None
-            state._dj_hyperview_cacheable = False
+            state.cacheable = False
         yield
 
 
@@ -137,7 +145,7 @@ def test_from_settings_honors_getattribute_false() -> None:
 def test_dynamic_non_bool_marker_fails_closed(
     marker: object, initial: str | None
 ) -> None:
-    _STATE._dj_hyperview_cacheable = marker
+    _STATE.cacheable = marker
     _STATE.content = initial
     config = _config(
         f"{__name__}._GetattributeSource",
@@ -161,7 +169,7 @@ def test_dynamic_non_bool_marker_fails_closed(
 
 
 def test_dynamic_exact_true_marker_caches_and_is_read_once_per_identity() -> None:
-    _STATE._dj_hyperview_cacheable = True
+    _STATE.cacheable = True
     config = _config(f"{__name__}._GetattributeSource", "proxy-exact-true")
     with override_settings(HYPERVIEW=config):
         current = TemplateResolver.from_settings()
@@ -205,14 +213,16 @@ def test_dynamic_marker_error_preserves_source_failure_without_leaking() -> None
     assert (_STATE.marker_reads, _STATE.calls) == (1, 1)
 
 
-def test_dynamic_attribute_error_is_the_legacy_absent_path() -> None:
+def test_dynamic_attribute_error_is_an_absent_attribute_and_not_cached() -> None:
     config = _config(f"{__name__}._AbsentDynamicSource", "proxy-absent")
     with override_settings(HYPERVIEW=config):
         assert TemplateResolver.from_settings().resolve("screen.xml").content == "first"
         _STATE.content = "second"
-        assert TemplateResolver.from_settings().resolve("screen.xml").content == "first"
+        assert (
+            TemplateResolver.from_settings().resolve("screen.xml").content == "second"
+        )
 
-    assert (_STATE.marker_reads, _STATE.calls) == (2, 1)
+    assert (_STATE.marker_reads, _STATE.calls) == (2, 2)
 
 
 def test_dynamic_marker_failure_does_not_disable_another_source_cache() -> None:

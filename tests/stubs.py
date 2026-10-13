@@ -24,6 +24,12 @@ class TemplateSource:
         )
 
 
+class CacheableTemplateSource(TemplateSource):
+    """Stub source that opts in to raw-template caching."""
+
+    cacheable = True
+
+
 def validate_schema(document: str) -> None:
     del document
 

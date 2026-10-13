@@ -120,7 +120,7 @@ and are not reported twice.
 | `SOURCES` | Sequence of mappings | `()` | Ordered source definitions. The first source that resolves a canonical template name wins. An empty sequence resolves no templates. |
 | `SOURCES[].BACKEND` | Dotted import path | Required | Importable source class for one entry. Built-in paths are shown below. |
 | `SOURCES[].OPTIONS` | Mapping | `{}` | Keyword arguments passed to that source class constructor. Supported keys are backend-specific; entries the constructor does not accept, or required arguments it does not receive, produce `dj_hyperview.E024`. |
-| `CACHE` | Mapping | Omitted (disabled) | Enables raw-source and source-miss caching when non-empty. It does not cache compiled templates. |
+| `CACHE` | Mapping | Omitted (disabled) | Enables raw-source and source-miss caching when non-empty, for the sources that opt in (see [cache consistency](cache-consistency.md#choose-which-sources-are-cached)). It does not cache compiled templates. |
 | `CACHE.ALIAS` | String | `"default"` | Django cache alias with atomic add and coherent reads. `DummyCache` and `FileBasedCache` are unsupported. |
 | `CACHE.NAMESPACE` | Non-empty string | `"dj-hyperview"` | Prefix domain that isolates all Hyperview cache keys. Change it to abandon previously published cache state. |
 | `CACHE.TTL` | Integer greater than or equal to 1 | 300 seconds | Lifetime of successful raw-template and resolved-source entries. Generation keys do not expire. |
@@ -275,7 +275,9 @@ There is no package-wide list for third-party options. System checks bind
 `OPTIONS` to the constructor signature of an importable backend: a misspelled
 option, an unexpected one, or a missing required argument produces
 `dj_hyperview.E024` ("OPTIONS do not match the backend constructor") instead of
-a `TypeError` on every request. Reading settings fails the same way. See
+a `TypeError` on every request. Reading settings fails the same way. A custom
+backend is also never cached unless it declares `cacheable = True`; see
+[cache consistency](cache-consistency.md#choose-which-sources-are-cached). See
 [Filesystem](filesystem.md) and [Database and admin](database-admin.md) for
 backend-specific behavior.
 

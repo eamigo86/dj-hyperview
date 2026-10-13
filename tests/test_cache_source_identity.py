@@ -15,7 +15,7 @@ LOCMEM = {
     }
 }
 CACHE = {"ALIAS": "screens", "NAMESPACE": "source-fingerprint"}
-STUB = "tests.stubs.TemplateSource"
+STUB = "tests.stubs.CacheableTemplateSource"
 FILESYSTEM = "dj_hyperview.sources.FileSystemSource"
 
 
@@ -119,6 +119,8 @@ def test_mapping_fingerprint_is_canonical_for_heterogeneous_and_equal_keys():
 
 
 class PathReportingSource:
+    cacheable = True
+
     def __init__(self, value):
         self.value = value
 

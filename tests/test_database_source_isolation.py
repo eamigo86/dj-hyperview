@@ -42,7 +42,7 @@ class SwitchingRouter:
 
 
 class UncachedSource:
-    _dj_hyperview_cacheable = False
+    cacheable = False
 
     def __init__(self) -> None:
         self.content = "first"
@@ -64,6 +64,8 @@ class ThirdPartySource:
 
 
 class CacheableMissSource:
+    cacheable = True
+
     def __init__(self) -> None:
         self.calls = 0
 
@@ -147,9 +149,9 @@ def test_database_using_check_does_not_apply_to_third_party_sources() -> None:
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_private_source_marker_disables_generic_resolver_cache() -> None:
+def test_source_declaring_cacheable_false_bypasses_the_resolver_cache() -> None:
     source = UncachedSource()
-    cache = TemplateCache("private-cache-opt-out", alias="screens")
+    cache = TemplateCache("declared-uncacheable", alias="screens")
     resolver = TemplateResolver([source], cache=cache)
 
     with patch.object(cache.backend, "get", wraps=cache.backend.get) as cache_get:

@@ -26,7 +26,15 @@ def _is_within_root(candidate: Path, root: Path) -> bool:
 
 
 class FileSystemSource:
-    """Resolve UTF-8 templates below configured directories."""
+    """Resolve UTF-8 templates below configured directories.
+
+    Output depends only on the configured roots and the template name, so the
+    source opts in to raw-template caching with a true cacheable attribute.
+    Subclasses inherit that declaration; a subclass whose output depends on
+    anything else, such as the current tenant, must set cacheable to False.
+    """
+
+    cacheable: bool = True
 
     def __init__(self, template_dirs: Iterable[str | Path] | None = None) -> None:
         """Initialize a filesystem source.

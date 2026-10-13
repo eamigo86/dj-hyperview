@@ -200,6 +200,7 @@ TRACKED_CACHES = {
 
 
 class OptionalSource:
+    cacheable = True
     calls = {}
 
     def __init__(self, label, value, content=None, secret=None):

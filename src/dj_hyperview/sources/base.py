@@ -21,7 +21,19 @@ class ResolvedTemplate:
 
 @runtime_checkable
 class TemplateSource(Protocol):
-    """A backend that may resolve a canonical template name."""
+    """A backend that may resolve a canonical template name.
+
+    Only resolve is required. A source may also expose an optional cacheable
+    attribute, as a class attribute, instance attribute or property. Raw-template
+    caching is an explicit opt-in: the resolver caches a source only when
+    cacheable is exactly True, so a source that omits it, or sets any other value,
+    is never cached. Opt in only when the output depends solely on the template
+    name and the constructor options. A source that reads ambient state, such as
+    the current tenant, user, request or language, must not opt in, because cached
+    content would be served to a different caller. Subclasses inherit the
+    attribute; a subclass that changes what resolve reads must set cacheable to
+    False.
+    """
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
         """Resolve a canonical name or report a source-local miss.

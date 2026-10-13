@@ -49,7 +49,16 @@ class DatabaseSource:
             using: Explicit database alias, or None to defer to Django routing.
         """
         self.using = using
-        self._dj_hyperview_cacheable = using is not None
+
+    @property
+    def cacheable(self) -> bool:
+        """Whether resolved content may be cached.
+
+        Returns:
+            True only for an explicit database alias. Without one, Django routing
+            can select a different database for each request.
+        """
+        return self.using is not None
 
     def _dj_hyperview_cache_safe(self) -> bool:
         if self.using is None:

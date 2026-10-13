@@ -6,6 +6,17 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Security
 
+- **Breaking change:** custom template sources are no longer cached unless they
+  declare `cacheable = True`. Before, the resolver cached every source that lacked
+  a private opt-out marker, keyed only by the source class and its constructor
+  options. A source whose content depends on ambient state, such as a `ContextVar`
+  that holds the current tenant, therefore served one caller's content to another
+  once `HYPERVIEW["CACHE"]` was enabled. `FileSystemSource` and `DatabaseSource`
+  with an explicit `using` alias keep their caching. To keep caching a custom
+  source, set `cacheable = True` on it, but only when its output depends solely on
+  the template name and the constructor options; see
+  [Cache consistency](cache-consistency.md#choose-which-sources-are-cached). The
+  private `_dj_hyperview_cacheable` marker is removed and no longer has any effect.
 - Reject an element with more than 256 attributes or more than 64 in-scope
   namespaces before XSD validation, using the new stable validation code
   `max_attributes`. Validation time grew faster than linearly with both counts, so
@@ -19,6 +30,10 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Added
 
+- A public, optional `cacheable` attribute on template sources. It defaults to
+  `False`; `FileSystemSource.cacheable` is `True` and `DatabaseSource.cacheable`
+  is `True` only with an explicit `using` alias. The `TemplateSource` protocol
+  still requires only `resolve()`.
 - `dj_hyperview.validators.validate_xml_text`, a Django validator (error code
   `xml_characters`) that rejects characters XML 1.0 cannot represent.
 - `hv_text` and `hv_attr` template filters that remove those characters and

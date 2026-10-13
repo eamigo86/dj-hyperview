@@ -44,6 +44,54 @@ The cache stores raw content and source misses, including valid empty content.
 It never stores compiled templates. Namespace, source identity, canonical name,
 revision, and generation keep entries isolated.
 
+## Choose which sources are cached
+
+Caching is an explicit opt-in per source. The resolver caches a source only when
+its `cacheable` attribute is exactly `True`. A source without the attribute, or
+with any other value, is read on every lookup and creates no cache entries.
+
+| Source | Cached |
+| --- | --- |
+| `FileSystemSource` | Yes: it declares `cacheable = True`. |
+| `DatabaseSource` with an explicit `using` alias | Yes. |
+| `DatabaseSource` without `using` | No: Django routing can select a different database per request. |
+| A custom source | Only when it declares `cacheable = True`. |
+
+A custom source opts in with a class attribute, an instance attribute, or a
+property that returns `True`:
+
+```python
+from dj_hyperview import ResolvedTemplate
+
+
+class ReleaseBucketSource:
+    # The content depends only on the template name and the constructor options.
+    cacheable = True
+
+    def __init__(self, *, bucket: str) -> None:
+        self.bucket = bucket
+
+    def resolve(self, name: str) -> ResolvedTemplate | None: ...
+```
+
+Declare `cacheable = True` only when the content returned for a name depends
+solely on that name and the constructor options. A cache entry is keyed by the
+namespace, the source's position, class and constructor options, the canonical
+name, the revision, and the generation. Nothing about the request, user, tenant,
+language, or any other ambient state is part of the key. A source that reads such
+state, for example a `ContextVar` that selects the current tenant, thread-local
+data, or the active translation, must not opt in: the first caller's content
+would be served to every other caller until the entry expires or is invalidated.
+
+Subclasses inherit the attribute. `FileSystemSource` declares `cacheable = True`,
+so a subclass whose `resolve()` depends on anything beyond its roots must set
+`cacheable = False`.
+
+Earlier betas cached every custom source that lacked a private marker. Custom
+sources are no longer cached until they declare `cacheable = True`. Add the
+declaration only after checking the rule above; otherwise the only effect of the
+change is that the source is read on every lookup.
+
 ## Select a Redis database
 
 `CACHE.ALIAS` can point to a compatible stateful cache configured in Django.

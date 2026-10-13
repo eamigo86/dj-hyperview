@@ -18,6 +18,8 @@ STUB_SOURCE = {"BACKEND": "tests.stubs.TemplateSource"}
 
 
 class RecordingSource:
+    cacheable = True
+
     def __init__(self, content: str | None, *, source="memory", revision="r1"):
         self.content = content
         self.source = source
@@ -34,7 +36,7 @@ class RecordingSource:
 
 
 class UncacheableRecordingSource(RecordingSource):
-    _dj_hyperview_cacheable = False
+    cacheable = False
 
 
 class BooleanSafeRecordingSource(RecordingSource):

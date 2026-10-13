@@ -62,6 +62,17 @@ coordinated rollout or rollback. See the [SSE guide](realtime.md).
 | `ResolvedTemplate` | Immutable result returned by a source. |
 | `ResolverLoader` | Connect the resolver to Django's template engine. |
 
+A `TemplateSource` requires only `resolve(name)`, which returns a `ResolvedTemplate`
+or `None` for a source-local miss. A source may also expose an optional
+`cacheable` attribute, `False` unless declared. The resolver caches a source only
+when `cacheable` is exactly `True`, so a source that does not declare it is read
+on every lookup. `FileSystemSource` declares `cacheable = True`; `DatabaseSource`
+reports `True` only with an explicit `using` alias. Declare `cacheable = True` in
+a custom source only when its output depends solely on the template name and the
+constructor options, never on ambient state such as the current tenant, user or
+request. Subclasses inherit the attribute. See
+[cache consistency](cache-consistency.md#choose-which-sources-are-cached).
+
 ## Rendering and HTTP
 
 | Symbol | Purpose |

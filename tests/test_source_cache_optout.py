@@ -1,3 +1,10 @@
+"""Caching is an explicit opt-in: only an exact True cacheable attribute enables it.
+
+These tests migrate the protections of the former private marker to the public
+attribute: strict bool domain, fail-closed unreadable attributes, one read per
+source identity, no leakage of attribute errors and no swallowed base exceptions.
+"""
+
 import traceback
 from unittest.mock import patch
 
@@ -38,6 +45,10 @@ class RecordingSource:
         return ResolvedTemplate(name, self.content, "memory", "memory", "1")
 
 
+class CacheableRecordingSource(RecordingSource):
+    cacheable = True
+
+
 class ExplodingMarkerSource(RecordingSource):
     def __init__(self, marker_error: str, **kwargs: object) -> None:
         super().__init__(**kwargs)
@@ -45,10 +56,10 @@ class ExplodingMarkerSource(RecordingSource):
         self.marker_reads = 0
 
     @property
-    def _dj_hyperview_cacheable(self) -> bool:
+    def cacheable(self) -> bool:
         self.marker_reads += 1
         if self.marker_error == "attribute":
-            raise AttributeError("private attribute")
+            raise AttributeError("unreadable attribute")
         if self.marker_error == "runtime":
             raise RuntimeError("SENSITIVE-MARKER-DETAIL")
         raise KeyboardInterrupt
@@ -60,13 +71,13 @@ class CountingMarkerSource(RecordingSource):
         self.marker_reads = 0
 
     @property
-    def _dj_hyperview_cacheable(self) -> bool:
+    def cacheable(self) -> bool:
         self.marker_reads += 1
         return True
 
 
 class UnsetSlotMarkerSource:
-    __slots__ = ("content", "calls", "_dj_hyperview_cacheable")
+    __slots__ = ("content", "calls", "cacheable")
 
     def __init__(self) -> None:
         self.content = "first"
@@ -98,7 +109,7 @@ def test_only_exact_true_marker_enables_cache(
     marker: object, initial: str | None
 ) -> None:
     source = RecordingSource(initial)
-    source._dj_hyperview_cacheable = marker
+    source.cacheable = marker
     with patch("dj_hyperview.resolver._source_fingerprint", return_value="source:test"):
         current = resolver(
             source, f"closed-domain-{initial is None}-{type(marker).__name__}"
@@ -115,18 +126,39 @@ def test_only_exact_true_marker_enables_cache(
     assert source.calls == 2
 
 
-@pytest.mark.parametrize("present", [False, True], ids=["absent", "exact-true"])
-def test_absent_or_exact_true_marker_preserves_legacy_caching(present: bool) -> None:
+def test_absent_attribute_is_not_cached() -> None:
     source = RecordingSource("first")
-    if present:
-        source._dj_hyperview_cacheable = True
-    current = resolver(source, f"cacheable-{present}")
+    current = resolver(source, "absent")
+
+    assert current.resolve("screen.xml").content == "first"
+    source.content = "second"
+
+    assert current.resolve("screen.xml").content == "second"
+    assert source.calls == 2
+
+
+def test_exact_true_attribute_is_cached() -> None:
+    source = CacheableRecordingSource("first")
+    current = resolver(source, "exact-true")
 
     assert current.resolve("screen.xml").content == "first"
     source.content = "second"
 
     assert current.resolve("screen.xml").content == "first"
     assert source.calls == 1
+
+
+@pytest.mark.parametrize("value", [True, False], ids=["true", "false"])
+def test_legacy_private_marker_no_longer_selects_caching(value: bool) -> None:
+    source = RecordingSource("first")
+    source._dj_hyperview_cacheable = value
+    current = resolver(source, f"legacy-{value}")
+
+    assert current.resolve("screen.xml").content == "first"
+    source.content = "second"
+
+    assert current.resolve("screen.xml").content == "second"
+    assert source.calls == 2
 
 
 @pytest.mark.parametrize("marker_error", ["attribute", "runtime"])
@@ -182,7 +214,7 @@ def test_marker_is_read_once_per_source_identity() -> None:
 
 def test_unreadable_marker_does_not_disable_other_source_cache() -> None:
     uncached = ExplodingMarkerSource("runtime", content=None)
-    cached = RecordingSource("winner")
+    cached = CacheableRecordingSource("winner")
     current = TemplateResolver(
         [uncached, cached], cache=TemplateCache("per-source", alias="screens")
     )
