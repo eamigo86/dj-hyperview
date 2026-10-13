@@ -23,14 +23,15 @@ screens into the package.
   Ace editor.
 - **Cache consistency** — opt into a compatible Django cache backend, including
   Redis, with source-aware keys and generation-based invalidation.
-  [File-based caches are not supported](docs/cache-consistency.md).
+  [File-based caches are not supported](https://eamigo86.github.io/dj-hyperview/cache-consistency/).
 - **Optional realtime hints** — use `[realtime]` for Redis-backed after-commit
   SSE invalidation, with exact v1 compatibility and negotiated opaque v2 change
   metadata. The application still owns authentication, client adaptation and
-  safe screen refresh. Follow the [SSE guide](docs/realtime.md).
+  safe screen refresh. Follow the
+  [SSE guide](https://eamigo86.github.io/dj-hyperview/realtime/).
 - **Django-native HTTP integration** — use lazy template responses, class-based
-  views, validated fragment responses, request metadata, content negotiation,
-  and standard CSRF protection.
+  views, validated fragment responses, request detection middleware that
+  attaches claimed client metadata, and standard CSRF protection.
 - **Fail-closed validation** — enforce canonical names, UTF-8, XML safety,
   configurable resource limits, and automatic XSD 1.1 validation against one
   corrected Hyperview 0.111.0 schema plus explicit project extensions.
@@ -43,30 +44,30 @@ screens into the package.
 
 **[HyperTodo](https://github.com/eamigo86/HyperTodo)** is the maintained test
 application for dj-hyperview. It combines a Django backend with an Expo mobile
-client and demonstrates filesystem and database templates, fragment updates,
-shared caching, custom HXML components, themes, localization, biometrics, and
-file uploads.
+client and exercises filesystem and database templates, Admin editing, fragment
+updates, custom HXML components, light and dark themes, English and Spanish
+localization, biometric sign-in, and realtime SSE refresh. Its Redis template
+cache is enabled only by the `backend-run-redis` and `backend-run-device`
+workflows, and an avatar travels as a base64 form field, not a multipart upload.
 
 ## Release maturity
 
-This documentation covers **0.1.0b2**, whose corrected Hyperview 0.111.0
-schema remains compatible with the byte-identical upstream XSD resources in
-Hyperview 0.112.0. The mobile runtime's 0.112.0 test-ID change is client-side;
-no new dj-hyperview package release is implied.
-The earlier 0.1.0b1 release used Hyperview 0.110.0. Confirm b2 publication
-on PyPI before installing it. Read the
-[beta compatibility policy](docs/api-reference.md#beta-compatibility-policy)
-and [verified scope and deployment limits](docs/testing.md#verified-scope).
-The [roadmap](docs/roadmap.md) separates current capabilities from future work.
-Beta invites integration feedback; it does not guarantee production suitability.
-For a source candidate, confirm publication and the required release checks
-before installing the registry version.
+This documentation covers **0.1.0b2**, which validates against the corrected
+Hyperview 0.111.0 schema. The earlier 0.1.0b1 release used Hyperview 0.110.0.
+Entries under *Unreleased* in the
+[changelog](https://eamigo86.github.io/dj-hyperview/changelog/) describe changes
+that are not part of any release yet. Read the
+[beta compatibility policy](https://eamigo86.github.io/dj-hyperview/api-reference/#beta-compatibility-policy)
+and [verified scope and deployment limits](https://eamigo86.github.io/dj-hyperview/testing/#verified-scope).
+The [roadmap](https://eamigo86.github.io/dj-hyperview/roadmap/) separates current
+capabilities from future work. Beta invites integration feedback; it does not
+guarantee production suitability.
 
 ## Requirements
 
 - **Python:** 3.12, 3.13, or 3.14
 - **Django:** 5.2 or 6.1
-- **lxml:** 6.1 or newer, below 7
+- **lxml:** 6.1.3 or newer, below 7
 - **Hyperview contract (0.1.0b2):** 0.111.0
 
 Newer Python versions are not blocked by the package metadata, but they are not
@@ -108,24 +109,34 @@ The editor adds HXML completion, formatting, and context-free validation of
 unsaved source. Enable only that editor explicitly:
 
 ```python
+from django.http import HttpRequest
+
 INSTALLED_APPS = [
     "django_ace",
     "dj_hyperview",
     "dj_hyperview.contrib.database",
 ]
 
+
+def can_edit_hyperview(request: HttpRequest) -> bool:
+    """Your project's own policy: who may change stored templates."""
+    return request.user.has_perm("dj_hyperview_database.change_hyperviewtemplate")
+
+
 HYPERVIEW = {
     "ADMIN": {
         "EDITOR": True,
-        "PERMISSION": "sample_app.permissions.can_edit_hyperview",
+        "PERMISSION": can_edit_hyperview,
     },
 }
 ```
 
 Stored templates execute as Django template code. Template mutations therefore
-default to superusers only. `ADMIN.PERMISSION` may be a callable receiving the
-current request or a dotted path to one; it must return the literal boolean
-`True` to grant add, change, and delete access.
+default to superusers only; omit `PERMISSION` to keep that default.
+`can_edit_hyperview` above is your project's own function, not part of the
+package. `ADMIN.PERMISSION` may be a callable receiving the current request or a
+dotted path to one; it must return the literal boolean `True` to grant add,
+change, and delete access.
 
 ## Quick start
 
@@ -242,6 +253,11 @@ uv run pytest
 uv run ruff check .
 uv run ruff format --check .
 ```
+
+`uv run pytest` runs the base profile only. The Admin tests
+(`tests/test_database_admin*.py`) need `--ds=tests.settings_database_admin` and are
+reported as skipped otherwise. `uv run python -m tools.test_matrix --django-version 6.1.1`
+runs both profiles and enforces the coverage gate.
 
 ## License
 

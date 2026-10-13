@@ -13,6 +13,7 @@ from dj_hyperview import __all__ as public_api
 from tests.settings import DATABASES
 
 ROOT = Path(__file__).parents[1]
+SITE = "https://eamigo86.github.io/dj-hyperview/"
 DOCS = (
     "index.md",
     "installation.md",
@@ -668,8 +669,47 @@ def test_beta_entrypoints_link_to_existing_canonical_contract_sections(
         ),
         ("testing.md", "verified-scope", "## Verified scope"),
     ):
-        target = f"docs/{filename}" if source.parent == ROOT else filename
-        assert f"]({target}#{anchor})" in text
-        destination = (source.parent / target).resolve()
+        if source.parent == ROOT:
+            # The README is the PyPI long description, so it links by absolute URL.
+            page = filename.removesuffix(".md")
+            assert f"]({SITE}{page}/#{anchor})" in text
+            destination = ROOT / "docs" / filename
+        else:
+            assert f"]({filename}#{anchor})" in text
+            destination = (source.parent / filename).resolve()
         assert destination == ROOT / "docs" / filename
         assert heading in destination.read_text().splitlines()
+
+
+def test_readme_links_are_absolute_because_pypi_renders_it_elsewhere() -> None:
+    """A relative README link resolves under pypi.org and breaks."""
+    readme = (ROOT / "README.md").read_text()
+
+    relative = [
+        target
+        for target in re.findall(r"\]\(([^)\s]+)\)", readme)
+        if not target.startswith(("https://", "http://", "#"))
+    ]
+    assert relative == []
+    images = re.findall(r"src=[\"']([^\"']+)[\"']", readme)
+    assert all(image.startswith("https://") for image in images)
+
+
+def test_readme_editor_snippet_defines_the_permission_it_configures() -> None:
+    """Copying the editor example must pass the ADMIN.PERMISSION system check."""
+    from django.test import override_settings
+
+    from dj_hyperview.checks import check_hyperview_settings
+
+    readme = (ROOT / "README.md").read_text()
+    block = next(
+        block
+        for block in re.findall(r"```python\n(.*?)```", readme, flags=re.DOTALL)
+        if '"EDITOR": True' in block
+    )
+    namespace: dict[str, object] = {}
+    exec(compile(block, "README.md", "exec"), namespace)
+
+    with override_settings(HYPERVIEW=namespace["HYPERVIEW"]):
+        identifiers = {message.id for message in check_hyperview_settings()}
+    assert "dj_hyperview.E017" not in identifiers
