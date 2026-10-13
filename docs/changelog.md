@@ -42,6 +42,11 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Changed
 
+- `requires-python` is now `>=3.12` with no upper bound. The previous `<3.15` cap
+  stopped installers on Python 3.15 from installing the package at all. Python
+  3.12, 3.13 and 3.14 remain the tested set, declared by the classifiers and the
+  CI matrix; newer versions are not blocked by the package metadata but are not
+  tested yet. `uv.lock` was regenerated and now also records Python 3.15 wheels.
 - A rendered document that contains a character XML 1.0 cannot represent now fails
   with `malformed_xml` and the message "document contains characters not allowed
   in XML 1.0" instead of the generic "invalid XML". Validation still fails closed
@@ -63,6 +68,8 @@ This page records user-visible release changes, including unpublished attempts.
 - Refresh compatible documentation/development dependencies, the pinned CI uv
   patch, and verified setup-node/setup-uv action releases without changing the
   published package's version or runtime dependency bounds.
+- Pin the CI uv patch to 0.12.22, the release that regenerated `uv.lock` (lock
+  format revision 5), so `uv sync --locked` in CI uses the uv that wrote the lock.
 
 ## 0.1.0b2 — 2026-09-24
 

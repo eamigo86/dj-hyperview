@@ -8,8 +8,9 @@ Install dj-hyperview into a supported Django project:
 uv add dj-hyperview
 ```
 
-The supported baseline is Python 3.12 or newer, below Python 3.15, with
-Django 5.2 or 6.1.
+dj-hyperview is tested on Python 3.12, 3.13, and 3.14 with Django 5.2 and 6.1.
+Newer Python versions are not blocked by the package metadata, but they are not
+part of the CI matrix yet.
 
 Register the package app:
 

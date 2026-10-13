@@ -19,7 +19,7 @@ def test_supported_matrix_matches_metadata_and_builds_portable_commands() -> Non
     policy = metadata["tool"]["dj-hyperview"]
     commands = test_matrix.matrix_commands()
 
-    assert metadata["project"]["requires-python"] == ">=3.12,<3.15"
+    assert metadata["project"]["requires-python"] == ">=3.12"
     assert tuple(policy["supported-python"]) == test_matrix.SUPPORTED_PYTHONS
     assert tuple(policy["supported-django"]) == test_matrix.SUPPORTED_DJANGOS
     assert test_matrix.SUPPORTED_PYTHONS == ("3.12", "3.13", "3.14")

@@ -69,6 +69,9 @@ before installing the registry version.
 - **lxml:** 6.1 or newer, below 7
 - **Hyperview contract (0.1.0b2):** 0.111.0
 
+Newer Python versions are not blocked by the package metadata, but they are not
+part of the CI matrix yet.
+
 ## Installation
 
 ```bash

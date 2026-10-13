@@ -3,6 +3,8 @@
 import tomllib
 from pathlib import Path
 
+from packaging.specifiers import SpecifierSet
+
 ROOT = Path(__file__).parents[1]
 LOCKED_DIRECT = {
     "coverage": "7.16.2",
@@ -25,7 +27,7 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
     """Runtime and tooling metadata encode the dated compatibility policy."""
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
 
-    assert metadata["project"]["requires-python"] == ">=3.12,<3.15"
+    assert metadata["project"]["requires-python"] == ">=3.12"
     assert metadata["project"]["dependencies"] == [
         "Django>=5.2,<6.2",
         "lxml>=6.1.3,<7",
@@ -63,6 +65,41 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
     manifest = (ROOT / "pyproject.toml").read_text()
     assert "django-hyperview" not in manifest
     assert "django_hv" not in manifest
+
+
+def test_requires_python_declares_no_upper_bound() -> None:
+    """Newer interpreters are never blocked by metadata; CI defines what is tested."""
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    requires = SpecifierSet(metadata["project"]["requires-python"])
+
+    assert {specifier.operator for specifier in requires} == {">="}
+    assert "3.12.0" in requires
+    assert "3.15.0" in requires
+    assert "3.11.9" not in requires
+    assert SpecifierSet(lock["requires-python"]) == requires
+
+
+def test_classifiers_list_exactly_the_tested_pythons() -> None:
+    """The tested interpreter set lives in classifiers, not in a version cap."""
+    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    prefix = "Programming Language :: Python :: "
+    classified = [
+        classifier.removeprefix(prefix)
+        for classifier in metadata["project"]["classifiers"]
+        if classifier.startswith(prefix)
+    ]
+
+    assert classified == metadata["tool"]["dj-hyperview"]["supported-python"]
+
+
+def test_docs_state_that_newer_pythons_are_untested_not_blocked() -> None:
+    """Users on a newer interpreter learn the metadata allows it but CI does not."""
+    sentence = "not blocked by the package metadata"
+    for page in ("README.md", "docs/installation.md"):
+        text = " ".join((ROOT / page).read_text().split())
+        assert sentence in text, page
+        assert "not part of the CI matrix" in text, page
 
 
 def test_manifest_and_repository_declare_the_mit_license() -> None:

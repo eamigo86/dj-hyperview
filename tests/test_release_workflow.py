@@ -35,7 +35,7 @@ def _move_setup_uv_after_gate(text: str) -> str:
     """Move environment setup after the version gate for one mutation."""
     setup = """      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
         with:
-          version: "0.12.21"
+          version: "0.12.22"
 """
     gate = """      - name: Match tag to project version
         run: uv run --locked python -m tools.check_release_tag "${GITHUB_REF_NAME}"
@@ -80,7 +80,7 @@ def test_release_validates_metadata_before_one_reusable_ci_build() -> None:
         },
         {
             "uses": f"astral-sh/setup-uv@{PINS['astral-sh/setup-uv']}",
-            "with": {"version": "0.12.21"},
+            "with": {"version": "0.12.22"},
         },
         {
             "name": "Match tag to project version",

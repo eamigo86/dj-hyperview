@@ -5,7 +5,7 @@ description = "Django infrastructure for server-driven Hyperview interfaces"
 readme = "README.md"
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.12,<3.15"
+requires-python = ">=3.12"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: Django",
