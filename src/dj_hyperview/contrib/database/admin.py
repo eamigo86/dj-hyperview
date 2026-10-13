@@ -291,6 +291,14 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         if allowed is None:
             try:
                 allowed = get_settings().admin.permission(request) is True
+            except HyperviewConfigurationError:
+                # The settings could not be read, so the callback never ran. The
+                # problem belongs to the configuration, which `check` reports.
+                logger.warning(
+                    "HYPERVIEW settings are unusable; template mutation was denied. "
+                    "Run `python manage.py check`."
+                )
+                allowed = False
             except Exception:
                 logger.exception(
                     "HYPERVIEW ADMIN.PERMISSION failed; template mutation was denied."

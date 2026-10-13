@@ -345,7 +345,10 @@ on, and says how to migrate.
   existing template renders read-only with a plain text area instead of the editor;
   adding, changing and deleting are denied (HTTP 403), as for any invalid setting;
   and the HXML completion endpoint answers with the same `configuration_error` JSON
-  diagnostic as the validation endpoint, instead of an unhandled exception.
+  diagnostic as the validation endpoint, instead of an unhandled exception. A page
+  logs one `WARNING` without a traceback that points to `python manage.py check`;
+  only a permission callback that raises is logged as an `ERROR` that names
+  `ADMIN.PERMISSION`.
 - A `SystemExit`, `KeyboardInterrupt` or other non-`Exception` raised while
   `RedisBroker.subscribe` opens a subscription is no longer converted into
   `RealtimeUnavailable`. The owned clients are still closed first, then the original

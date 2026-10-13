@@ -1,6 +1,7 @@
 """Integration tests for the optional database template admin."""
 
 import importlib
+import logging
 from importlib.resources import files
 from types import ModuleType
 from typing import Any
@@ -203,6 +204,89 @@ def test_admin_degrades_when_the_extra_schemas_conflict(admin_client, tmp_path) 
         assert response.status_code == 500
         assert response.json()["diagnostics"][0]["code"] == "configuration_error"
     assert str(tmp_path) not in catalog.content.decode()
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("page", ["changelist", "add", "change"])
+def test_unusable_settings_are_one_warning_without_a_traceback(
+    admin_client, tmp_path, caplog, page
+) -> None:
+    """A configuration fault is not a failing callback; the callback never ran.
+
+    Each page used to log an ERROR with a traceback saying that ADMIN.PERMISSION
+    failed, which sent operators to a callback that was never called.
+    """
+    module, model = _admin_types()
+    template = model.objects.create(name="screens/home.xml", content="<view />")
+    prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
+    arguments = [template.pk] if page == "change" else []
+    configured = {
+        "ADMIN": {"EDITOR": True},
+        "EXTRA_SCHEMAS": _conflicting_extra_schemas(tmp_path),
+    }
+
+    with override_settings(HYPERVIEW=configured):
+        with caplog.at_level(logging.DEBUG):
+            admin_client.get(reverse(prefix + page, args=arguments))
+
+    records = [
+        record
+        for record in caplog.records
+        if record.name == module.__name__ and record.levelno >= logging.WARNING
+    ]
+    assert [record.levelno for record in records] == [logging.WARNING]
+    assert records[0].exc_info is None
+    assert "ADMIN.PERMISSION failed" not in records[0].getMessage()
+    assert "HYPERVIEW" in records[0].getMessage()
+    assert str(tmp_path) not in caplog.text
+
+
+@pytest.mark.django_db
+def test_a_failing_permission_callback_is_still_an_error_with_its_traceback(
+    admin_client, caplog
+) -> None:
+    module, _ = _admin_types()
+    prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
+
+    with override_settings(HYPERVIEW={"ADMIN": {"PERMISSION": lambda request: 1 / 0}}):
+        with caplog.at_level(logging.DEBUG):
+            response = admin_client.get(reverse(prefix + "add"))
+
+    records = [r for r in caplog.records if r.name == module.__name__]
+    assert response.status_code == 403
+    assert [r.levelno for r in records] == [logging.ERROR]
+    assert "ADMIN.PERMISSION failed" in records[0].getMessage()
+    assert records[0].exc_info is not None
+
+
+@pytest.mark.django_db
+def test_admin_writes_are_denied_and_change_nothing_when_the_schemas_conflict(
+    admin_client, tmp_path
+) -> None:
+    """Saving or deleting is refused before any form runs, not just hidden."""
+    _, model = _admin_types()
+    template = model.objects.create(name="screens/home.xml", content="<view />")
+    prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
+    configured = {"EXTRA_SCHEMAS": _conflicting_extra_schemas(tmp_path)}
+
+    with override_settings(HYPERVIEW=configured):
+        change = admin_client.post(
+            reverse(prefix + "change", args=[template.pk]),
+            data={"name": "screens/home.xml", "content": "<view>changed</view>"},
+        )
+        delete = admin_client.post(
+            reverse(prefix + "delete", args=[template.pk]), data={"post": "yes"}
+        )
+        add = admin_client.post(
+            reverse(prefix + "add"),
+            data={"name": "screens/new.xml", "content": "<view />", "active": "on"},
+        )
+
+    assert (change.status_code, delete.status_code, add.status_code) == (403, 403, 403)
+    template.refresh_from_db()
+    assert template.content == "<view />"
+    assert template.revision == 1
+    assert model.objects.count() == 1
 
 
 @pytest.mark.django_db
