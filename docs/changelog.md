@@ -6,19 +6,6 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Security
 
-- **Breaking change:** custom template sources are no longer cached unless they
-  declare `cacheable = True`. Before, the resolver cached every source that lacked
-  a private opt-out marker, keyed only by the source class and its constructor
-  options. A source whose content depends on ambient state, such as a `ContextVar`
-  that holds the current tenant, therefore served one caller's content to another
-  once `HYPERVIEW["CACHE"]` was enabled. `FileSystemSource` and `DatabaseSource`
-  with an explicit `using` alias keep their caching, but only while `resolve()` is
-  their own: a subclass that overrides `resolve()`, for example to select a
-  tenant's directory, is no longer cached until it sets `cacheable = True`. To keep
-  caching a custom source, set `cacheable = True` on it, but only when its output
-  depends solely on the template name and the constructor options; see
-  [Cache consistency](cache-consistency.md#choose-which-sources-are-cached). The
-  private `_dj_hyperview_cacheable` marker is removed and no longer has any effect.
 - Reject an element with more than 128 attributes, more than 8 in-scope namespaces,
   or more than 32 namespace declarations on the path from the root to it, before XSD
   validation, using the new stable validation code `max_attributes`. Validation time
@@ -59,6 +46,92 @@ This page records user-visible release changes, including unpublished attempts.
   found, so control characters and escape sequences in hostile names cannot reach
   logs. Passing a bare string to `select_template` raises `TypeError`, as Django
   does, instead of iterating its characters.
+- The Admin **Format and Validate** check, which the Admin form repeats before every
+  save when `ADMIN.EDITOR` is on, now takes time proportional to the size of the
+  draft. It used to lex the whole draft again for every Django token, and to rescan
+  the rest of the input for every `{{`, `{%`, `<?xml` or `<!--` that had no closer.
+  An authorized user could therefore occupy a worker, and hold the row lock of a
+  save, for tens of seconds: 4,000 tokens took 25 s, `"{{\n" * 40000` (120 KB)
+  30 s, `"<?xml " * 40000` (240 KB) 32 s, and `"{{ a }}" + "<!--" * 40000`
+  (160 KB) 49 s. They now take well under a second. The check also compiles the
+  draft with a lexer that finds the same tokens as Django's in linear time: Django's
+  lazy pattern reads on to the end of the line for every `{{`, `{%` or `{#` without
+  a closer, so 40,000 of them on one line (120 KB) took 10 s in its lexer alone.
+- `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
+  `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
+  still lets a shared cache store the response and revalidate it later.
+- The Admin schema catalog endpoint (`hxml-catalog/`) now answers 404 unless
+  `HYPERVIEW["ADMIN"]["EDITOR"]` is enabled, as the validation endpoint already
+  did. Before, it served the catalog, including the names from the project's
+  `EXTRA_SCHEMAS` and `SCHEMA_EXTENSIONS`, to every staff user with view
+  permission while the editor was off.
+
+### Breaking changes
+
+Each entry changes behavior that existing code, configuration or templates may rely
+on, and says how to migrate.
+
+- Custom template sources are no longer cached unless they declare
+  `cacheable = True`. Before, the resolver cached every source that lacked
+  a private opt-out marker, keyed only by the source class and its constructor
+  options. A source whose content depends on ambient state, such as a `ContextVar`
+  that holds the current tenant, therefore served one caller's content to another
+  once `HYPERVIEW["CACHE"]` was enabled. `FileSystemSource` and `DatabaseSource`
+  with an explicit `using` alias keep their caching, but only while `resolve()` is
+  their own: a subclass that overrides `resolve()`, for example to select a
+  tenant's directory, is no longer cached until it sets `cacheable = True`. To keep
+  caching a custom source, set `cacheable = True` on it, but only when its output
+  depends solely on the template name and the constructor options; see
+  [Cache consistency](cache-consistency.md#choose-which-sources-are-cached). The
+  private `_dj_hyperview_cacheable` marker is removed and no longer has any effect.
+- `publish_template()` no longer re-activates an inactive template. Its `active`
+  argument now defaults to `None`, which keeps an existing template's value and
+  publishes a new template as active; before, the default `True` overwrote the
+  stored value. **A caller that relied on republishing to activate a template must
+  now pass `active=True`.**
+- The resolver now checks what a source returns, with or
+  without a cache. A `ResolvedTemplate` must be named exactly as requested and all
+  of its fields must be `str`; otherwise the resolver raises `SourceUnavailable`
+  (reason `invalid resolved template`) in both failure modes. Before, such a result
+  was written to the cache and then rejected on every read: `raise` mode failed on
+  the second lookup with `invalid payload`, `bypass` mode never cached it, and a
+  field that is not JSON serializable raised `TypeError` even in `bypass` mode. The
+  built-in sources already comply. A custom source that answered to another name,
+  or left a field as `None`, bytes or an integer, must be fixed.
+- The system check now compiles the merged `EXTRA_SCHEMAS`
+  registry. It compiled each extra schema alone, so two schemas that declare the
+  same element differently, or an extra schema that declares a Hyperview or alert
+  name differently from the bundled schemas, passed it. The conflict then surfaced
+  as `duplicate_schema_declaration` from every validation, which recompiled the
+  registry each time (70 to 90 ms, never cached). After every file passes on its
+  own, the check compiles the registry the first request would use, once, and
+  reports a failure as `dj_hyperview.E012` against the whole setting, with
+  `reason: duplicate_schema_declaration`, or `reason: schema_invalid` for any other
+  failure of the compiler, including one it does not translate. A registry that
+  compiles cleanly is cached, so the first request does not compile it again, and a
+  project without `EXTRA_SCHEMAS` pays nothing. The merge is skipped while
+  `SCHEMA_EXTENSIONS` has errors (`dj_hyperview.E021`). **A project whose extra
+  schemas conflict now fails system checks, and every call that reads the settings
+  raises `HyperviewConfigurationError`, a subclass of `HyperviewError` and
+  `ImproperlyConfigured` that is neither a `TemplateValidationError` nor a
+  `ValueError`.** These returned normally before: `get_settings()`,
+  `validate_template_source`, `HyperviewEngine()`, `resolve_template`,
+  `TemplateResolver.from_settings()`, `TemplateCache.from_settings()`,
+  `FileSystemSource()`, and `invalidate_templates()` when `CACHE` is set. These
+  raised `TemplateValidationError` before: `validate_hxml`, `validate_fragment_hxml`,
+  `validate_hyperview_schema`, the response classes, `HyperviewTemplateView`,
+  `render_template` once it validates a rendered document, and
+  `get_hyperview_catalog`. Code that handles
+  `TemplateValidationError` around them must handle `HyperviewConfigurationError` as
+  well. A schema file that starts to conflict after the settings were first read
+  still raises `TemplateValidationError` from the call that notices it.
+- Unknown `HYPERVIEW` keys are now configuration errors (`dj_hyperview.E023`)
+  instead of being ignored. The rule covers the top level, `SOURCES` entries,
+  `CACHE`, `VALIDATION` and `ADMIN`, so a typo such as `MAX_BYTE`, `FAILURE_MODES`
+  or `PERMISION` can no longer silently fall back to a default. **A project with a
+  stray key now fails system checks and `get_settings()`**; correct or remove the
+  key. The removed `SCHEMA_PROFILE`, `VALIDATION.MODE` and `VALIDATION.SCHEMA`
+  keep their existing errors and are not reported twice.
 - Reject format characters, and line and paragraph separators, in template names.
   The rule is a denylist of Unicode categories: Cf (format characters, such as
   bidirectional overrides and isolates, zero-width characters, the soft hyphen, the
@@ -97,17 +170,6 @@ This page records user-visible release changes, including unpublished attempts.
   schema file whose name contains `?`, `#` or `:`, such as `a#b.xsd`, must be
   renamed. A schema file that is a symlink now finds its dependencies beside the
   link, as the compiler does, not beside its target.**
-- The Admin **Format and Validate** check, which the Admin form repeats before every
-  save when `ADMIN.EDITOR` is on, now takes time proportional to the size of the
-  draft. It used to lex the whole draft again for every Django token, and to rescan
-  the rest of the input for every `{{`, `{%`, `<?xml` or `<!--` that had no closer.
-  An authorized user could therefore occupy a worker, and hold the row lock of a
-  save, for tens of seconds: 4,000 tokens took 25 s, `"{{\n" * 40000` (120 KB)
-  30 s, `"<?xml " * 40000` (240 KB) 32 s, and `"{{ a }}" + "<!--" * 40000`
-  (160 KB) 49 s. They now take well under a second. The check also compiles the
-  draft with a lexer that finds the same tokens as Django's in linear time: Django's
-  lazy pattern reads on to the end of the line for every `{{`, `{%` or `{#` without
-  a closer, so 40,000 of them on one line (120 KB) took 10 s in its lexer alone.
 - The Admin **Format and Validate** check now applies the limits that rendering
   applies before any schema work. It rejects a template whose source has more than
   `VALIDATION.MAX_NODES` nodes or `MAX_DEPTH` levels, an element with more than 128
@@ -120,9 +182,6 @@ This page records user-visible release changes, including unpublished attempts.
   counts every branch of a conditional, so a template whose branches together
   exceed a limit now fails the check although each rendering would pass. Raise the
   limit if you need such a template.**
-- `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
-  `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
-  still lets a shared cache store the response and revalidate it later.
 
 ### Added
 
@@ -145,212 +204,9 @@ This page records user-visible release changes, including unpublished attempts.
   only: never a template name, cache key, source identity or backend message. A
   source that declares `cacheable = True` but whose constructor options the cache
   cannot identify is logged once at `INFO` as `template_source_uncacheable`. A
-  working cache logs nothing. Before, a cache that never worked, for example behind
-  a wrong alias, left no trace.
-
-### Fixed
-
-- The database template admin no longer strips `content`: leading and trailing
-  whitespace, including a final newline, is now stored exactly as submitted. Django's
-  form field stripped it, so every admin save silently rewrote a template that
-  ended in a newline.
-- `publish_template()` no longer re-activates an inactive template. Its `active`
-  argument now defaults to `None`, which keeps an existing template's value and
-  publishes a new template as active; before, the default `True` overwrote the
-  stored value. **A caller that relied on republishing to activate a template must
-  now pass `active=True`.**
-- The editor's validation and completion URLs are now resolved on the `AdminSite`
-  that serves the form. Before, they were always looked up in the default `admin`
-  namespace, so a model registered on a custom site silently lost its validation
-  and completion.
-- `content_type=None` on `HyperviewResponse`, `HyperviewTemplateResponse` and the
-  fragment classes now behaves like omitting the argument and yields the
-  Hyperview media type of the class. Before, it fell through to Django's default
-  `text/html`.
-- A Hyperview `Content-Type` parameter whose value needs quoting, such as
-  `profile="mobile app"`, is now written back quoted and escaped. Before, the
-  rebuilt header lost the quotes (`profile=mobile app`), which is not a valid
-  parameter. A parameter name that is not an RFC 9110 token, or a value with
-  control characters, now raises `ValueError` instead of producing a malformed
-  header.
-- A `Content-Encoding` other than `gzip` or `identity` now fails at iteration and
-  serialization with the message "only gzip Content-Encoding is supported". Before,
-  it reported only that the header does not match the transport, which hid that the
-  encoding itself is unsupported. The error code `http_encoding` is unchanged.
-- `dj_hyperview.loaders.ResolverLoader` can be named in `TEMPLATES`
-  `OPTIONS["loaders"]`. Its `resolver` and `validation` arguments now default to
-  the resolver and validation limits built from `HYPERVIEW`; before, Django's
-  construction of the loader from its dotted path raised `TypeError`.
-- The engine behind `render_template` and the template responses is rebuilt when
-  `DEBUG` changes, as Django rebuilds its own engines, instead of keeping the debug
-  option it first saw.
-- A `TEMPLATES` entry without a `BACKEND`, or with `BACKEND` set to `None`, no
-  longer makes `HyperviewEngine` fail with `AttributeError`. The engine skips it,
-  like an entry whose backend cannot be imported, and reads its options from the
-  first Django backend.
-- **Behavior change:** the resolver now checks what a source returns, with or
-  without a cache. A `ResolvedTemplate` must be named exactly as requested and all
-  of its fields must be `str`; otherwise the resolver raises `SourceUnavailable`
-  (reason `invalid resolved template`) in both failure modes. Before, such a result
-  was written to the cache and then rejected on every read: `raise` mode failed on
-  the second lookup with `invalid payload`, `bypass` mode never cached it, and a
-  field that is not JSON serializable raised `TypeError` even in `bypass` mode. The
-  built-in sources already comply. A custom source that answered to another name,
-  or left a field as `None`, bytes or an integer, must be fixed.
-- Admin **Format and Validate** now treats a Django delimiter the way Django's lexer
-  does. A `{% comment %}` block is ignored whatever follows its name, as in
-  `{% comment "temporarily disabled" %}`: the check looked for
-  `{% endcomment "temporarily disabled" %}`, which Django never needs, so the
-  commented-out markup was validated as live and could block a save of a template
-  that renders. A `{# ... #}`, `{{ ... }}` or `{% ... %}` that spans a line break is
-  literal text, as it is when the template is served, so the check now reports what
-  that text does to the document. A `{# note #}` comment with a line break inside it
-  between two elements used to pass the check, and the rendered document then failed
-  schema validation. The tokens are the ones Django's lexer produces, and the check
-  classifies all of them in a single pass instead of lexing the draft again for
-  each one.
-- A variable that applies the `safe` filter in element text, such as
-  `{{ fragment|safe }}` in an element that allows only elements, no longer fails the
-  Admin check. It may render markup, so its position is now reported with the
-  informational note, like other runtime-dependent structure. Variables without
-  `safe` still count as text, as before.
-- Source nested too deeply for Django's recursive parser, about 800 nested
-  `{% if %}` blocks, no longer fails the Admin validation request and the Admin
-  save with HTTP 500. The check, the Admin form, `publish_template` and model
-  validation report it as `too_deep`, "Template is nested too deeply."
-- Reaching the limit of 64 expanded literal includes is now the informational note
-  `schema_static_incomplete` and no longer the error `django_include_limit`, which
-  blocked the save of a template that was only too large to check completely.
-  Expansion stops at the limit, and the code `django_include_limit` is no longer
-  produced.
-- Publication and model validation compile stored source with the same linear lexer
-  as the Admin check, so 40,000 unclosed `{{` on one line (120 KB) validate in well
-  under a second instead of the 10 s Django's lexer takes.
-- **Breaking change:** the system check now compiles the merged `EXTRA_SCHEMAS`
-  registry. It compiled each extra schema alone, so two schemas that declare the
-  same element differently, or an extra schema that declares a Hyperview or alert
-  name differently from the bundled schemas, passed it. The conflict then surfaced
-  as `duplicate_schema_declaration` from every validation, which recompiled the
-  registry each time (70 to 90 ms, never cached). After every file passes on its
-  own, the check compiles the registry the first request would use, once, and
-  reports a failure as `dj_hyperview.E012` against the whole setting, with
-  `reason: duplicate_schema_declaration`, or `reason: schema_invalid` for any other
-  failure of the compiler, including one it does not translate. A registry that
-  compiles cleanly is cached, so the first request does not compile it again, and a
-  project without `EXTRA_SCHEMAS` pays nothing. The merge is skipped while
-  `SCHEMA_EXTENSIONS` has errors (`dj_hyperview.E021`). **A project whose extra
-  schemas conflict now fails system checks, and every call that reads the settings
-  raises `HyperviewConfigurationError`, a subclass of `HyperviewError` and
-  `ImproperlyConfigured` that is neither a `TemplateValidationError` nor a
-  `ValueError`.** These returned normally before: `get_settings()`,
-  `validate_template_source`, `HyperviewEngine()`, `TemplateResolver.from_settings()`,
-  `FileSystemSource()`, and `invalidate_templates()` when `CACHE` is set. These
-  raised `TemplateValidationError` before: `validate_hxml`, `validate_fragment_hxml`,
-  `validate_hyperview_schema`, the response classes, `render_template` once it
-  validates a rendered document, and `get_hyperview_catalog`. Code that handles
-  `TemplateValidationError` around them must handle `HyperviewConfigurationError` as
-  well. A schema file that starts to conflict after the settings were first read
-  still raises `TemplateValidationError` from the call that notices it.
-- With unusable `HYPERVIEW` settings, including conflicting extra schemas, the Admin
-  no longer fails with a server error on the change page. The change page of an
-  existing template renders read-only with a plain text area instead of the editor;
-  adding, changing and deleting are denied (HTTP 403), as for any invalid setting;
-  and the HXML completion endpoint answers with the same `configuration_error` JSON
-  diagnostic as the validation endpoint, instead of an unhandled exception.
-- A `SystemExit`, `KeyboardInterrupt` or other non-`Exception` raised while
-  `RedisBroker.subscribe` opens a subscription is no longer converted into
-  `RealtimeUnavailable`. The owned clients are still closed first, then the original
-  exception propagates, as cancellation already did.
-- Saving or deleting a template through a proxy model of `HyperviewTemplate` now
-  schedules cache invalidation. Django sends the model signals of a proxy instance
-  with the proxy class as sender, so the handlers connected for `HyperviewTemplate`
-  alone never ran, and a cached template stayed stale after such a write. The
-  handlers are now connected to the model and to each of its subclasses, including
-  a proxy defined after startup, and to no other model, so Django keeps its fast
-  bulk delete for the rest of the project. A rename or delete also reads the stored
-  name through the base manager, so a proxy whose default manager hides the row
-  still invalidates the old name.
-- The Admin schema catalog endpoint (`hxml-catalog/`) now answers 404 unless
-  `HYPERVIEW["ADMIN"]["EDITOR"]` is enabled, as the validation endpoint already
-  did. Before, it served the catalog, including the names from the project's
-  `EXTRA_SCHEMAS` and `SCHEMA_EXTENSIONS`, to every staff user with view
-  permission while the editor was off.
-- Admin **Format and Validate** now formats a template that contains `{% load %}`.
-  The tag renders nothing, but a top-level one made the formatter keep the whole
-  source and report "HXML was already formatted." The package's own
-  `{% hv_csrf_token %}` tag is also accepted; before, a template using it could not
-  be formatted at all.
-- The Admin deletion page shows the right objects when the list is truncated.
-  `truncated_unordered_list` now decides whether an item is visible before it
-  counts the item's children, as Django's own filter does. Before, a visible parent
-  disappeared when its children crossed the limit and the "…and N more objects"
-  count was wrong. It also no longer renders an empty `<ul>` when all the children
-  are hidden.
-- Schemas now load from a directory whose name contains percent escapes, such as
-  `pct%20dir` or `a%41b`. The XSD compiler percent-decoded plain path sources, so
-  a project, or an installation of the package, under such a directory failed with
-  `dj_hyperview.E012` or `schema_invalid` even with default settings. The package
-  now hands the compiler absolute file URIs.
-- A malformed `schemaLocation` in an `EXTRA_SCHEMAS` file, such as
-  `//[::1/x.xsd`, is now reported as `forbidden_schema_reference` (`dj_hyperview.E012`
-  with `reason: forbidden_schema_reference` during configuration checks). Before,
-  `urlparse` raised a bare `ValueError` that crashed `manage.py check`.
-- The dependency system checks (`dj_hyperview.W007`, `dj_hyperview.E013` and
-  `dj_hyperview.E015`) no longer crash with `ValueError` when the module they look
-  up is a stand-in in `sys.modules` without a spec, such as a `ModuleType`,
-  `MagicMock` or `SimpleNamespace` that a test installs. `importlib` raises for such
-  an entry, but it still imports, so the check now counts it as installed.
-- A `VALIDATION` limit that is an `int` subclass other than `bool` now fails the
-  system check with `dj_hyperview.E009`, the rule `ValidationSettings` already
-  enforced. Before, the check accepted it and the first read of the settings
-  raised a bare `ValueError`.
-- An XML declaration whose encoding name contains a NUL or a lone surrogate now
-  fails with `invalid_encoding`, like any other encoding that is not UTF-8. The
-  codec lookup raises `ValueError` for such a name, not `LookupError`, so
-  `validate_hxml`, `validate_fragment_hxml`, `validate_rendered_hxml`,
-  `validate_template_source`, `HyperviewResponse` and the template loader leaked a
-  bare `ValueError` or `UnicodeEncodeError` that no `TemplateValidationError`
-  handler caught. `publish_template`, model validation and the Admin form raised it
-  instead of `ValidationError`.
-- An XML declaration whose encoding name is not an XML 1.0 `EncName` (a letter
-  followed by letters, digits, `.`, `_` or `-`), or is longer than 64 characters, now
-  fails with `invalid_encoding` before any codec lookup. Python keeps every name it
-  looks up for the life of the process, so each distinct name in a declaration used
-  to add an entry to a cache that is never emptied: 5,000 distinct names added 5,000
-  entries, and 20 names of 200 KB each kept 4.2 MB. No valid name is affected, but a
-  spelling that only the lookup's own normalization accepted, such as `utf 8` or a
-  trailing space, is now rejected here instead of failing later in the parser.
-- `HyperviewResponse` and the other response classes now raise their usual
-  `ValueError("Hyperview responses require UTF-8")` for a `charset`, or a
-  `Content-Type` charset parameter, that contains a NUL or a lone surrogate. They let
-  the codec lookup's own `ValueError` escape, with a different message.
-- A document is reported as `max_depth` only when libxml2 stops with a
-  resource-limit error that mentions depth, or with its own "Excessive depth in
-  document" message, which libxml2 before 2.13 reported as an internal error.
-  Before, any syntax error whose message contained "depth" was reported as
-  `max_depth`, so a mismatched end tag in an element named `depth`, or a duplicated
-  attribute named `depth`, hid the real `malformed_xml` diagnosis.
-- Checking a document for DTD and entity declarations is much faster after a
-  declaration literal appears anywhere in it, even inside a comment or CDATA
-  section. The scan used to test every character: about 1 MB took 215 ms rendered
-  and 373 ms as template source, and now takes a few milliseconds. The result is
-  unchanged.
-- The `ADMIN.PERMISSION` system check no longer crashes with `NameError` on
-  Python 3.14 when the permission callable annotates a parameter with a type that
-  is imported only under `TYPE_CHECKING`.
-- Importing the package no longer loads Django's test framework into production
-  processes: `setting_changed` now comes from `django.core.signals`.
-- A UTF-8 BOM followed by template whitespace before the XML declaration, such as
-  a file that starts with a BOM and `{% load dj_hyperview %}`, now renders. The BOM
-  is preserved and the whitespace after it is removed, as documented.
-- `HyperviewEngine.get_template` raises `InvalidTemplateName` for an empty,
-  `None` or non-string name on Django 5.2 and 6.1 alike. Django 6.1 rejects these
-  before any loader runs, which surfaced as `TemplateNotFound` and an HTTP 500
-  instead of the 400 that unsafe names produce.
-- On Django 6.1, an `Accept` header with a media range longer than Django's 10,000
-  character limit no longer makes `HyperviewMiddleware` fail the request. It is
-  treated as not accepting Hyperview. Django 5.2 has no such limit and parses the
-  header as before.
+  working cache logs nothing. Before, a backend that failed at runtime, or a payload
+  that could not be read back, left no trace; a wrong alias or an unsupported
+  backend was already a system-check error (`dj_hyperview.E004`, `E018`).
 
 ### Changed
 
@@ -378,13 +234,6 @@ This page records user-visible release changes, including unpublished attempts.
   `pip install "dj-hyperview[realtime]"`. Before, a missing extra passed the checks
   and only showed up at runtime as a fixed `realtime_publish_failed` log line. The
   check looks the package up without importing it.
-- Unknown `HYPERVIEW` keys are now configuration errors (`dj_hyperview.E023`)
-  instead of being ignored. The rule covers the top level, `SOURCES` entries,
-  `CACHE`, `VALIDATION` and `ADMIN`, so a typo such as `MAX_BYTE`, `FAILURE_MODES`
-  or `PERMISION` can no longer silently fall back to a default. **A project with a
-  stray key now fails system checks and `get_settings()`**; correct or remove the
-  key. The removed `SCHEMA_PROFILE`, `VALIDATION.MODE` and `VALIDATION.SCHEMA`
-  keep their existing errors and are not reported twice.
 - `SOURCES[].OPTIONS` is bound to the backend constructor during system checks.
   Options the constructor does not accept, or required arguments it does not
   receive, produce `dj_hyperview.E024`. Before, such a project passed the checks
@@ -424,6 +273,166 @@ This page records user-visible release changes, including unpublished attempts.
   is now `None` unless the value matches `[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}`. It
   used to return any string verbatim, including empty or oversized values.
 
+### Fixed
+
+- The database template admin no longer strips `content`: leading and trailing
+  whitespace, including a final newline, is now stored exactly as submitted. Django's
+  form field stripped it, so every admin save silently rewrote a template that
+  ended in a newline.
+- The editor's validation and completion URLs are now resolved on the `AdminSite`
+  that serves the form. Before, they were always looked up in the default `admin`
+  namespace, so a model registered on a custom site silently lost its validation
+  and completion.
+- `content_type=None` on `HyperviewResponse`, `HyperviewTemplateResponse` and the
+  fragment classes now behaves like omitting the argument and yields the
+  Hyperview media type of the class. Before, it fell through to Django's default
+  `text/html`.
+- A Hyperview `Content-Type` parameter whose value needs quoting, such as
+  `profile="mobile app"`, is now written back quoted and escaped. Before, the
+  rebuilt header lost the quotes (`profile=mobile app`), which is not a valid
+  parameter. A parameter name that is not an RFC 9110 token, or a value with
+  control characters, now raises `ValueError` instead of producing a malformed
+  header.
+- A `Content-Encoding` other than `gzip` or `identity` now fails at iteration and
+  serialization with the message "only gzip Content-Encoding is supported". Before,
+  it reported only that the header does not match the transport, which hid that the
+  encoding itself is unsupported. The error code `http_encoding` is unchanged.
+- `dj_hyperview.loaders.ResolverLoader` can be named in `TEMPLATES`
+  `OPTIONS["loaders"]`. Its `resolver` and `validation` arguments now default to
+  the resolver and validation limits built from `HYPERVIEW`; before, Django's
+  construction of the loader from its dotted path raised `TypeError`.
+- The engine behind `render_template` and the template responses is rebuilt when
+  `DEBUG` changes, as Django rebuilds its own engines, instead of keeping the debug
+  option it first saw.
+- A `TEMPLATES` entry without a `BACKEND`, or with `BACKEND` set to `None`, no
+  longer makes `HyperviewEngine` fail with `AttributeError`. The engine skips it,
+  like an entry whose backend cannot be imported, and reads its options from the
+  first Django backend.
+- Admin **Format and Validate** now treats a Django delimiter the way Django's lexer
+  does. A `{% comment %}` block is ignored whatever follows its name, as in
+  `{% comment "temporarily disabled" %}`: the check looked for
+  `{% endcomment "temporarily disabled" %}`, which Django never needs, so the
+  commented-out markup was validated as live and could block a save of a template
+  that renders. A `{# ... #}`, `{{ ... }}` or `{% ... %}` that spans a line break is
+  literal text, as it is when the template is served, so the check now reports what
+  that text does to the document. A `{# note #}` comment with a line break inside it
+  between two elements used to pass the check, and the rendered document then failed
+  schema validation. The tokens are the ones Django's lexer produces, and the check
+  classifies all of them in a single pass instead of lexing the draft again for
+  each one.
+- A variable that applies the `safe` filter in element text, such as
+  `{{ fragment|safe }}` in an element that allows only elements, no longer fails the
+  Admin check. It may render markup, so its position is now reported with the
+  informational note, like other runtime-dependent structure. Variables without
+  `safe` still count as text, as before.
+- Source nested too deeply for Django's recursive parser, about 800 nested
+  `{% if %}` blocks, no longer fails the Admin validation request and the Admin
+  save with HTTP 500. The check, the Admin form, `publish_template` and model
+  validation report it as `too_deep`, "Template is nested too deeply."
+- Reaching the limit of 64 expanded literal includes is now the informational note
+  `schema_static_incomplete` and no longer the error `django_include_limit`, which
+  blocked the save of a template that was only too large to check completely.
+  Expansion stops at the limit, and the code `django_include_limit` is no longer
+  produced.
+- Publication and model validation compile stored source with the same linear lexer
+  as the Admin check, so 40,000 unclosed `{{` on one line (120 KB) validate in well
+  under a second instead of the 10 s Django's lexer takes.
+- With unusable `HYPERVIEW` settings, including conflicting extra schemas, the Admin
+  no longer fails with a server error on the change page. The change page of an
+  existing template renders read-only with a plain text area instead of the editor;
+  adding, changing and deleting are denied (HTTP 403), as for any invalid setting;
+  and the HXML completion endpoint answers with the same `configuration_error` JSON
+  diagnostic as the validation endpoint, instead of an unhandled exception.
+- A `SystemExit`, `KeyboardInterrupt` or other non-`Exception` raised while
+  `RedisBroker.subscribe` opens a subscription is no longer converted into
+  `RealtimeUnavailable`. The owned clients are still closed first, then the original
+  exception propagates, as cancellation already did.
+- Saving or deleting a template through a proxy model of `HyperviewTemplate` now
+  schedules cache invalidation. Django sends the model signals of a proxy instance
+  with the proxy class as sender, so the handlers connected for `HyperviewTemplate`
+  alone never ran, and a cached template stayed stale after such a write. The
+  handlers are now connected to the model and to each of its subclasses, including
+  a proxy defined after startup, and to no other model, so Django keeps its fast
+  bulk delete for the rest of the project. A rename or delete also reads the stored
+  name through the base manager, so a proxy whose default manager hides the row
+  still invalidates the old name.
+- Admin **Format and Validate** now formats a template that contains `{% load %}`.
+  The tag renders nothing, but a top-level one made the formatter keep the whole
+  source and report "HXML was already formatted." The package's own
+  `{% hv_csrf_token %}` tag is also accepted; before, a template using it could not
+  be formatted at all.
+- The Admin deletion page shows the right objects when the list is truncated.
+  `truncated_unordered_list` now decides whether an item is visible before it
+  counts the item's children, as Django's own filter does. Before, a visible parent
+  disappeared when its children crossed the limit and the "…and N more objects"
+  count was wrong. It also no longer renders an empty `<ul>` when all the children
+  are hidden.
+- Schemas now load from a directory whose name contains percent escapes, such as
+  `pct%20dir` or `a%41b`. The XSD compiler percent-decoded plain path sources, so
+  a project, or an installation of the package, under such a directory failed with
+  `dj_hyperview.E012` or `schema_invalid` even with default settings. The package
+  now hands the compiler absolute file URIs.
+- A malformed `schemaLocation` in an `EXTRA_SCHEMAS` file, such as
+  `//[::1/x.xsd`, is now reported as `forbidden_schema_reference` (`dj_hyperview.E012`
+  with `reason: forbidden_schema_reference` during configuration checks). Before,
+  `urlparse` raised a bare `ValueError` that crashed `manage.py check`.
+- The dependency system checks (`dj_hyperview.E013` and `dj_hyperview.E015`) no longer crash with `ValueError` when the module they look
+  up is a stand-in in `sys.modules` without a spec, such as a `ModuleType`,
+  `MagicMock` or `SimpleNamespace` that a test installs. `importlib` raises for such
+  an entry, but it still imports, so the check now counts it as installed. The new `dj_hyperview.W007` follows the
+  same rule.
+- A `VALIDATION` limit that is an `int` subclass other than `bool` now fails the
+  system check with `dj_hyperview.E009`, the rule `ValidationSettings` already
+  enforced. Before, the check accepted it and the first read of the settings
+  raised a bare `ValueError`.
+- An XML declaration whose encoding name is not an XML 1.0 `EncName` (a letter
+  followed by letters, digits, `.`, `_` or `-`), is longer than 64 characters, or
+  names no codec, such as a name containing a NUL or a lone surrogate, now
+  fails with `invalid_encoding`, like any other encoding that is not UTF-8. The
+  codec lookup raises `ValueError` for such a name, not `LookupError`, so
+  `validate_hxml`, `validate_fragment_hxml`, `validate_rendered_hxml`,
+  `validate_template_source`, `HyperviewResponse` and the template loader leaked a
+  bare `ValueError` or `UnicodeEncodeError` that no `TemplateValidationError`
+  handler caught, and `publish_template`, model validation and the Admin form raised
+  it instead of `ValidationError`. The grammar and length checks run before any
+  codec lookup. Python keeps every name it looks up for the life of the process, so
+  each distinct name in a declaration used to add an entry to a cache that is never
+  emptied: 5,000 distinct names added 5,000 entries, and 20 names of 200 KB each kept
+  4.2 MB. No valid name is affected, but a spelling that only the lookup's own
+  normalization accepted, such as `utf 8` or a trailing space, is now rejected here
+  instead of failing later in the parser.
+- `HyperviewResponse` and the other response classes now raise their usual
+  `ValueError("Hyperview responses require UTF-8")` for a `charset`, or a
+  `Content-Type` charset parameter, that contains a NUL or a lone surrogate. They let
+  the codec lookup's own `ValueError` escape, with a different message.
+- A document is reported as `max_depth` only when libxml2 stops with a
+  resource-limit error that mentions depth, or with its own "Excessive depth in
+  document" message, which libxml2 before 2.13 reported as an internal error.
+  Before, any syntax error whose message contained "depth" was reported as
+  `max_depth`, so a mismatched end tag in an element named `depth`, or a duplicated
+  attribute named `depth`, hid the real `malformed_xml` diagnosis.
+- Checking a document for DTD and entity declarations is much faster after a
+  declaration literal appears anywhere in it, even inside a comment or CDATA
+  section. The scan used to test every character: about 1 MB took 215 ms rendered
+  and 373 ms as template source, and now takes a few milliseconds. The result is
+  unchanged.
+- The `ADMIN.PERMISSION` system check no longer crashes with `NameError` on
+  Python 3.14 when the permission callable annotates a parameter with a type that
+  is imported only under `TYPE_CHECKING`.
+- Importing the package no longer loads Django's test framework into production
+  processes: `setting_changed` now comes from `django.core.signals`.
+- A UTF-8 BOM followed by template whitespace before the XML declaration, such as
+  a file that starts with a BOM and `{% load dj_hyperview %}`, now renders. The BOM
+  is preserved and the whitespace after it is removed, as documented.
+- `HyperviewEngine.get_template` raises `InvalidTemplateName` for an empty,
+  `None` or non-string name on Django 5.2 and 6.1 alike. Django 6.1 rejects these
+  before any loader runs, which surfaced as `TemplateNotFound` and an HTTP 500
+  instead of the 400 that unsafe names produce.
+- On Django 6.1, an `Accept` header with a media range longer than Django's 10,000
+  character limit no longer makes `HyperviewMiddleware` fail the request. It is
+  treated as not accepting Hyperview. Django 5.2 has no such limit and parses the
+  header as before.
+
 ### Documentation
 
 - The configuration guide no longer says that project schemas can import the
@@ -436,13 +445,33 @@ This page records user-visible release changes, including unpublished attempts.
   only elements. Comments and processing instructions inside the root element have
   always counted toward both, which is the safer bound. Those outside the root
   element are not walked, so only `MAX_BYTES` bounds them.
+- A system check reference in the configuration guide lists every `dj_hyperview.E`
+  and `W` ID with its meaning and fix, and explains that `DummyCache` raises only
+  `W004` yet makes every lookup fail under `FAILURE_MODE="raise"`.
+- The HTTP guide documents `HyperviewMiddleware` and `request.hyperview`, and
+  states that the middleware adds no `Vary` header: a view that returns HXML to
+  Hyperview clients and something else to other callers on one URL must add
+  `Vary: Accept, X-Hyperview-Version` itself. The README no longer calls request
+  detection "content negotiation".
+- The configuration guide documents the Redis 7 ACL rule that realtime needs
+  (`resetchannels` plus the namespace's channels) and the limits of the `rediss://`
+  and `unix://` options, and shows `publish_after_commit` with its real signature:
+  `using` is keyword-only and required.
+- Hyperview compatibility is a page of its own again, `hyperview-compatibility.md`,
+  that describes the current 0.111.0 contract and the 0.110.0 history. It replaces
+  the `hyperview-0.110.0` stub, whose URL no longer exists.
+- The documentation no longer says that redis-py 7.4.1 is exercised against a live
+  Redis: CI runs 8.1.0, and 7.4.1 is only the declared lower bound of the
+  `[realtime]` extra. It also drops the removed `VALIDATION.MODE` from the database
+  guide, the "confirm publication" hedging, the unsupported claim about Hyperview
+  0.112.0, and HyperTodo instructions that no longer match that application.
 
 ### Compatibility
 
-- Hyperview 0.112.0 removes `createTestProps` and changes native test-ID behavior,
-  but does not change the upstream XSD resources or package peer dependencies.
-  The corrected 0.111.0 schema shipped in 0.1.0b2 remains the active server
-  contract; this local compatibility documentation does not publish a new beta.
+- Hyperview 0.112.0 removes `createTestProps` and changes native test-ID behavior
+  in the client. The server contract is unchanged: 0.1.0b2 ships and validates
+  against the corrected 0.111.0 schema, and this repository records upstream
+  provenance for 0.110.0 and 0.111.0 only. This note does not publish a new beta.
 
 ### Maintenance
 
@@ -463,13 +492,6 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
-- HyperTodo's mobile client now pins upstream Hyperview 0.111.0, whose
-  [#1348 fix](https://github.com/Instawork/hyperview/pull/1350) distinguishes
-  failed fragment fetches from intentional sync drops. Mounted client tests
-  cover HTTP 500, network rejection, indicator and pull-refresh cleanup,
-  successful retry, and a dropped request. No server SSE protocol change or
-  React Navigation migration is required.
-
 - The optional Admin HXML editor stays dark from initialization, regardless of the Admin theme, theme toggles, or system color preference.
 
 ### Changed
@@ -484,6 +506,16 @@ This page records user-visible release changes, including unpublished attempts.
 - Explain the Django-to-Hyperview request lifecycle in the Quick Start, with an
   executable full-screen and tap-to-fragment example, server/client responsibilities
   and direct links from the landing, mobile and HTTP response guides.
+
+### Compatibility
+
+- The HyperTodo test application's mobile client now pins upstream Hyperview 0.111.0,
+  whose [#1348 fix](https://github.com/Instawork/hyperview/pull/1350)
+  distinguishes failed fragment fetches from intentional sync drops. Mounted client
+  tests in that application cover HTTP 500, network rejection, indicator and
+  pull-refresh cleanup, successful retry, and a dropped request. This is not a
+  package change: no server SSE protocol change or React Navigation migration is
+  required.
 
 ## 0.1.0b1 — 2026-09-10
 
@@ -815,6 +847,11 @@ This page records user-visible release changes, including unpublished attempts.
   duplicate declarations.
 - The admin catalog endpoint requires authentication and model view permission;
   editor assets are local and avoid inline scripts.
+
+## 0.1.0a1 to 0.1.0a7 — 2026-09-04 to 2026-09-05
+
+These early alphas predate this changelog, so no per-release notes exist. The Git
+tags `v0.1.0a1` to `v0.1.0a7` and the history behind them are the record.
 
 ## 0.1.0a8 — 2026-09-06
 
