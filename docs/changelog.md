@@ -289,13 +289,17 @@ on, and says how to migrate.
 - `content_type=None` on `HyperviewResponse`, `HyperviewTemplateResponse` and the
   fragment classes now behaves like omitting the argument and yields the
   Hyperview media type of the class. Before, it fell through to Django's default
-  `text/html`.
+  `text/html`. When `headers` carries a `Content-Type` (in any letter case),
+  `None` keeps that header, as it does in Django, instead of raising Django's
+  `ValueError` about giving the type twice.
 - A Hyperview `Content-Type` parameter whose value needs quoting, such as
   `profile="mobile app"`, is now written back quoted and escaped. Before, the
   rebuilt header lost the quotes (`profile=mobile app`), which is not a valid
-  parameter. A parameter name that is not an RFC 9110 token, or a value with
-  control characters, now raises `ValueError` instead of producing a malformed
-  header.
+  parameter. A parameter name that is not an RFC 9110 token, or a value with a
+  control character, a character above U+00FF, or a trailing backslash, now raises
+  `ValueError` instead of producing a malformed header. Django and `email` read the
+  quote after a trailing backslash as escaped, so such a value would come back
+  changed and swallow the next parameter.
 - A `Content-Encoding` other than `gzip` or `identity` now fails at iteration and
   serialization with the message "only gzip Content-Encoding is supported". Before,
   it reported only that the header does not match the transport, which hid that the

@@ -67,13 +67,15 @@ restriction. A custom `content_type` does not disable validation. Content and
 XML declarations must use UTF-8; an incompatible response charset raises
 `ValueError`.
 
-`content_type=None` is the same as leaving the argument out: the response uses
-the Hyperview media type of its class, not Django's `text/html`. When you pass a
-Hyperview media type with parameters, the response rebuilds the header with
-`charset=utf-8`. A parameter value that is not a plain token, such as
+`content_type=None` means that no media type was given: the response uses the
+Hyperview media type of its class, not Django's `text/html`, unless `headers`
+already carries a `Content-Type`, in any letter case, which it keeps. When you
+pass a Hyperview media type with parameters, the response rebuilds the header
+with `charset=utf-8`. A parameter value that is not a plain token, such as
 `profile="mobile app"`, is quoted and escaped as RFC 9110 requires. A parameter
-name that is not a token, or a value with control characters, raises
-`ValueError`. Other media types are passed through unchanged.
+name that is not a token, or a value with a control character, a character above
+U+00FF, or a trailing backslash, raises `ValueError`. Other media types are passed
+through unchanged.
 
 Constructors and later `content` assignment validate the complete candidate
 before replacing the body. `write()` appends to the existing document;

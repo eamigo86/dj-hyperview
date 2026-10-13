@@ -151,7 +151,19 @@ def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> No
 
 
 @pytest.mark.parametrize(
-    "parameter", ["a b=c", "a(b)=c", 'profile="a\x00b"', 'profile="a\x7fb"']
+    "parameter",
+    [
+        "a b=c",
+        "a(b)=c",
+        'profile="a\x00b"',
+        'profile="a\x7fb"',
+        'profile="\u20ac"',
+        'profile="\u0100"',
+        # Django and email read the quote after a trailing backslash as escaped.
+        r'profile="a\\"',
+        r'profile="a\\\\"',
+        r'profile="\\"',
+    ],
 )
 def test_content_type_parameters_that_cannot_be_represented_are_rejected(
     parameter: str,
@@ -192,6 +204,57 @@ def test_none_content_type_is_the_default_media_type_for_template_responses(
     response = response_type(None, "screen.xml", content_type=None)
 
     assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
+
+
+@pytest.mark.parametrize("header", ["Content-Type", "content-type", "CONTENT-TYPE"])
+@pytest.mark.parametrize(
+    "response_type,media_type",
+    [
+        (HyperviewResponse, HYPERVIEW_MEDIA_TYPE),
+        (HyperviewFragmentResponse, HYPERVIEW_FRAGMENT_MEDIA_TYPE),
+    ],
+)
+def test_none_content_type_keeps_a_content_type_header(
+    response_type, media_type, header
+):
+    """None means not given, so a Content-Type header is not a second source."""
+    document = '<text xmlns="https://hyperview.org/hyperview" />'
+
+    response = response_type(
+        document, content_type=None, headers={header: f"{media_type}; charset=utf-8"}
+    )
+
+    assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
+
+
+@pytest.mark.parametrize("header", ["Content-Type", "content-type"])
+@pytest.mark.parametrize(
+    "response_type,media_type",
+    [
+        (HyperviewTemplateResponse, HYPERVIEW_MEDIA_TYPE),
+        (HyperviewFragmentTemplateResponse, HYPERVIEW_FRAGMENT_MEDIA_TYPE),
+    ],
+)
+def test_none_content_type_keeps_a_content_type_header_for_template_responses(
+    response_type, media_type, header
+):
+    response = response_type(
+        None,
+        "screen.xml",
+        content_type=None,
+        headers={header: f"{media_type}; charset=utf-8"},
+    )
+
+    assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
+
+
+def test_a_content_type_header_still_rejects_a_non_utf8_charset() -> None:
+    with pytest.raises(ValueError, match="Hyperview responses require UTF-8"):
+        HyperviewResponse(
+            '<text xmlns="https://hyperview.org/hyperview" />',
+            content_type=None,
+            headers={"Content-Type": f"{HYPERVIEW_MEDIA_TYPE}; charset=latin-1"},
+        )
 
 
 def test_fragment_response_uses_fragment_media_type_and_utf8() -> None:

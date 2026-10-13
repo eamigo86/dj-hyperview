@@ -6,7 +6,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
-from django.http.response import HttpResponseBase
+from django.http.response import HttpResponseBase, ResponseHeaders
 from django.template.backends.django import Template
 from django.template.response import ContentNotRenderedError, TemplateResponse
 from django.utils.http import parse_header_parameters
@@ -35,7 +35,13 @@ _QUOTABLE = re.compile(r"[\t\x20-\x7e\x80-\xff]*")
 
 
 def _parameter(key: str, value: str) -> str:
-    if not _TOKEN.fullmatch(key) or not _QUOTABLE.fullmatch(value):
+    # Django and email read the closing quote after a trailing backslash as escaped,
+    # so such a value would come back changed, and would swallow the next parameter.
+    if (
+        not _TOKEN.fullmatch(key)
+        or not _QUOTABLE.fullmatch(value)
+        or value.endswith("\\")
+    ):
         raise ValueError("Invalid Content-Type parameter")
     if not _TOKEN.fullmatch(value):
         value = '"' + re.sub(r'(["\\])', r"\\\1", value) + '"'
@@ -70,10 +76,15 @@ class _HyperviewBody:
     _gzip_transport: bytes | None = None
 
     def _initial_metadata(
-        self, content_type: str | None, charset: str | None
+        self,
+        content_type: str | None,
+        charset: str | None,
+        headers: Mapping[str, str] | None,
     ) -> tuple[str | None, str | None]:
-        # None means "not given", as it does for Django, not "no media type".
-        if content_type is None:
+        # None means "not given", as it does for Django, not "no media type". Headers
+        # that carry a Content-Type are the other way to give it, and Django rejects
+        # both together, so None stays None there.
+        if content_type is None and "Content-Type" not in ResponseHeaders(headers):
             content_type = (
                 HYPERVIEW_FRAGMENT_MEDIA_TYPE
                 if self._fragment
@@ -286,7 +297,9 @@ class HyperviewResponse(_HyperviewBody, HttpResponse):
             ValueError: If a Hyperview response selects a non-UTF-8 encoding or a
                 Content-Type parameter cannot be represented.
         """
-        content_type, charset = self._initial_metadata(content_type, charset)
+        content_type, charset = self._initial_metadata(
+            content_type, charset, kwargs.get("headers")
+        )
         self._head_request = request is not None and request.method == "HEAD"
         super().__init__(content, content_type=content_type, charset=charset, **kwargs)
 
@@ -321,7 +334,7 @@ class HyperviewTemplateResponse(_HyperviewBody, TemplateResponse):
             ValueError: If a Hyperview response selects a non-UTF-8 encoding or a
                 Content-Type parameter cannot be represented.
         """
-        content_type, charset = self._initial_metadata(content_type, charset)
+        content_type, charset = self._initial_metadata(content_type, charset, headers)
         self._head_request = request is not None and request.method == "HEAD"
         self._initializing_hyperview_template = True
         try:
