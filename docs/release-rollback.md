@@ -25,7 +25,12 @@ Before the first release:
    `artifacts`. The release relies on this ruleset: a commit that reached `main`
    passed those checks, and the release only verifies that the tagged commit is on
    `main`. Without the ruleset nothing blocks a merge on a failed or missing Codecov
-   status.
+   status. After enabling it, open a documentation-only pull request and confirm
+   that both Codecov statuses appear; if `codecov/patch` never reports on a change
+   with no coverable lines, drop it from the required checks.
+5. Install the Codecov GitHub App for the repository and store the upload token as
+   the repository secret `CODECOV_TOKEN`. CI uploads with `fail_ci_if_error: true`,
+   so a push or same-repository pull request fails without it.
 
 PyPI and Pages jobs receive OIDC only within their own jobs.
 Only Pages receives `pages: write`; validation and staging remain read-only.
