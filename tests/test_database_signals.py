@@ -7,10 +7,10 @@ from unittest.mock import patch
 import pytest
 from django.core.cache import caches
 from django.db import connection, connections, transaction
-from django.db.models import Model, QuerySet
+from django.db.models import CharField, Model, QuerySet
 from django.db.models.signals import pre_delete
 from django.test import override_settings
-from django.test.utils import CaptureQueriesContext
+from django.test.utils import CaptureQueriesContext, isolate_apps
 
 from dj_hyperview.contrib.database import signals as database_signals
 from dj_hyperview.contrib.database.apps import DjHyperviewDatabaseConfig
@@ -83,6 +83,78 @@ def dual_signal_model(django_db_blocker: Any) -> Iterator[type[Model]]:
         for alias in reversed(ALIASES):
             with connections[alias].schema_editor() as editor:
                 editor.delete_model(HyperviewTemplate)
+
+
+@pytest.fixture
+def proxy_model(signal_model: type[Model]) -> Iterator[type[Model]]:
+    """Yield a proxy of the stored template that lives in an isolated registry."""
+    with isolate_apps():
+
+        class ProxyTemplate(signal_model):
+            class Meta:
+                proxy = True
+                app_label = "dj_hyperview_database"
+
+        yield ProxyTemplate
+
+
+def test_proxy_model_saves_schedule_invalidation(proxy_model: type[Model]) -> None:
+    """Django sends proxy instances' signals with the proxy class as sender."""
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        template = proxy_model.objects.create(name="screen.xml", content="<view />")
+
+    schedule.assert_called_once_with("screen.xml", using="default")
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        template.name = "renamed.xml"
+        template.save()
+
+    schedule.assert_called_once_with("screen.xml", "renamed.xml", using="default")
+
+
+def test_proxy_model_deletes_schedule_invalidation(proxy_model: type[Model]) -> None:
+    template = proxy_model.objects.create(name="screen.xml", content="<view />")
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        template.delete()
+
+    schedule.assert_called_once_with("screen.xml", using="default")
+
+
+def test_unrelated_models_never_reach_the_template_handlers(
+    signal_model: type[Model],
+) -> None:
+    """Handlers connect without a sender, so they must ignore other models."""
+    with isolate_apps():
+
+        class Unrelated(Model):
+            title = CharField(max_length=20)
+
+            class Meta:
+                app_label = "dj_hyperview_database"
+
+            def __str__(self) -> str:
+                return self.title
+
+        with connection.schema_editor() as editor:
+            editor.create_model(Unrelated)
+        try:
+            with patch(
+                "dj_hyperview.contrib.database.signals._schedule_invalidation"
+            ) as schedule:
+                row = Unrelated.objects.create(title="screen.xml")
+                row.delete()
+        finally:
+            with connection.schema_editor() as editor:
+                editor.delete_model(Unrelated)
+
+    schedule.assert_not_called()
 
 
 def test_created_template_schedules_invalidation(signal_model: type[Model]) -> None:

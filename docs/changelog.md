@@ -50,6 +50,27 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
+- Saving or deleting a template through a proxy model of `HyperviewTemplate` now
+  schedules cache invalidation. Django sends the model signals of a proxy instance
+  with the proxy class as sender, so the handlers connected for `HyperviewTemplate`
+  alone never ran, and a cached template stayed stale after such a write. The
+  handlers now run for the model and its proxies.
+- The Admin schema catalog endpoint (`hxml-catalog/`) now answers 404 unless
+  `HYPERVIEW["ADMIN"]["EDITOR"]` is enabled, as the validation endpoint already
+  did. Before, it served the catalog, including the names from the project's
+  `EXTRA_SCHEMAS` and `SCHEMA_EXTENSIONS`, to every staff user with view
+  permission while the editor was off.
+- Admin **Format and Validate** now formats a template that contains `{% load %}`.
+  The tag renders nothing, but a top-level one made the formatter keep the whole
+  source and report "HXML was already formatted." The package's own
+  `{% hv_csrf_token %}` tag is also accepted; before, a template using it could not
+  be formatted at all.
+- The Admin deletion page shows the right objects when the list is truncated.
+  `truncated_unordered_list` now decides whether an item is visible before it
+  counts the item's children, as Django's own filter does. Before, a visible parent
+  disappeared when its children crossed the limit and the "…and N more objects"
+  count was wrong. It also no longer renders an empty `<ul>` when all the children
+  are hidden.
 - Schemas now load from a directory whose name contains percent escapes, such as
   `pct%20dir` or `a%41b`. The XSD compiler percent-decoded plain path sources, so
   a project, or an installation of the package, under such a directory failed with

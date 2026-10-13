@@ -7,7 +7,13 @@ from typing import Any, cast
 from django import forms
 from django.contrib import admin, messages
 from django.db import DEFAULT_DB_ALIAS, connections, models, router
-from django.http import HttpRequest, HttpResponse, HttpResponseRedirect, JsonResponse
+from django.http import (
+    Http404,
+    HttpRequest,
+    HttpResponse,
+    HttpResponseRedirect,
+    JsonResponse,
+)
 from django.template.response import TemplateResponse
 from django.urls import path
 from django.utils.datastructures import MultiValueDict
@@ -333,10 +339,13 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
             Combined official and project-owned schema catalog.
 
         Raises:
+            Http404: If the HXML editor is disabled, as for the validation endpoint.
             PermissionDenied: If the user cannot view stored templates.
         """
         from django.core.exceptions import PermissionDenied
 
+        if not get_settings().admin.editor:
+            raise Http404
         if not (
             self.has_view_permission(request) or self.has_change_permission(request)
         ):

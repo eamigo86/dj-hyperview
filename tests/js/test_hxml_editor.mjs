@@ -231,6 +231,31 @@ for (const source of [
   });
 }
 
+test("formatter formats a template that starts with a load tag", () => {
+  // {% load %} renders nothing, so it cannot change the meaning of whitespace.
+  const source = '{% load i18n %}\n<view><text>x</text></view>';
+  const expected = '{% load i18n %}\n<view>\n  <text>x</text>\n</view>';
+
+  assert.deepEqual(formatHxml(source), {ok: true, value: expected});
+  assert.deepEqual(formatHxml(expected), {ok: true, value: expected});
+});
+
+test("formatter formats around a load tag inside a structural element", () => {
+  const source = '<view>{% load i18n %}<text>x</text></view>';
+  const expected = '<view>\n  {% load i18n %}\n  <text>x</text>\n</view>';
+
+  assert.deepEqual(formatHxml(source), {ok: true, value: expected});
+  assert.deepEqual(formatHxml(expected), {ok: true, value: expected});
+});
+
+test("formatter accepts the package CSRF tag and keeps its form untouched", () => {
+  const source = '{% load dj_hyperview %}<view><form>{% hv_csrf_token %}<text>x</text></form></view>';
+  const expected = '{% load dj_hyperview %}\n<view>\n  <form>{% hv_csrf_token %}<text>x</text></form>\n</view>';
+
+  assert.deepEqual(formatHxml(source), {ok: true, value: expected});
+  assert.deepEqual(formatHxml(expected), {ok: true, value: expected});
+});
+
 test("formatter retains exact quoted opening tags and meaningful text spans", () => {
   const opening = '<view\tid = "a > b" data-label = \'{{ value|default:"x" }}\' >';
   const text = '<text>  A &amp; B\n <text> inner </text>  </text>';

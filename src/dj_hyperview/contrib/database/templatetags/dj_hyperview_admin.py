@@ -66,11 +66,15 @@ def truncated_unordered_list(
         output: list[str] = []
         for item, children in _walk_items(items):
             item_count += 1
-            child_markup = ""
-            if children:
-                child_items = format_items(children, tabs + 1)
-                child_markup = f"\n{indent}<ul>\n{child_items}\n{indent}</ul>\n{indent}"
-            if unlimited or item_count <= limit:
+            # Decide before the children are counted, as Django's own filter does.
+            visible = unlimited or item_count <= limit
+            child_items = format_items(children, tabs + 1) if children else ""
+            if visible:
+                child_markup = ""
+                if child_items:
+                    child_markup = (
+                        f"\n{indent}<ul>\n{child_items}\n{indent}</ul>\n{indent}"
+                    )
                 output.append(f"{indent}<li>{escape(item)}{child_markup}</li>")
         return "\n".join(output)
 

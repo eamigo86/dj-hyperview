@@ -1,5 +1,6 @@
 """Connect database model mutations to transactional invalidation."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 from django.db import connections
@@ -104,28 +105,38 @@ def _schedule_delete(
     _schedule_save(sender, instance, **kwargs)
 
 
+def _for_templates(handler: Callable[..., None]) -> Callable[..., None]:
+    """Limit a model signal handler to the template model and its proxy models.
+
+    Django sends the signals of a proxy instance with the proxy class as sender, so
+    a receiver connected with sender=HyperviewTemplate never sees them.
+    """
+
+    def receiver(*, sender: object, **kwargs: object) -> None:
+        if isinstance(sender, type) and issubclass(sender, HyperviewTemplate):
+            handler(sender=sender, **kwargs)
+
+    return receiver
+
+
 def _connect_signal_handlers() -> None:
     pre_save.connect(
-        _capture_save,
-        sender=HyperviewTemplate,
+        _for_templates(_capture_save),
         dispatch_uid="dj_hyperview.database.capture_save",
         weak=False,
     )
     post_save.connect(
-        _schedule_save,
-        sender=HyperviewTemplate,
+        _for_templates(_schedule_save),
         dispatch_uid="dj_hyperview.database.schedule_save",
         weak=False,
     )
     pre_delete.connect(
-        _capture_delete,
-        sender=HyperviewTemplate,
+        _for_templates(_capture_delete),
         dispatch_uid="dj_hyperview.database.capture_delete",
         weak=False,
     )
     post_delete.connect(
-        _schedule_delete,
-        sender=HyperviewTemplate,
+        _for_templates(_schedule_delete),
         dispatch_uid="dj_hyperview.database.schedule_delete",
         weak=False,
     )

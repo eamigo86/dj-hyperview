@@ -45,8 +45,8 @@
   const DJANGO_BLOCKS = new Set(["if", "for", "with", "block", "autoescape"]);
   const DJANGO_SINGLE_TAGS = new Set([
     "load", "extends", "include", "url", "now", "cycle", "resetcycle", "firstof",
-    "lorem", "csrf_token", "debug", "templatetag", "widthratio", "regroup",
-    "translate", "trans", "static", "get_static_prefix", "get_media_prefix",
+    "lorem", "csrf_token", "hv_csrf_token", "debug", "templatetag", "widthratio",
+    "regroup", "translate", "trans", "static", "get_static_prefix", "get_media_prefix",
   ]);
   const XML_NAME = /[A-Za-z_][\w.-]*(?::[A-Za-z_][\w.-]*)?/y;
 
@@ -224,8 +224,10 @@
               throw new Error("unbalanced Django branch");
             }
           } else if (DJANGO_SINGLE_TAGS.has(command)) {
-            // Output-producing tags have unknown whitespace semantics.
-            parent.preserve = true;
+            // Output-producing tags have unknown whitespace semantics; load has none.
+            if (command !== "load") {
+              parent.preserve = true;
+            }
           } else {
             throw new Error("unsupported Django tag");
           }

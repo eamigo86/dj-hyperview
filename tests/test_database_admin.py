@@ -139,6 +139,20 @@ def test_schema_catalog_admin_endpoint_requires_authentication_and_permission(
     assert "view" in allowed.json()["elements"]
 
 
+@pytest.mark.django_db
+@pytest.mark.parametrize("hyperview", [{}, {"ADMIN": {"EDITOR": False}}])
+def test_schema_catalog_admin_endpoint_is_not_found_when_the_editor_is_disabled(
+    admin_client, hyperview
+) -> None:
+    """The validation endpoint hides itself without the editor; so must the catalog."""
+    url = reverse("admin:dj_hyperview_database_hyperviewtemplate_hxml_catalog")
+
+    with override_settings(HYPERVIEW=hyperview):
+        response = admin_client.get(url)
+
+    assert response.status_code == 404
+
+
 def test_database_contrib_without_admin_never_imports_admin_module() -> None:
     result = run_isolated(
         "tests.settings_database",
@@ -235,6 +249,38 @@ def test_delete_list_filter_truncates_and_escapes_nested_items() -> None:
     assert "second" in rendered
     assert "third" not in rendered
     assert "1 more object" in rendered
+
+
+def _truncated(items: list[Any], limit: int | None) -> str:
+    module = importlib.import_module(
+        "dj_hyperview.contrib.database.templatetags.dj_hyperview_admin"
+    )
+    return str(module.truncated_unordered_list(items, limit))
+
+
+def test_delete_list_filter_keeps_a_parent_whose_children_cross_the_limit() -> None:
+    """Visibility is decided before the children are counted, as Django does."""
+    rendered = _truncated(["a", ["b"]], 1)
+
+    assert (
+        rendered == "\t<li>a</li>\n\t<li>\N{HORIZONTAL ELLIPSIS}and 1 more object.</li>"
+    )
+    assert "<ul>" not in rendered
+
+
+def test_delete_list_filter_counts_hidden_descendants_in_the_remainder() -> None:
+    rendered = _truncated(["a", ["b", "c"], "d"], 2)
+
+    assert rendered == (
+        "\t<li>a\n\t<ul>\n\t\t<li>b</li>\n\t</ul>\n\t</li>"
+        "\n\t<li>\N{HORIZONTAL ELLIPSIS}and 2 more objects.</li>"
+    )
+
+
+def test_delete_list_filter_renders_nested_items_without_a_limit() -> None:
+    assert _truncated(["a", ["b"]], None) == (
+        "\t<li>a\n\t<ul>\n\t\t<li>b</li>\n\t</ul>\n\t</li>"
+    )
 
 
 @pytest.mark.django_db

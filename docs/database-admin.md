@@ -129,9 +129,9 @@ database details. A returned result is persisted in the current transaction; an
 outer rollback can still discard it.
 
 Model signals schedule invalidation with `transaction.on_commit` on the mutation
-alias. Therefore a rollback has no cache effect. A cache failure after a
-successful commit remains observable and does not mean the database rolled back.
-The same callback also sends the public
+alias, for `HyperviewTemplate` and for proxy models of it. Therefore a rollback
+has no cache effect. A cache failure after a successful commit remains observable
+and does not mean the database rolled back. The same callback also sends the public
 [committed invalidation hint](api-reference.md#committed-template-invalidations),
 including when caching is disabled; receiver errors do not undo the write.
 
@@ -185,16 +185,18 @@ HYPERVIEW = {
 
 The editor always uses the dark Monokai theme, regardless of the Django Admin theme or system color preference.
 
-The editor uses package-owned assets, django-ace strict CSP mode, line numbers, search, wrapping, full screen, and contextual completion for elements, unused attributes, enumerated values, and configured namespace prefixes. Its catalog endpoint requires authentication and view permission for the template model. The source uses a 15-pixel editor font and inserts two-space soft tabs; pressing Tab never writes a literal tab.
+The editor uses package-owned assets, django-ace strict CSP mode, line numbers, search, wrapping, full screen, and contextual completion for elements, unused attributes, enumerated values, and configured namespace prefixes. Its catalog endpoint requires authentication and view permission for the template model, and answers 404 unless `ADMIN.EDITOR` is enabled, like the validation endpoint. The source uses a 15-pixel editor font and inserts two-space soft tabs; pressing Tab never writes a literal tab.
 
 **Format and Validate** first indents only structural whitespace in known
 element-only Hyperview containers. It preserves original opening tags, quoted
 attribute values, significant text and mixed content, CDATA, custom component
 subtrees, and preformatted or `xml:space`-preserving content. Django tokens and
 complete `comment`/`verbatim` bodies remain byte-for-byte unchanged; no
-replacement markers or XML reserialization are used. Would-be Django tokens
-whose delimiters span an LF newline are rejected unchanged; raw
-`comment`/`verbatim` bodies may still span multiple lines.
+replacement markers or XML reserialization are used. `{% load %}` renders
+nothing, so it does not stop formatting; tags that render output, such as
+`{% include %}` and `{% hv_csrf_token %}`, keep their enclosing element as written.
+Would-be Django tokens whose delimiters span an LF newline are rejected unchanged;
+raw `comment`/`verbatim` bodies may still span multiple lines.
 
 Balanced conditional branches containing complete elements can be formatted.
 Ambiguous or incomplete markup, branch-dependent opening/closing tags, and
