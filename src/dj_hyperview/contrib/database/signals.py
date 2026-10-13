@@ -3,8 +3,16 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 
+from django.apps import apps
 from django.db import connections
-from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
+from django.db.models import Model
+from django.db.models.signals import (
+    class_prepared,
+    post_delete,
+    post_save,
+    pre_delete,
+    pre_save,
+)
 
 from dj_hyperview.sources import canonicalize_template_name
 
@@ -31,7 +39,7 @@ def _persisted_name(
 ) -> str | None:
     if instance.pk is None:
         return None
-    persisted = sender._default_manager.using(using).filter(pk=instance.pk)
+    persisted = sender._base_manager.using(using).filter(pk=instance.pk)
     if connections[using].in_atomic_block:
         persisted = persisted.select_for_update()
     name = persisted.values_list("name", flat=True).first()
@@ -106,10 +114,10 @@ def _schedule_delete(
 
 
 def _for_templates(handler: Callable[..., None]) -> Callable[..., None]:
-    """Limit a model signal handler to the template model and its proxy models.
+    """Limit a model signal handler to the template model and its subclasses.
 
-    Django sends the signals of a proxy instance with the proxy class as sender, so
-    a receiver connected with sender=HyperviewTemplate never sees them.
+    Django 5.2 keeps no reference to a sender, so the registration of a collected
+    class can match an unrelated class that later reuses its id.
     """
 
     def receiver(*, sender: object, **kwargs: object) -> None:
@@ -119,24 +127,43 @@ def _for_templates(handler: Callable[..., None]) -> Callable[..., None]:
     return receiver
 
 
+_RECEIVERS = (
+    (pre_save, _for_templates(_capture_save), "capture_save"),
+    (post_save, _for_templates(_schedule_save), "schedule_save"),
+    (pre_delete, _for_templates(_capture_delete), "capture_delete"),
+    (post_delete, _for_templates(_schedule_delete), "schedule_delete"),
+)
+
+
+def _connect_model(model: type[Model]) -> None:
+    """Connect the invalidation handlers to one template model class.
+
+    Django sends the signals of a proxy instance with the proxy class as sender, so
+    each class needs its own registration. A receiver without a sender would listen
+    to every model, and Django skips its bulk delete for any model that has a
+    pre_delete or post_delete listener.
+    """
+    for signal, receiver, name in _RECEIVERS:
+        signal.connect(
+            receiver,
+            sender=model,
+            dispatch_uid=f"dj_hyperview.database.{name}:{model._meta.label}",
+            weak=False,
+        )
+
+
+def _connect_template_model(sender: type[Model], **kwargs: object) -> None:
+    del kwargs
+    if issubclass(sender, HyperviewTemplate):
+        _connect_model(sender)
+
+
 def _connect_signal_handlers() -> None:
-    pre_save.connect(
-        _for_templates(_capture_save),
-        dispatch_uid="dj_hyperview.database.capture_save",
+    class_prepared.connect(
+        _connect_template_model,
+        dispatch_uid="dj_hyperview.database.connect_template_model",
         weak=False,
     )
-    post_save.connect(
-        _for_templates(_schedule_save),
-        dispatch_uid="dj_hyperview.database.schedule_save",
-        weak=False,
-    )
-    pre_delete.connect(
-        _for_templates(_capture_delete),
-        dispatch_uid="dj_hyperview.database.capture_delete",
-        weak=False,
-    )
-    post_delete.connect(
-        _for_templates(_schedule_delete),
-        dispatch_uid="dj_hyperview.database.schedule_delete",
-        weak=False,
-    )
+    _connect_model(HyperviewTemplate)
+    for model in apps.get_models():
+        _connect_template_model(model)

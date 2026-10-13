@@ -133,7 +133,9 @@ alias, for `HyperviewTemplate` and for proxy models of it. Therefore a rollback
 has no cache effect. A cache failure after a successful commit remains observable
 and does not mean the database rolled back. The same callback also sends the public
 [committed invalidation hint](api-reference.md#committed-template-invalidations),
-including when caching is disabled; receiver errors do not undo the write.
+including when caching is disabled; receiver errors do not undo the write. The
+receivers are connected to those model classes only, so every other model in your
+project keeps Django's fast path for bulk deletes.
 
 ## Add the standard admin
 

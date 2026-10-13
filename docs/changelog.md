@@ -83,7 +83,11 @@ This page records user-visible release changes, including unpublished attempts.
   schedules cache invalidation. Django sends the model signals of a proxy instance
   with the proxy class as sender, so the handlers connected for `HyperviewTemplate`
   alone never ran, and a cached template stayed stale after such a write. The
-  handlers now run for the model and its proxies.
+  handlers are now connected to the model and to each of its subclasses, including
+  a proxy defined after startup, and to no other model, so Django keeps its fast
+  bulk delete for the rest of the project. A rename or delete also reads the stored
+  name through the base manager, so a proxy whose default manager hides the row
+  still invalidates the old name.
 - The Admin schema catalog endpoint (`hxml-catalog/`) now answers 404 unless
   `HYPERVIEW["ADMIN"]["EDITOR"]` is enabled, as the validation endpoint already
   did. Before, it served the catalog, including the names from the project's

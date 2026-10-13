@@ -1,14 +1,17 @@
 """Database model signal integration tests."""
 
+import json
 from collections.abc import Iterator
+from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import call, patch
 
 import pytest
 from django.core.cache import caches
 from django.db import connection, connections, transaction
-from django.db.models import CharField, Model, QuerySet
-from django.db.models.signals import pre_delete
+from django.db.models import CharField, Manager, Model, QuerySet
+from django.db.models.deletion import Collector
+from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
 from django.test import override_settings
 from django.test.utils import CaptureQueriesContext, isolate_apps
 
@@ -20,6 +23,7 @@ from dj_hyperview.resolver import TemplateResolver
 from tests.test_database_app import run_isolated
 
 ALIASES = ("default", "replica")
+SIGNALS = (pre_save, post_save, pre_delete, post_delete)
 LOCMEM_CACHES = {
     "signals": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -85,9 +89,14 @@ def dual_signal_model(django_db_blocker: Any) -> Iterator[type[Model]]:
                 editor.delete_model(HyperviewTemplate)
 
 
-@pytest.fixture
-def proxy_model(signal_model: type[Model]) -> Iterator[type[Model]]:
-    """Yield a proxy of the stored template that lives in an isolated registry."""
+@pytest.fixture(params=["proxy", "proxy-of-proxy"])
+def proxy_model(
+    request: pytest.FixtureRequest, signal_model: type[Model]
+) -> Iterator[type[Model]]:
+    """Yield a proxy, or a proxy of a proxy, defined after the handlers connected.
+
+    The classes live in an isolated registry, like a model created at runtime.
+    """
     with isolate_apps():
 
         class ProxyTemplate(signal_model):
@@ -95,7 +104,36 @@ def proxy_model(signal_model: type[Model]) -> Iterator[type[Model]]:
                 proxy = True
                 app_label = "dj_hyperview_database"
 
-        yield ProxyTemplate
+        model = ProxyTemplate
+        if request.param == "proxy-of-proxy":
+
+            class NestedProxyTemplate(ProxyTemplate):
+                class Meta:
+                    proxy = True
+                    app_label = "dj_hyperview_database"
+
+            model = NestedProxyTemplate
+        yield model
+
+
+@pytest.fixture
+def scoped_proxy_model(signal_model: type[Model]) -> Iterator[type[Model]]:
+    """Yield a proxy whose default manager hides every row outside live/."""
+
+    class LiveOnly(Manager):
+        def get_queryset(self) -> QuerySet:
+            return super().get_queryset().filter(name__startswith="live/")
+
+    with isolate_apps():
+
+        class LiveTemplate(signal_model):
+            objects = LiveOnly()
+
+            class Meta:
+                proxy = True
+                app_label = "dj_hyperview_database"
+
+        yield LiveTemplate
 
 
 def test_proxy_model_saves_schedule_invalidation(proxy_model: type[Model]) -> None:
@@ -104,6 +142,13 @@ def test_proxy_model_saves_schedule_invalidation(proxy_model: type[Model]) -> No
         "dj_hyperview.contrib.database.signals._schedule_invalidation"
     ) as schedule:
         template = proxy_model.objects.create(name="screen.xml", content="<view />")
+
+    schedule.assert_called_once_with("screen.xml", using="default")
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        template.save()
 
     schedule.assert_called_once_with("screen.xml", using="default")
 
@@ -127,10 +172,20 @@ def test_proxy_model_deletes_schedule_invalidation(proxy_model: type[Model]) -> 
     schedule.assert_called_once_with("screen.xml", using="default")
 
 
-def test_unrelated_models_never_reach_the_template_handlers(
-    signal_model: type[Model],
+def test_every_template_model_listens_to_all_four_signals(
+    signal_model: type[Model], proxy_model: type[Model]
 ) -> None:
-    """Handlers connect without a sender, so they must ignore other models."""
+    for model in (signal_model, proxy_model):
+        assert all(signal.has_listeners(model) for signal in SIGNALS)
+
+
+def test_other_models_keep_django_fast_delete(signal_model: type[Model]) -> None:
+    """Receivers belong to template classes, so no other model loses bulk delete.
+
+    A receiver connected without a sender listens to every model, and Django only
+    skips per-row deletion for a model that has no pre_delete or post_delete
+    listener.
+    """
     with isolate_apps():
 
         class Unrelated(Model):
@@ -142,6 +197,31 @@ def test_unrelated_models_never_reach_the_template_handlers(
             def __str__(self) -> str:
                 return self.title
 
+        assert not any(signal.has_listeners(Unrelated) for signal in SIGNALS)
+        assert Collector(using="default").can_fast_delete(Unrelated.objects.all())
+
+
+def test_a_stale_registration_never_reaches_the_template_handlers(
+    signal_model: type[Model],
+) -> None:
+    """Handlers ignore a sender that is not a template model.
+
+    Django 5.2 keeps no reference to a sender, so the registration of a collected
+    proxy can match a later, unrelated class that reuses its id. Connecting the
+    handlers to such a class stands in for that registration.
+    """
+    with isolate_apps():
+
+        class Unrelated(Model):
+            title = CharField(max_length=20)
+
+            class Meta:
+                app_label = "dj_hyperview_database"
+
+            def __str__(self) -> str:
+                return self.title
+
+        database_signals._connect_model(Unrelated)
         with connection.schema_editor() as editor:
             editor.create_model(Unrelated)
         try:
@@ -155,6 +235,53 @@ def test_unrelated_models_never_reach_the_template_handlers(
                 editor.delete_model(Unrelated)
 
     schedule.assert_not_called()
+
+
+def test_connecting_a_model_again_never_doubles_its_invalidations(
+    proxy_model: type[Model],
+) -> None:
+    """Repeated ready() calls reach the same registrations as the first."""
+    database_signals._connect_model(proxy_model)
+    _connect_signal_handlers()
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        proxy_model.objects.create(name="screen.xml", content="<view />").delete()
+
+    assert schedule.call_args_list == [call("screen.xml", using="default")] * 2
+
+
+def test_scoped_proxy_rename_invalidates_the_stored_name(
+    signal_model: type[Model], scoped_proxy_model: type[Model]
+) -> None:
+    """The stored name comes from the base manager, which never filters rows."""
+    stored = signal_model.objects.create(name="draft/home.xml", content="<view />")
+    assert not scoped_proxy_model._default_manager.filter(pk=stored.pk).exists()
+    scoped = scoped_proxy_model._base_manager.get(pk=stored.pk)
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        scoped.name = "live/home.xml"
+        scoped.save()
+
+    schedule.assert_called_once_with("draft/home.xml", "live/home.xml", using="default")
+
+
+def test_scoped_proxy_delete_invalidates_the_stored_name(
+    signal_model: type[Model], scoped_proxy_model: type[Model]
+) -> None:
+    stored = signal_model.objects.create(name="draft/home.xml", content="<view />")
+    scoped = scoped_proxy_model._base_manager.get(pk=stored.pk)
+    scoped.name = "live/unsaved.xml"
+
+    with patch(
+        "dj_hyperview.contrib.database.signals._schedule_invalidation"
+    ) as schedule:
+        scoped.delete()
+
+    schedule.assert_called_once_with("draft/home.xml", using="default")
 
 
 def test_created_template_schedules_invalidation(signal_model: type[Model]) -> None:
@@ -594,6 +721,97 @@ def test_optional_app_ready_imports_signals_without_queries(
 
     assert result.returncode == 0, result.stderr
     assert result.stdout.strip() == expected
+
+
+PROXY_APP_MODELS = """\
+from dj_hyperview.contrib.database.models import HyperviewTemplate
+
+
+class Draft(HyperviewTemplate):
+    class Meta:
+        proxy = True
+
+
+class Nested(Draft):
+    class Meta:
+        proxy = True
+"""
+PROXY_PROJECT_SETTINGS = """\
+from tests.settings_database_admin import *  # noqa: F403
+
+INSTALLED_APPS = [*INSTALLED_APPS, "proxyapp"]  # noqa: F405
+"""
+PROXY_PROJECT_PROBE = """\
+import json
+import sys
+from pathlib import Path
+from unittest.mock import patch
+
+sys.path.insert(0, str(Path(__file__).parent))
+
+import django
+
+django.setup()
+
+from django.apps import apps
+from django.contrib.sessions.models import Session
+from django.db import connection
+from django.db.models.deletion import Collector
+from django.db.models.signals import post_delete, post_save, pre_delete, pre_save
+from proxyapp.models import Draft, Nested
+
+from dj_hyperview.contrib.database.models import HyperviewTemplate
+
+signals = (pre_save, post_save, pre_delete, post_delete)
+# A second ready() call must reach the registrations of the first.
+apps.get_app_config("dj_hyperview_database").ready()
+with connection.schema_editor() as editor:
+    editor.create_model(HyperviewTemplate)
+scheduled = []
+with patch(
+    "dj_hyperview.contrib.database.signals._schedule_invalidation",
+    lambda *names, using: scheduled.append(names),
+):
+    Nested.objects.create(name="screen.xml", content="<view />").delete()
+print(
+    json.dumps(
+        {
+            "session_listeners": any(s.has_listeners(Session) for s in signals),
+            "session_fast_delete": Collector(using="default").can_fast_delete(
+                Session.objects.all()
+            ),
+            "template_listeners": [
+                all(s.has_listeners(model) for s in signals)
+                for model in (HyperviewTemplate, Draft, Nested)
+            ],
+            "scheduled": scheduled,
+        }
+    )
+)
+"""
+
+
+def test_ready_connects_template_models_and_their_proxies_only(tmp_path: Path) -> None:
+    """A project keeps Django's bulk delete while its own proxies still invalidate."""
+    app = tmp_path / "proxyapp"
+    app.mkdir()
+    (app / "__init__.py").touch()
+    (app / "models.py").write_text(PROXY_APP_MODELS, encoding="utf-8")
+    (tmp_path / "proxy_project.py").write_text(PROXY_PROJECT_SETTINGS, encoding="utf-8")
+    probe = tmp_path / "probe.py"
+    probe.write_text(PROXY_PROJECT_PROBE, encoding="utf-8")
+
+    result = run_isolated(
+        "proxy_project", f"import runpy; runpy.run_path({str(probe)!r})"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {
+        "session_listeners": False,
+        "session_fast_delete": True,
+        "template_listeners": [True, True, True],
+        "scheduled": [["screen.xml"], ["screen.xml"]],
+    }
 
 
 @pytest.mark.parametrize("fields", [["content"], ["name"], ["content", "name"], []])
