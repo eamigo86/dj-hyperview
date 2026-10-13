@@ -149,6 +149,16 @@ class _Dispatcher:
             # A BaseException ends the worker, and every client still goes with it.
             for target in self.targets.values():
                 _discard(target)
+            # Nothing will serve the callers still queued, and they would wait out
+            # their deadlines. Their jobs end unsent, as a timed-out job does.
+            self.stopped.set()
+            while True:
+                try:
+                    job = self.queue.get_nowait()
+                except queue.Empty:
+                    break
+                if job is not None:
+                    job.done.set()
 
     def close(self) -> None:
         self.stopped.set()

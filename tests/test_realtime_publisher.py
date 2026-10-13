@@ -400,6 +400,51 @@ def test_a_worker_ended_by_a_base_exception_still_closes_every_client(monkeypatc
         dispatcher.close()
 
 
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_callers_queued_behind_a_worker_that_dies_return_at_once(monkeypatch):
+    module = publisher()
+
+    class Stop(BaseException):
+        pass
+
+    made = fake_clients(monkeypatch, module)
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    entered = threading.Event()
+    release = threading.Event()
+    outcomes = []
+
+    def die_when_released(self):
+        entered.set()
+        release.wait(5)
+        raise Stop
+
+    def caller():
+        # A deadline far beyond the test: only the dying worker can end the wait.
+        outcomes.append(
+            dispatcher.submit(config, ("a",), b"x", deadline=time.monotonic() + 60)
+        )
+
+    dispatcher = module._Dispatcher()
+    callers = [threading.Thread(target=caller, daemon=True) for _ in range(3)]
+    try:
+        assert dispatcher.submit(config, ("a",), b"x") is True
+        monkeypatch.setattr(made[0].__class__, "execute", die_when_released)
+        callers[0].start()
+        assert entered.wait(2)
+        callers[1].start()
+        callers[2].start()
+        while dispatcher.queue.qsize() < 2:
+            time.sleep(0.001)
+        release.set()
+        for thread in callers:
+            thread.join(2)
+        assert not any(thread.is_alive() for thread in callers)
+        assert outcomes == [False, False, False]
+    finally:
+        release.set()
+        dispatcher.close()
+
+
 def raise_stop(error):
     def execute(self):
         raise error
