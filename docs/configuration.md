@@ -104,13 +104,22 @@ defaults apply only when `CACHE` is a non-empty mapping; omitting it or using an
 empty mapping disables Hyperview caching. `REALTIME` omitted or `None` is disabled;
 an empty realtime mapping is an error, not another disabled form.
 
+Unknown keys are rejected, not ignored. A key that `HYPERVIEW`, a `SOURCES` entry,
+`CACHE`, `VALIDATION` or `ADMIN` does not define, such as `MAX_BYTE`, `PERMISION`
+or a lowercase `cache`, produces `dj_hyperview.E023` from `python manage.py check`
+and `HyperviewConfigurationError` when settings are read. A typo therefore cannot
+silently fall back to a default and weaken a limit, a cache policy or the Admin
+permission. The error names the key and lists the valid ones. The removed keys
+`SCHEMA_PROFILE`, `VALIDATION.MODE` and `VALIDATION.SCHEMA` keep their own errors
+and are not reported twice.
+
 | Setting | Type | Default | Meaning |
 | --- | --- | --- | --- |
 | `HYPERVIEW` | Mapping | `{}` | Package configuration in Django settings. An absent or empty mapping configures no sources and no cache. |
 | `TEMPLATE_DIRS` | List or tuple of strings or `Path` objects | `()` | Ordered project-owned roots inherited by `FileSystemSource` instances that do not override `template_dirs`. Missing roots emit an operational warning and are skipped at runtime. |
 | `SOURCES` | Sequence of mappings | `()` | Ordered source definitions. The first source that resolves a canonical template name wins. An empty sequence resolves no templates. |
 | `SOURCES[].BACKEND` | Dotted import path | Required | Importable source class for one entry. Built-in paths are shown below. |
-| `SOURCES[].OPTIONS` | Mapping | `{}` | Keyword arguments passed to that source class constructor. Supported keys are backend-specific. |
+| `SOURCES[].OPTIONS` | Mapping | `{}` | Keyword arguments passed to that source class constructor. Supported keys are backend-specific; entries the constructor does not accept, or required arguments it does not receive, produce `dj_hyperview.E024`. |
 | `CACHE` | Mapping | Omitted (disabled) | Enables raw-source and source-miss caching when non-empty. It does not cache compiled templates. |
 | `CACHE.ALIAS` | String | `"default"` | Django cache alias with atomic add and coherent reads. `DummyCache` and `FileBasedCache` are unsupported. |
 | `CACHE.NAMESPACE` | Non-empty string | `"dj-hyperview"` | Prefix domain that isolates all Hyperview cache keys. Change it to abandon previously published cache state. |
@@ -262,9 +271,13 @@ HYPERVIEW["SOURCES"] = [
 ```
 
 A custom backend defines its own supported `OPTIONS` through its constructor.
-There is no package-wide list for third-party options; unknown keyword
-arguments fail during source initialization. See [Filesystem](filesystem.md)
-and [Database and admin](database-admin.md) for backend-specific behavior.
+There is no package-wide list for third-party options. System checks bind
+`OPTIONS` to the constructor signature of an importable backend: a misspelled
+option, an unexpected one, or a missing required argument produces
+`dj_hyperview.E024` ("OPTIONS do not match the backend constructor") instead of
+a `TypeError` on every request. Reading settings fails the same way. See
+[Filesystem](filesystem.md) and [Database and admin](database-admin.md) for
+backend-specific behavior.
 
 ## Template engine behavior
 

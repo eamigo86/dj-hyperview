@@ -1,3 +1,4 @@
+from collections import Counter
 from pathlib import Path
 from unittest.mock import patch
 
@@ -5,7 +6,41 @@ import pytest
 from django.test import override_settings
 
 from dj_hyperview.checks import check_hyperview_settings
+from dj_hyperview.conf import get_settings
+from dj_hyperview.exceptions import HyperviewConfigurationError
 from dj_hyperview.resolver import TemplateResolver
+
+FILESYSTEM = "dj_hyperview.sources.FileSystemSource"
+DATABASE_SOURCE = "dj_hyperview.contrib.database.sources.DatabaseSource"
+STUB_SOURCE = "tests.stubs.TemplateSource"
+
+
+class RequiredOptionSource:
+    """Source whose constructor requires one keyword option."""
+
+    def __init__(self, *, token: str) -> None:
+        self.token = token
+
+    def resolve(self, name: str) -> None:
+        return None
+
+
+class Limit(int):
+    """An int subclass that the typed settings reject."""
+
+
+class OpaqueBackend:
+    """Callable backend whose signature cannot be introspected."""
+
+    @property
+    def __signature__(self):
+        raise RuntimeError("signature unavailable")
+
+    def __call__(self, **options: object) -> object:
+        return object()
+
+
+OPAQUE_BACKEND = OpaqueBackend()
 
 
 @pytest.mark.parametrize("profile", ["unknown", None, True, [], {}])
@@ -380,3 +415,166 @@ def test_admin_permission_requires_a_single_request_callable(permission) -> None
     relevant = [message for message in messages if message.id != "dj_hyperview.W005"]
     assert [message.id for message in relevant] == ["dj_hyperview.E017"]
     assert "request" in relevant[0].hint
+
+
+def _ids(messages) -> list[str]:
+    """Return short check ids, ignoring the unrelated empty-sources warning."""
+    return [
+        message.id.rsplit(".", 1)[-1]
+        for message in messages
+        if message.id != "dj_hyperview.W005"
+    ]
+
+
+@pytest.mark.parametrize(
+    ("configured", "unknown", "valid"),
+    [
+        ({"TEMPLATE_DIR": []}, "HYPERVIEW.TEMPLATE_DIR", "TEMPLATE_DIRS"),
+        ({"cache": {"TTL": 5}}, "HYPERVIEW.cache", "CACHE"),
+        ({"CACHE": {"TTLL": 5}}, "CACHE.TTLL", "NEGATIVE_TTL"),
+        ({"VALIDATION": {"MAX_BYTE": 10}}, "VALIDATION.MAX_BYTE", "MAX_BYTES"),
+        ({"ADMIN": {"PERMISION": "x.y"}}, "ADMIN.PERMISION", "PERMISSION"),
+        (
+            {"SOURCES": [{"BACKEND": STUB_SOURCE, "OPTION": {"content": "x"}}]},
+            "SOURCES[0].OPTION",
+            "OPTIONS",
+        ),
+    ],
+)
+def test_unknown_keys_are_configuration_errors(configured, unknown, valid) -> None:
+    """A typo in any settings section can no longer fall back to a default."""
+    with override_settings(HYPERVIEW=configured):
+        messages = check_hyperview_settings()
+
+    assert _ids(messages) == ["E023"]
+    assert unknown in messages[0].msg
+    assert valid in messages[0].hint
+    assert messages[0].obj == "settings.HYPERVIEW"
+
+
+def test_typos_fail_closed_instead_of_using_defaults() -> None:
+    """The reported typo set is rejected, not silently replaced by defaults."""
+    configured = {
+        "VALIDATION": {"MAX_BYTE": 10},
+        "ADMIN": {"PERMISION": "no.such.fn"},
+        "TEMPLATE_DIR": ["/srv/hyperview"],
+    }
+    with override_settings(HYPERVIEW=configured):
+        assert _ids(check_hyperview_settings()) == ["E023"] * 3
+        with pytest.raises(HyperviewConfigurationError, match="E023") as captured:
+            get_settings()
+
+    assert len(captured.value.issues) == 3
+
+
+def test_retired_keys_keep_their_dedicated_errors_without_e023() -> None:
+    """Removed settings keep E007, E008 and E019 and never double-report."""
+    configured = {
+        "SCHEMA_PROFILE": "legacy",
+        "VALIDATION": {"MODE": "off", "SCHEMA": "app.xsd", "MAX_BYTE": 1},
+    }
+    with override_settings(HYPERVIEW=configured):
+        messages = check_hyperview_settings()
+
+    assert Counter(_ids(messages)) == {"E007": 1, "E008": 1, "E019": 1, "E023": 1}
+    unknown = next(message for message in messages if message.id.endswith("E023"))
+    assert "VALIDATION.MAX_BYTE" in unknown.msg
+    assert "MODE" not in unknown.msg and "SCHEMA" not in unknown.msg
+
+
+def test_every_documented_key_is_accepted(tmp_path: Path) -> None:
+    """The unknown-key rule rejects only keys that no section reads."""
+    configured = {
+        "TEMPLATE_DIRS": [tmp_path],
+        "SOURCES": [{"BACKEND": FILESYSTEM, "OPTIONS": {"template_dirs": [tmp_path]}}],
+        "CACHE": {
+            "ALIAS": "default",
+            "NAMESPACE": "documented-keys",
+            "TTL": 300,
+            "NEGATIVE_TTL": 15,
+            "FAILURE_MODE": "bypass",
+        },
+        "VALIDATION": {"MAX_BYTES": 1_000_000, "MAX_DEPTH": 64, "MAX_NODES": 20_000},
+        "ADMIN": {"EDITOR": False, "PERMISSION": "tests.stubs.allow_template_admin"},
+        "EXTRA_SCHEMAS": [],
+        "SCHEMA_EXTENSIONS": {},
+        "REALTIME": None,
+    }
+    with override_settings(HYPERVIEW=configured):
+        assert check_hyperview_settings() == []
+        assert get_settings().validation.max_bytes == 1_000_000
+
+
+@pytest.mark.parametrize(
+    ("backend", "options", "expected"),
+    [
+        (FILESYSTEM, {"template_dir": ["/srv/hyperview"]}, ["E024"]),
+        (f"{__name__}.RequiredOptionSource", {}, ["E024"]),
+        (f"{__name__}.RequiredOptionSource", {"token": "x", "extra": 1}, ["E024"]),
+        (f"{__name__}.RequiredOptionSource", {1: "x"}, ["E024"]),
+        (f"{__name__}.RequiredOptionSource", {"token": "x"}, []),
+        (STUB_SOURCE, {"x": 1}, ["E024"]),
+        (STUB_SOURCE, {"content": "x", "revision": "r1"}, []),
+        (DATABASE_SOURCE, {"alias": "default"}, ["E010", "E024"]),
+    ],
+)
+def test_source_options_must_match_the_backend_constructor(
+    tmp_path: Path, backend: str, options: dict, expected: list[str]
+) -> None:
+    """A mistyped constructor option fails the check instead of every request."""
+    configured: dict = {"SOURCES": [{"BACKEND": backend, "OPTIONS": options}]}
+    if backend == FILESYSTEM:
+        configured["TEMPLATE_DIRS"] = [tmp_path]
+    with override_settings(HYPERVIEW=configured):
+        messages = check_hyperview_settings()
+
+    assert _ids(messages) == expected
+    for message in messages:
+        if message.id.endswith("E024"):
+            assert message.msg == (
+                "SOURCES[0].OPTIONS do not match the backend constructor."
+            )
+            assert message.hint and message.obj == "settings.HYPERVIEW"
+
+
+def test_signature_introspection_failure_never_breaks_or_fails_the_check() -> None:
+    """A backend that cannot be inspected is left to runtime construction."""
+    configured = {
+        "SOURCES": [{"BACKEND": f"{__name__}.OPAQUE_BACKEND", "OPTIONS": {"x": 1}}]
+    }
+    with override_settings(HYPERVIEW=configured):
+        assert _ids(check_hyperview_settings()) == []
+
+
+def test_mismatched_options_fail_settings_instead_of_each_request(tmp_path) -> None:
+    """Resolver construction reports the typo as a configuration error."""
+    configured = {
+        "TEMPLATE_DIRS": [tmp_path],
+        "SOURCES": [{"BACKEND": FILESYSTEM, "OPTIONS": {"template_dir": [tmp_path]}}],
+    }
+    with override_settings(HYPERVIEW=configured):
+        with pytest.raises(HyperviewConfigurationError, match="E024"):
+            TemplateResolver.from_settings()
+
+
+@pytest.mark.parametrize(
+    "configured",
+    [
+        {"SOURCES": [{"BACKEND": "missing.Source", "OPTIONS": {"x": 1}}]},
+        {"SOURCES": [{"BACKEND": STUB_SOURCE, "OPTIONS": []}]},
+        {"SOURCES": [{"BACKEND": FILESYSTEM, "OPTIONS": "template_dirs"}]},
+    ],
+)
+def test_unusable_backend_or_options_report_only_their_own_error(configured) -> None:
+    """E024 needs an importable backend and a mapping of options."""
+    with override_settings(HYPERVIEW=configured):
+        assert set(_ids(check_hyperview_settings())) == {"E003"}
+
+
+@pytest.mark.parametrize("name", ["MAX_BYTES", "MAX_DEPTH", "MAX_NODES"])
+def test_validation_limits_reject_int_subclasses_at_check_time(name: str) -> None:
+    """Checks use the dataclass rule, so no bare ValueError escapes at runtime."""
+    with override_settings(HYPERVIEW={"VALIDATION": {name: Limit(10)}}):
+        assert _ids(check_hyperview_settings()) == ["E009"]
+        with pytest.raises(HyperviewConfigurationError, match="E009"):
+            get_settings()

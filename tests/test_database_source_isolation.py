@@ -53,6 +53,16 @@ class UncachedSource:
         return ResolvedTemplate(name, self.content, "memory", "memory", "1")
 
 
+class ThirdPartySource:
+    """Third-party source whose constructor happens to accept a using option."""
+
+    def __init__(self, *, using: object = None) -> None:
+        self.using = using
+
+    def resolve(self, name: str) -> None:
+        del name
+
+
 class CacheableMissSource:
     def __init__(self) -> None:
         self.calls = 0
@@ -129,7 +139,7 @@ def test_database_using_invalid_values_have_actionable_checks(using: object) -> 
 def test_database_using_check_does_not_apply_to_third_party_sources() -> None:
     configured = {
         "SOURCES": [
-            {"BACKEND": "tests.stubs.TemplateSource", "OPTIONS": {"using": object()}}
+            {"BACKEND": f"{__name__}.ThirdPartySource", "OPTIONS": {"using": object()}}
         ]
     }
     with override_settings(HYPERVIEW=configured):

@@ -27,6 +27,10 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
+- A `VALIDATION` limit that is a `bool` or another `int` subclass now fails the
+  system check with `dj_hyperview.E009`, the rule `ValidationSettings` already
+  enforced. Before, the check accepted it and the first read of the settings
+  raised a bare `ValueError`.
 - Importing the package no longer loads Django's test framework into production
   processes: `setting_changed` now comes from `django.core.signals`.
 - A UTF-8 BOM followed by template whitespace before the XML declaration, such as
@@ -42,6 +46,17 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Changed
 
+- Unknown `HYPERVIEW` keys are now configuration errors (`dj_hyperview.E023`)
+  instead of being ignored. The rule covers the top level, `SOURCES` entries,
+  `CACHE`, `VALIDATION` and `ADMIN`, so a typo such as `MAX_BYTE`, `FAILURE_MODES`
+  or `PERMISION` can no longer silently fall back to a default. **A project with a
+  stray key now fails system checks and `get_settings()`**; correct or remove the
+  key. The removed `SCHEMA_PROFILE`, `VALIDATION.MODE` and `VALIDATION.SCHEMA`
+  keep their existing errors and are not reported twice.
+- `SOURCES[].OPTIONS` is bound to the backend constructor during system checks.
+  Options the constructor does not accept, or required arguments it does not
+  receive, produce `dj_hyperview.E024`. Before, such a project passed the checks
+  and raised `TypeError` on every request.
 - `requires-python` is now `>=3.12` with no upper bound. The previous `<3.15` cap
   stopped installers on Python 3.15 from installing the package at all. Python
   3.12, 3.13 and 3.14 remain the tested set, declared by the classifiers and the

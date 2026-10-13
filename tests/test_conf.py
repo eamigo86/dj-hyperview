@@ -47,7 +47,9 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
     )
     value = {
         "TEMPLATE_DIRS": [tmp_path],
-        "SOURCES": [{"BACKEND": "tests.stubs.TemplateSource", "OPTIONS": {"x": 1}}],
+        "SOURCES": [
+            {"BACKEND": "tests.stubs.TemplateSource", "OPTIONS": {"content": "x"}}
+        ],
         "CACHE": {
             "ALIAS": "screens",
             "TTL": 60,
@@ -75,7 +77,7 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
 
     assert config == HyperviewSettings(
         template_dirs=(tmp_path,),
-        sources=(SourceSettings("tests.stubs.TemplateSource", {"x": 1}),),
+        sources=(SourceSettings("tests.stubs.TemplateSource", {"content": "x"}),),
         cache=CacheSettings("screens", 60, 5, "raise"),
         validation=ValidationSettings(2_000, 8, 100),
         admin=AdminSettings(

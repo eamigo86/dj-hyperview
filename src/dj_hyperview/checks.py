@@ -1,6 +1,7 @@
 """Django system checks for consumer Hyperview configuration."""
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Collection, Mapping, Sequence
+from dataclasses import fields
 from importlib.util import find_spec
 from inspect import signature
 from pathlib import Path
@@ -14,6 +15,7 @@ from django.utils.module_loading import import_string
 
 from ._realtime_config import _realtime_settings
 from .cache import _BACKEND_FAILURE, _UNSUPPORTED_BACKEND, _resolve_cache_alias
+from .conf import DEFAULTS
 from .sources import FileSystemSource
 
 SETTING = "settings.HYPERVIEW"
@@ -21,13 +23,47 @@ DATABASE_SOURCE = "dj_hyperview.contrib.database.sources.DatabaseSource"
 FILESYSTEM_SOURCE = "dj_hyperview.sources.FileSystemSource"
 
 
-def _error(code: str, path: str, requirement: str) -> Error:
+# A key is known when the typed loader in conf.py reads it, so a key can never be
+# accepted by the check yet ignored by the settings snapshot.
+_TOP_LEVEL_KEYS = frozenset(item.name.upper() for item in fields(DEFAULTS))
+_CACHE_KEYS = frozenset(item.name.upper() for item in fields(DEFAULTS.cache))
+_VALIDATION_KEYS = frozenset(item.name.upper() for item in fields(DEFAULTS.validation))
+_ADMIN_KEYS = frozenset(item.name.upper() for item in fields(DEFAULTS.admin))
+_SOURCE_KEYS = frozenset({"BACKEND", "OPTIONS"})
+# Removed keys keep their dedicated errors, so E023 must not report them again.
+_RETIRED_KEYS = frozenset({"SCHEMA_PROFILE"})
+_RETIRED_VALIDATION_KEYS = {"MODE": "E007", "SCHEMA": "E008"}
+
+
+def _error(code: str, path: str, requirement: str, hint: str | None = None) -> Error:
     return Error(
         f"{path} {requirement}.",
-        hint=f"Correct {path}: it {requirement}.",
+        hint=hint or f"Correct {path}: it {requirement}.",
         obj=SETTING,
         id=f"dj_hyperview.{code}",
     )
+
+
+def _unknown_keys(
+    value: Mapping[Any, Any],
+    known: Collection[str],
+    path: str,
+    retired: Collection[str] = (),
+) -> list[CheckMessage]:
+    """Reject keys that no loader reads, because they would be ignored silently."""
+    return [
+        _error(
+            "E023",
+            f"{path}.{key}",
+            "is not a recognized setting",
+            hint=(
+                f"Remove {path}.{key} or fix its spelling; valid keys are "
+                f"{', '.join(sorted(known))}."
+            ),
+        )
+        for key in value
+        if key not in known and key not in retired
+    ]
 
 
 def _sequence(value: Any) -> bool:
@@ -64,13 +100,28 @@ def _check_template_dirs(value: Any, path: str = "TEMPLATE_DIRS") -> list[CheckM
     return errors
 
 
-def _importable(path: Any) -> bool:
+def _backend(path: Any) -> Any:
+    """Return the callable a dotted path names, or None when it is unusable."""
     if not isinstance(path, str) or "." not in path:
-        return False
+        return None
     try:
-        return callable(import_string(path))
+        backend = import_string(path)
     except Exception:
+        return None
+    return backend if callable(backend) else None
+
+
+def _options_match(backend: Any, options: Mapping[str, Any]) -> bool:
+    """Whether the backend constructor accepts these keyword arguments."""
+    try:
+        constructor = signature(backend)
+    except Exception:  # Not introspectable: construction at runtime decides.
+        return True
+    try:
+        constructor.bind(**options)
+    except TypeError:
         return False
+    return True
 
 
 def _is_filesystem_backend(path: Any) -> bool:
@@ -94,6 +145,7 @@ def _check_sources(value: Any) -> list[CheckMessage]:
             continue
         backend = source.get("BACKEND")
         options = source.get("OPTIONS", {})
+        backend_class = _backend(backend)
         if (
             _is_filesystem_backend(backend)
             and isinstance(options, Mapping)
@@ -118,10 +170,23 @@ def _check_sources(value: Any) -> list[CheckMessage]:
                             "must be None or name a configured database",
                         )
                     )
-        elif not _importable(backend):
+        elif backend_class is None:
             errors.append(_error("E003", f"{path}.BACKEND", "must be importable"))
         if not isinstance(options, Mapping):
             errors.append(_error("E003", f"{path}.OPTIONS", "must be a mapping"))
+        elif backend_class is not None and not _options_match(backend_class, options):
+            errors.append(
+                _error(
+                    "E024",
+                    f"{path}.OPTIONS",
+                    "do not match the backend constructor",
+                    hint=(
+                        f"Pass {path}.OPTIONS only as keyword arguments that the "
+                        "backend constructor accepts."
+                    ),
+                )
+            )
+        errors.extend(_unknown_keys(source, _SOURCE_KEYS, path))
     return errors
 
 
@@ -189,7 +254,7 @@ def _source_consistency_warnings(
 def _check_cache(value: Any) -> list[CheckMessage]:
     if not isinstance(value, Mapping):
         return [_error("E004", "CACHE", "must be a mapping")]
-    errors = []
+    errors = _unknown_keys(value, _CACHE_KEYS, "CACHE")
     alias = value.get("ALIAS", "default")
     backend, alias_error = _resolve_cache_alias(alias)
     if alias_error == _BACKEND_FAILURE:
@@ -244,8 +309,10 @@ def _check_cache(value: Any) -> list[CheckMessage]:
 def _check_validation(value: Any) -> list[CheckMessage]:
     if not isinstance(value, Mapping):
         return [_error("E007", "VALIDATION", "must be a mapping")]
-    errors = []
-    for name, code in (("MODE", "E007"), ("SCHEMA", "E008")):
+    errors = _unknown_keys(
+        value, _VALIDATION_KEYS, "VALIDATION", _RETIRED_VALIDATION_KEYS
+    )
+    for name, code in _RETIRED_VALIDATION_KEYS.items():
         if name in value:
             errors.append(
                 _error(
@@ -257,7 +324,8 @@ def _check_validation(value: Any) -> list[CheckMessage]:
     limits = (("MAX_BYTES", 1_000_000), ("MAX_DEPTH", 64), ("MAX_NODES", 20_000))
     for name, default in limits:
         current = value.get(name, default)
-        if isinstance(current, bool) or not isinstance(current, int) or current < 1:
+        # Same rule as ValidationSettings: bool and other int subclasses are rejected.
+        if type(current) is not int or current < 1:
             errors.append(
                 _error("E009", f"VALIDATION.{name}", "must be a positive integer")
             )
@@ -291,7 +359,7 @@ def _check_extra_schemas(value: Any) -> list[CheckMessage]:
 def _check_admin(value: Any) -> list[CheckMessage]:
     if not isinstance(value, Mapping):
         return [_error("E014", "ADMIN", "must be a mapping")]
-    errors = []
+    errors = _unknown_keys(value, _ADMIN_KEYS, "ADMIN")
     editor = value.get("EDITOR", False)
     if not isinstance(editor, bool):
         errors.append(_error("E014", "ADMIN.EDITOR", "must be a boolean"))
@@ -383,6 +451,7 @@ def check_hyperview_settings(
     ]
     template_dir_messages = _check_template_dirs(raw.get("TEMPLATE_DIRS", ()))
     return [
+        *_unknown_keys(raw, _TOP_LEVEL_KEYS, "HYPERVIEW", _RETIRED_KEYS),
         *template_dir_messages,
         *extension_errors,
         *_check_sources(raw.get("SOURCES", ())),
