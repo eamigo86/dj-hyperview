@@ -1,8 +1,8 @@
 # Release and rollback
 
 Publish one reviewed tag through the hosted release workflow. It validates the
-tag, requires successful main CI and Codecov acceptance for that exact SHA,
-builds the candidate once through CI, publishes that exact distribution to
+tag against the project version, requires the tagged commit to be on `main`, runs
+CI on that commit, builds the candidate once, publishes that exact distribution to
 PyPI, creates the matching GitHub Release, and deploys its documentation only
 after PyPI succeeds.
 
@@ -16,6 +16,16 @@ Before the first release:
    and does not use an API token or repository secret.
 3. Select **GitHub Actions** as the Pages source and retain the
    `github-pages` environment used by GitHub Pages.
+4. In GitHub, add a ruleset on `main` that requires status checks to pass before
+   merging. Require `codecov/project`, `codecov/patch` and the CI jobs, named
+   exactly as the pull request checks list shows them: `quality`,
+   `compatibility (3.12, 5.2.17)`, `compatibility (3.12, 6.1.1)`,
+   `compatibility (3.13, 5.2.17)`, `compatibility (3.13, 6.1.1)`,
+   `compatibility (3.14, 5.2.17)`, `compatibility (3.14, 6.1.1)`, `redis` and
+   `artifacts`. The release relies on this ruleset: a commit that reached `main`
+   passed those checks, and the release only verifies that the tagged commit is on
+   `main`. Without the ruleset nothing blocks a merge on a failed or missing Codecov
+   status.
 
 PyPI and Pages jobs receive OIDC only within their own jobs.
 Only Pages receives `pages: write`; validation and staging remain read-only.
@@ -31,21 +41,15 @@ release decision.
 
 ## Release order
 
-1. Update `[project].version`, commit the lock if it changes, and merge only
-   after the checks in [Testing](testing.md) pass. The exact release SHA must
-   complete ordinary **push/main CI**, including both coverage profiles and its
-   immutable Codecov acceptance receipt. A branch or PR receipt alone is not
-   sufficient to publish.
+1. Update `[project].version`, commit the lock if it changes, and merge to `main`
+   through the ruleset above, after the checks in [Testing](testing.md) pass. The
+   release SHA must be on `main`.
 2. Tag that exact commit with the matching version, for example `v0.1.0`, and
    push the tag. Never reuse a tag.
-3. The release workflow checks the tag against `pyproject.toml`, runs reusable
-   CI with Redis, and builds the distribution and site once. It never initiates
-   a Codecov upload or notification. Before taking the per-SHA coverage lock, it
-   waits at most 20 minutes for successful canonical main CI and its receipt.
-   Under the lock, it compares the release's freshly measured default/Redis
-   profiles with that receipt and rechecks current Codecov statuses, upload set,
-   producer attempt and artifact expiry/digest. Any mismatch or unavailable proof
-   fails closed before staging or publication.
+3. The release workflow checks the tag against `pyproject.toml`, fetches `main`
+   and requires the tagged commit to be one of its ancestors, runs reusable CI with
+   Redis on that commit, and builds the distribution and site once. It uploads no
+   coverage. A tag on a commit that is not on `main` fails before anything is built.
 4. Staging validates the layout, records SHA-256 checksums, and separates the
    immutable distribution from the Pages artifact.
 5. Trusted Publishing uploads the staged distribution. After PyPI succeeds, the
@@ -55,18 +59,10 @@ release decision.
    already-built site. The documentation header reads the newest public release,
    including prereleases, so it shows the tag that produced the published site.
 
-An atomic main/tag push is supported: the tag run waits outside the SHA lock
-while main finishes. Prefer waiting for main CI before pushing the tag so a slow
-matrix does not consume the 20-minute bound. A failed or expired main assessment
-cannot be repaired by the tag run. Identical reruns can reuse a still-valid
-receipt, but cannot extend the original assessment artifact's lifetime. See
-[missing-proof recovery](testing.md#missing-proof-and-recovery) before rerunning;
-never bypass a failed Codecov check or replace an existing tag.
-
-The Codecov notification switches prevent a circular CI/Codecov wait; they do not
-weaken either approval requirement. All CI, release-tag, artifact and publishing
-controls remain mandatory. Local injected-response tests verify this ordering;
-they are not a substitute for observing the hosted workflows after deployment.
+Tag a commit that is already on `main`; the tag may be older than the tip. The
+check shows that the commit is on `main`, not that its checks passed: a commit
+that bypassed the ruleset passes it. Never bypass a failed check or replace an
+existing tag, and observe the hosted workflow after each release.
 
 For a reviewable preview without publishing, run the manual documentation
 preview workflow. The checked-in command remains:

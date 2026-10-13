@@ -615,6 +615,16 @@ on, and says how to migrate.
   which asserted one `setTheme` call after the theme listeners they exercised were
   removed; an unused XML fixture; and the assertions that the old package names
   `django_hv` and `django-hyperview` do not appear.
+- Replace the Codecov receipt and seal machinery with Codecov's own checks. It was
+  about 2,600 lines of tools, tests and workflow steps, and its pull-request path
+  had never run. CI now uploads the default and Redis reports with the pinned
+  Codecov action and `fail_ci_if_error`, and `codecov/project` and `codecov/patch`
+  become required checks through a ruleset on `main`, which the maintainer
+  configures (see Release and rollback). `codecov.yml` is removed, so Codecov uses
+  its defaults, and the local ≥95% thresholds of `tools.test_matrix` are unchanged.
+  The release no longer reuses a coverage receipt: it requires the tagged commit to
+  be an ancestor of `main`, runs CI without a coverage upload and no longer receives
+  the Codecov token.
 
 ## 0.1.0b2 — 2026-09-24
 
