@@ -774,7 +774,11 @@ Redis transport is **at-most-once**: hints can be lost. `resync` means
 
 Queues are bounded at 32; subscription overflow becomes resync. Setup/ACK has a
 2 s budget. The publisher bounds caller wait to 2 s using one worker and a finite
-queue per process, without retries. **This does not kill OS DNS resolution or
+queue per process, without retries. The worker reuses one Redis connection and
+pipelines the channels of a hint. When Redis is unreachable, three consecutive
+failures open a five-second breaker during which hints are dropped immediately
+(`realtime_publish_circuit_open` in the log) rather than each commit waiting for
+the connection timeout. **This does not kill OS DNS resolution or
 in-flight I/O:** a hint may finish late or partially. Socket timeout is per
 operation, not a total worker deadline. The 2 s cleanup budget is cooperative;
 it cannot guarantee cleanup of callbacks that ignore cancellation or a destroyed loop.

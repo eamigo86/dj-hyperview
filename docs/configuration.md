@@ -451,6 +451,14 @@ a fixed code and the exception type name, as
 which can contain the Redis URL. A per-process daemon worker has a queue of 32
 jobs; each commit caller waits at most two seconds including queue time. Expired queued jobs do
 not start I/O. Forked children create their own worker, not an inherited client.
+The worker keeps one Redis connection per configuration and reuses it for later
+hints, sending all channels of a hint in one pipeline round trip. It replaces the
+connection after a failure or after 30 seconds without use. After three
+consecutive failures of one configuration, publications for it fail fast for five
+seconds instead of each paying the connection timeout, and log the fixed code
+`realtime_publish_circuit_open`. The first publication after that pause is the
+probe: success closes the breaker, failure reopens it for another five seconds.
+Hints dropped this way follow the same at-most-once rule as every other failure.
 
 **The caller deadline is not a total I/O deadline.** DNS resolution cannot be
 preempted; socket timeouts apply per operation, including multiple pipeline

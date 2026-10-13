@@ -1,17 +1,25 @@
 """Finite per-process publisher: bounded callers, not preemptible OS DNS."""
 
+import contextlib
 import logging
 import os
 import queue
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import Any
 
 from ._clients import _sync_client
 from ._config import _Config
 
 _LOGGER = logging.getLogger("dj_hyperview.realtime")
 _TIMEOUT = 2.0
+# A pooled connection idle for longer may have been dropped by the server or a
+# middlebox, and the first command on it would fail without a retry.
+_IDLE = 30.0
+# Consecutive failures that open the breaker, and how long it then fails fast.
+_FAILURES = 3
+_COOLDOWN = 5.0
 
 
 @dataclass
@@ -24,25 +32,60 @@ class _Job:
     success: bool = False
 
 
+@dataclass
+class _Target:
+    """Worker-owned client and circuit breaker state for one configuration.
+
+    Only the worker thread touches the client, its last use and the failure count.
+    The open_until deadline is one float written by the worker and read by callers.
+    """
+
+    client: Any = None
+    used: float = 0.0
+    failures: int = 0
+    open_until: float = 0.0
+
+
+def _discard(target: _Target) -> None:
+    client, target.client = target.client, None
+    if client is not None:
+        with contextlib.suppress(Exception):
+            client.close()
+
+
 def _send(
-    config: _Config, channels: tuple[str, ...], payload: bytes, deadline: float
+    target: _Target,
+    config: _Config,
+    channels: tuple[str, ...],
+    payload: bytes,
+    deadline: float,
 ) -> None:
-    client = _sync_client(config)
+    if target.client is not None and time.monotonic() - target.used > _IDLE:
+        _discard(target)
+    if target.client is None:
+        target.client = _sync_client(config)
     try:
-        with client.pipeline(transaction=False) as pipeline:
+        with target.client.pipeline(transaction=False) as pipeline:
             for channel in channels:
                 pipeline.publish(channel, payload)
             if time.monotonic() >= deadline:
                 raise TimeoutError
             # One pipeline, but socket timeout is per operation, NOT a total IO bound.
             pipeline.execute()
-    finally:
-        client.close()
+    except BaseException:
+        _discard(target)
+        target.failures += 1
+        if target.failures >= _FAILURES:
+            target.open_until = time.monotonic() + _COOLDOWN
+        raise
+    target.failures = 0
+    target.used = time.monotonic()
 
 
 class _Dispatcher:
     def __init__(self) -> None:
         self.queue: queue.Queue[_Job | None] = queue.Queue(maxsize=32)
+        self.targets: dict[_Config, _Target] = {}
         self.stopped = threading.Event()
         self.thread = threading.Thread(
             target=self._run, name="djhv-realtime-publisher", daemon=True
@@ -52,6 +95,9 @@ class _Dispatcher:
     def submit(self, config, channels, payload, *, deadline=None) -> bool:
         deadline = time.monotonic() + _TIMEOUT if deadline is None else deadline
         if self.stopped.is_set() or time.monotonic() >= deadline:
+            return False
+        if self._open(config):
+            _LOGGER.warning("realtime_publish_circuit_open")
             return False
         job = _Job(config, channels, payload, deadline)
         try:
@@ -64,14 +110,19 @@ class _Dispatcher:
             return False
         return job.success
 
+    def _open(self, config: _Config) -> bool:
+        target = self.targets.get(config)
+        return target is not None and time.monotonic() < target.open_until
+
     def _run(self) -> None:
         while not self.stopped.is_set():
             job = self.queue.get()
             if job is None:
-                return
+                break
             try:
-                if time.monotonic() < job.deadline:
-                    _send(job.config, job.channels, job.payload, job.deadline)
+                if time.monotonic() < job.deadline and not self._open(job.config):
+                    target = self.targets.setdefault(job.config, _Target())
+                    _send(target, job.config, job.channels, job.payload, job.deadline)
                     job.success = True
             except Exception as error:
                 # The type name is code-defined; the message may carry a URL.
@@ -80,6 +131,9 @@ class _Dispatcher:
                 )
             finally:
                 job.done.set()
+        # Closed here, not in close(), so the worker is the only user of a client.
+        for target in self.targets.values():
+            _discard(target)
 
     def close(self) -> None:
         self.stopped.set()

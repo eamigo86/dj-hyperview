@@ -327,6 +327,16 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Changed
 
+- The after-commit realtime publisher no longer builds a Redis client for every
+  hint. The worker keeps one connection per configuration, replaces it after a
+  failure or after 30 seconds without use, and still sends the channels of a hint
+  in one pipeline round trip. A short circuit breaker also stops each commit from
+  waiting for the connection timeout while Redis is down: after three consecutive
+  failures of a configuration, hints for it are dropped immediately for five
+  seconds, each logging the fixed code `realtime_publish_circuit_open`, and the
+  next hint probes the server. Publication stays best-effort and at-most-once, and
+  a failure still never fails the committing request. The log carries no payload,
+  topic or URL.
 - A failed realtime publication now logs the exception type name as well:
   `realtime_publish_failed error_type=<TypeName>`. The exception message is still
   never logged because it can contain the Redis URL.

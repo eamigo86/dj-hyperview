@@ -111,13 +111,17 @@ def test_dispatcher_singleton_and_child_reset_do_not_reuse_parent_worker(monkeyp
         module._after_fork()
 
 
-def test_pipeline_checks_expiry_and_closes_client_without_sending(monkeypatch):
-    import pytest
-
-    module = publisher()
-    calls = []
+def fake_clients(monkeypatch, module, fail=lambda config: False):
+    """Replace redis-py with recording clients and return the constructed ones."""
+    made = []
 
     class Client:
+        def __init__(self, config):
+            self.config = config
+            self.calls = []
+            self.closed = False
+            made.append(self)
+
         def pipeline(self, *, transaction):
             assert transaction is False
             return self
@@ -129,18 +133,173 @@ def test_pipeline_checks_expiry_and_closes_client_without_sending(monkeypatch):
             pass
 
         def publish(self, channel, payload):
-            calls.append("queued")
+            self.calls.append("queued")
 
         def execute(self):
-            calls.append("sent")
+            self.calls.append("sent")
+            if fail(self.config):
+                raise ConnectionError("redis://secret/private-topic")
 
         def close(self):
-            calls.append("closed")
+            self.closed = True
 
-    monkeypatch.setattr(module, "_sync_client", lambda _: Client())
+    monkeypatch.setattr(module, "_sync_client", Client)
+    return made
+
+
+def test_pipeline_checks_expiry_and_discards_client_without_sending(monkeypatch):
+    import pytest
+
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    target = module._Target()
     with pytest.raises(TimeoutError):
-        module._send(None, ("a", "b"), b"x", time.monotonic() - 1)
-    assert calls == ["queued", "queued", "closed"]
+        module._send(target, None, ("a", "b"), b"x", time.monotonic() - 1)
+    assert made[0].calls == ["queued", "queued"]
+    assert made[0].closed and target.client is None
+
+
+def test_worker_reuses_one_pipelined_client_and_closes_it_on_stop(monkeypatch):
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        assert dispatcher.submit(config, ("a", "b"), b"x") is True
+        assert dispatcher.submit(config, ("c",), b"x") is True
+        assert len(made) == 1 and not made[0].closed
+        # Several channels, one round trip.
+        assert made[0].calls == ["queued", "queued", "sent", "queued", "sent"]
+    finally:
+        dispatcher.close()
+    assert made[0].closed
+
+
+def test_idle_connection_is_replaced_before_use(monkeypatch):
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    monkeypatch.setattr(module, "_IDLE", -1)
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        assert dispatcher.submit(config, ("a",), b"x") is True
+        assert dispatcher.submit(config, ("a",), b"x") is True
+        assert len(made) == 2 and made[0].closed and not made[1].closed
+    finally:
+        dispatcher.close()
+
+
+def test_failure_discards_the_client_and_the_next_hint_reconnects(monkeypatch):
+    module = publisher()
+    outcomes = iter([True, False])
+    made = fake_clients(monkeypatch, module, lambda config: next(outcomes))
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        assert dispatcher.submit(config, ("a",), b"x") is False
+        assert made[0].closed
+        assert dispatcher.submit(config, ("a",), b"x") is True
+        assert len(made) == 2 and not made[1].closed
+    finally:
+        dispatcher.close()
+
+
+def test_forked_child_neither_inherits_nor_closes_the_parent_client(monkeypatch):
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    module._after_fork()
+    parent = module._get_dispatcher()
+    try:
+        assert parent.submit(config, ("a",), b"x") is True
+        module._after_fork()  # same child-reset operation, no OS process for this unit
+        child = module._get_dispatcher()
+        try:
+            assert child is not parent and child.targets == {}
+            assert not made[0].closed
+        finally:
+            child.close()
+    finally:
+        parent.close()
+        module._after_fork()
+
+
+def test_breaker_opens_after_consecutive_failures_and_fails_fast(monkeypatch, caplog):
+    module = publisher()
+    made = fake_clients(monkeypatch, module, lambda config: True)
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        for _ in range(3):
+            assert dispatcher.submit(config, ("private-topic",), b"x") is False
+        assert len(made) == 3
+        started = time.monotonic()
+        assert dispatcher.submit(config, ("private-topic",), b"payload") is False
+        assert time.monotonic() - started < 0.2
+        assert len(made) == 3
+        assert "realtime_publish_circuit_open" in caplog.text
+        assert "payload" not in caplog.text and "private-topic" not in caplog.text
+        assert "secret" not in caplog.text
+    finally:
+        dispatcher.close()
+
+
+def test_breaker_half_opens_after_cooldown_and_closes_on_success(monkeypatch):
+    module = publisher()
+    down = [True]
+    made = fake_clients(monkeypatch, module, lambda config: down[0])
+    monkeypatch.setattr(module, "_COOLDOWN", 0.2)
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        for _ in range(3):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        time.sleep(0.25)
+        # One probe is let through; failing again reopens the breaker at once.
+        assert dispatcher.submit(config, ("a",), b"x") is False
+        assert len(made) == 4
+        assert dispatcher.submit(config, ("a",), b"x") is False
+        assert len(made) == 4
+        time.sleep(0.25)
+        down[0] = False
+        assert dispatcher.submit(config, ("a",), b"x") is True
+        assert dispatcher.submit(config, ("a",), b"x") is True
+        assert len(made) == 5
+    finally:
+        dispatcher.close()
+
+
+def test_breaker_state_is_per_configuration(monkeypatch):
+    module = publisher()
+    made = fake_clients(
+        monkeypatch, module, lambda config: config.url.endswith("/down")
+    )
+    down = module._Config("redis://127.0.0.1/down", "ns")
+    up = module._Config("redis://127.0.0.1/up", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        for _ in range(3):
+            assert dispatcher.submit(down, ("a",), b"x") is False
+        assert dispatcher.submit(down, ("a",), b"x") is False
+        assert [client.config for client in made].count(down) == 3
+        assert dispatcher.submit(up, ("a",), b"x") is True
+    finally:
+        dispatcher.close()
+
+
+def test_jobs_queued_before_the_breaker_opened_do_not_connect(monkeypatch):
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        dispatcher.targets[config] = module._Target(open_until=time.monotonic() + 60)
+        job = module._Job(config, ("a",), b"x", time.monotonic() + 2)
+        dispatcher.queue.put_nowait(job)
+        assert job.done.wait(1)
+        assert job.success is False and made == []
+    finally:
+        dispatcher.close()
 
 
 def test_stopped_dispatcher_and_changed_pid_do_not_reuse_worker(monkeypatch):
