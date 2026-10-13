@@ -422,59 +422,31 @@ test("r2 completion does not guess namespaces from branch-dependent opening elem
 });
 
 
-for (const initialTheme of ["dark", "light", "auto", undefined]) {
-  for (const systemDark of [false, true]) {
-    test(`editor stays dark across Admin and system theme changes: ${initialTheme}, ${systemDark}`, () => {
-      const themes = [];
-      const observers = [];
-      const mediaListeners = [];
-      const session = {setMode() {}, setTabSize() {}, setUseSoftTabs() {}};
-      const editor = {
-        getSession: () => session,
-        setFontSize() {},
-        setTheme: (theme) => themes.push(theme),
-      };
-      const textarea = {
-        previousElementSibling: {editor},
-        dataset: {},
-        closest: (selector) => selector === "form" ? null : {
-          nextElementSibling: {querySelector: () => ({})},
-        },
-      };
-      const document = {
-        documentElement: {dataset: initialTheme ? {theme: initialTheme} : {}},
-        querySelectorAll: () => [textarea],
-      };
-      const media = {
-        matches: systemDark,
-        addEventListener: (_event, callback) => mediaListeners.push(callback),
-      };
-      let load;
-      runInNewContext(readFileSync(new URL(
-        "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_editor.js", import.meta.url,
-      ), "utf8"), {
-        document,
-        window: {
-          ace: {require: () => ({Mode: class {}})},
-          addEventListener: (event, callback) => { if (event === "load") load = callback; },
-          matchMedia: () => media,
-        },
-        MutationObserver: class {
-          constructor(callback) { observers.push(callback); }
-          observe() {}
-        },
-      });
-      load();
-      assert.deepEqual(themes, ["ace/theme/monokai"]);
-      for (const theme of ["light", "auto", "dark", undefined]) {
-        if (theme) document.documentElement.dataset.theme = theme;
-        else delete document.documentElement.dataset.theme;
-        observers.forEach((callback) => callback());
-        media.matches = !media.matches;
-        mediaListeners.forEach((callback) => callback(media));
-        assert.equal(themes.at(-1), "ace/theme/monokai");
-        assert.ok(themes.every((value) => value === "ace/theme/monokai"));
-      }
-    });
-  }
-}
+test("the editor is always dark, whatever the Admin theme", () => {
+  const themes = [];
+  const session = {setMode() {}, setTabSize() {}, setUseSoftTabs() {}};
+  const editor = {
+    getSession: () => session,
+    setFontSize() {},
+    setTheme: (theme) => themes.push(theme),
+  };
+  const textarea = {
+    previousElementSibling: {editor},
+    dataset: {},
+    closest: (selector) => selector === "form" ? null : {
+      nextElementSibling: {querySelector: () => ({})},
+    },
+  };
+  let load;
+  runInNewContext(readFileSync(new URL(
+    "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_editor.js", import.meta.url,
+  ), "utf8"), {
+    document: {documentElement: {dataset: {theme: "light"}}, querySelectorAll: () => [textarea]},
+    window: {
+      ace: {require: () => ({Mode: class {}})},
+      addEventListener: (event, callback) => { if (event === "load") load = callback; },
+    },
+  });
+  load();
+  assert.deepEqual(themes, ["ace/theme/monokai"]);
+});

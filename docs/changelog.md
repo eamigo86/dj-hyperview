@@ -590,6 +590,12 @@ on, and says how to migrate.
   0.110.0 XSDs stay, so `get_hyperview_schema_path()` and `build_hyperview_catalog()`
   are unchanged, and the package carries about 410 KB less data. The tests that only
   compared those files with each other are removed with them.
+- Remove test and tooling code that pinned nothing: the `--show-matrix` option and
+  `matrix_commands()` of `tools.test_matrix`, which CI and the documentation never
+  used; a duplicate test of the coverage runner; seven of eight editor theme tests,
+  which asserted one `setTheme` call after the theme listeners they exercised were
+  removed; an unused XML fixture; and the assertions that the old package names
+  `django_hv` and `django-hyperview` do not appear.
 
 ## 0.1.0b2 — 2026-09-24
 

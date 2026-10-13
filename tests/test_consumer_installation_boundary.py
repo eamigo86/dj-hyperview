@@ -98,5 +98,5 @@ def test_consumer_capabilities_remain_outside_runtime_package() -> None:
     assert not list(runtime.rglob("*.xml"))
     assert not list(runtime.rglob("*.hxml"))
     combined = "\n".join(path.read_text(encoding="utf-8") for path in consumer_files)
-    for forbidden in ("/Users/", "django_hv", "mobile::", "contact", "icon", "user"):
+    for forbidden in ("/Users/", "mobile::", "contact", "icon", "user"):
         assert forbidden not in combined

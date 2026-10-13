@@ -63,9 +63,6 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
         "supported-python": ["3.12", "3.13", "3.14"],
         "supported-django": ["5.2.17", "6.1.1"],
     }
-    manifest = (ROOT / "pyproject.toml").read_text()
-    assert "django-hyperview" not in manifest
-    assert "django_hv" not in manifest
 
 
 def test_requires_python_declares_no_upper_bound() -> None:
@@ -124,18 +121,14 @@ def test_manifest_and_repository_declare_the_mit_license() -> None:
     )
 
 
-def test_versioned_lock_pins_audited_tools_without_legacy_names() -> None:
-    """The repository lock fixes audited versions and excludes legacy packages."""
+def test_versioned_lock_pins_audited_tools() -> None:
+    """The repository lock fixes the audited versions."""
     assert "uv.lock" not in (ROOT / ".gitignore").read_text().splitlines()
 
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     versions = {package["name"]: package["version"] for package in lock["package"]}
     assert {name: versions[name] for name in LOCKED_DIRECT} == LOCKED_DIRECT
     assert versions["pymdown-extensions"] == "12.1"
-
-    manifests = (ROOT / "pyproject.toml").read_text() + (ROOT / "uv.lock").read_text()
-    assert "django-hyperview" not in manifests
-    assert "django_hv" not in manifests
 
 
 def test_realtime_extra_lock_metadata_reuses_existing_redis_resolution() -> None:

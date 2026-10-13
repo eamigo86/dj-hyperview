@@ -21,27 +21,16 @@ def _run_consumer_probe() -> subprocess.CompletedProcess[str]:
         DJANGO_SETTINGS_MODULE="tests.consumer_project.settings_base",
         PYTHONPATH=os.pathsep.join(python_path),
     )
-    script = r'''
-import importlib.abc
+    script = r"""
 import json
 import socket
 import sys
-
-
-class LegacyImportBlocker(importlib.abc.MetaPathFinder):
-    """Reject imports from the abandoned package namespace."""
-
-    def find_spec(self, fullname, path=None, target=None):
-        if fullname == "django_hv" or fullname.startswith("django_hv."):
-            raise AssertionError("legacy package import attempted")
-        return None
 
 
 def forbidden_optional_access(*args, **kwargs):
     raise AssertionError("optional infrastructure access attempted")
 
 
-sys.meta_path.insert(0, LegacyImportBlocker())
 from django.core.cache import CacheHandler
 from django.db.backends.base.base import BaseDatabaseWrapper
 
@@ -67,13 +56,10 @@ print(json.dumps({
     "app": apps.get_app_config("dj_hyperview").name,
     "cache_disabled": resolver.cache is None,
     "checks": sorted({message.id for message in [*package_checks, *all_checks]}),
-    "legacy_loaded": any(
-        name == "django_hv" or name.startswith("django_hv.") for name in sys.modules
-    ),
     "patterns": len(get_resolver().url_patterns),
     "sources": len(resolver.sources),
 }))
-'''
+"""
     return subprocess.run(
         [sys.executable, "-c", script],
         cwd=PROJECT_ROOT,
@@ -104,7 +90,6 @@ def test_consumer_starts_safely_through_public_package_apis() -> None:
         "app": "dj_hyperview",
         "cache_disabled": True,
         "checks": ["dj_hyperview.W005"],
-        "legacy_loaded": False,
         "patterns": 4,
         "sources": 0,
     }
@@ -124,7 +109,6 @@ def test_consumer_scaffold_contains_only_portable_generic_configuration() -> Non
     combined = "\n".join(python_sources)
     for forbidden in (
         "/Users/",
-        "django_hv",
         "mobile::",
         "contact",
         "icon",

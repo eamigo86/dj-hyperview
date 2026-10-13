@@ -269,7 +269,7 @@ import sys
 
 class ForbiddenImport(importlib.abc.MetaPathFinder):
     def find_spec(self, fullname, path=None, target=None):
-        forbidden = {"django_hv", "apps", "backend", "config", "redis"}
+        forbidden = {"apps", "backend", "config", "redis"}
         if fullname.split(".")[0] in forbidden:
             raise AssertionError("external import attempted")
         return None
@@ -294,7 +294,7 @@ print(json.dumps({
     "patterns": len(get_resolver().url_patterns),
     "public": [TemplateResolver.__name__, publish_template.__name__],
     "forbidden": any(
-        name.split(".")[0] in {"django_hv", "apps", "backend", "config", "redis"}
+        name.split(".")[0] in {"apps", "backend", "config", "redis"}
         for name in sys.modules
     ),
 }))

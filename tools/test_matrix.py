@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import argparse
 import os
-import shlex
 import subprocess
 import sys
 from collections.abc import Sequence
@@ -56,30 +55,6 @@ def coverage_commands() -> tuple[tuple[str, ...], ...]:
         optional admin profile before enforcing the coverage threshold.
     """
     return (_BASE_COVERAGE, _ADMIN_COVERAGE)
-
-
-def matrix_commands() -> tuple[tuple[str, ...], ...]:
-    """Return portable uv commands for every supported compatibility cell.
-
-    Returns:
-        Commands covering Python 3.12 through 3.14 and both supported Django
-        patch releases.
-    """
-    return tuple(
-        (
-            "uv",
-            "run",
-            "--locked",
-            "--python",
-            python,
-            "--with",
-            f"Django=={django}",
-            "python",
-            "tools/test_matrix.py",
-        )
-        for python in SUPPORTED_PYTHONS
-        for django in SUPPORTED_DJANGOS
-    )
 
 
 def _profile_environment(*, redis: bool) -> dict[str, str]:
@@ -191,7 +166,7 @@ def _run_for_django(version: str, *, redis: bool) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    """Run coverage or print the supported compatibility matrix.
+    """Run the coverage gate, optionally under one supported Django release.
 
     Args:
         argv: Optional command-line arguments.
@@ -210,16 +185,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         choices=SUPPORTED_DJANGOS,
         help="run the gate under one supported Django patch release",
     )
-    parser.add_argument(
-        "--show-matrix",
-        action="store_true",
-        help="print reproducible uv commands instead of running tests",
-    )
     arguments = parser.parse_args(argv)
-    if arguments.show_matrix:
-        for command in matrix_commands():
-            print(shlex.join(command))
-        return 0
     if arguments.django_version:
         return _run_for_django(arguments.django_version, redis=arguments.redis)
     return run_coverage(redis=arguments.redis)

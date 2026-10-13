@@ -13,29 +13,16 @@ from tools import test_matrix
 ROOT = Path(__file__).parents[2]
 
 
-def test_supported_matrix_matches_metadata_and_builds_portable_commands() -> None:
-    """Every supported Python and Django pair has one portable uv command."""
+def test_supported_matrix_matches_metadata() -> None:
+    """The runner and the project metadata name the same Pythons and Djangos."""
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
     policy = metadata["tool"]["dj-hyperview"]
-    commands = test_matrix.matrix_commands()
 
     assert metadata["project"]["requires-python"] == ">=3.12"
     assert tuple(policy["supported-python"]) == test_matrix.SUPPORTED_PYTHONS
     assert tuple(policy["supported-django"]) == test_matrix.SUPPORTED_DJANGOS
     assert test_matrix.SUPPORTED_PYTHONS == ("3.12", "3.13", "3.14")
     assert test_matrix.SUPPORTED_DJANGOS == ("5.2.17", "6.1.1")
-    assert len(commands) == 6
-    assert {
-        (command[command.index("--python") + 1], command[-3]) for command in commands
-    } == {
-        (python, f"Django=={django}")
-        for python in test_matrix.SUPPORTED_PYTHONS
-        for django in test_matrix.SUPPORTED_DJANGOS
-    }
-    assert all(
-        command[-2:] == ("python", "tools/test_matrix.py") for command in commands
-    )
-    assert all(str(ROOT) not in " ".join(command) for command in commands)
 
 
 def test_coverage_commands_enforce_the_aggregate_after_admin() -> None:
@@ -54,27 +41,6 @@ def test_coverage_commands_enforce_the_aggregate_after_admin() -> None:
         "tests/test_database_admin_schema_r2.py",
         "tests/test_database_admin_publication.py",
     }.issubset(admin)
-
-
-@pytest.mark.parametrize(("codes", "expected_calls"), [([7], 1), ([0, 9], 2)])
-def test_coverage_runner_stops_after_a_failed_phase(
-    monkeypatch: Any, codes: list[int], expected_calls: int, tmp_path: Path
-) -> None:
-    """Any failed phase prevents a misleading aggregate coverage result."""
-    seen: list[tuple[str, ...]] = []
-    remaining = iter(codes)
-    monkeypatch.chdir(tmp_path)
-
-    def _fake_run(
-        command: tuple[str, ...], *, check: bool, env: dict[str, str]
-    ) -> SimpleNamespace:
-        seen.append(command)
-        return SimpleNamespace(returncode=next(remaining))
-
-    monkeypatch.setattr(test_matrix.subprocess, "run", _fake_run)
-
-    assert test_matrix.run_coverage(redis=False) == codes[-1]
-    assert seen == list(test_matrix.coverage_commands()[:expected_calls])
 
 
 def test_requested_django_version_reexecutes_the_canonical_runner(
@@ -164,20 +130,6 @@ def test_django_selector_forwards_redis_and_overlay_failure(
     assert seen[0][1][test_matrix.REDIS_OPT_IN_ENV] == "1"
 
 
-def test_main_prints_the_supported_matrix(monkeypatch: Any, capsys: Any) -> None:
-    """The matrix-only path prints every portable command without execution."""
-    monkeypatch.setattr(
-        test_matrix.subprocess,
-        "run",
-        lambda *args, **kwargs: pytest.fail("matrix display executed a subprocess"),
-    )
-
-    assert test_matrix.main(["--show-matrix"]) == 0
-    assert capsys.readouterr().out.splitlines() == [
-        " ".join(command) for command in test_matrix.matrix_commands()
-    ]
-
-
 def test_main_without_selector_uses_active_environment(monkeypatch: Any) -> None:
     """The default CLI delegates directly to aggregate coverage."""
     seen: list[bool] = []
@@ -191,17 +143,20 @@ def test_main_without_selector_uses_active_environment(monkeypatch: Any) -> None
     assert seen == [False]
 
 
-def test_module_entrypoint_exits_after_showing_matrix(
+def test_module_entrypoint_exits_with_the_status_of_main(
     monkeypatch: Any, capsys: Any
 ) -> None:
     """The executable module propagates the main return code."""
-    monkeypatch.setattr(sys, "argv", ["tools.test_matrix", "--show-matrix"])
+    monkeypatch.delenv(test_matrix.REDIS_URL_ENV, raising=False)
+    monkeypatch.setattr(sys, "argv", ["tools.test_matrix", "--redis"])
 
     with pytest.raises(SystemExit) as error:
         runpy.run_path(str(ROOT / "tools" / "test_matrix.py"), run_name="__main__")
 
-    assert error.value.code == 0
-    assert len(capsys.readouterr().out.splitlines()) == 6
+    assert error.value.code == 2
+    assert (
+        capsys.readouterr().err == "Redis profile requires an explicit service URL.\n"
+    )
 
 
 @pytest.mark.parametrize("selector", ["6.1", "../../outside"])
