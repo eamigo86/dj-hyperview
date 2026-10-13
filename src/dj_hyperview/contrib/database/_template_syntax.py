@@ -37,9 +37,11 @@ class _NestingParser(Parser):
 
 def _caused_by_recursion(error: BaseException | None) -> bool:
     """Tell whether a RecursionError is anywhere in the chain of an exception."""
-    while error is not None:
+    seen: set[int] = set()
+    while error is not None and id(error) not in seen:
         if isinstance(error, RecursionError):
             return True
+        seen.add(id(error))
         error = error.__cause__ or error.__context__
     return False
 

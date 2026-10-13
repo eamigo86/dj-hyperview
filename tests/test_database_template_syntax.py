@@ -18,7 +18,10 @@ from dj_hyperview._template_lexer import (
     _unclosed_cost_exceeds,
 )
 from dj_hyperview.contrib.database import admin_validation as scanning
-from dj_hyperview.contrib.database._template_syntax import _compile_nodelist
+from dj_hyperview.contrib.database._template_syntax import (
+    _caused_by_recursion,
+    _compile_nodelist,
+)
 
 SEEDS = range(6000)
 LEXER_ATOMS = (
@@ -687,6 +690,39 @@ def test_an_unrelated_type_error_is_not_mistaken_for_recursion(
 
     with pytest.raises(TypeError, match="not about recursion"):
         _compile_nodelist(Engine(), "{{ a|upper }}", Origin("hyperview:x"))
+
+
+@pytest.mark.parametrize("link", ["__cause__", "__context__"])
+def test_a_cyclic_chain_of_causes_ends_the_search(link: str) -> None:
+    """Two exceptions that name each other; reading the link too often fails."""
+    reads: list[None] = []
+
+    def follow(self: Any) -> BaseException:
+        reads.append(None)
+        assert len(reads) < 100, "the search does not end"
+        return self.other
+
+    endless = type("Endless", (Exception,), {link: property(follow)})
+    first, second = endless(), endless()
+    first.other, second.other = second, first
+
+    assert not _caused_by_recursion(first)
+    assert len(reads) == 2
+
+
+def test_a_recursion_error_behind_other_causes_is_still_found() -> None:
+    try:
+        try:
+            raise RecursionError
+        except RecursionError as error:
+            raise TypeError("a") from error
+    except TypeError as middle:
+        outer = ValueError("b")
+        outer.__context__ = middle
+
+    assert _caused_by_recursion(outer)
+    assert not _caused_by_recursion(ValueError("unrelated"))
+    assert not _caused_by_recursion(None)
 
 
 def test_an_else_branch_does_not_deepen_the_nesting() -> None:
