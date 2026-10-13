@@ -113,8 +113,82 @@ def test_hyperview_response_parses_quoted_content_type_parameters() -> None:
     )
 
     assert response.headers["Content-Type"] == (
-        f"{HYPERVIEW_MEDIA_TYPE}; profile=mobile app; charset=utf-8"
+        f'{HYPERVIEW_MEDIA_TYPE}; profile="mobile app"; charset=utf-8'
     )
+
+
+@pytest.mark.parametrize(
+    "parameter",
+    [
+        "profile=mobile",
+        'profile="mobile app"',
+        'profile="a;b"',
+        'profile="a,b"',
+        r'profile="a\"b"',
+        r'profile="a\\b"',
+        'profile=""',
+        'profile="a=b"',
+    ],
+)
+def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> None:
+    """A parameter value that is not a token is quoted and escaped, never raw."""
+    from django.utils.http import parse_header_parameters
+
+    response = HyperviewResponse(
+        '<text xmlns="https://hyperview.org/hyperview" />',
+        content_type=f"{HYPERVIEW_MEDIA_TYPE}; {parameter}",
+    )
+
+    header = response.headers["Content-Type"]
+    assert header == f"{HYPERVIEW_MEDIA_TYPE}; {parameter}; charset=utf-8"
+    assert (
+        parse_header_parameters(header)[1]["profile"]
+        == (parse_header_parameters(f"x/y; {parameter}")[1]["profile"])
+    )
+
+
+@pytest.mark.parametrize(
+    "parameter", ["a b=c", "a(b)=c", 'profile="a\x00b"', 'profile="a\x7fb"']
+)
+def test_content_type_parameters_that_cannot_be_represented_are_rejected(
+    parameter: str,
+) -> None:
+    with pytest.raises(ValueError, match="Content-Type parameter"):
+        HyperviewResponse(
+            '<text xmlns="https://hyperview.org/hyperview" />',
+            content_type=f"{HYPERVIEW_MEDIA_TYPE}; {parameter}",
+        )
+
+
+@pytest.mark.parametrize(
+    "response_type,media_type",
+    [
+        (HyperviewResponse, HYPERVIEW_MEDIA_TYPE),
+        (HyperviewFragmentResponse, HYPERVIEW_FRAGMENT_MEDIA_TYPE),
+    ],
+)
+def test_none_content_type_is_the_default_media_type(response_type, media_type):
+    """Passing None behaves like omitting the argument, not like text/html."""
+    document = '<text xmlns="https://hyperview.org/hyperview" />'
+
+    assert response_type(document, content_type=None).headers["Content-Type"] == (
+        f"{media_type}; charset=utf-8"
+    )
+
+
+@pytest.mark.parametrize(
+    "response_type,media_type",
+    [
+        (HyperviewTemplateResponse, HYPERVIEW_MEDIA_TYPE),
+        (HyperviewFragmentTemplateResponse, HYPERVIEW_FRAGMENT_MEDIA_TYPE),
+    ],
+)
+def test_none_content_type_is_the_default_media_type_for_template_responses(
+    response_type, media_type
+):
+    response = response_type(None, "screen.xml", content_type=None)
+
+    assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
 
 
 def test_fragment_response_uses_fragment_media_type_and_utf8() -> None:
@@ -780,6 +854,24 @@ def test_gzip_transport_requires_matching_header_at_every_emission_boundary():
     assert b"".join(response) == encoded
     response["Content-Encoding"] = "br"
     with pytest.raises(TemplateValidationError):
+        bytes(response)
+
+
+@pytest.mark.parametrize("encoding", ["br", "zstd", "deflate", "gzip, br"])
+def test_non_gzip_content_encoding_is_reported_as_unsupported(encoding):
+    """The message names the real limit instead of suggesting a transport mismatch."""
+    response = HyperviewResponse(VALID_HXML, headers={"Content-Encoding": encoding})
+
+    with pytest.raises(TemplateValidationError, match="only gzip") as error:
+        bytes(response)
+    assert error.value.code == "http_encoding"
+    assert encoding not in str(error.value)
+
+
+def test_gzip_header_without_a_gzip_body_keeps_the_mismatch_message():
+    response = HyperviewResponse(VALID_HXML, headers={"Content-Encoding": "gzip"})
+
+    with pytest.raises(TemplateValidationError, match="does not match"):
         bytes(response)
 
 

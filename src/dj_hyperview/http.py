@@ -1,6 +1,7 @@
 """HTTP responses for Hyperview markup."""
 
 import codecs
+import re
 import zlib
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
@@ -28,6 +29,17 @@ _HYPERVIEW_MEDIA_TYPES = {
     HYPERVIEW_MEDIA_TYPE.casefold(): HYPERVIEW_MEDIA_TYPE,
     HYPERVIEW_FRAGMENT_MEDIA_TYPE.casefold(): HYPERVIEW_FRAGMENT_MEDIA_TYPE,
 }
+# RFC 9110 token, and the characters a quoted-string may carry (no control bytes).
+_TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
+_QUOTABLE = re.compile(r"[\t\x20-\x7e\x80-\xff]*")
+
+
+def _parameter(key: str, value: str) -> str:
+    if not _TOKEN.fullmatch(key) or not _QUOTABLE.fullmatch(value):
+        raise ValueError("Invalid Content-Type parameter")
+    if not _TOKEN.fullmatch(value):
+        value = '"' + re.sub(r'(["\\])', r"\\\1", value) + '"'
+    return f"{key}={value}"
 
 
 def _normalized_response_metadata(
@@ -46,7 +58,7 @@ def _normalized_response_metadata(
     if normalized_media_type is None:
         return content_type, "utf-8"
     parameters.pop("charset", None)
-    extra = [f"{key}={value}" for key, value in parameters.items()]
+    extra = [_parameter(key, value) for key, value in parameters.items()]
     extra.append("charset=utf-8")
     return "; ".join([normalized_media_type, *extra]), "utf-8"
 
@@ -61,6 +73,18 @@ class _HyperviewBody:
     _head_suppressed = False
     _validated_result: _ValidatedHxml | None = None
     _gzip_transport: bytes | None = None
+
+    def _initial_metadata(
+        self, content_type: str | None, charset: str | None
+    ) -> tuple[str | None, str | None]:
+        # None means "not given", as it does for Django, not "no media type".
+        if content_type is None:
+            content_type = (
+                HYPERVIEW_FRAGMENT_MEDIA_TYPE
+                if self._fragment
+                else HYPERVIEW_MEDIA_TYPE
+            )
+        return _normalized_response_metadata(content_type, charset)
 
     def _check_body_status(self, content: bytes) -> None:
         _normalized_response_metadata(self.headers.get("Content-Type"), self.charset)
@@ -211,9 +235,11 @@ class _HyperviewBody:
         if self.status_code in _BODYLESS_STATUSES:
             return content
         encoding = self.headers.get("Content-Encoding", "").lower()
-        if (self._gzip_transport is not None and encoding != "gzip") or (
-            self._gzip_transport is None and encoding not in ("", "identity")
-        ):
+        if encoding not in ("", "identity", "gzip"):
+            raise TemplateValidationError(
+                "http_encoding", "only gzip Content-Encoding is supported"
+            )
+        if (self._gzip_transport is not None) != (encoding == "gzip"):
             raise TemplateValidationError(
                 "http_encoding", "Content-Encoding does not match response transport"
             )
@@ -262,9 +288,10 @@ class HyperviewResponse(_HyperviewBody, HttpResponse):
             **kwargs: Additional Django response options.
 
         Raises:
-            ValueError: If a Hyperview response selects a non-UTF-8 encoding.
+            ValueError: If a Hyperview response selects a non-UTF-8 encoding or a
+                Content-Type parameter cannot be represented.
         """
-        content_type, charset = _normalized_response_metadata(content_type, charset)
+        content_type, charset = self._initial_metadata(content_type, charset)
         self._head_request = request is not None and request.method == "HEAD"
         super().__init__(content, content_type=content_type, charset=charset, **kwargs)
 
@@ -296,9 +323,10 @@ class HyperviewTemplateResponse(_HyperviewBody, TemplateResponse):
             headers: Optional response headers.
 
         Raises:
-            ValueError: If a Hyperview response selects a non-UTF-8 encoding.
+            ValueError: If a Hyperview response selects a non-UTF-8 encoding or a
+                Content-Type parameter cannot be represented.
         """
-        content_type, charset = _normalized_response_metadata(content_type, charset)
+        content_type, charset = self._initial_metadata(content_type, charset)
         self._head_request = request is not None and request.method == "HEAD"
         self._initializing_hyperview_template = True
         try:
@@ -406,7 +434,8 @@ class HyperviewFragmentResponse(HyperviewResponse):
 
         Raises:
             TemplateValidationError: If the fragment XML or root is invalid.
-            ValueError: If a Hyperview response selects a non-UTF-8 encoding.
+            ValueError: If a Hyperview response selects a non-UTF-8 encoding or a
+                Content-Type parameter cannot be represented.
         """
         super().__init__(
             content,
@@ -446,7 +475,8 @@ class HyperviewFragmentTemplateResponse(HyperviewTemplateResponse):
             headers: Optional response headers.
 
         Raises:
-            ValueError: If a Hyperview response selects a non-UTF-8 encoding.
+            ValueError: If a Hyperview response selects a non-UTF-8 encoding or a
+                Content-Type parameter cannot be represented.
         """
         super().__init__(
             request=request,

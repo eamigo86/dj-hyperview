@@ -67,6 +67,14 @@ restriction. A custom `content_type` does not disable validation. Content and
 XML declarations must use UTF-8; an incompatible response charset raises
 `ValueError`.
 
+`content_type=None` is the same as leaving the argument out: the response uses
+the Hyperview media type of its class, not Django's `text/html`. When you pass a
+Hyperview media type with parameters, the response rebuilds the header with
+`charset=utf-8`. A parameter value that is not a plain token, such as
+`profile="mobile app"`, is quoted and escaped as RFC 9110 requires. A parameter
+name that is not a token, or a value with control characters, raises
+`ValueError`. Other media types are passed through unchanged.
+
 Constructors and later `content` assignment validate the complete candidate
 before replacing the body. `write()` appends to the existing document;
 `writelines()` assembles all chunks once and validates the combined result.
@@ -130,6 +138,13 @@ Django briefly reads the compressed body before setting its encoding header;
 final iteration and serialization require `Content-Encoding: gzip`. HEAD can
 then suppress transport without losing the validated representation. This does
 not add another XML parse or XSD pass unless the validation contract has changed.
+
+Only `gzip` (or no encoding, or `identity`) is supported. Any other
+`Content-Encoding`, such as `br` or `zstd`, raises `TemplateValidationError`
+with code `http_encoding` and the message "only gzip Content-Encoding is
+supported" when the response is iterated or serialized, because the guard
+cannot prove that such a body still carries the validated document. Remove the
+header, or compress with gzip.
 
 To replace or append XML after compression, first remove `Content-Encoding`.
 The normal mutation then validates a complete candidate before atomically

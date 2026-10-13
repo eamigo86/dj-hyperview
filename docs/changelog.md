@@ -150,6 +150,20 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
+- `content_type=None` on `HyperviewResponse`, `HyperviewTemplateResponse` and the
+  fragment classes now behaves like omitting the argument and yields the
+  Hyperview media type of the class. Before, it fell through to Django's default
+  `text/html`.
+- A Hyperview `Content-Type` parameter whose value needs quoting, such as
+  `profile="mobile app"`, is now written back quoted and escaped. Before, the
+  rebuilt header lost the quotes (`profile=mobile app`), which is not a valid
+  parameter. A parameter name that is not an RFC 9110 token, or a value with
+  control characters, now raises `ValueError` instead of producing a malformed
+  header.
+- A `Content-Encoding` other than `gzip` or `identity` now fails at iteration and
+  serialization with the message "only gzip Content-Encoding is supported". Before,
+  it reported only that the header does not match the transport, which hid that the
+  encoding itself is unsupported. The error code `http_encoding` is unchanged.
 - `dj_hyperview.loaders.ResolverLoader` can be named in `TEMPLATES`
   `OPTIONS["loaders"]`. Its `resolver` and `validation` arguments now default to
   the resolver and validation limits built from `HYPERVIEW`; before, Django's
