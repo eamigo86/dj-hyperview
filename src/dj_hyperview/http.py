@@ -72,7 +72,12 @@ def _parameter(key: str, value: str) -> str:
 def _normalized_response_metadata(
     content_type: str | None, charset: str | None
 ) -> tuple[str | None, str | None]:
-    media_type, parameters = parse_header_parameters(content_type or "")
+    # Django 5.2 lets LookupError escape for an unknown extended-value encoding,
+    # while 6.1 raises its own ValueError; both mean an unusable parameter.
+    try:
+        media_type, parameters = parse_header_parameters(content_type or "")
+    except (LookupError, ValueError) as error:
+        raise ValueError("Invalid Content-Type parameter") from error
     for declared in (charset or "utf-8", parameters.get("charset", "utf-8")):
         if not _is_utf8_encoding_name(declared):
             raise ValueError("Hyperview responses require UTF-8")

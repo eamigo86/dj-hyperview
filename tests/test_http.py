@@ -175,6 +175,9 @@ def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> No
         r"\";a**=",
         r"\"a;a*='a",
         r'""\";a*=',
+        # An unknown encoding in an extended value: Django 5.2 raises LookupError.
+        "a*=''%",
+        "a*=bogus''%41",
         # Django and email read the quote after a trailing backslash as escaped.
         r'profile="a\\"',
         r'profile="a\\\\"',

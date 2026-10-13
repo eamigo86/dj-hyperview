@@ -261,7 +261,10 @@ on, and says how to migrate.
   trailing backslash as escaped, so such a value would come back changed and
   swallow the next parameter, and Django drops the star of an extended name and
   decodes its value, so `a*=x` would come back as `a=x`. The check splits the header
-  the way Django does, so a stray quote cannot hide a star from it. **A caller that
+  the way Django does, so a stray quote cannot hide a star from it. A header that
+  Django cannot parse, such as an extended value with an unknown encoding (which
+  Django 5.2 reports as `LookupError`), raises the same `ValueError` on both
+  supported Django versions. **A caller that
   passes such a parameter must drop it or give it a value that fits: printable
   Latin-1 characters, and no backslash at the end.**
 - Source that nests blocks more than 100 levels deep, such as `{% if %}`, no longer
