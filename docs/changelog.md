@@ -61,7 +61,8 @@ This page records user-visible release changes, including unpublished attempts.
   draft with one include of 40,000 `{{ ` took 10 s and four such includes took
   42 s; they now take 0.3 s. The composed source is bounded as well: expansion
   stops, with the informational note `schema_static_incomplete`, once the draft and
-  its includes together exceed `VALIDATION.MAX_BYTES`. A draft with 64 includes of
+  its includes together exceed `VALIDATION.MAX_BYTES`, counted in UTF-8 bytes as the
+  limit is everywhere else. A draft with 64 includes of
   a 990 KB template used 3.3 GB and now uses 79 MB.
 - Limit the work that unclosed template delimiters cost when a stored template is
   compiled, using the new stable validation code `max_unclosed`. Django's lexer

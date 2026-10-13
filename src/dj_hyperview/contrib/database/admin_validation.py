@@ -387,7 +387,7 @@ def _include_error(
 class _IncludeBudget:
     """What literal includes may still consume across one draft and its includes."""
 
-    # Characters of source resolved so far, the draft included.
+    # Bytes of source resolved so far, the draft included, as MAX_BYTES counts them.
     size: int
     edges: int = 0
     exhausted: bool = False
@@ -467,7 +467,7 @@ def _expand_literal_includes(
                 )
             )
             continue
-        budget.size += len(resolved.content)
+        budget.size += len(resolved.content.encode())
         if budget.size > engine.validation.max_bytes:
             # The composed source would be larger than rendering accepts.
             budget.exhausted = True
@@ -858,7 +858,7 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
             name,
             content,
             stack=(name,),
-            budget=_IncludeBudget(size=len(content)),
+            budget=_IncludeBudget(size=len(content.encode())),
         )
     except TemplateSyntaxError as error:
         return {

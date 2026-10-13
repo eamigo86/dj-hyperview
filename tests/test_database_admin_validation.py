@@ -1919,6 +1919,28 @@ def test_include_nested_too_deeply_is_reported_for_the_target_and_expansion_goes
     assert result["ok"] is False
 
 
+@pytest.mark.django_db
+def test_include_size_limit_counts_bytes_not_characters(
+    admin_client, monkeypatch, tmp_path
+) -> None:
+    """Counting characters would let multi-byte text reach 4 x MAX_BYTES."""
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "wide.xml").write_text(f"<text>{'é' * 400}</text>", encoding="utf-8")
+    calls = _count_resolutions(monkeypatch)
+    source = (
+        f'<view xmlns="{HV}">' + '{% include "partials/wide.xml" %}' * 6 + "</view>"
+    )
+
+    with override_settings(HYPERVIEW=_bounded_includes_config(tmp_path, 1000)):
+        result = _validate(admin_client, source)
+
+    assert len(calls) == 1
+    assert [(item["code"], item["severity"]) for item in result["diagnostics"]] == [
+        ("schema_static_incomplete", "info")
+    ]
+
+
 NAMESPACE_BOUNDARY_PASSES = [
     pytest.param(rebinding_path(32), id="32-declarations"),
     pytest.param(
