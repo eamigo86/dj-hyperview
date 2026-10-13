@@ -110,6 +110,7 @@ def test_custom_catalog_rejects_unsafe_schema_references(
             get_hyperview_catalog()
 
     assert error.value.issues == (
-        "dj_hyperview.E012: EXTRA_SCHEMAS[0] must be a valid local XSD 1.1 schema.",
+        "dj_hyperview.E012: EXTRA_SCHEMAS[0] must be a valid local XSD 1.1 schema "
+        "(reason: forbidden_schema_reference).",
     )
     assert location not in str(error.value)

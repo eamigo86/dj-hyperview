@@ -217,6 +217,18 @@ compiler paths also disable entity expansion and reject compilation warnings,
 including warnings on imported schemas, rather than silently dropping a
 configured dependency and validating against an incomplete registry.
 
+A schema that fails `dj_hyperview.E012` is reported with its cause at the end of
+the message:
+
+```text
+EXTRA_SCHEMAS[0] must be a valid local XSD 1.1 schema (reason: forbidden_declaration).
+```
+
+The reason is the stable validation code of the failure (`schema_invalid`,
+`forbidden_declaration`, `forbidden_schema_reference` or `schema_dependency`),
+`unreadable` when the file is missing or cannot be read, or `not_a_path` when the
+entry is not a path. It never contains a file path.
+
 Do not use `xs:override` in `EXTRA_SCHEMAS`: it is rejected with the stable
 `forbidden_schema_reference` validation code (`dj_hyperview.E012` during
 configuration checks). The only allowed override belongs to the package's fixed

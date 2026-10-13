@@ -128,8 +128,8 @@ and are not reported twice.
 | `CACHE.FAILURE_MODE` | `bypass` or `raise` | `"bypass"` | `bypass` falls back to authoritative sources after ordinary cache failures; `raise` reports `SourceUnavailable`. Invalidation remains fail-closed in both modes. |
 | `VALIDATION` | Mapping | `{}` | Resource limits for mandatory source safety and automatic rendered validation. |
 | `VALIDATION.MAX_BYTES` | Positive integer | 1,000,000 bytes | Maximum UTF-8 size accepted for raw source and the final rendered document. |
-| `VALIDATION.MAX_DEPTH` | Positive integer | 64 levels | Maximum final XML element depth, with an absolute maximum of 256 imposed by the parser safety ceiling. |
-| `VALIDATION.MAX_NODES` | Positive integer | 20,000 nodes | Maximum number of elements in the final parsed XML document. |
+| `VALIDATION.MAX_DEPTH` | Positive integer | 64 levels | Maximum depth of the final parsed XML tree, with an absolute maximum of 256 imposed by the parser safety ceiling. A comment or processing instruction is a node one level below its parent, so it counts too. |
+| `VALIDATION.MAX_NODES` | Positive integer | 20,000 nodes | Maximum number of nodes in the final parsed XML document: elements, comments and processing instructions. Text content is not a node. |
 | `ADMIN` | Mapping | `{}` | Optional Django Admin enhancements. |
 | `ADMIN.EDITOR` | Boolean | `False` | Replace the database template textarea with the optional HXML-aware Ace editor with one conservative Format and Validate action. Requires the `editor` extra and `django_ace` in `INSTALLED_APPS`. |
 | `ADMIN.PERMISSION` | Callable or dotted callable path | Superuser-only callback | Authoritative mutation policy for adding, changing, and deleting stored templates. The callable receives the current `HttpRequest` and must return the literal boolean `True`; exceptions and non-boolean results deny access. |

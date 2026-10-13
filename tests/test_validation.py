@@ -1,3 +1,5 @@
+import random
+
 import pytest
 from django.test import RequestFactory, override_settings
 
@@ -8,7 +10,10 @@ from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.http import HyperviewTemplateResponse
 from dj_hyperview.resolver import TemplateResolver
 from dj_hyperview.validation import (
+    IGNORED_BLOCKS,
     _contains_forbidden_declaration,
+    _django_comment_end,
+    _inline_django_comment_end,
     _rendered_hxml_text,
     validate_hxml,
     validate_rendered_hxml,
@@ -37,20 +42,148 @@ def test_validate_hxml_rejects_malformed_xml_with_a_stable_error():
     assert str(error) == "HXML validation failed [malformed_xml]: invalid XML"
 
 
+class TrackedDocument(str):
+    """A document that counts how often the scanner asks where a token starts."""
+
+    startswith_calls = 0
+
+    def startswith(self, *args, **kwargs):
+        self.startswith_calls += 1
+        return super().startswith(*args, **kwargs)
+
+
 def test_declaration_scan_has_a_constant_time_common_path() -> None:
     """Documents without declaration literals avoid the block-aware scan."""
-
-    class TrackedDocument(str):
-        startswith_calls = 0
-
-        def startswith(self, *args, **kwargs):
-            self.startswith_calls += 1
-            return super().startswith(*args, **kwargs)
-
     document = TrackedDocument(f"<view>{'content' * 10_000}</view>")
 
     assert _contains_forbidden_declaration(document) is False
     assert document.startswith_calls == 0
+
+
+@pytest.mark.parametrize("template_source", [False, True])
+def test_declaration_scan_visits_only_candidate_positions(
+    template_source: bool,
+) -> None:
+    """A literal inside a comment sends the scan down the block-aware path.
+
+    Only a few positions can start anything the scan acts on. It used to test every
+    character there: about 1 MB took 215 ms rendered and 373 ms as template source.
+    """
+    document = TrackedDocument(
+        "<!-- <!DOCTYPE -->" + "<text>content {{ value }}</text>" * 20_000
+    )
+
+    assert (
+        _contains_forbidden_declaration(document, template_source=template_source)
+        is False
+    )
+    assert document.startswith_calls < 50
+
+
+def reference_contains_forbidden_declaration(
+    document: str, *, template_source: bool = False
+) -> bool:
+    """The scanner as it was before it jumped between candidates, one index at a time.
+
+    The oracle of the differential test below. The Django comment helpers are
+    shared with the implementation, so this pins only the scanning loop.
+    """
+    if "<!DOCTYPE" not in document and "<!ENTITY" not in document:
+        return False
+    positions: dict[str, int] = {}
+
+    def find(marker: str, start: int) -> int:
+        position = positions.get(marker)
+        if position is None or 0 <= position < start:
+            position = positions[marker] = document.find(marker, start)
+        return position
+
+    index = 0
+    while index < len(document):
+        for opening, closing in IGNORED_BLOCKS:
+            if document.startswith(opening, index):
+                end = find(closing, index + len(opening))
+                index = len(document) if end < 0 else end + len(closing)
+                break
+        else:
+            comment_end = None
+            if template_source:
+                comment_end = _inline_django_comment_end(document, index, find)
+                if comment_end is None:
+                    comment_end = _django_comment_end(document, index, find)
+            if comment_end is not None:
+                index = comment_end
+            elif document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
+                return True
+            else:
+                index += 1
+    return False
+
+
+SCAN_TOKENS = [
+    "<!--",
+    "-->",
+    "<![CDATA[",
+    "]]>",
+    "<?",
+    "?>",
+    "<!DOCTYPE",
+    "<!ENTITY",
+    "<!",
+    "<",
+    "{",
+    "#",
+    "%",
+    "{#",
+    "#}",
+    "{%",
+    "%}",
+    "{% comment %}",
+    "{%comment%}",
+    '{% comment "note" %}',
+    "{% endcomment %}",
+    "{% endcomment%}",
+    "\n",
+    "\r",
+    " ",
+    "text",
+    "<view>",
+    "</view>",
+]
+
+
+def random_scan_document(rng: random.Random) -> str:
+    """Join delimiters, declarations and plain runs in an order no author would."""
+    parts = []
+    for _ in range(rng.randint(1, 16)):
+        if rng.random() < 0.2:
+            parts.append("x" * rng.randint(1, 40))
+        else:
+            parts.append(rng.choice(SCAN_TOKENS))
+    return "".join(parts)
+
+
+def test_declaration_scan_matches_the_character_by_character_scanner() -> None:
+    """Jumping between candidates is equivalent to testing every index."""
+    rng = random.Random(20261013)
+    with_literal = 0
+    outcomes: set[tuple[bool, bool]] = set()
+    for _ in range(4_000):
+        document = random_scan_document(rng)
+        with_literal += "<!DOCTYPE" in document or "<!ENTITY" in document
+        for template_source in (False, True):
+            expected = reference_contains_forbidden_declaration(
+                document, template_source=template_source
+            )
+            actual = _contains_forbidden_declaration(
+                document, template_source=template_source
+            )
+            assert actual is expected, (template_source, document)
+            outcomes.add((template_source, expected))
+
+    # The sample must reach the block-aware path and both of its answers.
+    assert with_literal > 1_000
+    assert outcomes == {(False, False), (False, True), (True, False), (True, True)}
 
 
 @pytest.mark.parametrize("max_depth", [256])
@@ -64,20 +197,48 @@ def test_libxml_depth_ceiling_uses_the_public_max_depth_code(max_depth) -> None:
     )
 
 
-def test_parser_depth_wording_variants_keep_the_public_error_code(
+RESOURCE_LIMIT = validation_module.etree.ErrorTypes.ERR_RESOURCE_LIMIT
+
+
+@pytest.mark.parametrize(
+    ("message", "libxml_code", "public_code"),
+    [
+        # Libxml message-prefix changes do not alter the stable package code.
+        ("Maximum DEPTH limit reached", RESOURCE_LIMIT, "max_depth"),
+        # A resource limit that is not about depth is not MAX_DEPTH.
+        ("xmlSAX2Characters: huge text node", RESOURCE_LIMIT, "malformed_xml"),
+        # Only the resource-limit code classifies a parser error as a depth failure.
+        ("Maximum DEPTH limit reached", 0, "malformed_xml"),
+    ],
+)
+def test_parser_errors_map_to_max_depth_only_for_depth_resource_limits(
     monkeypatch: pytest.MonkeyPatch,
+    message: str,
+    libxml_code: int,
+    public_code: str,
 ) -> None:
-    """Libxml message-prefix changes do not alter the stable package code."""
-
-    def reject_depth(*args: object, **kwargs: object) -> None:
+    def reject(*args: object, **kwargs: object) -> None:
         del args, kwargs
-        raise validation_module.etree.XMLSyntaxError(
-            "Maximum DEPTH limit reached", 0, 0, 0
-        )
+        raise validation_module.etree.XMLSyntaxError(message, libxml_code, 0, 0)
 
-    monkeypatch.setattr(validation_module.etree, "fromstring", reject_depth)
+    monkeypatch.setattr(validation_module.etree, "fromstring", reject)
 
-    assert_validation_error("max_depth", lambda: validate_hxml("<view />"))
+    assert_validation_error(public_code, lambda: validate_hxml("<view />"))
+
+
+@pytest.mark.parametrize(
+    "document",
+    [
+        "<depth></deep>",
+        "<view depth='1' depth='2' />",
+        "<view><depth></view></depth>",
+    ],
+)
+def test_syntax_errors_that_merely_mention_depth_are_malformed_xml(document) -> None:
+    """libxml2 echoes names into messages, so a tag or attribute can say "depth"."""
+    error = assert_validation_error("malformed_xml", lambda: validate_hxml(document))
+
+    assert error.message == "invalid XML"
 
 
 @pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
@@ -209,6 +370,26 @@ def test_validate_hxml_denies_dtd_external_and_expanding_entities(document):
 )
 def test_validate_hxml_enforces_configured_limits(document, config, code):
     assert_validation_error(code, lambda: validate_hxml(document, config=config))
+
+
+@pytest.mark.parametrize(
+    ("body", "limit", "needed"),
+    [
+        ("<!-- note --><?audit data?>", "max_nodes", 3),
+        ("<text><!-- note --></text>", "max_depth", 3),
+        ("<text><?audit data?></text>", "max_depth", 3),
+    ],
+)
+def test_comments_and_processing_instructions_count_toward_the_limits(
+    body: str, limit: str, needed: int
+) -> None:
+    """MAX_NODES and MAX_DEPTH bound every node, not only elements: the safer bound."""
+    document = f"<view xmlns='https://hyperview.org/hyperview'>{body}</view>"
+
+    exact = ValidationSettings(**{limit: needed})
+    assert validate_hxml(document, config=exact) == document
+    one_less = ValidationSettings(**{limit: needed - 1})
+    assert_validation_error(limit, lambda: validate_hxml(document, config=one_less))
 
 
 def test_engine_safe_render_escapes_context_and_validates_output():

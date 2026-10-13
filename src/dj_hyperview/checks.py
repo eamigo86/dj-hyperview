@@ -46,13 +46,30 @@ else:
     _SIGNATURE_OPTIONS = {}
 
 
-def _error(code: str, path: str, requirement: str, hint: str | None = None) -> Error:
+def _error(
+    code: str,
+    path: str,
+    requirement: str,
+    hint: str | None = None,
+    cause: str | None = None,
+) -> Error:
+    """Build a check error; cause is a short, path-free reason for the message."""
+    detail = f" ({cause})" if cause else ""
     return Error(
-        f"{path} {requirement}.",
+        f"{path} {requirement}{detail}.",
         hint=hint or f"Correct {path}: it {requirement}.",
         obj=SETTING,
         id=f"dj_hyperview.{code}",
     )
+
+
+def _import_cause(error: Exception) -> str:
+    """Name the exception class of a failed import, never its text.
+
+    The text of an import error can carry file system paths or values from the
+    imported module, so only the class is reported.
+    """
+    return f"import raised {type(error).__name__}"
 
 
 def _unknown_keys(
@@ -111,15 +128,18 @@ def _check_template_dirs(value: Any, path: str = "TEMPLATE_DIRS") -> list[CheckM
     return errors
 
 
-def _backend(path: Any) -> Any:
-    """Return the callable a dotted path names, or None when it is unusable."""
+def _backend(path: Any) -> tuple[Any, str | None]:
+    """Return the callable a dotted path names, or None when it is unusable.
+
+    The second item says why an import failed, or is None when nothing raised.
+    """
     if not isinstance(path, str) or "." not in path:
-        return None
+        return None, None
     try:
         backend = import_string(path)
-    except Exception:
-        return None
-    return backend if callable(backend) else None
+    except Exception as error:
+        return None, _import_cause(error)
+    return (backend if callable(backend) else None), None
 
 
 def _options_match(backend: Any, options: Mapping[str, Any]) -> bool:
@@ -156,7 +176,7 @@ def _check_sources(value: Any) -> list[CheckMessage]:
             continue
         backend = source.get("BACKEND")
         options = source.get("OPTIONS", {})
-        backend_class = _backend(backend)
+        backend_class, import_cause = _backend(backend)
         if (
             _is_filesystem_backend(backend)
             and isinstance(options, Mapping)
@@ -182,7 +202,11 @@ def _check_sources(value: Any) -> list[CheckMessage]:
                         )
                     )
         elif backend_class is None:
-            errors.append(_error("E003", f"{path}.BACKEND", "must be importable"))
+            errors.append(
+                _error(
+                    "E003", f"{path}.BACKEND", "must be importable", cause=import_cause
+                )
+            )
         if not isinstance(options, Mapping):
             errors.append(_error("E003", f"{path}.OPTIONS", "must be a mapping"))
         elif backend_class is not None and not _options_match(backend_class, options):
@@ -347,23 +371,46 @@ def _check_validation(value: Any) -> list[CheckMessage]:
     return errors
 
 
-def _check_extra_schemas(value: Any) -> list[CheckMessage]:
-    if not _sequence(value):
-        return [_error("E012", "EXTRA_SCHEMAS", "must be a sequence of local files")]
+def _extra_schema_cause(configured: Any) -> str | None:
+    """Return a stable, path-free reason an extra schema is unusable, or None.
+
+    The reason is the validation code of the failure, "unreadable" when the file
+    cannot be read, or "not_a_path" when the entry is not a path at all.
+    """
     from .exceptions import TemplateValidationError
     from .schema import _compile_schema, _guard_local_references
 
+    try:
+        schema_path = Path(configured)
+    except TypeError:
+        return "not_a_path"
+    try:
+        if not schema_path.is_file():
+            return "unreadable"
+        _guard_local_references(schema_path)
+        _compile_schema(schema_path)
+    except TemplateValidationError as error:
+        return error.code
+    except OSError:
+        return "unreadable"
+    return None
+
+
+def _check_extra_schemas(value: Any) -> list[CheckMessage]:
+    if not _sequence(value):
+        return [_error("E012", "EXTRA_SCHEMAS", "must be a sequence of local files")]
     errors = []
     for index, configured in enumerate(value):
-        path = f"EXTRA_SCHEMAS[{index}]"
-        try:
-            schema_path = Path(configured)
-            if not schema_path.is_file():
-                raise OSError
-            _guard_local_references(schema_path)
-            _compile_schema(schema_path)
-        except (OSError, TypeError, TemplateValidationError):
-            errors.append(_error("E012", path, "must be a valid local XSD 1.1 schema"))
+        cause = _extra_schema_cause(configured)
+        if cause is not None:
+            errors.append(
+                _error(
+                    "E012",
+                    f"EXTRA_SCHEMAS[{index}]",
+                    "must be a valid local XSD 1.1 schema",
+                    cause=f"reason: {cause}",
+                )
+            )
     return errors
 
 
@@ -395,11 +442,12 @@ def _check_admin(value: Any) -> list[CheckMessage]:
             )
 
     permission = value.get("PERMISSION", lambda request: True)
+    import_cause = None
     if isinstance(permission, str):
         try:
             permission = import_string(permission)
-        except Exception:
-            permission = None
+        except Exception as error:
+            permission, import_cause = None, _import_cause(error)
     accepts_request = callable(permission)
     if accepts_request:
         try:
@@ -412,6 +460,7 @@ def _check_admin(value: Any) -> list[CheckMessage]:
                 "E017",
                 "ADMIN.PERMISSION",
                 "must be a callable accepting request or a dotted path to one",
+                cause=import_cause,
             )
         )
     return errors

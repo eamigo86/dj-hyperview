@@ -104,6 +104,37 @@ def test_upstream_0111_resources_have_published_checksums_and_legacy_is_stable()
     )
 
 
+def test_active_revision_is_named_once_and_every_loader_follows_it():
+    from dj_hyperview import _schema_extensions, schema
+    from dj_hyperview import _schema_revision as active
+
+    root = active.ACTIVE_SCHEMA_ROOT
+    manifest = json.loads((root / "manifest.json").read_text())
+    assert manifest["upstream_version"] == active.SCHEMA_VERSION
+    assert manifest["schema_profile"] == (
+        f"compatible-{active.SCHEMA_VERSION}-{active.SCHEMA_REVISION}"
+    )
+    assert schema.HYPERVIEW_SCHEMA_VERSION == active.SCHEMA_VERSION
+    assert schema._SCHEMA_REVISION == (
+        f"hyperview-{active.SCHEMA_VERSION}-corrected-{active.SCHEMA_REVISION}"
+    )
+    assert schema._SCHEMA_ROOT / active.SCHEMA_REVISION == root
+    shipped = json.loads((root / "catalog.json").read_text())["elements"]
+    assert _schema_extensions._standards() == shipped
+
+
+def test_no_other_module_hard_codes_the_active_revision():
+    """Bumping the schema is one edit; a stale copy would load the old files."""
+    package = Path(__file__).resolve().parents[1] / "src/dj_hyperview"
+    offenders = sorted(
+        path.name
+        for path in package.rglob("*.py")
+        if path.name != "_schema_revision.py"
+        and any(literal in path.read_text() for literal in ('"0.111.0"', '"r3"'))
+    )
+    assert offenders == []
+
+
 def test_corrected_r3_catalog_and_manifest_match_the_active_validator():
     current = SCHEMAS / "0.111.0"
     revision = current / "r3"

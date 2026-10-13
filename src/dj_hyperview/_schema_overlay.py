@@ -65,7 +65,9 @@ def _generated_overlay(
     """Create a trusted in-memory overlay; never accept caller-provided XSD.
 
     Args:
-        schema_path: Fixed bundled r2 entry point.
+        schema_path: Entry point of the active corrected revision. Its version
+            directory, one level up, holds the unchanged core, alert and scroll
+            schemas that the overlay imports and overrides.
         extensions: Checked immutable additions with no standard collisions.
 
     Returns:

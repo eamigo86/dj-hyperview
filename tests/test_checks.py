@@ -351,6 +351,57 @@ def test_extra_schemas_must_be_a_sequence_of_local_files(extra_schemas) -> None:
     ] == ["dj_hyperview.E012"]
 
 
+XS = "http://www.w3.org/2001/XMLSchema"
+
+
+@pytest.mark.parametrize(
+    ("content", "cause"),
+    [
+        ("not xml", "schema_invalid"),
+        (f'<schema xmlns="{XS}"><element/></schema>', "schema_invalid"),
+        (f'<!DOCTYPE schema><schema xmlns="{XS}"/>', "forbidden_declaration"),
+        (
+            f'<schema xmlns="{XS}"><include schemaLocation="https://example.test/a.xsd"/>'
+            "</schema>",
+            "forbidden_schema_reference",
+        ),
+        (
+            f'<schema xmlns="{XS}"><override schemaLocation="other.xsd"/></schema>',
+            "forbidden_schema_reference",
+        ),
+    ],
+)
+def test_extra_schema_error_names_the_stable_cause(
+    tmp_path: Path, content: str, cause: str
+) -> None:
+    """One message for every failure hid whether the file, a rule or the XSD failed."""
+    schema = tmp_path / "app.xsd"
+    schema.write_text(content, encoding="utf-8")
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [schema]}):
+        messages = [m for m in check_hyperview_settings() if m.id.endswith("E012")]
+
+    assert [message.msg for message in messages] == [
+        f"EXTRA_SCHEMAS[0] must be a valid local XSD 1.1 schema (reason: {cause})."
+    ]
+    assert str(tmp_path) not in messages[0].msg + messages[0].hint
+
+
+@pytest.mark.parametrize(
+    ("configured", "cause"), [("missing/app.xsd", "unreadable"), (7, "not_a_path")]
+)
+def test_unusable_extra_schema_entry_is_unreadable_or_not_a_path(
+    tmp_path: Path, configured: object, cause: str
+) -> None:
+    entry = tmp_path / configured if isinstance(configured, str) else configured
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [entry]}):
+        messages = [m for m in check_hyperview_settings() if m.id.endswith("E012")]
+
+    assert [message.msg for message in messages] == [
+        f"EXTRA_SCHEMAS[0] must be a valid local XSD 1.1 schema (reason: {cause})."
+    ]
+    assert str(tmp_path) not in messages[0].msg
+
+
 def test_valid_extra_schema_passes_startup_checks(tmp_path: Path) -> None:
     """A local XSD 1.1 extension is accepted when the schema extra is installed."""
     schema = tmp_path / "app.xsd"
@@ -689,6 +740,61 @@ def test_unusable_backend_or_options_report_only_their_own_error(configured) -> 
     """E024 needs an importable backend and a mapping of options."""
     with override_settings(HYPERVIEW=configured):
         assert set(_ids(check_hyperview_settings())) == {"E003"}
+
+
+@pytest.fixture
+def exploding_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
+    """Return an importable module whose import raises with a secret in its message."""
+    (tmp_path / "exploding_backend_module.py").write_text(
+        'raise RuntimeError("secret-token")\n', encoding="utf-8"
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    return "exploding_backend_module"
+
+
+@pytest.mark.parametrize(
+    ("backend", "cause"),
+    [
+        ("missing.Source", "ModuleNotFoundError"),
+        (f"{STUB_SOURCE}Missing", "ImportError"),
+        ("exploding_backend_module.Source", "RuntimeError"),
+        (1, None),
+    ],
+)
+def test_unimportable_backend_names_the_exception_class_only(
+    exploding_module: str, backend: object, cause: str | None
+) -> None:
+    """The class name helps diagnosis; the message text can carry secrets or paths."""
+    with override_settings(HYPERVIEW={"SOURCES": [{"BACKEND": backend}]}):
+        messages = [m for m in check_hyperview_settings() if m.id.endswith("E003")]
+
+    suffix = "" if cause is None else f" (import raised {cause})"
+    assert [message.msg for message in messages] == [
+        f"SOURCES[0].BACKEND must be importable{suffix}."
+    ]
+    assert "secret-token" not in messages[0].msg + messages[0].hint
+
+
+@pytest.mark.parametrize(
+    ("permission", "cause"),
+    [
+        ("missing.permission_callback", "ModuleNotFoundError"),
+        ("exploding_backend_module.allow", "RuntimeError"),
+        (object(), None),
+    ],
+)
+def test_unimportable_admin_permission_names_the_exception_class_only(
+    exploding_module: str, permission: object, cause: str | None
+) -> None:
+    with override_settings(HYPERVIEW={"ADMIN": {"PERMISSION": permission}}):
+        messages = [m for m in check_hyperview_settings() if m.id.endswith("E017")]
+
+    suffix = "" if cause is None else f" (import raised {cause})"
+    assert [message.msg for message in messages] == [
+        "ADMIN.PERMISSION must be a callable accepting request or a dotted path "
+        f"to one{suffix}."
+    ]
+    assert "secret-token" not in messages[0].msg + messages[0].hint
 
 
 @pytest.mark.parametrize("name", ["MAX_BYTES", "MAX_DEPTH", "MAX_NODES"])

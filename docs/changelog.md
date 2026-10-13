@@ -109,6 +109,16 @@ This page records user-visible release changes, including unpublished attempts.
   system check with `dj_hyperview.E009`, the rule `ValidationSettings` already
   enforced. Before, the check accepted it and the first read of the settings
   raised a bare `ValueError`.
+- A document is reported as `max_depth` only when libxml2 stops with a
+  resource-limit error that mentions depth. Before, any syntax error whose message
+  contained "depth" was reported as `max_depth`, so a mismatched end tag in an
+  element named `depth`, or a duplicated attribute named `depth`, hid the real
+  `malformed_xml` diagnosis.
+- Checking a document for DTD and entity declarations is much faster after a
+  declaration literal appears anywhere in it, even inside a comment or CDATA
+  section. The scan used to test every character: about 1 MB took 215 ms rendered
+  and 373 ms as template source, and now takes a few milliseconds. The result is
+  unchanged.
 - The `ADMIN.PERMISSION` system check no longer crashes with `NameError` on
   Python 3.14 when the permission callable annotates a parameter with a type that
   is imported only under `TYPE_CHECKING`.
@@ -155,6 +165,12 @@ This page records user-visible release changes, including unpublished attempts.
   3.12, 3.13 and 3.14 remain the tested set, declared by the classifiers and the
   CI matrix; newer versions are not blocked by the package metadata but are not
   tested yet. `uv.lock` was regenerated and now also records Python 3.15 wheels.
+- `dj_hyperview.E012` now ends with the cause, such as `(reason: schema_invalid)`,
+  and `dj_hyperview.E003` and `dj_hyperview.E017` add `(import raised
+  ModuleNotFoundError)` when the dotted path could not be imported. Before, a
+  missing file, an invalid schema, a forbidden reference and a DTD all produced the
+  same E012 message. The cause is a stable code or an exception class name; file
+  paths and exception messages are never included.
 - A rendered document that contains a character XML 1.0 cannot represent now fails
   with `malformed_xml` and the message "document contains characters not allowed
   in XML 1.0" instead of the generic "invalid XML". Validation still fails closed
@@ -172,6 +188,12 @@ This page records user-visible release changes, including unpublished attempts.
   Hyperview whenever the header is present, but `HyperviewRequestDetails.version`
   is now `None` unless the value matches `[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}`. It
   used to return any string verbatim, including empty or oversized values.
+
+### Documentation
+
+- `VALIDATION.MAX_NODES` and `MAX_DEPTH` are documented as bounds on nodes, not
+  only elements. Comments and processing instructions have always counted toward
+  both, which is the safer bound.
 
 ### Compatibility
 

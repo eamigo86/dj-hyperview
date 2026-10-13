@@ -18,16 +18,22 @@ from lxml import etree
 from ._schema_duplicates import _guard_duplicate_declarations
 from ._schema_extensions import _EMPTY_EXTENSIONS, _SchemaExtensions
 from ._schema_overlay import _file_uri, _generated_overlay
+from ._schema_revision import (
+    SCHEMA_IDENTITY,
+    SCHEMA_REVISION,
+    SCHEMA_VERSION,
+    SCHEMAS_ROOT,
+)
 from .conf import get_settings
 from .exceptions import TemplateValidationError
 
-HYPERVIEW_SCHEMA_VERSION = "0.111.0"
+HYPERVIEW_SCHEMA_VERSION = SCHEMA_VERSION
 _LEGACY_UPSTREAM_VERSION = "0.110.0"
 HYPERVIEW_VALIDATION_CONTRACT = "automatic-xsd-v1"
-_SCHEMA_REVISION = "hyperview-0.111.0-corrected-r3"
+_SCHEMA_REVISION = SCHEMA_IDENTITY
 HYPERVIEW_NAMESPACE = "https://hyperview.org/hyperview"
 XSD_NAMESPACE = "http://www.w3.org/2001/XMLSchema"
-_SCHEMAS_ROOT = Path(__file__).with_name("schemas")
+_SCHEMAS_ROOT = SCHEMAS_ROOT
 _SCHEMA_ROOT = _SCHEMAS_ROOT / HYPERVIEW_SCHEMA_VERSION
 _MAX_SCHEMA_FILES = 256
 _REGISTRY_LOCK = RLock()
@@ -355,7 +361,7 @@ def _cached_registry(
         TemplateValidationError: If dependencies or declarations are invalid.
     """
     xmlschema = _xmlschema_module()
-    schema_path = _SCHEMA_ROOT / "r3" / "hyperview.xsd"
+    schema_path = _SCHEMA_ROOT / SCHEMA_REVISION / "hyperview.xsd"
     roots = [Path(dependencies.root) for dependencies in state]
     locations = [(_target_namespace(path), _file_uri(path)) for path in roots]
     try:

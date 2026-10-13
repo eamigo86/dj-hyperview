@@ -7,10 +7,11 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
 from typing import Any, Literal
 
 from lxml import etree
+
+from ._schema_revision import ACTIVE_SCHEMA_ROOT
 
 _TYPES = frozenset({"string", "boolean", "integer", "decimal"})
 _NAME = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*\Z")
@@ -42,7 +43,7 @@ _EMPTY_EXTENSIONS = _SchemaExtensions()
 @lru_cache(maxsize=1)
 def _standards() -> dict[str, Any]:
     """Read the active corrected declarations without loading Django or xmlschema."""
-    path = Path(__file__).with_name("schemas") / "0.111.0" / "r3" / "catalog.json"
+    path = ACTIVE_SCHEMA_ROOT / "catalog.json"
     return json.loads(path.read_text(encoding="utf-8"))["elements"]
 
 

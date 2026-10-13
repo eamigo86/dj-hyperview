@@ -29,6 +29,11 @@ XML_ENCODING = re.compile(
 )
 DJANGO_COMMENT = re.compile(r"{%\s*comment(?=\s|%})")
 DJANGO_ENDCOMMENT = re.compile(r"{%\s*endcomment(?=\s|%})")
+# Every construct the declaration scan acts on starts at one of these: "<!" opens a
+# comment, a CDATA section or a declaration, "<?" a processing instruction, and
+# "{#" or "{%" a Django comment, which only template source recognizes.
+_XML_CANDIDATE = re.compile(r"<[!?]")
+_TEMPLATE_CANDIDATE = re.compile(r"<[!?]|\{[#%]")
 
 
 def _fail(code: str, message: str) -> None:
@@ -96,7 +101,11 @@ def _inline_django_comment_end(
 def _contains_forbidden_declaration(
     document: str, *, template_source: bool = False
 ) -> bool:
-    """Scan forward, reusing delimiter searches rather than rescanning suffixes."""
+    """Scan forward, reusing delimiter searches rather than rescanning suffixes.
+
+    Between candidate positions nothing can match, so the scan jumps to the next
+    candidate instead of testing every character.
+    """
     if "<!DOCTYPE" not in document and "<!ENTITY" not in document:
         return False
     positions: dict[str, int] = {}
@@ -109,6 +118,7 @@ def _contains_forbidden_declaration(
             position = positions[marker] = document.find(marker, start)
         return position
 
+    candidate = _TEMPLATE_CANDIDATE if template_source else _XML_CANDIDATE
     index = 0
     while index < len(document):
         for opening, closing in IGNORED_BLOCKS:
@@ -127,7 +137,8 @@ def _contains_forbidden_declaration(
             elif document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
                 return True
             else:
-                index += 1
+                following = candidate.search(document, index + 1)
+                index = len(document) if following is None else following.start()
     return False
 
 
@@ -224,7 +235,12 @@ def _parse(document: str, config: ValidationSettings) -> etree._Element:
     try:
         root = etree.fromstring(encoded, parser=_parser())
     except etree.XMLSyntaxError as error:
-        if "depth" in str(error).casefold():
+        # libxml2 echoes element and attribute names into its messages, so the word
+        # alone proves nothing: only a resource-limit error about depth is MAX_DEPTH.
+        if (
+            error.code == etree.ErrorTypes.ERR_RESOURCE_LIMIT
+            and "depth" in str(error).casefold()
+        ):
             raise TemplateValidationError(
                 "max_depth", "document exceeds MAX_DEPTH"
             ) from error
