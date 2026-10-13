@@ -166,15 +166,27 @@ HYPERVIEW["EXTRA_SCHEMAS"] = [
 ]
 ```
 
-Project schemas can declare namespaced custom elements and import the Hyperview
-namespace. Includes, imports, and redefines may reference only plain local files
-below their root schema's directory. Remote references, traversal (any `..`
-segment), percent-encoded locations, control or other non-printable characters,
-the characters `?`, `#` and `:`, backslash/URI ambiguity, DTD/entities, and
-arbitrary `xs:override` are rejected.
+Project schemas declare namespaced custom elements. To accept Hyperview elements
+inside one, use `xs:any` with `namespace="https://hyperview.org/hyperview"`, as the
+[custom schema guide](custom-schemas.md) does. An `xs:import` of that namespace
+cannot supply its components: each extra schema is also compiled on its own,
+without the Hyperview schema, so a `ref` or `type` that names one fails with
+`dj_hyperview.E012` (`reason: schema_invalid`). Includes, imports, and redefines
+may reference only plain local files below their root schema's directory. Remote
+references, traversal (any `..` segment), percent-encoded locations, control or
+other non-printable characters, the characters `?`, `#` and `:`, backslash/URI
+ambiguity, DTD/entities, and arbitrary `xs:override` are rejected.
 Each extra schema may reference at most 256 distinct file paths, including its
 root; cycles are visited once. Symlink escapes remain forbidden, also through the
 dependencies of a schema file that is itself a symlink.
+
+After every extra schema passes on its own, the system check compiles them all
+together with the bundled Hyperview schema. Two schemas that declare the same
+global name differently, or a schema that declares a Hyperview or alert name
+differently from the bundled schemas, fail the check with `dj_hyperview.E012`
+(`reason: duplicate_schema_declaration`) instead of failing the first request. A
+registry that compiles cleanly is cached, so the first request does not compile it
+again.
 
 Validation, static Admin checks, and completion use one immutable registry
 identity: the internal correction revision, normalized registrations, and complete

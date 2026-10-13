@@ -110,6 +110,21 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
+- The system check now compiles the merged `EXTRA_SCHEMAS` registry. It compiled
+  each extra schema alone, so two schemas that declare the same element differently,
+  or an extra schema that declares a Hyperview or alert name differently from the
+  bundled schemas, passed it. The conflict then surfaced as
+  `duplicate_schema_declaration` from every validation, which recompiled the
+  registry each time (70 to 90 ms, never cached). After every file passes on its
+  own, the check compiles the registry the first request would use, once, and
+  reports a failure as `dj_hyperview.E012` against the whole setting, with
+  `reason: duplicate_schema_declaration` or `reason: schema_invalid`. A registry
+  that compiles cleanly is cached, so the first request does not compile it again,
+  and a project without `EXTRA_SCHEMAS` pays nothing. **A project whose extra schemas
+  conflict now fails system checks, and `get_settings()` and the first request
+  raise `HyperviewConfigurationError` where they raised
+  `TemplateValidationError`.** The merge is skipped while `SCHEMA_EXTENSIONS` has
+  errors (`dj_hyperview.E021`).
 - A `SystemExit`, `KeyboardInterrupt` or other non-`Exception` raised while
   `RedisBroker.subscribe` opens a subscription is no longer converted into
   `RealtimeUnavailable`. The owned clients are still closed first, then the original
@@ -251,6 +266,12 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Documentation
 
+- The configuration guide no longer says that project schemas can import the
+  Hyperview namespace. Only `xs:any` with that namespace lets a custom element hold
+  Hyperview elements: an `xs:import` of it cannot supply Hyperview components,
+  because every extra schema is also compiled on its own, without the Hyperview
+  schema, and a `ref` or `type` that names one fails with `dj_hyperview.E012`
+  (`reason: schema_invalid`).
 - `VALIDATION.MAX_NODES` and `MAX_DEPTH` are documented as bounds on nodes, not
   only elements. Comments and processing instructions inside the root element have
   always counted toward both, which is the safer bound. Those outside the root

@@ -102,6 +102,11 @@ This definition gives the editor enough information to suggest:
 The checked-in [complete example](examples/hypertodo.xsd) can be copied as a
 starting point.
 
+To let Hyperview elements appear inside a custom element, declare an `xs:any` with
+the Hyperview namespace, as `swipe-row` does. An `xs:import` of that namespace does
+not help: every extra schema is also compiled on its own, without the Hyperview
+schema, so a `ref` or `type` that names a Hyperview component is rejected.
+
 ## 3. Register the schema
 
 Configure the local path; the bundled Hyperview validator is automatic:
@@ -171,8 +176,12 @@ python manage.py check
 ```
 
 The check rejects missing files, invalid XSD 1.1, remote references, and local
-references that escape the schema root. Then exercise at least one valid and
-one invalid rendered response in the consumer project's test suite.
+references that escape the schema root. It also compiles every extra schema
+together with the bundled Hyperview schema, so two schemas that declare the same
+element differently, or a schema that declares a Hyperview element differently
+from the bundled one, fail the check instead of the first request. Then exercise
+at least one valid and one invalid rendered response in the consumer project's
+test suite.
 
 With the editor enabled, open a database template in Django Admin and verify
 that autocomplete proposes the qualified custom element, contextual children,
@@ -237,6 +246,21 @@ The reason is the stable validation code of the failure (`schema_invalid`,
 `unreadable` when the file is missing or cannot be read, or `not_a_path` when the
 entry is not a path. It never contains a file path.
 
+When every file passes on its own, the check compiles them all together with the
+bundled Hyperview schema, the same registry the first request uses, and reports a
+failure against the whole setting:
+
+```text
+EXTRA_SCHEMAS must compile together with the Hyperview schema (reason: duplicate_schema_declaration).
+```
+
+The reason is `duplicate_schema_declaration` when two schemas, or a schema and the
+Hyperview or alert namespaces, declare the same global name differently, or
+`schema_invalid` when the combined registry cannot be built. A registry that
+compiles cleanly is cached, so the first request reuses it instead of compiling it
+again. The merged compilation is skipped while `SCHEMA_EXTENSIONS` has errors
+(`dj_hyperview.E021`), because the registry cannot be built without them.
+
 Do not use `xs:override` in `EXTRA_SCHEMAS`: it is rejected with the stable
 `forbidden_schema_reference` validation code (`dj_hyperview.E012` during
 configuration checks). The only allowed override belongs to the package's fixed
@@ -278,8 +302,9 @@ Only package code produces this overlay from normalized data. Registrations
 cannot contain raw XSD, XPath, import callbacks, custom regexes, or schema
 locations. External `xs:override` stays forbidden. Existing local-reference,
 DTD/entity, symlink-confinement and transitive-file limits remain unchanged.
-Conflicting global declarations across extra schemas are rejected before
-runtime validation, static Admin validation or catalog use; matching completion
+Conflicting global declarations across extra schemas are reported by the system
+check (`dj_hyperview.E012`) and rejected before runtime validation, static Admin
+validation or catalog use; matching completion
 enums alone do not prove matching XSD types or child models. This comparison
 also includes effective schema defaults (such as local attribute/element forms
 and default attributes), node-scoped QName bindings, and XPath namespace context.

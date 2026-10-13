@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
@@ -347,9 +348,14 @@ def _target_namespace(path: Path) -> str:
     return root.get("targetNamespace", "")
 
 
-def _registry_state() -> tuple[_SchemaDependencies, ...]:
+def _registry_state(extra_schemas: Iterable[Path]) -> tuple[_SchemaDependencies, ...]:
+    """Guard each schema and fingerprint its dependencies; the key of one registry.
+
+    The paths are explicit because the system check calls this while the settings
+    snapshot that runs the check is still being built.
+    """
     state: list[_SchemaDependencies] = []
-    for configured in get_settings().extra_schemas:
+    for configured in extra_schemas:
         paths = _guard_local_references(configured)
         state.append(
             _SchemaDependencies(
@@ -427,7 +433,9 @@ def get_hyperview_catalog() -> dict[str, Any]:
         TemplateValidationError: If a dependency is unsafe, invalid, or conflicts.
     """
     config = get_settings()
-    return deepcopy(_active_catalog(_registry_state(), config.schema_extensions))
+    return deepcopy(
+        _active_catalog(_registry_state(config.extra_schemas), config.schema_extensions)
+    )
 
 
 @lru_cache(maxsize=64)
@@ -449,7 +457,9 @@ def _get_static_validation_catalog() -> dict[str, Any]:
     """Return detached schema metadata for context-free Admin validation."""
     config = get_settings()
     return deepcopy(
-        _cached_static_validation_catalog(_registry_state(), config.schema_extensions)
+        _cached_static_validation_catalog(
+            _registry_state(config.extra_schemas), config.schema_extensions
+        )
     )
 
 
@@ -463,7 +473,7 @@ def _get_registry_snapshot() -> tuple[tuple[Any, ...], Any]:
         TemplateValidationError: If any dependency is unsafe or inconsistent.
     """
     config = get_settings()
-    state = _registry_state()
+    state = _registry_state(config.extra_schemas)
     return (
         (_SCHEMA_REVISION, state, config.schema_extensions),
         _compile_registry(state, config.schema_extensions),

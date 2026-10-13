@@ -341,8 +341,9 @@ def test_duplicate_extra_elements_with_different_children_are_rejected(tmp_path)
         )
         paths.append(path)
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": paths}):
+        # The check merges the registry, so a conflict is a configuration error.
         with pytest.raises(
-            TemplateValidationError, match="duplicate_schema_declaration"
+            HyperviewConfigurationError, match="duplicate_schema_declaration"
         ):
             get_hyperview_catalog()
 
@@ -369,7 +370,7 @@ def test_duplicate_extra_attribute_types_fail_in_every_consumer(tmp_path, operat
             "validation": lambda: validate_hyperview_schema(f'<view xmlns="{HV}"/>'),
         }
         with pytest.raises(
-            TemplateValidationError, match="duplicate_schema_declaration"
+            HyperviewConfigurationError, match="duplicate_schema_declaration"
         ):
             operations[operation]()
 

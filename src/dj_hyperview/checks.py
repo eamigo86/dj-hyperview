@@ -15,6 +15,11 @@ from django.core.checks import CheckMessage, Error, Warning, register
 from django.utils.module_loading import import_string
 
 from ._realtime_config import _realtime_settings
+from ._schema_extensions import (
+    _extension_errors,
+    _normalize_extensions,
+    _SchemaExtensions,
+)
 from .cache import _BACKEND_FAILURE, _UNSUPPORTED_BACKEND, _resolve_cache_alias
 from .conf import DEFAULTS
 from .sources import FileSystemSource
@@ -408,7 +413,36 @@ def _extra_schema_cause(configured: Any) -> str | None:
     return None
 
 
-def _check_extra_schemas(value: Any) -> list[CheckMessage]:
+def _merged_registry_cause(
+    paths: Sequence[Path], extensions: _SchemaExtensions
+) -> str | None:
+    """Return the validation code that stops the merged registry compiling, or None.
+
+    This is the compilation, and the cache entry, of the first request, so a clean
+    registry is compiled once for both. Conflicts between schemas, or with the
+    Hyperview namespaces, only show up here. The paths are explicit because the
+    settings snapshot that runs this check does not exist yet.
+    """
+    from .exceptions import TemplateValidationError
+    from .schema import _compile_registry, _registry_state
+
+    try:
+        _compile_registry(_registry_state(paths), extensions)
+    except TemplateValidationError as error:
+        return error.code
+    return None
+
+
+def _check_extra_schemas(
+    value: Any, extensions: _SchemaExtensions | None
+) -> list[CheckMessage]:
+    """Check each extra schema alone, then all of them together.
+
+    Args:
+        value: Raw EXTRA_SCHEMAS setting.
+        extensions: Normalized SCHEMA_EXTENSIONS, or None when they are invalid and
+            reported separately, which leaves nothing to key the merged registry.
+    """
     if not _sequence(value):
         return [_error("E012", "EXTRA_SCHEMAS", "must be a sequence of local files")]
     errors = []
@@ -420,6 +454,21 @@ def _check_extra_schemas(value: Any) -> list[CheckMessage]:
                     "E012",
                     f"EXTRA_SCHEMAS[{index}]",
                     "must be a valid local XSD 1.1 schema",
+                    cause=f"reason: {cause}",
+                )
+            )
+    if value and extensions is not None and not errors:
+        cause = _merged_registry_cause([Path(item) for item in value], extensions)
+        if cause is not None:
+            errors.append(
+                _error(
+                    "E012",
+                    "EXTRA_SCHEMAS",
+                    "must compile together with the Hyperview schema",
+                    hint=(
+                        "Declare each global name once, or make its declarations "
+                        "identical, and do not redeclare Hyperview or alert names."
+                    ),
                     cause=f"reason: {cause}",
                 )
             )
@@ -525,12 +574,12 @@ def check_hyperview_settings(
         if "CACHE" not in raw or (isinstance(cache, Mapping) and not cache)
         else _check_cache(cache)
     )
-    from ._schema_extensions import _extension_errors
-
+    registrations = raw.get("SCHEMA_EXTENSIONS", {})
     extension_errors = [
         _error("E021", path, message)
-        for path, message in _extension_errors(raw.get("SCHEMA_EXTENSIONS", {}))
+        for path, message in _extension_errors(registrations)
     ]
+    extensions = None if extension_errors else _normalize_extensions(registrations)
     template_dir_messages = _check_template_dirs(raw.get("TEMPLATE_DIRS", ()))
     return [
         *_unknown_keys(raw, _TOP_LEVEL_KEYS, "HYPERVIEW", _RETIRED_KEYS),
@@ -541,7 +590,7 @@ def check_hyperview_settings(
         *cache_errors,
         *_check_realtime(raw.get("REALTIME")),
         *_check_validation(raw.get("VALIDATION", {})),
-        *_check_extra_schemas(raw.get("EXTRA_SCHEMAS", ())),
+        *_check_extra_schemas(raw.get("EXTRA_SCHEMAS", ()), extensions),
         *(
             [
                 _error(

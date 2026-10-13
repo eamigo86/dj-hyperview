@@ -6,7 +6,7 @@ import pytest
 from django.test import override_settings
 
 from dj_hyperview import validate_hyperview_schema
-from dj_hyperview.exceptions import TemplateValidationError
+from dj_hyperview.exceptions import HyperviewConfigurationError
 from dj_hyperview.schema import _get_static_validation_catalog, get_hyperview_catalog
 
 XS = "http://www.w3.org/2001/XMLSchema"
@@ -134,8 +134,9 @@ def test_conflicting_context_is_rejected_before_any_registry_consumer(
     if reverse:
         paths.reverse()
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": paths}):
+        # The check merges the registry, so a conflict is a configuration error.
         with pytest.raises(
-            TemplateValidationError, match="duplicate_schema_declaration"
+            HyperviewConfigurationError, match="duplicate_schema_declaration"
         ):
             _run(operation)
 

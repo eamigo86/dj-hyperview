@@ -426,6 +426,137 @@ def test_valid_extra_schema_passes_startup_checks(tmp_path: Path) -> None:
         ] == []
 
 
+HV = "https://hyperview.org/hyperview"
+ALERT = "https://hyperview.org/hyperview-alert"
+
+
+def extra_schema(path: Path, declaration: str, namespace: str = "urn:app") -> Path:
+    """Write a schema that is valid alone, whatever the other schemas declare."""
+    path.write_text(
+        f'<xs:schema xmlns:xs="{XS}" targetNamespace="{namespace}" '
+        f'elementFormDefault="qualified">{declaration}</xs:schema>',
+        encoding="utf-8",
+    )
+    return path
+
+
+def run_check() -> list:
+    """Run the check, leaving out the warning that an empty SOURCES setting adds."""
+    return [m for m in check_hyperview_settings() if m.id != "dj_hyperview.W005"]
+
+
+@pytest.mark.parametrize(
+    "declarations",
+    [
+        [("urn:app", "w", "xs:string"), ("urn:app", "w", "xs:integer")],
+        [(HV, "text", "xs:string")],
+        [(ALERT, "option", "xs:string")],
+    ],
+    ids=["between-extras", "hyperview-namespace", "alert-namespace"],
+)
+def test_schemas_that_only_conflict_when_merged_fail_the_check(
+    tmp_path: Path, declarations: list[tuple[str, str, str]]
+) -> None:
+    """Each schema compiles alone; the conflict used to surface on every request.
+
+    A duplicate declaration is detected only by the merged registry, so a check that
+    compiles the files one by one passed and each validation recompiled and failed.
+    The bundled schemas already declare "text" and "option" in their namespaces.
+    """
+    paths = [
+        extra_schema(
+            tmp_path / f"s{index}.xsd",
+            f'<xs:element name="{name}" type="{declared}"/>',
+            namespace,
+        )
+        for index, (namespace, name, declared) in enumerate(declarations)
+    ]
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": paths}):
+        messages = run_check()
+        with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E012"):
+            get_settings()
+
+    assert [message.id for message in messages] == ["dj_hyperview.E012"]
+    assert messages[0].msg == (
+        "EXTRA_SCHEMAS must compile together with the Hyperview schema "
+        "(reason: duplicate_schema_declaration)."
+    )
+    assert str(tmp_path) not in messages[0].msg + messages[0].hint
+
+
+def test_merged_failure_is_not_added_to_a_failing_file(tmp_path: Path) -> None:
+    """A file that fails alone is reported by index and the merge is not attempted."""
+    broken = tmp_path / "broken.xsd"
+    broken.write_text("not xml", encoding="utf-8")
+    fine = extra_schema(tmp_path / "fine.xsd", '<xs:element name="w"/>')
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [fine, broken]}):
+        messages = run_check()
+
+    assert [message.msg for message in messages] == [
+        "EXTRA_SCHEMAS[1] must be a valid local XSD 1.1 schema "
+        "(reason: schema_invalid)."
+    ]
+
+
+def test_valid_extra_schemas_are_compiled_once_for_check_and_requests(
+    tmp_path: Path,
+) -> None:
+    """The check warms the registry the first request would otherwise compile."""
+    from dj_hyperview import validate_hyperview_schema
+    from dj_hyperview.schema import _cached_registry
+
+    first = extra_schema(tmp_path / "first.xsd", '<xs:element name="w"/>')
+    second = extra_schema(tmp_path / "second.xsd", '<xs:element name="v"/>', "urn:b")
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [first, second]}):
+        assert run_check() == []
+        assert _cached_registry.cache_info().misses == 1
+
+        validate_hyperview_schema(f'<view xmlns="{HV}"/>')
+        assert run_check() == []
+
+        assert _cached_registry.cache_info().misses == 1
+
+
+@override_settings(HYPERVIEW={})
+def test_check_without_extra_schemas_compiles_no_registry() -> None:
+    """The default configuration pays nothing for the merged-registry check."""
+    from dj_hyperview.schema import _cached_registry
+
+    check_hyperview_settings()
+
+    assert _cached_registry.cache_info().misses == 0
+
+
+def test_invalid_registrations_skip_the_merged_compile(tmp_path: Path) -> None:
+    """Registrations that are reported as E021 cannot key a registry."""
+    from dj_hyperview.schema import _cached_registry
+
+    schema = extra_schema(tmp_path / "app.xsd", '<xs:element name="w"/>')
+    configured = {"EXTRA_SCHEMAS": [schema], "SCHEMA_EXTENSIONS": {"BEHAVIORS": 5}}
+    with override_settings(HYPERVIEW=configured):
+        messages = run_check()
+        misses = _cached_registry.cache_info().misses
+
+    assert {message.id for message in messages} == {"dj_hyperview.E021"}
+    assert misses == 0
+
+
+def test_check_compiles_without_reading_the_settings_it_is_validating(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """get_settings() runs this check, so asking it for settings would recurse."""
+
+    def forbidden() -> None:
+        raise AssertionError("the check must not ask for the settings snapshot")
+
+    schema = extra_schema(tmp_path / "app.xsd", '<xs:element name="w"/>')
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [schema]}):
+        with monkeypatch.context() as patched:
+            patched.setattr("dj_hyperview.schema.get_settings", forbidden)
+            assert run_check() == []
+        assert get_settings().extra_schemas == (schema,)
+
+
 @override_settings(HYPERVIEW={})
 def test_builtin_validator_requires_its_regular_dependency() -> None:
     """Every installation reports a missing mandatory dependency at startup."""
