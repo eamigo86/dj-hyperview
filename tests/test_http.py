@@ -673,6 +673,22 @@ def test_unknown_response_encoding_is_rejected(content_type, charset):
         HyperviewResponse(VALID_HXML, content_type=content_type, charset=charset)
 
 
+@pytest.mark.parametrize("name", ["utf-8\x00", "\x00", "utf-8\U0000d800"])
+@pytest.mark.parametrize("where", ["argument", "content_type"])
+def test_unlookupable_response_encoding_is_the_same_typed_failure(where, name):
+    """codecs.lookup raises ValueError, not LookupError, for NUL and a surrogate."""
+    options = (
+        {"charset": name}
+        if where == "argument"
+        else {"content_type": f"application/xml; charset={name}"}
+    )
+
+    with pytest.raises(ValueError) as error:
+        HyperviewResponse(VALID_HXML, **options)
+
+    assert str(error.value) == "Hyperview responses require UTF-8"
+
+
 def test_overridden_rendered_content_cannot_bypass_final_validation():
     class CustomResponse(HyperviewTemplateResponse):
         @property

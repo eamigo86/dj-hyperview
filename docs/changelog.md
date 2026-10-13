@@ -45,9 +45,15 @@ This page records user-visible release changes, including unpublished attempts.
   first, and an undeclared attribute costs time proportional to the number of
   attributes on its element. Rejecting 300 elements with 256 undeclared attributes
   each therefore took about 7.7 s, where a valid document of the same size takes
-  under a second. The reported error is unchanged: the first violation in document
-  order, with the same message and line. Validating a valid document costs the same
-  as before.
+  under a second. The reported violation is the first one xmlschema finds, with the
+  same message and line, which is not always the first in document order: it reports
+  a parent's content-model error, such as a missing required child, after the errors
+  inside its children. One classification changed. A document that has a violation
+  and, after it, an `xsi:type` naming no declared type used to be rejected as
+  `schema_invalid`, because the lax mode failed on the type before it returned
+  anything; it is now rejected with the earlier `schema` violation. A document whose
+  only problem is such an `xsi:type` is still `schema_invalid`. Validating a valid
+  document costs the same as before.
 - Stop echoing rejected template names from an ordered selection. When every
   candidate misses, `TemplateNotFound` now lists only valid names that were not
   found, so control characters and escape sequences in hostile names cannot reach
@@ -251,6 +257,18 @@ This page records user-visible release changes, including unpublished attempts.
   bare `ValueError` or `UnicodeEncodeError` that no `TemplateValidationError`
   handler caught. `publish_template`, model validation and the Admin form raised it
   instead of `ValidationError`.
+- An XML declaration whose encoding name is not an XML 1.0 `EncName` (a letter
+  followed by letters, digits, `.`, `_` or `-`), or is longer than 64 characters, now
+  fails with `invalid_encoding` before any codec lookup. Python keeps every name it
+  looks up for the life of the process, so each distinct name in a declaration used
+  to add an entry to a cache that is never emptied: 5,000 distinct names added 5,000
+  entries, and 20 names of 200 KB each kept 4.2 MB. No valid name is affected, but a
+  spelling that only the lookup's own normalization accepted, such as `utf 8` or a
+  trailing space, is now rejected here instead of failing later in the parser.
+- `HyperviewResponse` and the other response classes now raise their usual
+  `ValueError("Hyperview responses require UTF-8")` for a `charset`, or a
+  `Content-Type` charset parameter, that contains a NUL or a lone surrogate. They let
+  the codec lookup's own `ValueError` escape, with a different message.
 - A document is reported as `max_depth` only when libxml2 stops with a
   resource-limit error that mentions depth, or with its own "Excessive depth in
   document" message, which libxml2 before 2.13 reported as an internal error.

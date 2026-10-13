@@ -37,6 +37,10 @@ XML_ENCODING = re.compile(
     r"^\ufeff?\s*<\?xml\b[^>]*\bencoding\s*=\s*(['\"])([^'\"]+)\1",
     re.IGNORECASE,
 )
+# The EncName production of XML 1.0, capped at a length no codec name reaches.
+# codecs.lookup keeps every name it is given for the life of the process, so a
+# declaration must not be able to choose how many, or how long, those names are.
+_ENCODING_NAME = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,63}")
 DJANGO_COMMENT = re.compile(r"{%\s*comment(?=\s|%})")
 DJANGO_ENDCOMMENT = re.compile(r"{%\s*endcomment(?=\s|%})")
 # Every construct the declaration scan acts on starts at one of these: "<!" opens a
@@ -164,11 +168,14 @@ def _contains_forbidden_declaration(
 def _encode_utf8(document: str) -> bytes:
     declaration = XML_ENCODING.match(document)
     if declaration is not None:
+        name = declaration.group(2)
         try:
-            encoding = codecs.lookup(declaration.group(2)).name
-        except (LookupError, ValueError):
-            # Not only unknown names: a NUL raises ValueError, and a lone surrogate
-            # UnicodeEncodeError, which is a ValueError too.
+            # A NUL or a lone surrogate would raise ValueError; the shape check
+            # keeps both, and every other odd name, away from the lookup.
+            encoding = (
+                codecs.lookup(name).name if _ENCODING_NAME.fullmatch(name) else None
+            )
+        except LookupError:
             encoding = None
         if encoding != "utf-8":
             raise TemplateValidationError(

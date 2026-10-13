@@ -85,12 +85,13 @@ siblings do not accumulate. Extension schemas share the same caps.
 Checking the caps takes time proportional to the number of nodes and declarations.
 They keep one document from costing far more than its size; they do not make
 validation cheap. Measured at the default limits with Python 3.12, lxml 6.1, and
-xmlschema 4.3 on an Apple M3 Max machine, a plain valid document of 20,000
-elements validates in about 0.6 s, and one of 19,000 elements with seven attributes
-each, close to the default byte limit, in about 1.5 s. The most expensive document
-found within the namespace caps, 20,000 elements that each rebind a prefix below a
-path already at the cap, takes about 1.1 s, or 1.2 s with `MAX_DEPTH` at its ceiling
-of 256. A rejected document stops at its first schema error, so rejecting it costs
+xmlschema 4.3 on an Apple M3 Max machine, a valid document of 20,000 elements
+(`MAX_NODES`) with up to three attributes each, 840 KB, validates in 0.7 to 0.9 s,
+and one of 9,807 elements with seven attributes each, 1,000,000 bytes
+(`MAX_BYTES`), in about 0.5 s; a document cannot reach both limits at once. The
+most expensive document found within the namespace caps, 20,000 elements that each
+rebind a prefix below a path already at the cap, takes about 1.1 s, or 1.2 s with
+`MAX_DEPTH` at its ceiling of 256. A rejected document stops at its first schema error, so rejecting it costs
 about as much as validating the part before that error. Cost grows roughly in
 proportion to the nodes and attributes, and your hardware may be slower, so plan for
 one to two seconds of CPU per large untrusted document at the defaults, and measure
@@ -159,8 +160,10 @@ or scans it, so the validators report `malformed_xml` for a document that also
 exceeds `MAX_BYTES` or declares a DTD or entity. An eager response compares its
 character count with `MAX_BYTES` before it encodes the text, so it still reports
 `max_bytes` when the text is already longer than the limit. An XML declaration
-that names a non-UTF-8 encoding, or a name that no codec can look up, such as one
-containing NUL, still reports `invalid_encoding` first.
+that names a non-UTF-8 encoding, or a name that is not a valid XML encoding name
+(letters, digits, `.`, `_` and `-`, starting with a letter, at most 64 characters)
+or that no codec knows, such as one containing NUL, still reports
+`invalid_encoding` first, before any codec lookup.
 
 Reject the text where you accept it, or neutralize it where you render it:
 

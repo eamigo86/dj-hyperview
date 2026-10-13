@@ -37,7 +37,8 @@ def _normalized_response_metadata(
     for declared in (charset or "utf-8", parameters.get("charset", "utf-8")):
         try:
             encoding = codecs.lookup(declared).name
-        except LookupError as error:
+        except (LookupError, ValueError) as error:
+            # A NUL or a lone surrogate raises ValueError, not LookupError.
             raise ValueError("Hyperview responses require UTF-8") from error
         if encoding != "utf-8":
             raise ValueError("Hyperview responses require UTF-8")

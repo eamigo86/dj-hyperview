@@ -1,4 +1,5 @@
 import random
+from types import SimpleNamespace
 
 import pytest
 from django.test import RequestFactory, override_settings
@@ -275,7 +276,7 @@ def test_non_utf8_xml_declarations_are_rejected(validator) -> None:
 def test_encoding_names_that_cannot_be_looked_up_are_invalid_encoding(
     validator, encoding: str
 ) -> None:
-    """codecs.lookup raises ValueError, not LookupError, for NUL and for a surrogate."""
+    """A NUL or a lone surrogate is no name character; lookup raises ValueError."""
     document = (
         f'<?xml version="1.0" encoding="{encoding}"?>'
         "<view xmlns='https://hyperview.org/hyperview' />"
@@ -285,6 +286,64 @@ def test_encoding_names_that_cannot_be_looked_up_are_invalid_encoding(
 
     assert error.message == "XML declaration must use UTF-8"
     assert error.__cause__ is None
+
+
+@pytest.mark.parametrize(
+    "encoding",
+    [
+        "a" * 65,
+        "UTF-8" + "x" * 200_000,
+        "1utf-8",
+        "utf 8",
+        "utf-8;",
+        "utf-8\xe9",
+        "-utf-8",
+    ],
+    ids=[
+        "too-long",
+        "huge",
+        "digit-first",
+        "space",
+        "punctuation",
+        "non-ascii",
+        "dash",
+    ],
+)
+@pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
+def test_malformed_or_oversized_encoding_names_never_reach_the_codec_registry(
+    monkeypatch: pytest.MonkeyPatch, validator, encoding: str
+) -> None:
+    """Python keeps every name it looks up for the life of the process.
+
+    A name that XML does not allow, or that is longer than any codec name, is
+    rejected by its shape, so hostile declarations cannot grow that cache.
+    """
+
+    def forbidden(name: str) -> None:
+        raise AssertionError("codecs.lookup must not see an invalid name")
+
+    monkeypatch.setattr(
+        validation_module, "codecs", SimpleNamespace(lookup=forbidden), raising=True
+    )
+    document = (
+        f'<?xml version="1.0" encoding="{encoding}"?>'
+        "<view xmlns='https://hyperview.org/hyperview' />"
+    )
+
+    error = assert_validation_error("invalid_encoding", lambda: validator(document))
+
+    assert error.message == "XML declaration must use UTF-8"
+    assert error.__cause__ is None
+
+
+@pytest.mark.parametrize("encoding", ["UTF-8", "utf-8", "utf8", "UTF_8", "U8"])
+def test_every_spelling_of_utf8_is_still_accepted(encoding: str) -> None:
+    document = (
+        f'<?xml version="1.0" encoding="{encoding}"?>'
+        "<view xmlns='https://hyperview.org/hyperview' />"
+    )
+
+    assert validate_hxml(document) == document
 
 
 def test_render_validation_strips_template_whitespace_before_xml_declaration() -> None:
