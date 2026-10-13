@@ -82,6 +82,21 @@ def test_publish_creates_validated_inactive_template_and_immutable_result(
     schedule.assert_called_once_with("screen.xml", using="default")
 
 
+def test_publish_keeps_the_existing_activity_unless_it_is_given(
+    publication_model: type[Model],
+) -> None:
+    publication_model.objects.create(name="screen.xml", content="<one />", active=False)
+    with patch(SCHEDULE):
+        publish_template("screen.xml", "<two />")
+        kept = publication_model.objects.get(name="screen.xml").active
+        publish_template("screen.xml", "<three />", active=True)
+        activated = publication_model.objects.get(name="screen.xml").active
+        publish_template("created.xml", "<view />")
+
+    assert (kept, activated) == (False, True)
+    assert publication_model.objects.get(name="created.xml").active is True
+
+
 def test_publish_updates_revision_and_enforces_expected_revision(
     publication_model: type[Model],
 ) -> None:

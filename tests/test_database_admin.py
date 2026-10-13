@@ -8,7 +8,9 @@ from typing import Any
 import pytest
 from django.apps import apps
 from django.contrib import admin
+from django.db import connection
 from django.test import Client, RequestFactory, override_settings
+from django.test.utils import CaptureQueriesContext
 from django.urls import reverse
 
 from dj_hyperview import HYPERVIEW_SCHEMA_VERSION
@@ -618,3 +620,175 @@ def test_view_only_staff_can_open_template_without_edit_controls(
         "<view />",
         1,
     )
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize("content", ["\n<view />\n", "  <view />  ", "<view />\n\n"])
+def test_admin_form_keeps_content_byte_exact(content: str) -> None:
+    """The form does not strip stored sources, as Django's CharField would."""
+    module, _ = _admin_types()
+    form = module.HyperviewTemplateAdminForm(
+        data={"name": "screen.xml", "content": content, "active": True}
+    )
+
+    assert form.is_valid(), form.errors.as_data()
+    assert form.cleaned_data["content"] == content
+
+
+@pytest.mark.django_db
+def test_admin_save_round_trips_surrounding_whitespace(admin_client) -> None:
+    _, model = _admin_types()
+    add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
+    source = "<view>\n  <text>a</text>\n</view>\n"
+
+    admin_client.post(
+        add, {"name": "screen.xml", "content": source, "active": "on", "_save": "Save"}
+    )
+    template = model.objects.get()
+    change = reverse(
+        "admin:dj_hyperview_database_hyperviewtemplate_change", args=[template.pk]
+    )
+    admin_client.post(
+        change,
+        {
+            "name": "screen.xml",
+            "content": source + "\n",
+            "active": "on",
+            "expected_revision": "1",
+            "_save": "Save",
+        },
+    )
+
+    template.refresh_from_db()
+    assert (template.content, template.revision) == (source + "\n", 2)
+
+
+def _counting_permission(calls: list[object], result: object = True) -> Any:
+    def permission(request: Any) -> object:
+        calls.append(request)
+        if isinstance(result, Exception):
+            raise result
+        return result
+
+    return permission
+
+
+@pytest.mark.parametrize("result", [True, False, ZeroDivisionError()])
+def test_admin_permission_is_evaluated_once_per_request(result: object) -> None:
+    """Every permission check of one request shares a single callback result."""
+    _, model = _admin_types()
+    registered = admin.site.get_model_admin(model)
+    calls: list[object] = []
+    first = RequestFactory().get("/admin/")
+    second = RequestFactory().get("/admin/")
+
+    with override_settings(
+        HYPERVIEW={"ADMIN": {"PERMISSION": _counting_permission(calls, result)}}
+    ):
+        outcomes = {
+            check(first)
+            for check in (
+                registered.has_add_permission,
+                registered.has_change_permission,
+                registered.has_delete_permission,
+                registered.has_add_permission,
+            )
+        }
+        assert len(calls) == 1
+        registered.has_change_permission(second)
+
+    assert outcomes == {result is True}
+    assert calls == [first, second]
+
+
+@pytest.mark.django_db
+def test_admin_pages_evaluate_the_permission_callback_once(admin_client) -> None:
+    _, model = _admin_types()
+    template = model.objects.create(name="screen.xml", content="<view />")
+    prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
+    calls: list[object] = []
+
+    with override_settings(
+        HYPERVIEW={"ADMIN": {"PERMISSION": _counting_permission(calls)}}
+    ):
+        for url in (
+            reverse(prefix + "changelist"),
+            reverse(prefix + "add"),
+            reverse(prefix + "change", args=[template.pk]),
+        ):
+            calls.clear()
+            assert admin_client.get(url).status_code == 200
+            assert len(calls) == 1, url
+
+
+@pytest.mark.django_db
+def test_changelist_defers_the_template_bodies(admin_client) -> None:
+    _, model = _admin_types()
+    template = model.objects.create(name="screen.xml", content="<view>body</view>")
+    prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
+
+    with CaptureQueriesContext(connection) as listing:
+        listed = admin_client.get(reverse(prefix + "changelist"))
+    with CaptureQueriesContext(connection) as editing:
+        edited = admin_client.get(reverse(prefix + "change", args=[template.pk]))
+
+    def selects_content(queries: Any) -> bool:
+        return any(
+            "hyperviewtemplate" in query["sql"] and '"content"' in query["sql"]
+            for query in queries.captured_queries
+        )
+
+    assert listed.status_code == 200 and b"screen.xml" in listed.content
+    assert not selects_content(listing)
+    assert edited.status_code == 200 and b"&lt;view&gt;body" in edited.content
+    assert selects_content(editing)
+
+
+@pytest.mark.django_db
+def test_bulk_delete_action_works_on_the_deferred_changelist(admin_client) -> None:
+    _, model = _admin_types()
+    template = model.objects.create(name="screen.xml", content="<view />")
+    changelist = reverse("admin:dj_hyperview_database_hyperviewtemplate_changelist")
+
+    response = admin_client.post(
+        changelist,
+        {
+            "action": "delete_selected",
+            "_selected_action": [str(template.pk)],
+            "post": "yes",
+        },
+    )
+
+    assert response.status_code == 302
+    assert model.objects.count() == 0
+
+
+@pytest.mark.django_db
+@override_settings(
+    ROOT_URLCONF="tests.urls_admin_custom", HYPERVIEW={"ADMIN": {"EDITOR": True}}
+)
+def test_editor_urls_follow_the_admin_site_the_model_is_registered_on(
+    admin_client,
+) -> None:
+    """A non-default AdminSite gets its own validate and catalog endpoints."""
+    prefix = "dj_hyperview_database_hyperviewtemplate_"
+    catalog = reverse("custom:" + prefix + "hxml_catalog")
+    validate = reverse("custom:" + prefix + "hxml_validate")
+
+    custom = admin_client.get(reverse("custom:" + prefix + "add")).content.decode()
+    default = admin_client.get(reverse("admin:" + prefix + "add")).content.decode()
+
+    assert catalog.startswith("/custom/")
+    assert f'data-hyperview-catalog-url="{catalog}"' in custom
+    assert f'data-hyperview-validation-url="{validate}"' in custom
+    assert (
+        f'data-hyperview-catalog-url="{reverse("admin:" + prefix + "hxml_catalog")}"'
+        in default
+    )
+    assert admin_client.get(catalog).status_code == 200
+    posted = admin_client.post(
+        validate,
+        data={"name": "a.xml", "content": "<view />"},
+        content_type="application/json",
+    )
+    assert posted.status_code == 200

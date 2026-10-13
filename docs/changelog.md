@@ -150,6 +150,19 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
+- The database template admin no longer strips `content`: leading and trailing
+  whitespace, including a final newline, is now stored exactly as submitted. Django's
+  form field stripped it, so every admin save silently rewrote a template that
+  ended in a newline.
+- `publish_template()` no longer re-activates an inactive template. Its `active`
+  argument now defaults to `None`, which keeps an existing template's value and
+  publishes a new template as active; before, the default `True` overwrote the
+  stored value. **A caller that relied on republishing to activate a template must
+  now pass `active=True`.**
+- The editor's validation and completion URLs are now resolved on the `AdminSite`
+  that serves the form. Before, they were always looked up in the default `admin`
+  namespace, so a model registered on a custom site silently lost its validation
+  and completion.
 - `content_type=None` on `HyperviewResponse`, `HyperviewTemplateResponse` and the
   fragment classes now behaves like omitting the argument and yields the
   Hyperview media type of the class. Before, it fell through to Django's default
@@ -341,6 +354,12 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Changed
 
+- `ADMIN.PERMISSION` is called at most once per request. Every add, change and
+  delete check of one request now shares the first result, which is also kept when
+  the callback raises, so the failure is logged once. A page used to call the
+  callback eight times on the changelist. The next request calls it again.
+- The database admin changelist no longer loads the template bodies; the change and
+  delete pages still do.
 - The after-commit realtime publisher no longer builds a Redis client for every
   hint. The worker keeps one connection per configuration, replaces it after a
   failure or after 30 seconds without use, and still sends the channels of a hint

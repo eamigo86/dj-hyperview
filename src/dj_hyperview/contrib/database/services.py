@@ -89,7 +89,7 @@ def publish_template(
     name: str,
     content: str,
     *,
-    active: bool = True,
+    active: bool | None = None,
     expected_revision: int | None = None,
     using: str | None = None,
 ) -> PublicationResult:
@@ -98,7 +98,8 @@ def publish_template(
     Args:
         name: Canonical consumer template name.
         content: Raw consumer-owned template source.
-        active: Whether database resolution may return the template.
+        active: Whether database resolution may return the template, or None to
+            keep an existing template's value and activate a new one.
         expected_revision: Existing revision required for optimistic publication.
         using: Explicit database alias, or None to use Django write routing.
 
@@ -133,13 +134,19 @@ def publish_template(
         if template is None:
             if expected_revision is not None:
                 raise PublicationConflict
-            template = model(name=canonical, content=content, active=active, revision=1)
+            template = model(
+                name=canonical,
+                content=content,
+                active=True if active is None else active,
+                revision=1,
+            )
             created = True
         else:
             if expected_revision is not None and template.revision != expected_revision:
                 raise PublicationConflict
             template.content = content
-            template.active = active
+            if active is not None:
+                template.active = active
             template.revision += 1
             created = False
 

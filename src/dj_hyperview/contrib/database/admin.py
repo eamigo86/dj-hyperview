@@ -39,6 +39,7 @@ from .services import (
 __all__ = ["HyperviewTemplateAdmin", "HyperviewTemplateAdminForm"]
 
 _CONFLICT_MESSAGE = "Template changed; reload and retry."
+_PERMISSION_MEMO = "_dj_hyperview_admin_permission"
 logger = logging.getLogger(__name__)
 
 
@@ -96,6 +97,8 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
     expected_revision = forms.IntegerField(
         required=False, min_value=1, widget=forms.HiddenInput
     )
+    # Instance name of the AdminSite serving the form, set by the model admin.
+    admin_site_name: str | None = None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         """Initialize controls appropriate to a new or persisted template.
@@ -111,10 +114,15 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
             else None
         )
         super().__init__(*args, **kwargs)
-        if _editor_enabled() and "content" in self.fields:
-            from .admin_editor import HyperviewAceWidget
+        if "content" in self.fields:
+            # Stored sources round-trip byte-exact; CharField would strip them.
+            self.fields["content"].strip = False
+            if _editor_enabled():
+                from .admin_editor import HyperviewAceWidget
 
-            self.fields["content"].widget = HyperviewAceWidget()
+                self.fields["content"].widget = HyperviewAceWidget(
+                    admin_site=self.admin_site_name
+                )
         if self.instance.pk is None:
             self.fields.pop("expected_revision", None)
         else:
@@ -278,13 +286,18 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         Returns:
             True only when the callback returns the literal boolean True.
         """
-        try:
-            return get_settings().admin.permission(request) is True
-        except Exception:
-            logger.exception(
-                "HYPERVIEW ADMIN.PERMISSION failed; template mutation was denied."
-            )
-            return False
+        # One callback call per request; the request owns the result.
+        allowed = getattr(request, _PERMISSION_MEMO, None)
+        if allowed is None:
+            try:
+                allowed = get_settings().admin.permission(request) is True
+            except Exception:
+                logger.exception(
+                    "HYPERVIEW ADMIN.PERMISSION failed; template mutation was denied."
+                )
+                allowed = False
+            setattr(request, _PERMISSION_MEMO, allowed)
+        return allowed
 
     def get_urls(self) -> list[Any]:
         """Add the permission-protected HXML completion catalog endpoint.
@@ -373,6 +386,28 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
                 "configuration_error", "Template completion is unavailable.", 500
             )
 
+    def get_form(
+        self,
+        request: HttpRequest,
+        obj: HyperviewTemplate | None = None,
+        change: bool = False,
+        **kwargs: Any,
+    ) -> type[forms.ModelForm]:
+        """Tell the form which AdminSite serves it, for the editor's endpoints.
+
+        Args:
+            request: Current admin request.
+            obj: Persisted object for a change form, or None for creation.
+            change: Whether the form edits an existing object.
+            **kwargs: Options forwarded to Django's form factory.
+
+        Returns:
+            The generated form class, bound to this model admin's site.
+        """
+        form = super().get_form(request, obj, change=change, **kwargs)
+        form.admin_site_name = self.admin_site.name
+        return form
+
     def get_fields(
         self, request: HttpRequest, obj: HyperviewTemplate | None = None
     ) -> tuple[str, ...]:
@@ -391,24 +426,25 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         return fields
 
     def get_queryset(self, request: HttpRequest) -> models.QuerySet:
-        """Select the write database and lock change or delete POST rows.
+        """Select the write database, lock change or delete POST rows, defer lists.
 
         Args:
             request: Current admin request.
 
         Returns:
-            Standard queryset, locked when the enclosing admin view is atomic.
+            Standard queryset, locked when the enclosing admin view is atomic and
+            without the template bodies on the changelist.
         """
         queryset = super().get_queryset(request)
         match = request.resolver_match
-        if (
-            request.method == "POST"
-            and match is not None
-            and match.url_name is not None
-            and match.url_name.endswith(("_change", "_delete"))
-        ):
+        name = match.url_name if match is not None else None
+        if name is None:
+            return queryset
+        if request.method == "POST" and name.endswith(("_change", "_delete")):
             alias = router.db_for_write(self.model) or DEFAULT_DB_ALIAS
             return queryset.using(alias).select_for_update()
+        if name.endswith("_changelist"):
+            return queryset.defer("content")
         return queryset
 
     def save_model(

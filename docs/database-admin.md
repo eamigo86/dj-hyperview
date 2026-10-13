@@ -47,6 +47,17 @@ permission can provide read-only access without granting template mutation.
 Read-only template pages display escaped content without edit, delete, or format
 controls, including when the optional Ace editor is enabled.
 
+The callback runs at most once per request: the first add, change or delete
+check stores its result on the request, and later checks of that request reuse
+it. A new request always calls it again, so a callback that depends on mutable
+state is still evaluated for every request. The changelist does not load the
+template bodies, and the admin form stores `content` exactly as submitted,
+including leading and trailing whitespace.
+
+To mount the admin on a custom `AdminSite`, register `HyperviewTemplateAdmin`
+there. The editor's validation and completion endpoints are resolved on the site
+that serves the form, not on the default `admin` site.
+
 ## Enable the database source
 
 Add the optional app and source to project settings:
@@ -123,6 +134,10 @@ delete_template(
     using="default",
 )
 ```
+
+`publish_template()` keeps the `active` value of an existing template unless you
+pass `active`, and publishes a new template as active. Pass `active=True` to
+activate an inactive template while updating it.
 
 `PublicationConflict` reports missing, stale, or conflicting state without
 database details. A returned result is persisted in the current transaction; an

@@ -14,12 +14,17 @@ from django_ace import AceWidget
 class HyperviewAceWidget(AceWidget):
     """Edit HXML with local Ace assets and project schema completions."""
 
-    def __init__(self, attrs: dict[str, Any] | None = None) -> None:
+    def __init__(
+        self, attrs: dict[str, Any] | None = None, *, admin_site: str | None = None
+    ) -> None:
         """Initialize an XML editor with strict CSP-compatible local assets.
 
         Args:
             attrs: Optional textarea HTML attributes.
+            admin_site: Instance name of the AdminSite that serves the editor's
+                validation and catalog endpoints, or None for the default site.
         """
+        self._admin_site = admin_site
         super().__init__(
             attrs=attrs,
             mode="xml",
@@ -75,14 +80,16 @@ class HyperviewAceWidget(AceWidget):
         resolved_attrs["data-hyperview-editor"] = "true"
         try:
             catalog_url = reverse(
-                "admin:dj_hyperview_database_hyperviewtemplate_hxml_catalog"
+                "admin:dj_hyperview_database_hyperviewtemplate_hxml_catalog",
+                current_app=self._admin_site,
             )
         except NoReverseMatch:
             catalog_url = ""
         resolved_attrs["data-hyperview-catalog-url"] = catalog_url
         try:
             validation_url = reverse(
-                "admin:dj_hyperview_database_hyperviewtemplate_hxml_validate"
+                "admin:dj_hyperview_database_hyperviewtemplate_hxml_validate",
+                current_app=self._admin_site,
             )
         except NoReverseMatch:
             validation_url = ""
