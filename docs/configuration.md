@@ -170,7 +170,8 @@ Project schemas can declare namespaced custom elements and import the Hyperview
 namespace. Includes, imports, and redefines may reference only plain local files
 below their root schema's directory. Remote references, traversal (any `..`
 segment), percent-encoded locations, control or other non-printable characters,
-backslash/URI ambiguity, DTD/entities, and arbitrary `xs:override` are rejected.
+the characters `?`, `#` and `:`, backslash/URI ambiguity, DTD/entities, and
+arbitrary `xs:override` are rejected.
 Each extra schema may reference at most 256 distinct file paths, including its
 root; cycles are visited once. Symlink escapes remain forbidden, also through the
 dependencies of a schema file that is itself a symlink.

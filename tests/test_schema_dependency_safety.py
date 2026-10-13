@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from xml.sax.saxutils import quoteattr
 
 import pytest
 import xmlschema
@@ -694,3 +695,89 @@ def test_symlinked_includer_may_include_files_beside_the_link(
         validate_hyperview_schema(
             f'<view xmlns="{HV}" xmlns:app="{APP}"><app:thing/></view>'
         )
+
+
+@pytest.mark.parametrize(
+    ("location", "loaded"),
+    [
+        ("x.xsd?", "x.xsd"),
+        ("x.xsd#", "x.xsd"),
+        ("?#x.xsd", "#x.xsd"),
+        ("&:./x.xsd", "&:x.xsd"),
+        ("1:./x.xsd", "1:x.xsd"),
+    ],
+)
+def test_url_syntax_cannot_name_a_different_file_than_the_inspected_one(
+    tmp_path: Path, location: str, loaded: str
+) -> None:
+    """The compiler rebuilds a path from URL parts; the guard must not trust it.
+
+    xmlschema drops an empty query or fragment and folds a first segment like "1:."
+    into a drive, so these locations name the symlink `loaded` for the compiler,
+    while the guard would join the literal text onto a benign decoy beside the root.
+    """
+    outside = tmp_path / "outside.xsd"
+    outside.write_text(schema_text('<xs:element name="outside"/>'), encoding="utf-8")
+    safe = tmp_path / "safe"
+    safe.mkdir()
+    decoy = safe / location
+    try:
+        decoy.parent.mkdir(parents=True, exist_ok=True)
+        decoy.write_text(schema_text('<xs:element name="decoy"/>'), encoding="utf-8")
+    except OSError:
+        pytest.skip("the filesystem cannot name a file with this character")
+    link_or_skip(safe / loaded, outside)
+    root = safe / "root.xsd"
+    root.write_text(
+        schema_text(f"<xs:include schemaLocation={quoteattr(location)}/>"),
+        encoding="utf-8",
+    )
+    assert compiled_elements(root) == {"outside"}
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+    assert str(tmp_path) not in str(error.value)
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
+        with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E012"):
+            validate_hyperview_schema(f'<view xmlns="{HV}"/>')
+
+
+def test_two_aliases_of_one_file_are_each_inspected(tmp_path: Path) -> None:
+    """Includes are tracked by the location they were reached by, not by their target.
+
+    base/a/link.xsd and base/b/link.xsd are links to one file that includes
+    out/evil.xsd. The compiler reads base/a/out/evil.xsd, a decoy directory, for the
+    first link and base/b/out/evil.xsd, a link to a directory outside the root, for
+    the second. Visiting the target once would inspect only the decoy.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "evil.xsd").write_text(
+        schema_text('<xs:element name="outside"/>'), encoding="utf-8"
+    )
+    base = tmp_path / "base"
+    (base / "a" / "out").mkdir(parents=True)
+    (base / "b").mkdir()
+    (base / "a" / "out" / "evil.xsd").write_text(
+        schema_text('<xs:element name="decoy"/>'), encoding="utf-8"
+    )
+    real = base / "real.xsd"
+    real.write_text(
+        schema_text('<xs:include schemaLocation="out/evil.xsd"/>'), encoding="utf-8"
+    )
+    link_or_skip(base / "a" / "link.xsd", real)
+    link_or_skip(base / "b" / "link.xsd", real)
+    link_or_skip(base / "b" / "out", outside, directory=True)
+    root = base / "root.xsd"
+    root.write_text(
+        schema_text(
+            '<xs:include schemaLocation="a/link.xsd"/>'
+            '<xs:include schemaLocation="b/link.xsd"/>'
+        ),
+        encoding="utf-8",
+    )
+    assert compiled_elements(root) == {"decoy", "outside"}
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+    assert str(tmp_path) not in str(error.value)

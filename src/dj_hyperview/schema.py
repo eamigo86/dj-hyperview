@@ -297,15 +297,18 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
                     "forbidden_schema_reference",
                     "remote schema references are forbidden",
                 )
-            # The compiler's URL parser drops TAB, CR and LF and folds ".." lexically,
-            # while this guard resolves symlinks physically, so the two can name
-            # different files.
+            # The compiler rebuilds a path from URL parts: it drops TAB, CR and LF,
+            # folds ".." lexically, drops an empty "?" or "#", and reads a first
+            # segment such as "1:." as a drive, while this guard resolves symlinks
+            # physically, so the two can name different files. Accepting only
+            # plain paths keeps what the guard inspects equal to what is loaded.
             if (
                 not location.isprintable()
                 or unquote(location) != location
                 or "\\" in location
                 or location != location.strip()
                 or ".." in PurePosixPath(location).parts
+                or re.search("[?#:]", location)
             ):
                 raise TemplateValidationError(
                     "forbidden_schema_reference",
@@ -323,6 +326,8 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
                     "forbidden_schema_reference",
                     "schema references must remain inside their local root",
                 )
+            # Keyed by location, not by target: two links to one file include
+            # different files, so each of them has to be inspected.
             if lexical not in scheduled:
                 if len(scheduled) >= _MAX_SCHEMA_FILES:
                     raise TemplateValidationError(

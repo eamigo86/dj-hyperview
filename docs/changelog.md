@@ -68,22 +68,26 @@ This page records user-visible release changes, including unpublished attempts.
   uses one of these characters, for example a zero-width joiner in an emoji
   sequence, must be renamed.** `check_hyperview_templates` reports a stored row
   with such a name as `invalid_name`, and the row is no longer resolved.
-- Reject any `..` segment and any non-printable character in a schema reference
-  of an `EXTRA_SCHEMAS` file with the stable `forbidden_schema_reference` code
-  (`dj_hyperview.E012` during configuration checks), and read the references of a
-  symlinked schema file from the symlink's own directory. The dependency guard
-  resolved symlinks physically while the XSD compiler folded `..` lexically, so a
-  reference such as `link/../../outside.xsd` through a symlinked directory passed
-  the guard and made the compiler load a file outside the configured root. The
-  compiler's URL parser also drops tabs and carriage returns, so
-  `.<TAB>.` passed as an ordinary directory name while the compiler read `..`.
+- Reject any `..` segment, any non-printable character, and the characters `?`,
+  `#` and `:` in a schema reference of an `EXTRA_SCHEMAS` file with the stable
+  `forbidden_schema_reference` code (`dj_hyperview.E012` during configuration
+  checks), and read the references of a symlinked schema file from the symlink's
+  own directory. The dependency guard resolved symlinks physically while the XSD
+  compiler folded `..` lexically, so a reference such as `link/../../outside.xsd`
+  through a symlinked directory passed the guard and made the compiler load a file
+  outside the configured root. The compiler's URL parser also drops tabs and
+  carriage returns, so `.<TAB>.` passed as an ordinary directory name while the
+  compiler read `..`. It drops an empty `?` or `#` and reads a first segment such as
+  `1:.` as a drive, so `x.xsd?` named a benign decoy file `x.xsd?` for the guard and
+  the file `x.xsd`, a symlink to a schema outside the root, for the compiler.
   And the guard joined the references of a schema file that is a symlink onto the
   directory of its target, where the compiler joins them onto the directory of the
   link, so `out/evil.xsd` could name a decoy for the guard and a file outside the
   root for the compiler. **A schema that relied on `..` inside its own root, for
   example `components/../shared.xsd`, must now use the plain path `shared.xsd`. A
-  schema file that is a symlink now finds its dependencies beside the link, as the
-  compiler does, not beside its target.**
+  schema file whose name contains `?`, `#` or `:`, such as `a#b.xsd`, must be
+  renamed. A schema file that is a symlink now finds its dependencies beside the
+  link, as the compiler does, not beside its target.**
 - `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
   `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
   still lets a shared cache store the response and revalidate it later.

@@ -122,13 +122,15 @@ as a separate bound on memory and parser work.
 Configured extra schemas may use local includes, imports, and redefines within
 their own directory. Remote schema references and traversal outside that root
 are rejected before compilation. References must use plain local paths:
-percent-encoded locations, control or other non-printable characters, and any
-`..` segment are rejected so URL decoding, the dropping of tabs and carriage
-returns, and lexical path folding cannot redirect the compiler to a different
-dependency than the guard inspected. The guard reads a reference from the
-location of the file that contains it, as the compiler does, so a symlink cannot
-pull a dependency from outside the root. Each extra schema is bounded to 256
-distinct file paths, with include cycles visited once.
+percent-encoded locations, control or other non-printable characters, the
+characters `?`, `#` and `:`, and any `..` segment are rejected so URL decoding,
+the dropping of tabs and carriage returns, the dropping of an empty query or
+fragment, drive-letter parsing, and lexical path folding cannot redirect the
+compiler to a different dependency than the guard inspected. For the plain paths
+it accepts, the guard reads a reference from the location of the file that
+contains it, as the compiler does, so a symlink cannot pull a dependency from
+outside the root. Each extra schema is bounded to 256 distinct file paths, with
+include cycles visited once.
 `xs:override` is forbidden in extra schemas;
 only the fixed, packaged compatibility adaptation uses it. Duplicate
 declarations must be identical.
