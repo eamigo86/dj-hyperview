@@ -38,12 +38,25 @@ docstrings. Include `Args`, `Returns`, and `Raises` only when they apply. Parame
 and return type hints are mandatory; do not repeat types in
 docstrings. Do not place backticks inside Python docstrings.
 
-`ruff check` rejects public symbols without a docstring and parameters missing from
-an `Args` section (D1 and D417, Google convention). It also rejects a function in
-`src/`, public or private, whose parameters, `*args`, `**kwargs` or return are not
-annotated (the ANN rules). `Any` is allowed, because ANN401 is ignored. Tests, tools
-and generated migrations are exempt from the docstring rules, and tests and tools
-from the annotation rules. `tests/test_public_api_quality.py` rejects backticks.
+Tools enforce only part of that contract.
+
+- `ruff check` (D1) rejects a public module, class, function or method without a
+  docstring. Ruff treats a name or a module that starts with an underscore as
+  private and skips it.
+- `ruff check` (D417, Google convention) rejects a parameter missing from an `Args`
+  section. It checks only a docstring that already has an `Args` section, so it
+  never asks for one.
+- `ruff check` (ANN) rejects a function in `src/`, public or private, whose
+  parameters, `*args`, `**kwargs` or return are not annotated. `Any` is allowed,
+  because ANN401 is ignored.
+- `tests/test_public_api_quality.py` rejects backticks in docstrings and requires a
+  docstring on every exported name and on every public member it inherits, including
+  those defined in underscore modules.
+
+Tests, tools and generated migrations are exempt from the docstring rules, and tests
+and tools from the annotation rules. Everything else is convention that review
+checks by hand: the `Returns` and `Raises` sections, an `Args` section where
+parameters call for one, and the quality of every description.
 
 ## Documentation contract
 
