@@ -70,8 +70,9 @@ guarantee production suitability.
 - **lxml:** 6.1.3 or newer, below 7
 - **Hyperview contract (0.1.0b2):** 0.111.0
 
-Newer Python versions are not blocked by the package metadata, but they are not
-part of the CI matrix yet.
+The published 0.1.0b2 requires Python below 3.15. From the next release, newer
+Python versions are not blocked by the package metadata, but they are not part of
+the CI matrix yet.
 
 ## Installation
 

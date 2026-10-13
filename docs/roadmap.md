@@ -67,7 +67,7 @@ for duplicates, and report one cause at a time. Do not include private data.
 
 | Candidate | Follow-up |
 | --- | --- |
-| ~~Fragment load failure leaves loading active~~ | **Done.** Fixed upstream in Hyperview 0.111.0 ([issue #1348](https://github.com/Instawork/hyperview/issues/1348), [PR #1350](https://github.com/Instawork/hyperview/pull/1350)); HyperTodo pins that release and covers the case with mounted tests, as the [0.1.0b2 release notes](changelog.md#010b2-2026-09-24) record. |
+| ~~Fragment load failure leaves loading active~~ | **Done.** Fixed upstream in Hyperview 0.111.0 ([issue #1348](https://github.com/Instawork/hyperview/issues/1348), [PR #1350](https://github.com/Instawork/hyperview/pull/1350)); HyperTodo pinned that release when 0.1.0b2 shipped and covers the case with mounted tests, as the [0.1.0b2 release notes](changelog.md#010b2-2026-09-24) record. |
 | Style IDs shadow update targets | Reproduce element/style ID collision; use distinct IDs in the consumer. |
 | Switch change loses form context or submits an old value | Isolate the two symptoms with the current form value and request body. |
 | Android ID overrides an accessible label | Verify actual TalkBack output with a minimal image/label case. |

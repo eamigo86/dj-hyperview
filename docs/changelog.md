@@ -44,8 +44,7 @@ This page records user-visible release changes, including unpublished attempts.
 - Stop echoing rejected template names from an ordered selection. When every
   candidate misses, `TemplateNotFound` now lists only valid names that were not
   found, so control characters and escape sequences in hostile names cannot reach
-  logs. Passing a bare string to `select_template` raises `TypeError`, as Django
-  does, instead of iterating its characters.
+  logs.
 - The Admin **Format and Validate** check, which the Admin form repeats before every
   save when `ADMIN.EDITOR` is on, now takes time proportional to the size of the
   draft. It used to lex the whole draft again for every Django token, and to rescan
@@ -67,11 +66,6 @@ This page records user-visible release changes, including unpublished attempts.
 - `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
   `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
   still lets a shared cache store the response and revalidate it later.
-- The Admin schema catalog endpoint (`hxml-catalog/`) now answers 404 unless
-  `HYPERVIEW["ADMIN"]["EDITOR"]` is enabled, as the validation endpoint already
-  did. Before, it served the catalog, including the names from the project's
-  `EXTRA_SCHEMAS` and `SCHEMA_EXTENSIONS`, to every staff user with view
-  permission while the editor was off.
 
 ### Breaking changes
 
@@ -192,6 +186,35 @@ on, and says how to migrate.
   counts every branch of a conditional, so a template whose branches together
   exceed a limit now fails the check although each rendering would pass. Raise the
   limit if you need such a template.**
+- `select_template()` called with a bare string now raises `TypeError`, as Django
+  does, instead of iterating its characters as template names. **Pass a list or a
+  tuple of names, or use `get_template()` for one name.**
+- The Admin schema catalog endpoint (`hxml-catalog/`) now answers 404 unless
+  `HYPERVIEW["ADMIN"]["EDITOR"]` is enabled, as the validation endpoint already
+  did. Before, it served the catalog, including the names from the project's
+  `EXTRA_SCHEMAS` and `SCHEMA_EXTENSIONS`, to every staff user with view
+  permission while the editor was off. **An integration that fetched the catalog
+  with the editor off must enable the editor.**
+- `X-Hyperview-Version` is treated as a claimed value. A request still counts as
+  Hyperview whenever the header is present, but `HyperviewRequestDetails.version`
+  is now `None` unless the value matches `[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}`. It
+  used to return any string verbatim, including empty or oversized values. **Code
+  that reads `version` must accept `None`.**
+- Reaching the limit of 64 expanded literal includes is now the informational note
+  `schema_static_incomplete` and no longer the error `django_include_limit`, which
+  blocked the save of a template that was only too large to check completely.
+  Expansion stops at the limit, and the code `django_include_limit` is no longer
+  produced. **Tooling that matched `django_include_limit` must expect
+  `schema_static_incomplete`, with severity `info`.**
+- The `charset` argument of a response, and the `charset` parameter of its
+  `Content-Type`, now follow the rule that decides the encoding name of an XML
+  declaration (see *Fixed*): the name is read from the alias table of Python's
+  `encodings` package and never looked up in `codecs`. A spelling that only the
+  lookup's own normalization accepted, such as `utf 8` or a trailing space, is now
+  rejected with the usual `ValueError("Hyperview responses require UTF-8")`. So is
+  a name that contains a NUL or a lone surrogate, which used to let the lookup's
+  own `ValueError` escape with another message. **Pass a standard spelling such as
+  `utf-8`.**
 
 ### Added
 
@@ -285,10 +308,6 @@ on, and says how to migrate.
   dropped other whitespace and control characters silently, such as U+00A0,
   U+0085 or U+001C. A document that starts with one of them now fails with
   `malformed_xml`.
-- `X-Hyperview-Version` is treated as a claimed value. A request still counts as
-  Hyperview whenever the header is present, but `HyperviewRequestDetails.version`
-  is now `None` unless the value matches `[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}`. It
-  used to return any string verbatim, including empty or oversized values.
 
 ### Fixed
 
@@ -370,11 +389,6 @@ on, and says how to migrate.
   it was served. A comment ends at the first tag named exactly `endcomment`, so a
   declaration after `{% endcomment note %}` is hidden and the template is accepted,
   as it renders.
-- Reaching the limit of 64 expanded literal includes is now the informational note
-  `schema_static_incomplete` and no longer the error `django_include_limit`, which
-  blocked the save of a template that was only too large to check completely.
-  Expansion stops at the limit, and the code `django_include_limit` is no longer
-  produced.
 - Publication and model validation compile stored source with the same linear lexer
   as the Admin check, so 40,000 unclosed `{{` on one line (120 KB) validate in well
   under a second instead of the 10 s Django's lexer takes.
@@ -447,14 +461,7 @@ on, and says how to migrate.
   `zz4999` still added 5,000 after a grammar check alone. Every spelling of UTF-8
   that the registry accepts and the grammar allows is still accepted, for example
   `utf-8`, `UTF8`, `u8`, `utf` and `cp65001`; a spelling that only the lookup's own
-  normalization accepted, such as `utf 8` or a trailing space, is rejected. The
-  `charset` argument of a response and the `charset` parameter of its `Content-Type`
-  follow the same rule, so a response with such a spelling raises the usual
-  `ValueError("Hyperview responses require UTF-8")`.
-- `HyperviewResponse` and the other response classes now raise their usual
-  `ValueError("Hyperview responses require UTF-8")` for a `charset`, or a
-  `Content-Type` charset parameter, that contains a NUL or a lone surrogate. They let
-  the codec lookup's own `ValueError` escape, with a different message.
+  normalization accepted, such as `utf 8` or a trailing space, is rejected.
 - A document is reported as `max_depth` only when libxml2 stops with a
   resource-limit error that mentions depth, or with its own "Excessive depth in
   document" message, which libxml2 before 2.13 reported as an internal error.

@@ -452,8 +452,12 @@ parameters. The broker prefixes them with `namespace:`.
 
 The package issues `PUBLISH` and `SUBSCRIBE` on channels named
 `<namespace>:<topic>`. Redis also receives `AUTH` when the URL carries
-credentials and `SELECT` when it selects a database other than 0. No scripting
-permission is required. Since Redis 7.0 the default for new ACL users is
+credentials and `SELECT` when it selects a database other than 0. redis-py also
+sends `CLIENT SETINFO` with its library name and version whenever it opens a
+connection. The rule below denies that command, and redis-py ignores the error (its
+`Connection.on_connect` in 7.4.1 and 8.1.0 catches `ResponseError` around both
+commands), so the connection works; the denied attempts may appear in `ACL LOG`.
+No scripting permission is required. Since Redis 7.0 the default for new ACL users is
 `resetchannels` (the `acl-pubsub-default` setting), so `+publish +subscribe` alone
 is refused with `NOPERM` until the user is also granted the namespace's channels:
 
@@ -550,7 +554,7 @@ probably is not what you meant. `E020` is not used.
 | `dj_hyperview.E014` | `ADMIN` is not a mapping, or `ADMIN.EDITOR` is not a boolean. | Use a mapping and `True` or `False`. |
 | `dj_hyperview.E015` | `ADMIN.EDITOR` is on but `django-ace` is not installed. | Install `dj-hyperview[editor]`. |
 | `dj_hyperview.E016` | `ADMIN.EDITOR` is on but `django_ace` is not in `INSTALLED_APPS`. | Add `django_ace` before `dj_hyperview`. |
-| `dj_hyperview.E017` | `ADMIN.PERMISSION` is not a callable that accepts one request, or its dotted path cannot be imported. | Pass a callable, or a dotted path to a module that exists; see [Admin editor](#admin-editor). |
+| `dj_hyperview.E017` | `ADMIN.PERMISSION` is not a callable that accepts one request, or its dotted path cannot be imported. | Pass a callable, or a dotted path to an importable callable; see [Admin editor](#admin-editor). |
 | `dj_hyperview.E018` | `CACHE.ALIAS` uses `FileBasedCache` or a subclass, whose `add()` is not atomic. | Select another backend or omit `CACHE`; `bypass` does not override this. |
 | `dj_hyperview.E019` | The removed key `SCHEMA_PROFILE` is present. | Delete it; the corrected schema is automatic. |
 | `dj_hyperview.E021` | A `SCHEMA_EXTENSIONS` registration is invalid; the message names the path. | Follow [Register typed schema extensions](#register-typed-schema-extensions). |
