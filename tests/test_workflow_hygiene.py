@@ -145,6 +145,27 @@ def test_nothing_is_published_before_the_tag_matches_the_project_version() -> No
         assert "metadata" in _upstream(jobs, name), name
 
 
+def test_every_publishing_job_waits_for_the_tagged_commit_to_be_on_main() -> None:
+    """A tag can name any commit, so the release proves the commit reached main,
+    where the required status checks ran, before it builds or publishes."""
+    jobs = _workflow("release.yml")["jobs"]
+    gates = [
+        name
+        for name, job in jobs.items()
+        for step in job.get("steps", [])
+        if "merge-base --is-ancestor" in step.get("run", "")
+        and "GITHUB_SHA" in step["run"]
+        and "origin main" in step["run"]
+    ]
+    publishing = [
+        name for workflow, name in PUBLISHING_SCOPES if workflow == "release.yml"
+    ]
+
+    assert len(gates) == 1
+    for name in publishing:
+        assert gates[0] in _upstream(jobs, name), name
+
+
 def test_publication_follows_the_staged_build_in_order() -> None:
     jobs = _workflow("release.yml")["jobs"]
     publish_inputs = [step.get("with", {}) for step in jobs["pypi"]["steps"]]

@@ -23,6 +23,15 @@ jobs:
           version: "0.12.22"
       - name: Match tag to project version
         run: uv run --locked python -m tools.check_release_tag "${GITHUB_REF_NAME}"
+      # A tag can name any commit. Only a commit on main went through the required
+      # status checks, so refuse the rest before anything is built or published.
+      # The checkout keeps no token and the repository is public, so the fetch is
+      # anonymous. If the repository ever turns private, compare through the API
+      # with this job's read-only GITHUB_TOKEN instead.
+      - name: Require the tagged commit to be on main
+        run: |
+          git fetch --no-tags origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
 
   ci:
     needs: metadata
