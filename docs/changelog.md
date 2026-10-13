@@ -94,8 +94,10 @@ This page records user-visible release changes, including unpublished attempts.
   `False`; `FileSystemSource.cacheable` is `True` and `DatabaseSource.cacheable`
   is `True` only with an explicit `using` alias, each only while the instance uses
   the built-in `resolve()`. Both can be assigned, for example `self.cacheable =
-  False` in a subclass constructor, or overridden by a class attribute. The
-  `TemplateSource` protocol still requires only `resolve()`.
+  False` in a subclass constructor, or overridden by a class attribute. On an
+  instance they behave like a class attribute: deleting an assignment, or patching
+  with `unittest.mock.patch.object`, restores the default. The `TemplateSource`
+  protocol still requires only `resolve()`.
 - `dj_hyperview.validators.validate_xml_text`, a Django validator (error code
   `xml_characters`) that rejects characters XML 1.0 cannot represent.
 - `hv_text` and `hv_attr` template filters that remove those characters and
@@ -160,10 +162,11 @@ This page records user-visible release changes, including unpublished attempts.
   handler caught. `publish_template`, model validation and the Admin form raised it
   instead of `ValidationError`.
 - A document is reported as `max_depth` only when libxml2 stops with a
-  resource-limit error that mentions depth. Before, any syntax error whose message
-  contained "depth" was reported as `max_depth`, so a mismatched end tag in an
-  element named `depth`, or a duplicated attribute named `depth`, hid the real
-  `malformed_xml` diagnosis.
+  resource-limit error that mentions depth, or with its own "Excessive depth in
+  document" message, which libxml2 before 2.13 reported as an internal error.
+  Before, any syntax error whose message contained "depth" was reported as
+  `max_depth`, so a mismatched end tag in an element named `depth`, or a duplicated
+  attribute named `depth`, hid the real `malformed_xml` diagnosis.
 - Checking a document for DTD and entity declarations is much faster after a
   declaration literal appears anywhere in it, even inside a comment or CDATA
   section. The scan used to test every character: about 1 MB took 215 ms rendered
@@ -245,8 +248,9 @@ This page records user-visible release changes, including unpublished attempts.
 ### Documentation
 
 - `VALIDATION.MAX_NODES` and `MAX_DEPTH` are documented as bounds on nodes, not
-  only elements. Comments and processing instructions have always counted toward
-  both, which is the safer bound.
+  only elements. Comments and processing instructions inside the root element have
+  always counted toward both, which is the safer bound. Those outside the root
+  element are not walked, so only `MAX_BYTES` bounds them.
 
 ### Compatibility
 

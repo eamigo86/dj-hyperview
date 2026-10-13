@@ -57,13 +57,15 @@ class TemplateSource(Protocol):
 
 
 class _BuiltinCacheable:
-    """The cacheable attribute of a built-in source, assignable per instance.
+    """The cacheable attribute of a built-in source, shadowed by any assignment.
 
-    Reading returns an explicit assignment when there is one. Otherwise the source
-    is cacheable by default only while it runs the resolve of the built-in class
-    that holds this descriptor. A subclass that overrides resolve may read ambient
-    state, such as the current tenant, so it is not cached until it declares
-    cacheable itself, as a class attribute or by assigning the instance attribute.
+    This is a non-data descriptor, so an instance attribute takes precedence and
+    assignment, deletion and mock.patch.object behave as they do for a plain class
+    attribute. Without an assignment the source is cacheable by default only while
+    it runs the resolve of the built-in class that holds this descriptor. A
+    subclass that overrides resolve may read ambient state, such as the current
+    tenant, so it is not cached until it declares cacheable itself, as a class
+    attribute or by assigning the instance attribute.
     """
 
     def __init__(self, default: Callable[[Any], bool] = lambda source: True) -> None:
@@ -71,17 +73,11 @@ class _BuiltinCacheable:
 
     def __set_name__(self, owner: type, name: str) -> None:
         self._owner = owner
-        self._name = name
 
     def __get__(self, source: Any, owner: type | None = None) -> Any:
         if source is None:
             return self
-        if self._name in source.__dict__:
-            return source.__dict__[self._name]
         return type(source).resolve is self._owner.resolve and self._default(source)
-
-    def __set__(self, source: Any, value: bool) -> None:
-        source.__dict__[self._name] = value
 
 
 def canonicalize_template_name(name: str) -> str:

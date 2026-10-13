@@ -199,6 +199,8 @@ def test_libxml_depth_ceiling_uses_the_public_max_depth_code(max_depth) -> None:
 
 
 RESOURCE_LIMIT = validation_module.etree.ErrorTypes.ERR_RESOURCE_LIMIT
+INTERNAL_ERROR = validation_module.etree.ErrorTypes.ERR_INTERNAL_ERROR
+EXCESSIVE_DEPTH = "Excessive depth in document: 256 use XML_PARSE_HUGE option"
 
 
 @pytest.mark.parametrize(
@@ -208,11 +210,19 @@ RESOURCE_LIMIT = validation_module.etree.ErrorTypes.ERR_RESOURCE_LIMIT
         ("Maximum DEPTH limit reached", RESOURCE_LIMIT, "max_depth"),
         # A resource limit that is not about depth is not MAX_DEPTH.
         ("xmlSAX2Characters: huge text node", RESOURCE_LIMIT, "malformed_xml"),
-        # Only the resource-limit code classifies a parser error as a depth failure.
+        # Another code does not classify a parser error as a depth failure...
         ("Maximum DEPTH limit reached", 0, "malformed_xml"),
+        (
+            "Opening and ending tag mismatch: depth line 1 and deep",
+            INTERNAL_ERROR,
+            "malformed_xml",
+        ),
+        # ...except libxml2's own message: before 2.13 it came as an internal error.
+        (EXCESSIVE_DEPTH, INTERNAL_ERROR, "max_depth"),
+        (EXCESSIVE_DEPTH, RESOURCE_LIMIT, "max_depth"),
     ],
 )
-def test_parser_errors_map_to_max_depth_only_for_depth_resource_limits(
+def test_parser_errors_map_to_max_depth_only_for_libxml2_depth_limits(
     monkeypatch: pytest.MonkeyPatch,
     message: str,
     libxml_code: int,
@@ -442,6 +452,19 @@ def test_comments_and_processing_instructions_count_toward_the_limits(
     assert validate_hxml(document, config=exact) == document
     one_less = ValidationSettings(**{limit: needed - 1})
     assert_validation_error(limit, lambda: validate_hxml(document, config=one_less))
+
+
+def test_comments_and_processing_instructions_outside_the_root_are_not_counted() -> (
+    None
+):
+    """The walk starts at the root element, so only MAX_BYTES bounds its siblings."""
+    document = (
+        "<!-- before --><?audit data?>"
+        "<view xmlns='https://hyperview.org/hyperview' />"
+        "<!-- after -->"
+    )
+
+    assert validate_hxml(document, config=ValidationSettings(max_nodes=1)) == document
 
 
 def test_engine_safe_render_escapes_context_and_validates_output():

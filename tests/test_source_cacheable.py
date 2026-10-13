@@ -206,6 +206,41 @@ def test_assigning_the_attribute_overrides_the_default_on_any_instance() -> None
     assert FileSystemSource(template_dirs=()).cacheable is True
 
 
+BUILTIN_SOURCES = pytest.mark.parametrize(
+    "make",
+    [
+        lambda: FileSystemSource(template_dirs=()),
+        lambda: DatabaseSource(using="default"),
+    ],
+    ids=["filesystem", "database"],
+)
+
+
+@BUILTIN_SOURCES
+def test_deleting_the_assigned_attribute_restores_the_derived_default(make) -> None:
+    """The attribute behaves like a plain class attribute that an instance shadows."""
+    source = make()
+    source.cacheable = False
+    assert source.cacheable is False
+
+    del source.cacheable
+
+    assert source.cacheable is True
+    assert "cacheable" not in vars(source)
+
+
+@BUILTIN_SOURCES
+def test_patch_object_can_override_and_restore_the_attribute(make) -> None:
+    """Test doubles patch the attribute on an instance, as they did on a class one."""
+    source = make()
+
+    with patch.object(source, "cacheable", False):
+        assert source.cacheable is False
+
+    assert source.cacheable is True
+    assert "cacheable" not in vars(source)
+
+
 def test_filesystem_source_is_still_cached_without_extra_configuration(
     tmp_path: Path,
 ) -> None:

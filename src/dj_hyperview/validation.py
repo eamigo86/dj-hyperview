@@ -27,6 +27,7 @@ _XML_WHITESPACE = " \t\r\n"
 _MAX_ATTRIBUTES = 128
 _MAX_NAMESPACES = 8
 _MAX_NAMESPACE_DECLARATIONS = 32
+_DEPTH_LIMIT_MESSAGE = "Excessive depth in document"
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 ILLEGAL_CHARACTERS_MESSAGE = "document contains characters not allowed in XML 1.0"
 RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
@@ -247,10 +248,12 @@ def _parse(document: str, config: ValidationSettings) -> etree._Element:
         root = etree.fromstring(encoded, parser=_parser())
     except etree.XMLSyntaxError as error:
         # libxml2 echoes element and attribute names into its messages, so the word
-        # alone proves nothing: only a resource-limit error about depth is MAX_DEPTH.
-        if (
+        # alone proves nothing: only a resource-limit error about depth is MAX_DEPTH,
+        # or libxml2's own message for it, which before 2.13 had another error code.
+        message = str(error)
+        if message.startswith(_DEPTH_LIMIT_MESSAGE) or (
             error.code == etree.ErrorTypes.ERR_RESOURCE_LIMIT
-            and "depth" in str(error).casefold()
+            and "depth" in message.casefold()
         ):
             raise TemplateValidationError(
                 "max_depth", "document exceeds MAX_DEPTH"
