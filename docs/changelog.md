@@ -243,6 +243,40 @@ on, and says how to migrate.
   or filesystem template that reaches it must close the delimiters, spell them with
   `{% templatetag openvariable %}` and its siblings, or break the line; a stored
   row that reaches it fails when it is served.**
+- The database template admin no longer strips `content`: leading and trailing
+  whitespace, including a final newline, is now stored exactly as submitted. Django's
+  form field stripped it, so every admin save silently rewrote a template that
+  ended in a newline. With the editor off, content that is only whitespace is
+  therefore saved; the empty string is still rejected as required, and with the
+  editor on the source check still rejects whitespace-only content. **An integration
+  that relied on the form trimming `content`, or on it rejecting whitespace-only
+  content with the editor off, must do that itself.**
+- A Hyperview `Content-Type` parameter whose value needs quoting, such as
+  `profile="mobile app"`, is now written back quoted and escaped. Before, the
+  rebuilt header lost the quotes (`profile=mobile app`), which is not a valid
+  parameter. A parameter name that is not an RFC 9110 token, or a value with a
+  control character, a character above U+00FF, or a trailing backslash, now raises
+  `ValueError` instead of producing a malformed header. Django and `email` read the
+  quote after a trailing backslash as escaped, so such a value would come back
+  changed and swallow the next parameter. **A caller that passes such a parameter
+  must drop it or give it a value that fits: printable Latin-1 characters, and no
+  backslash at the end.**
+- Source that nests blocks more than 100 levels deep, such as `{% if %}`, no longer
+  fails the Admin validation request and the Admin save with HTTP 500, and can no
+  longer be saved only to fail with `RecursionError` when it is served. Django's
+  parser compiles about 490 nested `{% if %}` blocks, but rendering recurses three
+  frames for each and fails at about 330 in an empty stack and at about 230 inside
+  a request, so the earlier check accepted source that could not render. The check,
+  the Admin form, `publish_template` and model validation report it as `too_deep`,
+  "Template is nested too deeply." **A stored template that nests blocks more than
+  100 levels deep is now rejected when it is saved; flatten it.**
+- The source check for forbidden declarations now agrees with Django about two
+  constructs. A `{% comment %}` inside a `{% verbatim %}` body hides nothing, so a
+  declaration there is rejected when the template is saved, as it was already when
+  it was served. A comment ends at the first tag named exactly `endcomment`, so a
+  declaration after `{% endcomment note %}` is hidden and the template is accepted,
+  as it renders. **A template that hid a declaration in a `{% comment %}` inside a
+  `{% verbatim %}` body is now rejected when it is saved; remove the declaration.**
 
 ### Added
 
@@ -339,12 +373,6 @@ on, and says how to migrate.
 
 ### Fixed
 
-- The database template admin no longer strips `content`: leading and trailing
-  whitespace, including a final newline, is now stored exactly as submitted. Django's
-  form field stripped it, so every admin save silently rewrote a template that
-  ended in a newline. With the editor off, content that is only whitespace is
-  therefore saved; the empty string is still rejected as required, and with the
-  editor on the source check still rejects whitespace-only content.
 - The editor's validation and completion URLs are now resolved on the `AdminSite`
   that serves the form. Before, they were always looked up in the default `admin`
   namespace, so a model registered on a custom site silently lost its validation
@@ -355,14 +383,6 @@ on, and says how to migrate.
   `text/html`. When `headers` carries a `Content-Type` (in any letter case),
   `None` keeps that header, as it does in Django, instead of raising Django's
   `ValueError` about giving the type twice.
-- A Hyperview `Content-Type` parameter whose value needs quoting, such as
-  `profile="mobile app"`, is now written back quoted and escaped. Before, the
-  rebuilt header lost the quotes (`profile=mobile app`), which is not a valid
-  parameter. A parameter name that is not an RFC 9110 token, or a value with a
-  control character, a character above U+00FF, or a trailing backslash, now raises
-  `ValueError` instead of producing a malformed header. Django and `email` read the
-  quote after a trailing backslash as escaped, so such a value would come back
-  changed and swallow the next parameter.
 - A `Content-Encoding` other than `gzip` or `identity` now fails at iteration and
   serialization with the message "only gzip Content-Encoding is supported". Before,
   it reported only that the header does not match the transport, which hid that the
@@ -395,14 +415,6 @@ on, and says how to migrate.
   Admin check. It may render markup, so its position is now reported with the
   informational note, like other runtime-dependent structure. Variables without
   `safe` still count as text, as before.
-- Source that nests blocks more than 100 levels deep, such as `{% if %}`, no longer
-  fails the Admin validation request and the Admin save with HTTP 500, and can no
-  longer be saved only to fail with `RecursionError` when it is served. Django's
-  parser compiles about 490 nested `{% if %}` blocks, but rendering recurses three
-  frames for each and fails at about 330 in an empty stack and at about 230 inside
-  a request, so the earlier check accepted source that could not render. The check,
-  the Admin form, `publish_template` and model validation report it as `too_deep`,
-  "Template is nested too deeply."
 - The Admin check no longer counts the namespace declaration and prefix of its own
   synthetic root toward the namespace limits. A document with exactly 32
   declarations on a path or 8 in-scope namespaces passed at render time and failed
@@ -411,12 +423,6 @@ on, and says how to migrate.
   element or half of a tag, now gets the informational note in the Admin check.
   It used to be reported as the blocking `schema_structure` or `xml_syntax` error,
   although the template renders.
-- The source check for forbidden declarations now agrees with Django about two
-  constructs. A `{% comment %}` inside a `{% verbatim %}` body hides nothing, so a
-  declaration there is rejected when the template is saved, as it was already when
-  it was served. A comment ends at the first tag named exactly `endcomment`, so a
-  declaration after `{% endcomment note %}` is hidden and the template is accepted,
-  as it renders.
 - Publication and model validation compile stored source with the same linear lexer
   as the Admin check, so a long line of unclosed `{{` is checked in linear time
   instead of the 10 s that Django's lexer takes for 40,000 of them (120 KB). How
