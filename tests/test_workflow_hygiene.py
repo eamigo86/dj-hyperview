@@ -72,6 +72,14 @@ def _upstream(jobs: dict, name: str) -> set[str]:
     return found
 
 
+def _coverage_uploads() -> list[dict]:
+    return [
+        step
+        for step in _steps(_workflow("ci.yml"))
+        if step.get("uses", "").startswith("codecov/codecov-action@")
+    ]
+
+
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
 def test_workflow_reads_only_by_default_and_never_cancels_a_branch_run(
     path: Path,
@@ -183,7 +191,28 @@ def test_release_calls_ci_with_inputs_and_secrets_it_declares() -> None:
 
     assert (WORKFLOW_DIR.parent.parent / call["uses"]).is_file()
     assert set(call["with"]) <= set(declared["inputs"])
-    assert set(call["secrets"]) <= set(declared["secrets"])
+    assert set(call.get("secrets", {})) <= set(declared.get("secrets", {}))
+
+
+def test_a_failed_coverage_upload_fails_the_run() -> None:
+    """Codecov's own statuses are the coverage gate, so a lost upload must not
+    leave a green run with no status to wait for."""
+    uploads = _coverage_uploads()
+
+    assert uploads
+    for step in uploads:
+        assert FULL_SHA_PIN.fullmatch(step["uses"]), step["uses"]
+        assert step["with"]["fail_ci_if_error"] == "true", step["uses"]
+
+
+def test_the_release_run_uploads_no_coverage() -> None:
+    """The tagged commit got its statuses on main; the release passes no token."""
+    uploads = _coverage_uploads()
+
+    assert uploads
+    assert [
+        step["name"] for step in uploads if "github.ref_type != 'tag'" not in step["if"]
+    ] == []
 
 
 def test_release_runs_the_live_redis_acceptance() -> None:

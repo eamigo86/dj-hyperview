@@ -33,18 +33,14 @@ jobs:
           git fetch --no-tags origin main
           git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD
 
+  # Tests, build and documentation on the tagged commit. No coverage is uploaded
+  # here: Codecov judged this commit when it reached main.
   ci:
     needs: metadata
-    permissions:
-      contents: read
-      actions: read
-      statuses: read
     uses: ./.github/workflows/ci.yml
-    secrets:
-      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
     with:
       redis: true
-      coverage_reuse_only: true
+
   stage:
     needs: ci
     runs-on: ubuntu-latest
