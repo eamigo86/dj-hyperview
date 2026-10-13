@@ -2,7 +2,7 @@
 
 import re
 import zlib
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from typing import Any
 
 from django.http import HttpRequest, HttpResponse
@@ -71,6 +71,8 @@ def _normalized_response_metadata(
 
 
 _BODYLESS_STATUSES = frozenset({204, 205, 304})
+_Chunk = str | bytes | memoryview
+_Content = _Chunk | Iterable[_Chunk]
 
 
 class _HyperviewBody:
@@ -105,7 +107,7 @@ class _HyperviewBody:
                 "http_body", "response body does not match its HTTP status"
             )
 
-    def _candidate(self, value, *, prefix: bytes = b"") -> bytes:
+    def _candidate(self, value: _Content, *, prefix: bytes = b"") -> bytes:
         limit = get_settings().validation.max_bytes
         size = len(prefix)
         chunks = [prefix]
@@ -223,7 +225,7 @@ class _HyperviewBody:
         return self.content.decode("utf-8")
 
     @content.setter
-    def content(self, value) -> None:
+    def content(self, value: _Content) -> None:
         if getattr(self, "_initializing_hyperview_template", False) and value == "":
             self._container = [b""]
             return
@@ -257,7 +259,7 @@ class _HyperviewBody:
             )
         return content
 
-    def __iter__(self):
+    def __iter__(self) -> Iterator[bytes]:
         return iter((self._emission_content(),))
 
     def serialize(self) -> bytes:
@@ -271,10 +273,10 @@ class _HyperviewBody:
 
     __bytes__ = serialize
 
-    def write(self, content) -> None:
+    def write(self, content: _Content) -> None:
         self._set_candidate(self._candidate(content, prefix=self._body_content()))
 
-    def writelines(self, lines) -> None:
+    def writelines(self, lines: Iterable[_Chunk]) -> None:
         self._set_candidate(self._candidate(lines, prefix=self._body_content()))
 
 

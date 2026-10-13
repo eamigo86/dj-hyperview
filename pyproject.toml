@@ -87,12 +87,17 @@ line-length = 88
 src = ["src", "tests", "tools"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "DJ", "D1", "D417"]
+select = ["E", "F", "I", "UP", "B", "DJ", "D1", "D417", "ANN"]
+# ANN asks for the parameters and the return of every function in the package, the
+# private ones too, because ruff cannot limit it to public names. Any stays allowed
+# (ANN401) where the type is open by nature, such as the optional redis-py client.
+ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
-# Documentation rules apply to the shipped package only; migrations are generated.
-"tests/**" = ["D"]
-"tools/**" = ["D"]
+# Documentation rules apply to the shipped package only, and migrations are generated.
+# Annotation rules skip tests and tools.
+"tests/**" = ["D", "ANN"]
+"tools/**" = ["D", "ANN"]
 "**/migrations/*.py" = ["D"]
 
 [tool.ruff.lint.pydocstyle]

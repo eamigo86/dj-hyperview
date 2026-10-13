@@ -103,7 +103,14 @@ class _Dispatcher:
         )
         self.thread.start()
 
-    def submit(self, config, channels, payload, *, deadline=None) -> bool:
+    def submit(
+        self,
+        config: _Config,
+        channels: tuple[str, ...],
+        payload: bytes,
+        *,
+        deadline: float | None = None,
+    ) -> bool:
         deadline = time.monotonic() + _TIMEOUT if deadline is None else deadline
         if self.stopped.is_set() or time.monotonic() >= deadline:
             return False

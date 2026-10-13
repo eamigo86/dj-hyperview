@@ -1,5 +1,7 @@
 """Lazy public redis-py construction with no retry or URL safety overrides."""
 
+from typing import Any
+
 from ._config import _Config
 
 
@@ -17,7 +19,8 @@ def _options(config: _Config) -> dict:
     return options
 
 
-def _sync_client(config: _Config):
+# redis-py is optional and imported lazily, so its client types are not named here.
+def _sync_client(config: _Config) -> Any:
     import redis
     from redis.backoff import NoBackoff
     from redis.retry import Retry
@@ -30,7 +33,7 @@ def _sync_client(config: _Config):
     )
 
 
-def _async_client(config: _Config):
+def _async_client(config: _Config) -> Any:
     from redis.asyncio import Redis
     from redis.asyncio.retry import Retry
     from redis.backoff import NoBackoff

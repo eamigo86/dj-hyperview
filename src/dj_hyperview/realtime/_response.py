@@ -3,6 +3,7 @@
 import asyncio
 import logging
 from collections.abc import AsyncIterator, Awaitable, Callable, Mapping
+from typing import Self
 
 from django.http import StreamingHttpResponse
 
@@ -25,7 +26,7 @@ class _OwnedEvents:
         self._closing: asyncio.Task[None] | None = None
         self._unregister = _register(self.aclose)
 
-    def __aiter__(self):
+    def __aiter__(self) -> Self:
         return self
 
     async def __anext__(self) -> bytes:

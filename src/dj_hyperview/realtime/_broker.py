@@ -6,7 +6,7 @@ from typing import TYPE_CHECKING
 
 from django.db import transaction
 
-from ._config import _channels, _config
+from ._config import _channels, _Config, _config
 from ._events import _encode_payload
 
 if TYPE_CHECKING:
@@ -19,7 +19,7 @@ class RealtimeUnavailable(RuntimeError):
     """The optional broker could not establish or retain its owned transport."""
 
 
-def _dispatch(config, channels, payload):
+def _dispatch(config: _Config, channels: tuple[str, ...], payload: bytes) -> None:
     from ._publisher import dispatch
 
     dispatch(config, channels, payload)

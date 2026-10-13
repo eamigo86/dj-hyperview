@@ -9,7 +9,7 @@ from django.core.signals import setting_changed
 from django.dispatch import receiver
 from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
-from django.template.backends.django import DjangoTemplates
+from django.template.backends.django import DjangoTemplates, Template
 from django.utils.module_loading import import_string
 
 from .conf import _SETTING_DEPENDENCIES, ValidationSettings, get_settings
@@ -54,7 +54,7 @@ def _consumer_django_template_options() -> dict[str, Any]:
 class _ValidatedTemplate:
     def __init__(
         self,
-        template,
+        template: Template,
         validation: ValidationSettings,
         resolver: TemplateResolver,
     ) -> None:
@@ -62,17 +62,25 @@ class _ValidatedTemplate:
         self._resolver = resolver
         self.validation = validation
 
-    def __getattr__(self, name):
+    def __getattr__(self, name: str) -> Any:
         if name.startswith("_"):
             raise AttributeError(name)
         return getattr(self._template, name)
 
-    def _render_source(self, context=None, request=None) -> str:
+    def _render_source(
+        self,
+        context: dict[str, Any] | None = None,
+        request: HttpRequest | None = None,
+    ) -> str:
         with template_snapshot(self._resolver):
             return self._template.render(context, request)
 
     def _render_result(
-        self, context=None, request=None, *, fragment=False
+        self,
+        context: dict[str, Any] | None = None,
+        request: HttpRequest | None = None,
+        *,
+        fragment: bool = False,
     ) -> _ValidatedHxml:
         return _validate_hxml_result(
             _rendered_hxml_text(self._render_source(context, request)),
@@ -80,7 +88,11 @@ class _ValidatedTemplate:
             fragment=fragment,
         )
 
-    def render(self, context=None, request=None) -> str:
+    def render(
+        self,
+        context: dict[str, Any] | None = None,
+        request: HttpRequest | None = None,
+    ) -> str:
         return self._render_result(context, request).text
 
 
@@ -187,7 +199,12 @@ class HyperviewEngine:
         return self._render_result(name, context, request).text
 
     def _render_result(
-        self, name, context=None, request=None, *, fragment=False
+        self,
+        name: str | Sequence[str],
+        context: dict[str, Any] | None = None,
+        request: HttpRequest | None = None,
+        *,
+        fragment: bool = False,
     ) -> _ValidatedHxml:
         with template_snapshot(self.resolver):
             template = (

@@ -3,11 +3,12 @@
 import asyncio
 import json
 import logging
-from collections.abc import Mapping
-from typing import Protocol
+from collections.abc import Iterable, Mapping
+from typing import Any, Protocol, Self
 
 from ._broker import RealtimeUnavailable
 from ._clients import _async_client
+from ._config import _Config
 from ._events import _encode_payload
 
 _LOGGER = logging.getLogger("dj_hyperview.realtime")
@@ -44,7 +45,7 @@ class Subscription(Protocol):
         ...
 
 
-def _pairs(pairs):
+def _pairs(pairs: Iterable[tuple[str, Any]]) -> dict[str, Any]:
     result = {}
     for key, value in pairs:
         if key in result:
@@ -53,14 +54,14 @@ def _pairs(pairs):
     return result
 
 
-def _payload(raw):
+def _payload(raw: object) -> bytes:
     if not isinstance(raw, bytes) or len(raw) > 4096:
         raise ValueError("Invalid realtime event")
     return _encode_payload(json.loads(raw, object_pairs_hook=_pairs))
 
 
-async def _close_clients(pubsub, client):
-    async def close():
+async def _close_clients(pubsub: Any, client: Any) -> None:
+    async def close() -> None:
         try:
             if pubsub is not None:
                 await pubsub.aclose()
@@ -68,7 +69,7 @@ async def _close_clients(pubsub, client):
             if client is not None:
                 await client.aclose()
 
-    async def bounded_close():
+    async def bounded_close() -> None:
         task = asyncio.create_task(close())
         done, pending = await asyncio.wait([task], timeout=_CLOSE_TIMEOUT)
         if pending:
@@ -92,7 +93,7 @@ async def _close_clients(pubsub, client):
 
 
 class _Subscription:
-    def __init__(self, pubsub, client, channels):
+    def __init__(self, pubsub: Any, client: Any, channels: frozenset[bytes]) -> None:
         self._pubsub = pubsub
         self._client = client
         self._channels = channels
@@ -103,10 +104,10 @@ class _Subscription:
         self._closed = False
         self._pump_task = asyncio.create_task(self._pump())
 
-    def __aiter__(self):
+    def __aiter__(self) -> Self:
         return self
 
-    async def __anext__(self):
+    async def __anext__(self) -> Mapping[str, object]:
         if self._closed:
             raise StopAsyncIteration
         value = await self._queue.get()
@@ -116,11 +117,11 @@ class _Subscription:
             self._resync_pending = False
         return json.loads(value)
 
-    def _drain(self):
+    def _drain(self) -> None:
         while not self._queue.empty():
             self._queue.get_nowait()
 
-    def _put(self, payload):
+    def _put(self, payload: bytes) -> None:
         if self._resync_pending:
             return
         if self._queue.full():
@@ -130,7 +131,7 @@ class _Subscription:
         else:
             self._queue.put_nowait(payload)
 
-    async def _pump(self):
+    async def _pump(self) -> None:
         try:
             while True:
                 message = await self._pubsub.get_message(
@@ -151,25 +152,25 @@ class _Subscription:
             # No retry/reconnect; a fresh subscription must acknowledge and resync.
             self._begin_close()
 
-    def _begin_close(self):
+    def _begin_close(self) -> None:
         if self._closing is None:
             self._closed = True
             self._drain()
             self._queue.put_nowait(_END)
             self._closing = asyncio.create_task(self._finish())
 
-    async def _finish(self):
+    async def _finish(self) -> None:
         if not self._pump_task.done():
             self._pump_task.cancel()
             await asyncio.gather(self._pump_task, return_exceptions=True)
         await _close_clients(self._pubsub, self._client)
 
-    async def aclose(self):
+    async def aclose(self) -> None:
         self._begin_close()
         await asyncio.shield(self._closing)
 
 
-async def _subscribe(config, channels) -> Subscription:
+async def _subscribe(config: _Config, channels: tuple[str, ...]) -> Subscription:
     client = pubsub = None
     expected = frozenset(channel.encode("ascii") for channel in channels)
     acknowledged = set()

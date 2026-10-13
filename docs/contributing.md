@@ -39,7 +39,11 @@ and return type hints are mandatory; do not repeat types in
 docstrings. Do not place backticks inside Python docstrings.
 
 `ruff check` rejects public symbols without a docstring and parameters missing from
-an `Args` section; `tests/test_public_api_quality.py` rejects backticks.
+an `Args` section (D1 and D417, Google convention). It also rejects a function in
+`src/`, public or private, whose parameters, `*args`, `**kwargs` or return are not
+annotated (the ANN rules). `Any` is allowed, because ANN401 is ignored. Tests, tools
+and generated migrations are exempt from the docstring rules, and tests and tools
+from the annotation rules. `tests/test_public_api_quality.py` rejects backticks.
 
 ## Documentation contract
 
