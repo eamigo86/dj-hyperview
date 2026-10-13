@@ -254,13 +254,15 @@ on, and says how to migrate.
 - A Hyperview `Content-Type` parameter whose value needs quoting, such as
   `profile="mobile app"`, is now written back quoted and escaped. Before, the
   rebuilt header lost the quotes (`profile=mobile app`), which is not a valid
-  parameter. A parameter name that is not an RFC 9110 token, or a value with a
-  control character, a character above U+00FF, or a trailing backslash, now raises
-  `ValueError` instead of producing a malformed header. Django and `email` read the
-  quote after a trailing backslash as escaped, so such a value would come back
-  changed and swallow the next parameter. **A caller that passes such a parameter
-  must drop it or give it a value that fits: printable Latin-1 characters, and no
-  backslash at the end.**
+  parameter. A parameter name that is not an RFC 9110 token or ends in `*` (an
+  RFC 8187 extended name such as `a*=x`), or a value with a control character, a
+  character above U+00FF, or a trailing backslash, now raises `ValueError` instead
+  of producing a malformed header. Django and `email` read the quote after a
+  trailing backslash as escaped, so such a value would come back changed and
+  swallow the next parameter, and Django drops the star of an extended name and
+  decodes its value, so `a*=x` would come back as `a=x`. **A caller that passes such
+  a parameter must drop it or give it a value that fits: printable Latin-1
+  characters, and no backslash at the end.**
 - Source that nests blocks more than 100 levels deep, such as `{% if %}`, no longer
   fails the Admin validation request and the Admin save with HTTP 500, and can no
   longer be saved only to fail with `RecursionError` when it is served. Django's

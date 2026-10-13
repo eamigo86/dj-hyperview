@@ -131,6 +131,8 @@ def test_hyperview_response_parses_quoted_content_type_parameters() -> None:
         r'profile="a\\b"',
         'profile=""',
         'profile="a=b"',
+        # A star inside a quoted value is data, not an extended parameter name.
+        'profile="a; b*=c"',
     ],
 )
 def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> None:
@@ -159,6 +161,11 @@ def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> No
         'profile="a\x7fb"',
         'profile="\u20ac"',
         'profile="\u0100"',
+        # RFC 8187 extended names: Django drops the star and decodes the value, and
+        # email reads the parameter as encoded, so neither gives the value back.
+        "a*=x",
+        "profile=mobile; a*=utf-8''x%20y",
+        'a *="x"',
         # Django and email read the quote after a trailing backslash as escaped.
         r'profile="a\\"',
         r'profile="a\\\\"',
