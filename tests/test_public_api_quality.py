@@ -9,6 +9,7 @@ one is checked here too.
 import ast
 import importlib
 import inspect
+import json
 import sys
 from functools import cached_property
 from pathlib import Path
@@ -60,9 +61,10 @@ def exporting_modules(root: Path = PACKAGE_ROOT) -> list[str]:
     for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
         if any(
-            isinstance(node, ast.Assign)
-            and any(getattr(target, "id", "") == "__all__" for target in node.targets)
-            for node in tree.body
+            isinstance(node, ast.Name)
+            and node.id == "__all__"
+            and isinstance(node.ctx, ast.Store)
+            for node in ast.walk(tree)
         ):
             parts = [root.name, *path.relative_to(root).with_suffix("").parts]
             names.append(".".join(parts[:-1] if parts[-1] == "__init__" else parts))
@@ -79,37 +81,46 @@ def _function(member: object) -> FunctionType | None:
     return member if isinstance(member, FunctionType) else None
 
 
-def undocumented_exports(
+def checked_names(
     module_names: list[str], root: Path = PACKAGE_ROOT
-) -> list[str]:
-    """Return what the exports of these modules leave without a docstring.
+) -> dict[str, bool]:
+    """Map each name the walk checks to whether it has a docstring.
 
-    That is each exported class and function, and every public function, method
-    and property (a dunder method counts) on the classes along the MRO of an
+    The names are each exported class and function, and every public function,
+    method and property (a dunder method counts) on the classes along the MRO of an
     exported class whose code lives under the root. Methods that Python generates
-    for a dataclass or a protocol, and ones a base class from another package
-    defines, are not ours to document.
+    for a dataclass or a protocol (Python 3.14 also generates __annotate__ for any
+    class with annotations), and ones a base class from another package defines,
+    are not ours to document.
     """
-    missing: set[str] = set()
+    checked: dict[str, bool] = {}
     for module_name in module_names:
         module = importlib.import_module(module_name)
         for export in module.__all__:
             exported = getattr(module, export)
             if not (inspect.isclass(exported) or inspect.isroutine(exported)):
                 continue
-            if not exported.__doc__:
-                missing.add(f"{module_name}.{export}")
+            checked[f"{module_name}.{export}"] = bool(exported.__doc__)
             for klass in getattr(exported, "__mro__", ()):
                 for name, member in vars(klass).items():
                     function = _function(member)
                     if (
                         function is not None
-                        and not function.__doc__
+                        and function.__name__ != "__annotate__"
                         and (not name.startswith("_") or name.startswith("__"))
                         and Path(function.__code__.co_filename).is_relative_to(root)
                     ):
-                        missing.add(f"{klass.__module__}.{klass.__qualname__}.{name}")
-    return sorted(missing)
+                        label = f"{klass.__module__}.{klass.__qualname__}.{name}"
+                        checked[label] = bool(function.__doc__)
+    return checked
+
+
+def undocumented_exports(
+    module_names: list[str], root: Path = PACKAGE_ROOT
+) -> list[str]:
+    """Return what the exports of these modules leave without a docstring."""
+    checked = checked_names(module_names, root)
+    return sorted(name for name, documented in checked.items() if not documented)
 
 
 def test_the_exporting_modules_are_found_by_their_all() -> None:
@@ -119,6 +130,26 @@ def test_the_exporting_modules_are_found_by_their_all() -> None:
         "dj_hyperview.sources",
         "dj_hyperview.contrib.database.services",
     } <= set(exporting_modules())
+
+
+def test_all_is_found_however_it_is_written(tmp_path: Path) -> None:
+    package = tmp_path / "sample_pkg"
+    package.mkdir()
+    for name, source in {
+        "plain": "__all__ = ['a']",
+        "annotated": "__all__: list[str] = ['a']",
+        "augmented": "from os.path import *\n__all__ += ['a']",
+        "conditional": "if True:\n    __all__ = ['a']",
+        "absent": "everything = ['a']\nprint(__all__)",
+    }.items():
+        (package / f"{name}.py").write_text(source + "\n")
+
+    assert exporting_modules(package) == [
+        "sample_pkg.annotated",
+        "sample_pkg.augmented",
+        "sample_pkg.conditional",
+        "sample_pkg.plain",
+    ]
 
 
 def test_undocumented_exports_are_found_through_private_bases(
@@ -162,10 +193,15 @@ def test_every_exported_name_and_member_has_a_docstring() -> None:
     result = run_isolated(
         "tests.settings_database_admin",
         "import django; django.setup()\n"
-        "from tests.test_public_api_quality import (\n"
-        "    exporting_modules, undocumented_exports)\n"
-        "print(*undocumented_exports(exporting_modules()), sep=chr(10))\n",
+        "import json\n"
+        "from tests.test_public_api_quality import checked_names, exporting_modules\n"
+        "modules = exporting_modules()\n"
+        "print(json.dumps([modules, checked_names(modules)]))\n",
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.split() == []
+    modules, checked = json.loads(result.stdout)
+    # A walk that reached nothing would pass, so each module must have been reached.
+    for module in modules:
+        assert any(name.rpartition(".")[0] == module for name in checked), module
+    assert [name for name, documented in checked.items() if not documented] == []
