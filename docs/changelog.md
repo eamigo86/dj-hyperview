@@ -97,7 +97,10 @@ on, and says how to migrate.
   the second lookup with `invalid payload`, `bypass` mode never cached it, and a
   field that is not JSON serializable raised `TypeError` even in `bypass` mode. The
   built-in sources already comply. A custom source that answered to another name,
-  or left a field as `None`, bytes or an integer, must be fixed.
+  or left one of the five fields as `None`, bytes or an integer, must be fixed. A
+  subclass of `ResolvedTemplate` may still add fields of its own: they are not
+  checked, an uncached lookup returns the subclass instance, and the cache stores,
+  and later returns, only the five contract fields as a plain `ResolvedTemplate`.
 - The system check now compiles the merged `EXTRA_SCHEMAS`
   registry. It compiled each extra schema alone, so two schemas that declare the
   same element differently, or an extra schema that declares a Hyperview or alert

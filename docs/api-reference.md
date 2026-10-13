@@ -66,7 +66,8 @@ coordinated rollout or rollback. See the [SSE guide](realtime.md).
 A `TemplateSource` requires only `resolve(name)`, which returns a `ResolvedTemplate`
 or `None` for a source-local miss. The resolver checks the result: its `name` must
 equal the requested canonical name and all five fields must be `str`, otherwise
-`SourceUnavailable` is raised instead of using or caching it. A source may also
+`SourceUnavailable` is raised instead of using or caching it. Fields that a
+subclass adds are not checked and are not cached: the cache holds the five. A source may also
 expose an optional `cacheable` attribute, `False` unless declared. The resolver
 caches a source only
 when `cacheable` is exactly `True`, so a source that does not declare it is read

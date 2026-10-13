@@ -24,6 +24,8 @@ from .sources import (
 
 _PATH_TYPES = (PurePosixPath, PureWindowsPath, PosixPath, WindowsPath)
 _MISSING_CACHE_SAFETY_HOOK = object()
+# A subclass may add fields of its own; only the contract's fields are checked.
+_CONTRACT_FIELDS = fields(ResolvedTemplate)
 logger = logging.getLogger("dj_hyperview.cache")
 
 
@@ -48,7 +50,7 @@ def _resolve_checked(source: TemplateSource, name: str) -> ResolvedTemplate | No
     if (
         not isinstance(resolved, ResolvedTemplate)
         or resolved.name != name
-        or not all(isinstance(getattr(resolved, f.name), str) for f in fields(resolved))
+        or not all(isinstance(getattr(resolved, f.name), str) for f in _CONTRACT_FIELDS)
     ):
         kind = type(source)
         raise SourceUnavailable(

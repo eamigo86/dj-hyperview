@@ -4,7 +4,7 @@ import hashlib
 import json
 import secrets
 from collections.abc import Callable, Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, fields
 from typing import cast
 
 from django.conf import settings
@@ -53,6 +53,17 @@ CACHE_MISS = CacheEntry(None)
 def _validate_timeout(value: object, minimum: int, label: str) -> None:
     if isinstance(value, bool) or not isinstance(value, int) or value < minimum:
         raise ValueError(f"Cache {label} must be an integer >= {minimum}")
+
+
+def _contract_fields(template: ResolvedTemplate) -> dict[str, str]:
+    """Return exactly the fields of the ResolvedTemplate contract.
+
+    The reader accepts those fields and no others, so a subclass that adds a field
+    must not put it in the payload. Reading the entry back gives the base class.
+    """
+    return {
+        item.name: getattr(template, item.name) for item in fields(ResolvedTemplate)
+    }
 
 
 def _unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
@@ -314,7 +325,7 @@ class TemplateCache:
             template: Resolved raw template to cache.
         """
         payload = json.dumps(
-            {"version": 1, "state": "template", "template": asdict(template)},
+            {"version": 1, "state": "template", "template": _contract_fields(template)},
             ensure_ascii=False,
             separators=(",", ":"),
         )
@@ -395,7 +406,7 @@ class TemplateCache:
                 "state": "resolved",
                 "source": source,
                 "name": name,
-                "template": asdict(template),
+                "template": _contract_fields(template),
             },
             ensure_ascii=False,
             separators=(",", ":"),

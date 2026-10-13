@@ -1,6 +1,8 @@
 """The resolver reports a silent cache and a source that breaks its contract."""
 
+import json
 import logging
+from dataclasses import dataclass
 
 import pytest
 from django.test import override_settings
@@ -229,3 +231,70 @@ def test_a_valid_text_subclass_is_still_cached() -> None:
 
     assert first.content == second.content == "<view/>"
     assert source.calls == 1
+
+
+@dataclass(frozen=True, slots=True)
+class TextExtra(ResolvedTemplate):
+    """A subclass whose extra field is text, like the five base fields."""
+
+    extra: str = "note"
+
+
+@dataclass(frozen=True, slots=True)
+class NumberExtra(ResolvedTemplate):
+    """A subclass whose extra field is not text."""
+
+    extra: int = 7
+
+
+class SubclassSource(Source):
+    def __init__(self, kind: type[ResolvedTemplate]) -> None:
+        super().__init__()
+        self.kind = kind
+
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        self.calls += 1
+        return self.kind(name, "<view/>", f"memory:{name}", "memory", "r1")
+
+
+@pytest.mark.parametrize("kind", [TextExtra, NumberExtra])
+def test_a_resolved_template_subclass_is_served_without_a_cache(kind) -> None:
+    """Only the five fields of the contract are checked; a subclass may add more."""
+    result = TemplateResolver([SubclassSource(kind)]).resolve("screen.xml")
+
+    assert isinstance(result, kind)
+    assert result.extra == {TextExtra: "note", NumberExtra: 7}[kind]
+
+
+@pytest.mark.parametrize("kind", [TextExtra, NumberExtra])
+@pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_a_resolved_template_subclass_is_cached_as_its_five_base_fields(
+    kind, failure_mode
+) -> None:
+    """The cache reader accepts exactly five fields, so the writer must send those."""
+    cache = TemplateCache(f"subclass-{kind.__name__}-{failure_mode}", alias="screens")
+    source = SubclassSource(kind)
+    resolver = TemplateResolver([source], cache=cache, failure_mode=failure_mode)
+
+    first = resolver.resolve("screen.xml")
+    second = resolver.resolve("screen.xml")
+
+    assert source.calls == 1
+    base = ("screen.xml", "<view/>", "memory:screen.xml", "memory", "r1")
+    assert (first.name, first.content, first.origin, first.source, first.revision) == (
+        base
+    )
+    assert second == ResolvedTemplate(*base)
+    generation = cache.generation("screen.xml")
+    key = cache.key(
+        resolver._source_ids[0], "screen.xml", cache._resolved_revision(generation)
+    )
+    payload = json.loads(cache.backend.get(key))
+    assert set(payload["template"]) == {
+        "name",
+        "content",
+        "origin",
+        "source",
+        "revision",
+    }
