@@ -172,15 +172,54 @@ def _project_file(tmp_path: Path, version: str) -> Path:
     return path
 
 
+def _allowed_maturities(version: Version) -> set[str]:
+    """Return the Development Status values a release may carry.
+
+    A prerelease, a development build included, must not claim more than its
+    stage. A final release in the 0.x line may still call itself Beta; from 1.0 on
+    it is Production/Stable.
+    """
+    if version.is_prerelease:
+        stage = version.pre[0] if version.pre else "dev"
+        return {
+            "dev": {"2 - Pre-Alpha"},
+            "a": {"3 - Alpha"},
+            "b": {"4 - Beta"},
+            "rc": {"4 - Beta"},
+        }[stage]
+    if version.major == 0:
+        return {"4 - Beta", "5 - Production/Stable"}
+    return {"5 - Production/Stable"}
+
+
+@pytest.mark.parametrize(
+    ("version", "allowed"),
+    [
+        ("1.0.0.dev1", {"2 - Pre-Alpha"}),
+        ("1.0.0a1", {"3 - Alpha"}),
+        ("1.0.0b1", {"4 - Beta"}),
+        ("1.0.0rc1", {"4 - Beta"}),
+        ("1.0.0b1.dev2", {"4 - Beta"}),
+        ("1.0.0", {"5 - Production/Stable"}),
+        ("1.0.0.post1", {"5 - Production/Stable"}),
+        ("0.1.0", {"4 - Beta", "5 - Production/Stable"}),
+    ],
+)
+def test_release_maturity_follows_the_version_stage(
+    version: str, allowed: set[str]
+) -> None:
+    """A development build is a prerelease too, and a 0.x final may stay Beta."""
+    assert _allowed_maturities(Version(version)) == allowed
+
+
 def test_development_status_classifier_matches_the_release_maturity() -> None:
     """A prerelease must not claim production-stable metadata, nor the reverse."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
-    pre = Version(project["version"]).pre
-    maturity = {"a": "3 - Alpha", "b": "4 - Beta", "rc": "4 - Beta"}
-    expected = maturity[pre[0]] if pre else "5 - Production/Stable"
-
-    assert [
-        classifier
+    declared = [
+        classifier.removeprefix("Development Status :: ")
         for classifier in project["classifiers"]
         if classifier.startswith("Development Status ::")
-    ] == [f"Development Status :: {expected}"]
+    ]
+
+    assert len(declared) == 1
+    assert declared[0] in _allowed_maturities(Version(project["version"]))
