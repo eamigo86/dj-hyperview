@@ -9,6 +9,7 @@ from dj_hyperview.http import HyperviewTemplateResponse
 from dj_hyperview.resolver import TemplateResolver
 from dj_hyperview.validation import (
     _contains_forbidden_declaration,
+    _rendered_hxml_text,
     validate_hxml,
     validate_rendered_hxml,
     validate_template_source,
@@ -107,6 +108,73 @@ def test_render_validation_strips_whitespace_after_an_initial_bom() -> None:
     )
 
     assert validate_rendered_hxml(document) == document.replace("\n\t", "")
+
+
+ILLEGAL_MESSAGE = "document contains characters not allowed in XML 1.0"
+# Python treats all of these as whitespace; XML 1.0 allows only space, tab, CR, LF.
+ILLEGAL_SPACES = ["\x0b", "\x0c", "\x1c", "\x1f"]
+LEGAL_NON_SPACES = ["\x85", "\xa0", "\U00002028", "\U00003000"]
+NOT_XML_WHITESPACE = [*ILLEGAL_SPACES, *LEGAL_NON_SPACES]
+
+
+@pytest.mark.parametrize("bom", ["", "\U0000feff"])
+@pytest.mark.parametrize("whitespace", [" ", "\t", "\r", "\n", " \t\r\n\n "])
+def test_render_normalizer_strips_xml_whitespace_after_an_optional_bom(
+    bom: str, whitespace: str
+) -> None:
+    """Only the four XML whitespace characters may precede the document."""
+    assert _rendered_hxml_text(f"{bom}{whitespace}<view />") == f"{bom}<view />"
+
+
+@pytest.mark.parametrize("character", NOT_XML_WHITESPACE)
+def test_render_normalizer_keeps_characters_that_are_not_xml_whitespace(
+    character: str,
+) -> None:
+    """str.lstrip would drop these silently, including illegal control characters."""
+    document = f"{character}<view />"
+
+    assert _rendered_hxml_text(document) == document
+
+
+@pytest.mark.parametrize(
+    ("character", "message"),
+    [
+        *[(character, ILLEGAL_MESSAGE) for character in ILLEGAL_SPACES],
+        *[(character, "invalid XML") for character in LEGAL_NON_SPACES],
+    ],
+)
+def test_leading_unicode_whitespace_is_rejected_not_stripped(
+    character: str, message: str
+) -> None:
+    """The public normalizer and the engine report what precedes the root."""
+    document = f"{character}<view xmlns='https://hyperview.org/hyperview' />"
+    engine = HyperviewEngine(TemplateResolver([TemplateSource(content=document)]))
+
+    direct = assert_validation_error(
+        "malformed_xml", lambda: validate_rendered_hxml(document)
+    )
+    rendered = assert_validation_error(
+        "malformed_xml", lambda: engine.render("screen.xml")
+    )
+
+    assert direct.message == rendered.message == message
+
+
+@pytest.mark.parametrize(
+    ("document", "config", "code"),
+    [
+        ("<!DOCTYPE view>\x01<view />", ValidationSettings(), "forbidden_declaration"),
+        (
+            '<?xml version="1.0" encoding="ISO-8859-1"?>\x01<view />',
+            ValidationSettings(),
+            "invalid_encoding",
+        ),
+        ("<view>\x01\xe9</view>", ValidationSettings(max_bytes=14), "max_bytes"),
+    ],
+)
+def test_guard_codes_take_precedence_over_illegal_characters(document, config, code):
+    """A control character must not mask a failure that protects the parser."""
+    assert_validation_error(code, lambda: validate_hxml(document, config=config))
 
 
 @pytest.mark.parametrize(

@@ -339,6 +339,32 @@ def test_invalid_response_mutations_are_atomic(response_type, mutation):
     assert response.content == before
 
 
+@pytest.mark.parametrize(
+    "response_type", [HyperviewResponse, HyperviewFragmentResponse]
+)
+@pytest.mark.parametrize("mutation", ["construct", "content", "write", "writelines"])
+def test_lone_surrogates_get_the_actionable_xml_character_message(
+    response_type, mutation
+):
+    """Text that cannot be encoded fails like every other XML 1.0 violation."""
+    surrogate = "\U0000d800"
+    response = None if mutation == "construct" else response_type(VALID_HXML)
+    with pytest.raises(TemplateValidationError) as error:
+        if mutation == "construct":
+            response_type(f"<text>{surrogate}</text>")
+        elif mutation == "content":
+            response.content = surrogate
+        elif mutation == "write":
+            response.write(surrogate)
+        else:
+            response.writelines(["<text>", surrogate])
+
+    assert error.value.code == "malformed_xml"
+    assert error.value.message == "document contains characters not allowed in XML 1.0"
+    if response is not None:
+        assert response.content == VALID_HXML.encode()
+
+
 def test_writelines_assembles_once_before_validating():
     response = HyperviewResponse(VALID_HXML)
     response.writelines(iter(["<!--", "comment", "-->"]))

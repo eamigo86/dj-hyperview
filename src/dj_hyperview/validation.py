@@ -15,9 +15,11 @@ from .exceptions import TemplateValidationError
 from .validators import _XML_ILLEGAL_CHARACTERS
 
 _BOM = "\ufeff"
+_XML_WHITESPACE = " \t\r\n"
 _MAX_ATTRIBUTES = 256
 _MAX_NAMESPACES = 64
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
+ILLEGAL_CHARACTERS_MESSAGE = "document contains characters not allowed in XML 1.0"
 RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
 IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"))
 XML_ENCODING = re.compile(
@@ -33,9 +35,13 @@ def _fail(code: str, message: str) -> None:
 
 
 def _rendered_hxml_text(rendered: str) -> str:
-    """Keep template preambles compatible without trusting safe-string markup."""
+    """Drop template preamble whitespace, and nothing else, after an initial BOM.
+
+    Only the four XML whitespace characters are removed. str.lstrip would also
+    discard control characters and Unicode spaces that the document must not have.
+    """
     bom = _BOM if rendered.startswith(_BOM) else ""
-    stripped = bom + rendered[len(bom) :].lstrip()
+    stripped = bom + rendered[len(bom) :].lstrip(_XML_WHITESPACE)
     return mark_safe(stripped) if isinstance(rendered, SafeData) else stripped
 
 
@@ -138,7 +144,10 @@ def _encode_utf8(document: str) -> bytes:
     try:
         return document.encode()
     except UnicodeEncodeError as error:
-        raise TemplateValidationError("malformed_xml", "invalid XML") from error
+        # Only a lone surrogate cannot be encoded, and XML 1.0 forbids it.
+        raise TemplateValidationError(
+            "malformed_xml", ILLEGAL_CHARACTERS_MESSAGE
+        ) from error
 
 
 def _guard_document(
@@ -196,9 +205,11 @@ def _check_namespace_scope(root: etree._Element) -> None:
 
 
 def _parse(document: str, config: ValidationSettings) -> etree._Element:
-    if _XML_ILLEGAL_CHARACTERS.search(document):
-        _fail("malformed_xml", "document contains characters not allowed in XML 1.0")
     encoded = _guard_document(document, config)
+    # After the guard, so that size, declaration and encoding failures keep their
+    # codes when the document also has an illegal character.
+    if _XML_ILLEGAL_CHARACTERS.search(document):
+        _fail("malformed_xml", ILLEGAL_CHARACTERS_MESSAGE)
     try:
         root = etree.fromstring(encoded, parser=_parser())
     except etree.XMLSyntaxError as error:
@@ -206,8 +217,6 @@ def _parse(document: str, config: ValidationSettings) -> etree._Element:
             raise TemplateValidationError(
                 "max_depth", "document exceeds MAX_DEPTH"
             ) from error
-        raise TemplateValidationError("malformed_xml", "invalid XML") from error
-    except UnicodeError as error:
         raise TemplateValidationError("malformed_xml", "invalid XML") from error
 
     nodes = 0

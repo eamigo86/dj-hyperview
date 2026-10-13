@@ -12,10 +12,12 @@ from django.template.response import ContentNotRenderedError, TemplateResponse
 from django.utils.http import parse_header_parameters
 
 from .conf import get_settings
-from .engine import _default_engine, _rendered_hxml_text, _ValidatedTemplate
+from .engine import _default_engine, _ValidatedTemplate
 from .exceptions import TemplateValidationError
 from .validation import (
+    ILLEGAL_CHARACTERS_MESSAGE,
     _is_current_hxml_result,
+    _rendered_hxml_text,
     _validate_hxml_result,
     _ValidatedHxml,
 )
@@ -88,9 +90,10 @@ class _HyperviewBody:
                         if isinstance(piece, str)
                         else bytes(piece)
                     )
-                except UnicodeError as error:
+                except UnicodeEncodeError as error:
+                    # Only a lone surrogate cannot be encoded; XML 1.0 forbids it.
                     raise TemplateValidationError(
-                        "malformed_xml", "invalid XML"
+                        "malformed_xml", ILLEGAL_CHARACTERS_MESSAGE
                     ) from error
                 size += len(encoded)
                 if size > limit:

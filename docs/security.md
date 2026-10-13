@@ -122,6 +122,10 @@ such as `"Buy\x01milk"` that reaches the rendered document makes the whole
 document invalid. Validation fails closed with `TemplateValidationError` code
 `malformed_xml` and the fixed message "document contains characters not allowed
 in XML 1.0". It repairs nothing and names neither the character nor its position.
+Eager responses and `write()` give the same message for a lone surrogate. A
+document that also exceeds `MAX_BYTES`, declares a DTD or entity, or declares a
+non-UTF-8 encoding reports `max_bytes`, `forbidden_declaration`, or
+`invalid_encoding` instead, because those checks run first.
 
 Reject the text where you accept it, or neutralize it where you render it:
 
@@ -177,7 +181,10 @@ Load the package tag library and render `hv_csrf_token` inside a form:
 
 The tag emits an escaped hidden Hyperview text field. Render validation removes
 leading whitespace produced before an XML declaration, and Hyperview responses
-require UTF-8 in both the declaration and HTTP charset.
+require UTF-8 in both the declaration and HTTP charset. Only XML whitespace
+(space, tab, carriage return, and line feed) is removed; any other leading
+character, such as a control character or a non-breaking space, is reported as an
+error rather than stripped.
 An initial UTF-8 BOM is preserved and whitespace after it is removed, but it
 cannot hide a contradictory encoding declaration such as `ISO-8859-1`.
 

@@ -133,7 +133,16 @@ This page records user-visible release changes, including unpublished attempts.
 - A rendered document that contains a character XML 1.0 cannot represent now fails
   with `malformed_xml` and the message "document contains characters not allowed
   in XML 1.0" instead of the generic "invalid XML". Validation still fails closed
-  and the message still does not echo document content.
+  and the message still does not echo document content. This includes a lone
+  surrogate passed to `HyperviewResponse`, `HyperviewFragmentResponse` or
+  `write()`. A document that also exceeds `MAX_BYTES`, declares a DTD or entity, or
+  declares a non-UTF-8 encoding keeps reporting `max_bytes`,
+  `forbidden_declaration` or `invalid_encoding`.
+- Render validation now removes only XML whitespace (space, tab, carriage return
+  and line feed) before the document, after an optional BOM. Before, it also
+  dropped other whitespace and control characters silently, such as U+00A0,
+  U+0085 or U+001C. A document that starts with one of them now fails with
+  `malformed_xml`.
 - `X-Hyperview-Version` is treated as a claimed value. A request still counts as
   Hyperview whenever the header is present, but `HyperviewRequestDetails.version`
   is now `None` unless the value matches `[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}`. It
