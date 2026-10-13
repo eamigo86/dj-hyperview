@@ -16,6 +16,7 @@ from .conf import _SETTING_DEPENDENCIES, ValidationSettings, get_settings
 from .exceptions import InvalidTemplateName, TemplateNotFound
 from .loaders import template_snapshot
 from .resolver import TemplateResolver
+from .sources import canonicalize_template_name
 from .validation import _rendered_hxml_text, _validate_hxml_result, _ValidatedHxml
 
 _INHERITED_DJANGO_TEMPLATE_OPTIONS = frozenset(
@@ -129,6 +130,7 @@ class HyperviewEngine:
             InvalidTemplateName: If the name is unsafe.
             TemplateNotFound: If the named template does not exist.
         """
+        canonicalize_template_name(name)
         try:
             template = self.backend.get_template(name)
         except TemplateDoesNotExist as error:
@@ -145,14 +147,24 @@ class HyperviewEngine:
             The first available compiled template.
 
         Raises:
-            TemplateNotFound: If no candidate template exists.
+            TypeError: If names is a single string.
+            TemplateNotFound: If no candidate template exists. Only valid
+                names that were not found are listed; rejected names never are.
         """
+        if isinstance(names, str):
+            raise TypeError(
+                "select_template() takes an iterable of template names, not a "
+                "string; use get_template() for a single name"
+            )
+        missing = []
         for name in names:
             try:
                 return self.get_template(name)
-            except (InvalidTemplateName, TemplateDoesNotExist):
+            except InvalidTemplateName:
                 continue
-        raise TemplateNotFound(", ".join(names))
+            except TemplateDoesNotExist:
+                missing.append(name)
+        raise TemplateNotFound(", ".join(missing))
 
     def render(
         self,

@@ -16,7 +16,7 @@ from dj_hyperview.middleware import (
 )
 
 
-def test_detector_exposes_verified_hyperview_version():
+def test_detector_exposes_claimed_hyperview_version():
     request = RequestFactory().get(
         "/screen",
         headers={"X-Hyperview-Version": "0.110.0"},
@@ -28,6 +28,68 @@ def test_detector_exposes_verified_hyperview_version():
     assert bool(details) is True
     assert details.is_hyperview is True
     assert details.version == "0.110.0"
+
+
+@pytest.mark.parametrize(
+    "version",
+    ["0", "v1", "0.111.0-rc.1", "1.2.3+build_5", pytest.param("A" + "z" * 63, id="64")],
+)
+def test_detector_keeps_version_tokens_that_match_the_grammar(version):
+    request = RequestFactory().get("/screen", headers={"X-Hyperview-Version": version})
+
+    assert detect_hyperview_request(request).version == version
+
+
+@pytest.mark.parametrize(
+    "version",
+    [
+        "",
+        " ",
+        ".1",
+        "-1",
+        "1 0",
+        "1.0\n",
+        "0.110.0\r\nSet-Cookie: x=1",
+        "<script>",
+        "\u0663.0",
+        pytest.param("a" * 65, id="65-characters"),
+        pytest.param("a" * 5_000, id="5000-characters"),
+    ],
+)
+def test_detector_claims_hyperview_but_drops_a_malformed_version(version):
+    request = RequestFactory().get("/screen", headers={"X-Hyperview-Version": version})
+
+    details = detect_hyperview_request(request)
+
+    assert details.is_hyperview is True
+    assert details.version is None
+
+
+def test_detector_treats_an_unparseable_accept_header_as_not_hyperview(monkeypatch):
+    request = RequestFactory().get(
+        "/screen", headers={"Accept": "application/vnd.hyperview+xml"}
+    )
+
+    def reject(media_type):
+        raise ValueError("Unable to parse header parameters (value too long).")
+
+    monkeypatch.setattr(request, "accepts", reject)
+
+    details = detect_hyperview_request(request)
+
+    assert details.is_hyperview is False
+    assert details.version is None
+
+
+def test_middleware_survives_an_oversized_accept_token():
+    accept = "application/vnd.hyperview+xml, " + "x" * 10_001
+    request = RequestFactory().get("/screen", headers={"Accept": accept})
+    expected = HttpResponse("screen")
+
+    response = HyperviewMiddleware(lambda incoming_request: expected)(request)
+
+    assert response is expected
+    assert isinstance(request.hyperview, HyperviewRequestDetails)
 
 
 @pytest.mark.parametrize(

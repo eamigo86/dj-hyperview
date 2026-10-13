@@ -30,7 +30,10 @@ to the Django admin itself.
 Names are relative, case-preserving POSIX paths. Reject absolute paths, empty or
 dot segments, backslashes, NUL bytes, control characters and isolated surrogates
 rather than normalizing them. Filesystem sources also reject symlink
-escapes. Public errors do not echo hostile names or absolute paths.
+escapes. Public errors do not echo hostile names or absolute paths. An ordered
+candidate list skips unsafe names, and its final `TemplateNotFound` lists only the
+valid names that were not found. Passing one string where a list is expected
+raises `TypeError`.
 
 ## Set explicit XML limits
 

@@ -11,6 +11,11 @@ This page records user-visible release changes, including unpublished attempts.
   `max_attributes`. Validation time grew faster than linearly with both counts, so
   a few kilobytes of untrusted markup could occupy a worker for seconds. The caps
   are fixed and sit well above anything a valid Hyperview document needs.
+- Stop echoing rejected template names from an ordered selection. When every
+  candidate misses, `TemplateNotFound` now lists only valid names that were not
+  found, so control characters and escape sequences in hostile names cannot reach
+  logs. Passing a bare string to `select_template` raises `TypeError`, as Django
+  does, instead of iterating its characters.
 
 ### Added
 
@@ -27,6 +32,13 @@ This page records user-visible release changes, including unpublished attempts.
 - A UTF-8 BOM followed by template whitespace before the XML declaration, such as
   a file that starts with a BOM and `{% load dj_hyperview %}`, now renders. The BOM
   is preserved and the whitespace after it is removed, as documented.
+- `HyperviewEngine.get_template` raises `InvalidTemplateName` for an empty,
+  `None` or non-string name on Django 5.2 and 6.1 alike. Django 6.1 rejects these
+  before any loader runs, which surfaced as `TemplateNotFound` and an HTTP 500
+  instead of the 400 that unsafe names produce.
+- An `Accept` header with a media range longer than Django's 10,000 character
+  limit no longer makes `HyperviewMiddleware` fail the request. It is treated as
+  not accepting Hyperview.
 
 ### Changed
 
@@ -34,6 +46,10 @@ This page records user-visible release changes, including unpublished attempts.
   with `malformed_xml` and the message "document contains characters not allowed
   in XML 1.0" instead of the generic "invalid XML". Validation still fails closed
   and the message still does not echo document content.
+- `X-Hyperview-Version` is treated as a claimed value. A request still counts as
+  Hyperview whenever the header is present, but `HyperviewRequestDetails.version`
+  is now `None` unless the value matches `[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}`. It
+  used to return any string verbatim, including empty or oversized values.
 
 ### Compatibility
 

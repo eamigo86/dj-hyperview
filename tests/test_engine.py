@@ -124,6 +124,54 @@ def test_engine_rejects_an_invalid_single_name_without_disclosing_it() -> None:
     assert "private" not in str(error.value)
 
 
+@pytest.mark.parametrize("name", ["", None, 123])
+def test_get_template_rejects_non_canonical_names_on_every_django(name) -> None:
+    """Django 6.1 rejects these before any loader; the package must not differ."""
+    engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
+
+    with pytest.raises(InvalidTemplateName, match="^Invalid template name$") as error:
+        engine.get_template(name)
+
+    assert error.value.name == name
+
+
+def test_select_template_rejects_a_bare_string_like_django() -> None:
+    """A string would iterate characters; the error never echoes it."""
+    engine = HyperviewEngine(
+        TemplateResolver([MemorySource({"screen.xml": "<text />"})])
+    )
+
+    with pytest.raises(
+        TypeError, match="^select_template\\(\\) takes an iterable"
+    ) as error:
+        engine.select_template("screen.xml")
+
+    assert "screen.xml" not in str(error.value)
+
+
+def test_select_template_miss_lists_only_valid_missing_names() -> None:
+    """Rejected names are never echoed, even into logs, by a final miss."""
+    engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
+    names = ["bad\nname\x1b[31m.xml", "../private.xml", "first.xml", None, 123]
+
+    with pytest.raises(TemplateNotFound) as error:
+        engine.select_template([*names, "second.xml"])
+
+    assert error.value.name == "first.xml, second.xml"
+    assert str(error.value) == "Template not found: first.xml, second.xml"
+
+
+def test_select_template_miss_with_only_unsafe_names_discloses_none() -> None:
+    """A selection without a single valid candidate has nothing to list."""
+    engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
+
+    with pytest.raises(TemplateNotFound) as error:
+        engine.render(["../private.xml", "bad\nname.xml"])
+
+    assert error.value.name == ""
+    assert "private" not in str(error.value) and "bad" not in str(error.value)
+
+
 @override_settings(
     TEMPLATES=[
         {
