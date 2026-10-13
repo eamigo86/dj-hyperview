@@ -422,31 +422,36 @@ test("r2 completion does not guess namespaces from branch-dependent opening elem
 });
 
 
-test("the editor is always dark, whatever the Admin theme", () => {
-  const themes = [];
-  const session = {setMode() {}, setTabSize() {}, setUseSoftTabs() {}};
-  const editor = {
-    getSession: () => session,
-    setFontSize() {},
-    setTheme: (theme) => themes.push(theme),
-  };
-  const textarea = {
-    previousElementSibling: {editor},
-    dataset: {},
-    closest: (selector) => selector === "form" ? null : {
-      nextElementSibling: {querySelector: () => ({})},
-    },
-  };
-  let load;
-  runInNewContext(readFileSync(new URL(
-    "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_editor.js", import.meta.url,
-  ), "utf8"), {
-    document: {documentElement: {dataset: {theme: "light"}}, querySelectorAll: () => [textarea]},
-    window: {
-      ace: {require: () => ({Mode: class {}})},
-      addEventListener: (event, callback) => { if (event === "load") load = callback; },
-    },
+for (const theme of ["dark", "light", "auto", undefined]) {
+  test(`the editor is always dark, whatever the Admin theme (${theme ?? "unset"})`, () => {
+    const themes = [];
+    const session = {setMode() {}, setTabSize() {}, setUseSoftTabs() {}};
+    const editor = {
+      getSession: () => session,
+      setFontSize() {},
+      setTheme: (name) => themes.push(name),
+    };
+    const textarea = {
+      previousElementSibling: {editor},
+      dataset: {},
+      closest: (selector) => selector === "form" ? null : {
+        nextElementSibling: {querySelector: () => ({})},
+      },
+    };
+    let load;
+    runInNewContext(readFileSync(new URL(
+      "../../src/dj_hyperview/static/dj_hyperview/admin/hxml_editor.js", import.meta.url,
+    ), "utf8"), {
+      document: {
+        documentElement: {dataset: theme === undefined ? {} : {theme}},
+        querySelectorAll: () => [textarea],
+      },
+      window: {
+        ace: {require: () => ({Mode: class {}})},
+        addEventListener: (event, callback) => { if (event === "load") load = callback; },
+      },
+    });
+    load();
+    assert.deepEqual(themes, ["ace/theme/monokai"]);
   });
-  load();
-  assert.deepEqual(themes, ["ace/theme/monokai"]);
-});
+}
