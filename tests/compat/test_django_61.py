@@ -4,6 +4,7 @@ import django
 import pytest
 from django.test import Client, override_settings
 from tests.consumer_project import settings_filesystem as filesystem
+from tools.test_matrix import SUPPORTED_DJANGOS
 
 from dj_hyperview import HYPERVIEW_MEDIA_TYPE
 
@@ -16,10 +17,10 @@ HTTP_SETTINGS = {
 @pytest.mark.skipif(django.VERSION[:2] != (6, 1), reason="requires Django 6.1")
 @override_settings(**HTTP_SETTINGS)
 def test_django_61_renders_the_public_consumer_contract(client: Client) -> None:
-    """Django 6.1.1 renders escaped HXML through the public response path."""
+    """Django 6.1 renders escaped HXML through the public response path."""
     response = client.get("/documents/full/", {"title": "6.1 & <supported>"})
 
-    assert django.get_version() == "6.1.1"
+    assert django.get_version() in SUPPORTED_DJANGOS
     assert response.status_code == 201
     assert response.headers["Content-Type"] == (
         f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"

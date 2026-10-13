@@ -10,6 +10,7 @@ from types import ModuleType
 
 import pytest
 import yaml
+from packaging.version import Version
 
 ROOT = Path(__file__).parents[1]
 CI_WORKFLOW = ROOT / ".github" / "workflows" / "ci.yml"
@@ -156,7 +157,6 @@ def test_repository_release_version_is_synchronized() -> None:
         package for package in lock["package"] if package["name"] == "dj-hyperview"
     )
 
-    assert project_version == "0.1.0b2"
     assert locked_project["version"] == project_version
 
 
@@ -172,12 +172,15 @@ def _project_file(tmp_path: Path, version: str) -> Path:
     return path
 
 
-def test_beta_release_declares_beta_development_status() -> None:
-    """The first beta advertises beta rather than production-stable metadata."""
+def test_development_status_classifier_matches_the_release_maturity() -> None:
+    """A prerelease must not claim production-stable metadata, nor the reverse."""
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
-    maturity = [
+    pre = Version(project["version"]).pre
+    maturity = {"a": "3 - Alpha", "b": "4 - Beta", "rc": "4 - Beta"}
+    expected = maturity[pre[0]] if pre else "5 - Production/Stable"
+
+    assert [
         classifier
         for classifier in project["classifiers"]
         if classifier.startswith("Development Status ::")
-    ]
-    assert maturity == ["Development Status :: 4 - Beta"]
+    ] == [f"Development Status :: {expected}"]

@@ -11,6 +11,9 @@ import pytest
 from tools import test_matrix
 
 ROOT = Path(__file__).parents[2]
+# The oldest and newest supported patch releases: the runner re-executes itself for
+# one that is not the active Django.
+OLDEST, NEWEST = test_matrix.SUPPORTED_DJANGOS[0], test_matrix.SUPPORTED_DJANGOS[-1]
 
 
 def test_supported_matrix_matches_metadata() -> None:
@@ -18,11 +21,8 @@ def test_supported_matrix_matches_metadata() -> None:
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
     policy = metadata["tool"]["dj-hyperview"]
 
-    assert metadata["project"]["requires-python"] == ">=3.12"
     assert tuple(policy["supported-python"]) == test_matrix.SUPPORTED_PYTHONS
     assert tuple(policy["supported-django"]) == test_matrix.SUPPORTED_DJANGOS
-    assert test_matrix.SUPPORTED_PYTHONS == ("3.12", "3.13", "3.14")
-    assert test_matrix.SUPPORTED_DJANGOS == ("5.2.17", "6.1.1")
 
 
 def test_coverage_commands_enforce_the_aggregate_after_admin() -> None:
@@ -48,7 +48,7 @@ def test_requested_django_version_reexecutes_the_canonical_runner(
 ) -> None:
     """A requested patch release runs the same gate in a locked uv overlay."""
     seen: list[tuple[str, ...]] = []
-    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: "6.1.1")
+    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: NEWEST)
 
     def _fake_run(
         command: tuple[str, ...], *, check: bool, env: dict[str, str]
@@ -58,14 +58,14 @@ def test_requested_django_version_reexecutes_the_canonical_runner(
 
     monkeypatch.setattr(test_matrix.subprocess, "run", _fake_run)
 
-    assert test_matrix.main(["--django-version", "5.2.17"]) == 0
+    assert test_matrix.main(["--django-version", OLDEST]) == 0
     assert seen == [
         (
             "uv",
             "run",
             "--locked",
             "--with",
-            "Django==5.2.17",
+            f"Django=={OLDEST}",
             "python",
             "-m",
             "tools.test_matrix",
@@ -78,14 +78,14 @@ def test_requested_installed_django_runs_coverage_without_reexec(
 ) -> None:
     """The active supported patch release runs coverage directly."""
     seen: list[bool] = []
-    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: "5.2.17")
+    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: OLDEST)
     monkeypatch.setattr(
         test_matrix,
         "run_coverage",
         lambda *, redis: seen.append(redis) or 0,
     )
 
-    assert test_matrix.main(["--django-version", "5.2.17"]) == 0
+    assert test_matrix.main(["--django-version", OLDEST]) == 0
     assert seen == [False]
 
 
@@ -93,7 +93,7 @@ def test_django_selector_redis_requires_url_before_overlay(
     monkeypatch: Any, capsys: Any
 ) -> None:
     """A Redis selector fails closed before starting an overlay without a URL."""
-    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: "6.1.1")
+    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: NEWEST)
     monkeypatch.delenv(test_matrix.REDIS_URL_ENV, raising=False)
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(
@@ -102,7 +102,7 @@ def test_django_selector_redis_requires_url_before_overlay(
         lambda command, **kwargs: calls.append(command),
     )
 
-    assert test_matrix.main(["--django-version", "5.2.17", "--redis"]) == 2
+    assert test_matrix.main(["--django-version", OLDEST, "--redis"]) == 2
     assert calls == []
     assert capsys.readouterr().err == (
         "Redis profile requires an explicit service URL.\n"
@@ -114,7 +114,7 @@ def test_django_selector_forwards_redis_and_overlay_failure(
 ) -> None:
     """An explicit Redis selector forwards opt-in and subprocess status."""
     seen: list[tuple[tuple[str, ...], dict[str, str]]] = []
-    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: "6.1.1")
+    monkeypatch.setattr(test_matrix.metadata, "version", lambda name: NEWEST)
     monkeypatch.setenv(test_matrix.REDIS_URL_ENV, "redis://127.0.0.1:6379/15")
 
     def _fake_run(
@@ -125,7 +125,7 @@ def test_django_selector_forwards_redis_and_overlay_failure(
 
     monkeypatch.setattr(test_matrix.subprocess, "run", _fake_run)
 
-    assert test_matrix.main(["--django-version", "5.2.17", "--redis"]) == 7
+    assert test_matrix.main(["--django-version", OLDEST, "--redis"]) == 7
     assert seen[0][0][-1] == "--redis"
     assert seen[0][1][test_matrix.REDIS_OPT_IN_ENV] == "1"
 

@@ -18,7 +18,9 @@ from tests.settings import DATABASES
 
 ROOT = Path(__file__).parents[1]
 DOCS = ROOT / "docs"
-SITE = "https://eamigo86.github.io/dj-hyperview/"
+SITE = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["urls"][
+    "Documentation"
+]
 # Rows of the settings reference that are not fields of the settings dataclasses.
 UNMAPPED_SETTING_ROWS = {
     "HYPERVIEW",

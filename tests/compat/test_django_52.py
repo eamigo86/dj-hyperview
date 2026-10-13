@@ -7,6 +7,7 @@ import django
 import pytest
 from django.test import Client, override_settings
 from tests.consumer_project import settings_filesystem as filesystem
+from tools.test_matrix import SUPPORTED_DJANGOS
 
 from dj_hyperview import HYPERVIEW_MEDIA_TYPE
 
@@ -30,10 +31,10 @@ def test_pytest_treats_deprecations_as_compatibility_failures() -> None:
 @pytest.mark.skipif(django.VERSION[:2] != (5, 2), reason="requires Django 5.2")
 @override_settings(**HTTP_SETTINGS)
 def test_django_52_renders_the_public_consumer_contract(client: Client) -> None:
-    """Django 5.2.17 renders escaped HXML through the public response path."""
+    """Django 5.2 renders escaped HXML through the public response path."""
     response = client.get("/documents/full/", {"title": "5.2 & <supported>"})
 
-    assert django.get_version() == "5.2.17"
+    assert django.get_version() in SUPPORTED_DJANGOS
     assert response.status_code == 201
     assert response.headers["Content-Type"] == (
         f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"

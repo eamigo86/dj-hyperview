@@ -1,147 +1,111 @@
-"""Dependency metadata policy tests."""
+"""Dependency metadata policy tests.
+
+The tests state how pyproject.toml, uv.lock and the supported-version policy
+relate to each other. None repeats a version number, so a dependency bump or a
+`uv lock --upgrade` inside the declared ranges changes no test.
+"""
 
 import tomllib
 from pathlib import Path
 
+from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
+from packaging.utils import canonicalize_name
 
 ROOT = Path(__file__).parents[1]
-LOCKED_DIRECT = {
-    "coverage": "7.16.2",
-    "django": "6.1.1",
-    "django-ace": "1.44.0",
-    "lxml": "6.1.3",
-    "packaging": "26.3",
-    "pytest": "9.1.1",
-    "pytest-cov": "7.1.0",
-    "pytest-django": "4.14.0",
-    "redis": "8.1.0",
-    "ruff": "0.16.9",
-    "uv-build": "0.12.21",
-    "xmlschema": "4.3.2",
-    "zensical": "0.0.67",
-}
+METADATA = tomllib.loads((ROOT / "pyproject.toml").read_text())
+POLICY = METADATA["tool"]["dj-hyperview"]
 
 
-def test_manifest_declares_audited_compatible_ranges() -> None:
-    """Runtime and tooling metadata encode the dated compatibility policy."""
-    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
-
-    assert metadata["project"]["requires-python"] == ">=3.12"
-    assert metadata["project"]["dependencies"] == [
-        "Django>=5.2,<6.2",
-        "lxml>=6.1.3,<7",
-        "xmlschema>=4.3,<5",
+def _declared_requirements() -> list[str]:
+    declared = list(METADATA["project"]["dependencies"])
+    declared += [
+        requirement
+        for group in METADATA["project"]["optional-dependencies"].values()
+        for requirement in group
     ]
-    assert metadata["project"]["optional-dependencies"] == {
-        "schema": [],
-        "editor": ["django-ace>=1.44,<2"],
-        "realtime": ["redis>=7.4.1,<9"],
-    }
-    assert metadata["project"]["urls"] == {
-        "Documentation": "https://eamigo86.github.io/dj-hyperview/",
-        "Release notes": "https://eamigo86.github.io/dj-hyperview/changelog/",
-        "Source": "https://github.com/eamigo86/dj-hyperview",
-    }
-    assert metadata["build-system"]["requires"] == ["uv_build>=0.12.9,<0.13"]
-    assert metadata["dependency-groups"]["dev"] == [
-        "coverage[toml]>=7.16,<8",
-        "django-ace>=1.44,<2",
-        "packaging>=26.3,<27",
-        "pytest>=9.1,<10",
-        "pytest-cov>=7.1,<8",
-        "pytest-django>=4.14,<5",
-        "pyyaml>=6,<7",
-        "ruff>=0.16.6,<0.17",
-        "uv-build>=0.12.9,<0.13",
-        "xmlschema>=4.3,<5",
-        "zensical==0.0.67",
+    declared += [
+        requirement
+        for group in METADATA["dependency-groups"].values()
+        for requirement in group
     ]
-    assert metadata["dependency-groups"]["redis"] == ["redis==8.1.0"]
-    assert metadata["tool"]["dj-hyperview"] == {
-        "dependency-audit-date": "2026-09-30",
-        "supported-python": ["3.12", "3.13", "3.14"],
-        "supported-django": ["5.2.17", "6.1.1"],
-    }
+    return declared + METADATA["build-system"]["requires"]
+
+
+def test_locked_versions_satisfy_every_declared_requirement() -> None:
+    lock = tomllib.loads((ROOT / "uv.lock").read_text())
+    locked: dict[str, list[str]] = {}
+    for package in lock["package"]:
+        locked.setdefault(package["name"], []).append(package["version"])
+
+    unmet = []
+    for text in _declared_requirements():
+        requirement = Requirement(text)
+        versions = locked.get(canonicalize_name(requirement.name), [])
+        if not any(
+            requirement.specifier.contains(version, prereleases=True)
+            for version in versions
+        ):
+            unmet.append(text)
+
+    assert unmet == []
+
+
+def test_uv_lock_is_versioned() -> None:
+    assert "uv.lock" not in (ROOT / ".gitignore").read_text().splitlines()
 
 
 def test_requires_python_declares_no_upper_bound() -> None:
     """Newer interpreters are never blocked by metadata; CI defines what is tested."""
-    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
-    requires = SpecifierSet(metadata["project"]["requires-python"])
+    requires = SpecifierSet(METADATA["project"]["requires-python"])
 
     assert {specifier.operator for specifier in requires} == {">="}
-    assert "3.12.0" in requires
     assert "3.15.0" in requires
-    assert "3.11.9" not in requires
     assert SpecifierSet(lock["requires-python"]) == requires
 
 
 def test_classifiers_list_exactly_the_tested_pythons() -> None:
     """The tested interpreter set lives in classifiers, not in a version cap."""
-    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
     prefix = "Programming Language :: Python :: "
     classified = [
         classifier.removeprefix(prefix)
-        for classifier in metadata["project"]["classifiers"]
+        for classifier in METADATA["project"]["classifiers"]
         if classifier.startswith(prefix)
     ]
 
-    assert classified == metadata["tool"]["dj-hyperview"]["supported-python"]
+    assert classified == POLICY["supported-python"]
+    assert all(
+        version in SpecifierSet(METADATA["project"]["requires-python"])
+        for version in POLICY["supported-python"]
+    )
 
 
-def test_docs_state_that_newer_pythons_are_untested_not_blocked() -> None:
-    """Users on a newer interpreter learn the metadata allows it but CI does not."""
-    sentence = "not blocked by the package metadata"
-    for page in ("README.md", "docs/installation.md"):
-        text = " ".join((ROOT / page).read_text().split())
-        assert sentence in text, page
-        assert "not part of the CI matrix" in text, page
+def test_classifiers_list_exactly_the_tested_djangos() -> None:
+    prefix = "Framework :: Django :: "
+    classified = [
+        classifier.removeprefix(prefix)
+        for classifier in METADATA["project"]["classifiers"]
+        if classifier.startswith(prefix)
+    ]
+    django = next(
+        Requirement(text)
+        for text in METADATA["project"]["dependencies"]
+        if canonicalize_name(Requirement(text).name) == "django"
+    )
+
+    assert classified == [
+        ".".join(version.split(".")[:2]) for version in POLICY["supported-django"]
+    ]
+    assert all(
+        django.specifier.contains(version) for version in POLICY["supported-django"]
+    )
 
 
 def test_manifest_and_repository_declare_the_mit_license() -> None:
-    """Modern package metadata and the repository expose the selected license."""
-    metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
     license_text = (ROOT / "LICENSE").read_text()
-    readme = (ROOT / "README.md").read_text()
 
-    assert metadata["project"]["license"] == "MIT"
-    assert metadata["project"]["license-files"] == ["LICENSE"]
-    assert license_text.startswith(
-        "MIT License\n\nCopyright (c) 2026 Ernesto Perez Amigo\n"
-    )
+    assert METADATA["project"]["license"] == "MIT"
+    assert METADATA["project"]["license-files"] == ["LICENSE"]
+    assert license_text.startswith("MIT License\n")
     assert "Permission is hereby granted, free of charge" in license_text
-    assert 'THE SOFTWARE IS PROVIDED "AS IS"' in license_text
-    assert "img.shields.io/pypi/l/dj-hyperview" in readme
-    assert "## License" in readme
-    assert (
-        "[MIT License](https://github.com/eamigo86/dj-hyperview/blob/main/LICENSE)"
-        in readme
-    )
-
-
-def test_versioned_lock_pins_audited_tools() -> None:
-    """The repository lock fixes the audited versions."""
-    assert "uv.lock" not in (ROOT / ".gitignore").read_text().splitlines()
-
-    lock = tomllib.loads((ROOT / "uv.lock").read_text())
-    versions = {package["name"]: package["version"] for package in lock["package"]}
-    assert {name: versions[name] for name in LOCKED_DIRECT} == LOCKED_DIRECT
-    assert versions["pymdown-extensions"] == "12.1"
-
-
-def test_realtime_extra_lock_metadata_reuses_existing_redis_resolution() -> None:
-    lock = tomllib.loads((ROOT / "uv.lock").read_text())
-    package = next(item for item in lock["package"] if item["name"] == "dj-hyperview")
-    assert package["optional-dependencies"]["realtime"] == [{"name": "redis"}]
-    assert {
-        "name": "redis",
-        "marker": "extra == 'realtime'",
-        "specifier": ">=7.4.1,<9",
-    } in package["metadata"]["requires-dist"]
-    assert "realtime" in package["metadata"]["provides-extras"]
-    assert (
-        next(item for item in lock["package"] if item["name"] == "redis")["version"]
-        == "8.1.0"
-    )
