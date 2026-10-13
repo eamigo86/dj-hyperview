@@ -32,10 +32,27 @@ _HYPERVIEW_MEDIA_TYPES = {
 # RFC 9110 token, and the characters a quoted-string may carry (no control bytes).
 _TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 _QUOTABLE = re.compile(r"[\t\x20-\x7e\x80-\xff]*")
-# A parameter name that ends in "*" is an RFC 8187 extended parameter. Django drops
-# the star from the name and decodes the value, so it would not come back as given.
-_QUOTED_STRING = re.compile(r'"(?:[^"\\]|\\.?)*(?:"|\Z)')
-_EXTENDED_NAME = re.compile(r";[^;=]*\*\s*=")
+
+
+def _has_extended_name(header: str) -> bool:
+    # A name that ends in "*" is an RFC 8187 extended parameter: Django drops the star
+    # and decodes the value, so it would not come back as given. This splits the
+    # header the way Django does (at a semicolon after an even count of quotes, a
+    # quote behind a backslash not counted) because a split that follows RFC quoting
+    # finds a different parameter in some malformed headers.
+    rest = ";" + header
+    while rest:
+        rest = rest[1:]
+        end = rest.find(";")
+        while end > 0 and (rest.count('"', 0, end) - rest.count('\\"', 0, end)) % 2:
+            end = rest.find(";", end + 1)
+        if end < 0:
+            end = len(rest)
+        name, equals, _ = rest[:end].partition("=")
+        if equals and name.strip().endswith("*"):
+            return True
+        rest = rest[end:]
+    return False
 
 
 def _parameter(key: str, value: str) -> str:
@@ -62,7 +79,7 @@ def _normalized_response_metadata(
     normalized_media_type = _HYPERVIEW_MEDIA_TYPES.get(media_type.casefold())
     if normalized_media_type is None:
         return content_type, "utf-8"
-    if _EXTENDED_NAME.search(_QUOTED_STRING.sub('""', content_type or "")):
+    if _has_extended_name(content_type or ""):
         raise ValueError("Invalid Content-Type parameter")
     parameters.pop("charset", None)
     extra = [_parameter(key, value) for key, value in parameters.items()]

@@ -133,6 +133,7 @@ def test_hyperview_response_parses_quoted_content_type_parameters() -> None:
         'profile="a=b"',
         # A star inside a quoted value is data, not an extended parameter name.
         'profile="a; b*=c"',
+        r'profile="a\"; b*=c"',
     ],
 )
 def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> None:
@@ -166,6 +167,14 @@ def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> No
         "a*=x",
         "profile=mobile; a*=utf-8''x%20y",
         'a *="x"',
+        "a**=x",
+        # Django ends a parameter at a semicolon after an even count of quotes, a
+        # quote behind a backslash not counted, so these hide the star from a reader
+        # that follows RFC quoting but not from Django.
+        r"\";a*=x",
+        r"\";a**=",
+        r"\"a;a*='a",
+        r'""\";a*=',
         # Django and email read the quote after a trailing backslash as escaped.
         r'profile="a\\"',
         r'profile="a\\\\"',

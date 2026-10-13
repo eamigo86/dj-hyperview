@@ -261,9 +261,10 @@ on, and says how to migrate.
   of producing a malformed header. Django and `email` read the quote after a
   trailing backslash as escaped, so such a value would come back changed and
   swallow the next parameter, and Django drops the star of an extended name and
-  decodes its value, so `a*=x` would come back as `a=x`. **A caller that passes such
-  a parameter must drop it or give it a value that fits: printable Latin-1
-  characters, and no backslash at the end.**
+  decodes its value, so `a*=x` would come back as `a=x`. The check splits the header
+  the way Django does, so a stray quote cannot hide a star from it. **A caller that
+  passes such a parameter must drop it or give it a value that fits: printable
+  Latin-1 characters, and no backslash at the end.**
 - Source that nests blocks more than 100 levels deep, such as `{% if %}`, no longer
   fails the Admin validation request and the Admin save with HTTP 500, and can no
   longer be saved only to fail with `RecursionError` when it is served. Django's
