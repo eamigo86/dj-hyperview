@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from django.template import Engine, Origin
 from django.template.loaders.base import Loader
 
-from .conf import ValidationSettings
+from .conf import ValidationSettings, get_settings
 from .exceptions import TemplateNotFound
 from .resolver import TemplateResolver
 from .sources import ResolvedTemplate
@@ -94,19 +94,28 @@ class ResolverLoader(Loader):
     def __init__(
         self,
         engine: Engine,
-        resolver: TemplateResolver,
-        validation: ValidationSettings,
+        resolver: TemplateResolver | None = None,
+        validation: ValidationSettings | None = None,
     ) -> None:
         """Initialize a resolver-backed Django loader.
 
+        Django builds a loader named in TEMPLATES OPTIONS with the engine alone, so
+        both arguments default to the current HYPERVIEW settings.
+
         Args:
             engine: Owning Django template engine.
-            resolver: Ordered raw-template resolver.
-            validation: Validation policy for loaded source.
+            resolver: Ordered raw-template resolver, or None to load the sources
+                from the settings.
+            validation: Validation policy for loaded source, or None to load it
+                from the settings.
         """
         super().__init__(engine)
-        self.resolver = resolver
-        self.validation = validation
+        self.resolver = (
+            TemplateResolver.from_settings() if resolver is None else resolver
+        )
+        self.validation = (
+            get_settings().validation if validation is None else validation
+        )
 
     def _resolve(self, name: str) -> ResolvedTemplate:
         snapshot = _snapshot_for(self.resolver)

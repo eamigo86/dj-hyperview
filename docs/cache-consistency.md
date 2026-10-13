@@ -141,6 +141,23 @@ shared Django cache to migrate this package's entries.
 fail. `raise` reports `SourceUnavailable` instead. Neither mode hides a real
 source failure.
 
+A cache that bypass silently skips would never be noticed, so each swallowed
+failure logs one `WARNING` on the `dj_hyperview.cache` logger:
+`template_cache_bypassed operation=<operation> reason=<reason>`. The operation is
+`initialize`, `generation`, `read` or `write`, and the reason is one of the fixed
+descriptions `SourceUnavailable` carries, such as `backend failure`, `invalid
+payload`, `invalid alias` or `unsupported backend`. The message never contains a
+template name, a cache key, a source identity or the backend's own error. A cache
+that works logs nothing. A source that declares `cacheable = True` but has
+constructor options the cache cannot identify, such as an arbitrary object, is
+never cached; building the resolver logs one `INFO` record,
+`template_source_uncacheable source_index=<n> reason=unsupported_options`.
+
+A source must return `None` or a `ResolvedTemplate` named exactly as requested,
+with `str` fields. Anything else raises `SourceUnavailable` with the reason
+`invalid resolved template` in both failure modes, because the cache could not read
+the entry back.
+
 An explicitly bound `DatabaseSource` never publishes a source read while its
 database connection is inside a transaction. Existing cache hits remain
 available, but an older transaction snapshot cannot pin stale content under a

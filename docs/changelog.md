@@ -139,9 +139,37 @@ This page records user-visible release changes, including unpublished attempts.
 - `hv_text` and `hv_attr` template filters that remove those characters and
   escape element text or attribute values. `hv_attr` also encodes line feeds,
   carriage returns and tabs so they survive XML attribute-value normalization.
+- `CACHE.FAILURE_MODE = "bypass"` is no longer silent. Each cache failure it
+  swallows logs a `WARNING` on the new `dj_hyperview.cache` logger, such as
+  `template_cache_bypassed operation=read reason=invalid payload`, with fixed codes
+  only: never a template name, cache key, source identity or backend message. A
+  source that declares `cacheable = True` but whose constructor options the cache
+  cannot identify is logged once at `INFO` as `template_source_uncacheable`. A
+  working cache logs nothing. Before, a cache that never worked, for example behind
+  a wrong alias, left no trace.
 
 ### Fixed
 
+- `dj_hyperview.loaders.ResolverLoader` can be named in `TEMPLATES`
+  `OPTIONS["loaders"]`. Its `resolver` and `validation` arguments now default to
+  the resolver and validation limits built from `HYPERVIEW`; before, Django's
+  construction of the loader from its dotted path raised `TypeError`.
+- The engine behind `render_template` and the template responses is rebuilt when
+  `DEBUG` changes, as Django rebuilds its own engines, instead of keeping the debug
+  option it first saw.
+- A `TEMPLATES` entry without a `BACKEND`, or with `BACKEND` set to `None`, no
+  longer makes `HyperviewEngine` fail with `AttributeError`. The engine skips it,
+  like an entry whose backend cannot be imported, and reads its options from the
+  first Django backend.
+- **Behavior change:** the resolver now checks what a source returns, with or
+  without a cache. A `ResolvedTemplate` must be named exactly as requested and all
+  of its fields must be `str`; otherwise the resolver raises `SourceUnavailable`
+  (reason `invalid resolved template`) in both failure modes. Before, such a result
+  was written to the cache and then rejected on every read: `raise` mode failed on
+  the second lookup with `invalid payload`, `bypass` mode never cached it, and a
+  field that is not JSON serializable raised `TypeError` even in `bypass` mode. The
+  built-in sources already comply. A custom source that answered to another name,
+  or left a field as `None`, bytes or an integer, must be fixed.
 - Admin **Format and Validate** now treats a Django delimiter the way Django's lexer
   does. A `{% comment %}` block is ignored whatever follows its name, as in
   `{% comment "temporarily disabled" %}`: the check looked for

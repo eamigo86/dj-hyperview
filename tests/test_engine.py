@@ -529,3 +529,87 @@ def test_uninitialized_validated_template_can_be_copied_without_recursion() -> N
 
     assert isinstance(copy.copy(uninitialized), template_type)
     assert isinstance(copy.deepcopy(uninitialized), template_type)
+
+
+HV_TEXT = '<text xmlns="https://hyperview.org/hyperview">hv</text>'
+STUB_SOURCES = [
+    {"BACKEND": "tests.stubs.TemplateSource", "OPTIONS": {"content": HV_TEXT}}
+]
+
+
+@override_settings(
+    HYPERVIEW={"SOURCES": STUB_SOURCES, "VALIDATION": {"MAX_BYTES": 10}},
+    TEMPLATES=[
+        {
+            "BACKEND": "django.template.backends.django.DjangoTemplates",
+            "OPTIONS": {"loaders": ["dj_hyperview.loaders.ResolverLoader"]},
+        }
+    ],
+)
+def test_resolver_loader_defaults_to_the_configured_resolver_and_validation() -> None:
+    """The documented loader works from a plain TEMPLATES entry.
+
+    Django builds a loader from its dotted path alone, so the resolver and the
+    validation policy have to come from the HYPERVIEW settings.
+    """
+    from django.template import engines
+
+    template_engine = engines["django"].engine
+    loader = template_engine.template_loaders[0]
+
+    assert isinstance(loader, ResolverLoader)
+    assert loader.resolver.resolve("screen.xml").content == HV_TEXT
+    with pytest.raises(TemplateValidationError) as error:
+        engines["django"].get_template("screen.xml")
+    assert error.value.code == "max_bytes"
+
+
+@override_settings(DEBUG=False)
+def test_default_engine_is_rebuilt_when_debug_changes() -> None:
+    """Django resets its own engines on DEBUG, which changes their template options."""
+    from dj_hyperview.engine import _default_engine
+
+    first = _default_engine()
+    with override_settings(DEBUG=True):
+        assert _default_engine() is not first
+    assert _default_engine() is not first
+
+
+@pytest.mark.parametrize(
+    ("templates", "inherited"),
+    [
+        ([{"OPTIONS": {"string_if_invalid": "NO-BACKEND"}}], {}),
+        ([{"BACKEND": None, "OPTIONS": {"string_if_invalid": "NONE"}}], {}),
+        (["not-a-mapping"], {}),
+        (
+            [
+                {"BACKEND": "django.template.backends.jinja2.Jinja2"},
+                {
+                    "BACKEND": "tests.stubs.CustomDjangoTemplates",
+                    "OPTIONS": {"string_if_invalid": "SECOND"},
+                },
+            ],
+            {"string_if_invalid": "SECOND"},
+        ),
+        (
+            [
+                {
+                    "BACKEND": "django.template.backends.django.DjangoTemplates",
+                    "OPTIONS": None,
+                }
+            ],
+            {},
+        ),
+    ],
+    ids=["no-backend", "none-backend", "not-a-mapping", "jinja2-first", "options-none"],
+)
+def test_odd_templates_entries_never_break_the_engine(templates, inherited) -> None:
+    """Only a Django backend entry contributes options; the others are skipped."""
+    from dj_hyperview.engine import _consumer_django_template_options
+
+    with override_settings(TEMPLATES=templates):
+        options = _consumer_django_template_options()
+        engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
+
+    assert options == inherited
+    assert engine.backend.engine is not None

@@ -42,6 +42,12 @@ class TemplateSource(Protocol):
     False. The built-in sources are stricter: they report cacheable only while
     resolve is their own, so a subclass that overrides resolve must declare
     cacheable True itself.
+
+    The result of resolve is checked once by the resolver, whether or not the
+    source is cached. It must be None or a ResolvedTemplate whose name equals the
+    requested canonical name and whose five fields are all str (a str subclass is
+    fine). Anything else raises SourceUnavailable instead of being used or cached,
+    because the cache cannot read such an entry back.
     """
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
@@ -51,7 +57,8 @@ class TemplateSource(Protocol):
             name: Canonical template name.
 
         Returns:
-            The resolved template when found, otherwise a source-local miss.
+            The resolved template, named exactly name, or None for a source-local
+            miss.
         """
         ...
 

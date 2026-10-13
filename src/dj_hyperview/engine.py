@@ -22,7 +22,8 @@ from .validation import _rendered_hxml_text, _validate_hxml_result, _ValidatedHx
 _INHERITED_DJANGO_TEMPLATE_OPTIONS = frozenset(
     {"builtins", "context_processors", "libraries", "string_if_invalid"}
 )
-_ENGINE_SETTING_DEPENDENCIES = _SETTING_DEPENDENCIES | {"TEMPLATES"}
+# Like Django's own engines, which also take their debug flag from DEBUG.
+_ENGINE_SETTING_DEPENDENCIES = _SETTING_DEPENDENCIES | {"DEBUG", "TEMPLATES"}
 
 
 def _consumer_django_template_options() -> dict[str, Any]:
@@ -32,7 +33,8 @@ def _consumer_django_template_options() -> dict[str, Any]:
         backend_path = configured.get("BACKEND")
         try:
             backend_type = import_string(backend_path)
-        except (ImportError, TypeError, ValueError):
+        except (AttributeError, ImportError, TypeError, ValueError):
+            # An entry without a usable BACKEND, such as None, is not ours to read.
             continue
         if not isinstance(backend_type, type) or not issubclass(
             backend_type, DjangoTemplates

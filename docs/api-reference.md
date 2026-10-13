@@ -60,11 +60,14 @@ coordinated rollout or rollback. See the [SSE guide](realtime.md).
 | `TemplateSource` | Contract implemented by template sources. |
 | `FileSystemSource` | Read project-owned files from configured roots. |
 | `ResolvedTemplate` | Immutable result returned by a source. |
-| `ResolverLoader` | Connect the resolver to Django's template engine. |
+| `ResolverLoader` | Connect the resolver to Django's template engine. Naming `"dj_hyperview.loaders.ResolverLoader"` in `TEMPLATES` `OPTIONS["loaders"]` reads the sources and validation limits from `HYPERVIEW`. |
 
 A `TemplateSource` requires only `resolve(name)`, which returns a `ResolvedTemplate`
-or `None` for a source-local miss. A source may also expose an optional
-`cacheable` attribute, `False` unless declared. The resolver caches a source only
+or `None` for a source-local miss. The resolver checks the result: its `name` must
+equal the requested canonical name and all five fields must be `str`, otherwise
+`SourceUnavailable` is raised instead of using or caching it. A source may also
+expose an optional `cacheable` attribute, `False` unless declared. The resolver
+caches a source only
 when `cacheable` is exactly `True`, so a source that does not declare it is read
 on every lookup. `FileSystemSource` reports `cacheable = True`; `DatabaseSource`
 reports `True` only with an explicit `using` alias. Both report it only while

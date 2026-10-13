@@ -2,8 +2,10 @@
 
 import hashlib
 import json
+import logging
 import math
 from collections.abc import Iterable
+from dataclasses import fields
 from inspect import getattr_static
 from pathlib import PosixPath, PurePath, PurePosixPath, PureWindowsPath, WindowsPath
 
@@ -22,6 +24,37 @@ from .sources import (
 
 _PATH_TYPES = (PurePosixPath, PureWindowsPath, PosixPath, WindowsPath)
 _MISSING_CACHE_SAFETY_HOOK = object()
+logger = logging.getLogger("dj_hyperview.cache")
+
+
+def _log_bypass(operation: str, error: SourceUnavailable) -> None:
+    """Report a cache failure that bypass mode swallowed, with fixed codes only."""
+    logger.warning(
+        "template_cache_bypassed operation=%s reason=%s", operation, error.reason
+    )
+
+
+def _resolve_checked(source: TemplateSource, name: str) -> ResolvedTemplate | None:
+    """Resolve through one source and enforce the ResolvedTemplate contract.
+
+    The cache reader rejects what it cannot read back, so a result that breaks the
+    contract would be written once and then fail every later lookup, or raise from
+    the cache writer. The same rule holds without a cache: a template must not
+    answer to another name than the one asked for.
+    """
+    resolved = source.resolve(name)
+    if resolved is None:
+        return None
+    if (
+        not isinstance(resolved, ResolvedTemplate)
+        or resolved.name != name
+        or not all(isinstance(getattr(resolved, f.name), str) for f in fields(resolved))
+    ):
+        kind = type(source)
+        raise SourceUnavailable(
+            f"{kind.__module__}.{kind.__qualname__}", "invalid resolved template"
+        )
+    return resolved
 
 
 def _canonical_bytes(value: object) -> bytes:
@@ -103,6 +136,14 @@ def _source_fingerprint(index: int, backend: str, options: object) -> str | None
     return f"source:{digest}"
 
 
+def _log_uncacheable(index: int) -> None:
+    """Report a source that asked for caching but cannot be identified for it."""
+    logger.info(
+        "template_source_uncacheable source_index=%d reason=unsupported_options",
+        index,
+    )
+
+
 def _source_cacheable(source: object) -> bool:
     """Cache a source only when its cacheable attribute is exactly True.
 
@@ -174,9 +215,12 @@ class TemplateResolver:
                 options = vars(source)
             except TypeError:
                 options = source
-            yield _source_fingerprint(
+            fingerprint = _source_fingerprint(
                 index, f"{kind.__module__}.{kind.__qualname__}", options
             )
+            if fingerprint is None and self.cache is not None:
+                _log_uncacheable(index)
+            yield fingerprint
 
     @classmethod
     def from_settings(cls) -> "TemplateResolver":
@@ -199,9 +243,10 @@ class TemplateResolver:
             return cls(sources)
         try:
             cache = TemplateCache.from_settings(config.cache.namespace)
-        except SourceUnavailable:
+        except SourceUnavailable as error:
             if config.cache.failure_mode == "raise":
                 raise
+            _log_bypass("initialize", error)
             return cls(sources)
         source_ids = []
         for index, (source, instance) in enumerate(
@@ -213,7 +258,10 @@ class TemplateResolver:
             options = dict(source.options)
             if isinstance(instance, FileSystemSource):
                 options["template_dirs"] = instance.template_dirs
-            source_ids.append(_source_fingerprint(index, source.backend, options))
+            fingerprint = _source_fingerprint(index, source.backend, options)
+            if fingerprint is None:
+                _log_uncacheable(index)
+            source_ids.append(fingerprint)
         return cls(
             sources,
             cache=cache,
@@ -242,7 +290,7 @@ class TemplateResolver:
             publish_initial = False
             if initialize:
                 publish_initial = source_id is not None and _source_cache_safe(source)
-                resolved = source.resolve(canonical)
+                resolved = _resolve_checked(source, canonical)
                 if publish_initial:
                     initial_results.append((source_id, resolved))
             else:
@@ -262,9 +310,10 @@ class TemplateResolver:
             return None, False
         try:
             generation = self.cache._peek_generation(name)
-        except SourceUnavailable:
+        except SourceUnavailable as error:
             if self.failure_mode == "raise":
                 raise
+            _log_bypass("generation", error)
             return None, False
         return generation, generation is None
 
@@ -281,9 +330,10 @@ class TemplateResolver:
                         self.cache.set_resolved_miss(source_id, name, generation)
                     else:
                         self.cache.set_resolved(source_id, name, resolved, generation)
-        except SourceUnavailable:
+        except SourceUnavailable as error:
             if self.failure_mode == "raise":
                 raise
+            _log_bypass("write", error)
 
     def _resolve_source(
         self,
@@ -293,19 +343,20 @@ class TemplateResolver:
         generation: str | None,
     ) -> ResolvedTemplate | None:
         if self.cache is None or source_id is None or generation is None:
-            return source.resolve(name)
+            return _resolve_checked(source, name)
         try:
             entry = self.cache.get_resolved(source_id, name, generation)
-        except SourceUnavailable:
+        except SourceUnavailable as error:
             if self.failure_mode == "raise":
                 raise
-            return source.resolve(name)
+            _log_bypass("read", error)
+            return _resolve_checked(source, name)
         if entry is CACHE_MISS:
             return None
         if entry is not None:
             return entry.template
 
-        resolved = source.resolve(name)
+        resolved = _resolve_checked(source, name)
         if not _source_cache_safe(source):
             return resolved
         try:
@@ -313,9 +364,10 @@ class TemplateResolver:
                 self.cache.set_resolved_miss(source_id, name, generation)
             else:
                 self.cache.set_resolved(source_id, name, resolved, generation)
-        except SourceUnavailable:
+        except SourceUnavailable as error:
             if self.failure_mode == "raise":
                 raise
+            _log_bypass("write", error)
         return resolved
 
 
