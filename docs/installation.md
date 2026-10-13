@@ -59,8 +59,8 @@ all sections together. Reading settings or running checks does not connect Redis
 
 `uv add "dj-hyperview[realtime]"` adds redis-py `>=7.4.1,<9`. Redis remains
 optional: package startup, template signals and SSE framing do not import the
-client or connect. The supplied lock continues to resolve the existing 8.1.0;
-transport capability tests also exercise 7.4.1. No Redis server is installed by
-this extra. Provide a separately operated Redis service only when enabling
+client or connect. The supplied lock resolves 8.1.0, the only version the live
+Redis job runs against; 7.4.1 is the lower bound that the package declares and
+does not test. No Redis server is installed by this extra. Provide a separately operated Redis service only when enabling
 application-owned realtime. See [SSE ownership](http-responses.md#owned-asynchronous-sse-responses)
 and [broker configuration](configuration.md#optional-realtime-broker).

@@ -2,10 +2,11 @@
 
 Start with the [API compatibility commitment](api-reference.md#beta-compatibility-policy)
 and [verified test scope](testing.md#verified-scope) before adopting a prerelease.
-**0.1.0b1** begins the 0.1 beta line by formalizing the existing a22 contract and
-its documented limits; it does not add new SSE runtime behavior. A source
-candidate is not proof of publication: retain the existing
-[CI, Codecov and publication gates](release-rollback.md) before adopting it.
+**0.1.0b1** began the 0.1 beta line by formalizing the a22 contract and its
+documented limits, and **0.1.0b2** moved validation to the corrected Hyperview
+0.111.0 schema. Neither adds new SSE runtime behavior. Releases pass the
+[CI, Codecov and publication gates](release-rollback.md); entries under
+*Unreleased* in the [changelog](changelog.md) are not part of any release.
 
 ## Available now
 
@@ -66,7 +67,7 @@ for duplicates, and report one cause at a time. Do not include private data.
 
 | Candidate | Follow-up |
 | --- | --- |
-| Fragment load failure leaves loading active | Track [issue #1348](https://github.com/Instawork/hyperview/issues/1348) and [PR #1350](https://github.com/Instawork/hyperview/pull/1350); verify a published fix against the original case before claiming consumer acceptance. |
+| ~~Fragment load failure leaves loading active~~ | **Done.** Fixed upstream in Hyperview 0.111.0 ([issue #1348](https://github.com/Instawork/hyperview/issues/1348), [PR #1350](https://github.com/Instawork/hyperview/pull/1350)); HyperTodo pins that release and covers the case with mounted tests, as the [0.1.0b2 release notes](changelog.md#010b2-2026-09-24) record. |
 | Style IDs shadow update targets | Reproduce element/style ID collision; use distinct IDs in the consumer. |
 | Switch change loses form context or submits an old value | Isolate the two symptoms with the current form value and request body. |
 | Android ID overrides an accessible label | Verify actual TalkBack output with a minimal image/label case. |

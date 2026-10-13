@@ -90,7 +90,10 @@ characters, line and paragraph separators, and surrogates are rejected. Omitting
 
 `DummyCache` is not a valid Hyperview cache backend because it cannot preserve
 generation state. To disable caching, omit `CACHE` instead of selecting a dummy
-cache alias.
+cache alias. The system check only warns (`dj_hyperview.W004`), but the effect at
+runtime is not mild: with `CACHE.FAILURE_MODE` set to `"raise"` every lookup
+raises `SourceUnavailable`, and with `"bypass"` every lookup logs a
+`template_cache_bypassed` warning and reads from the sources.
 
 `FileBasedCache` and its subclasses are rejected with `dj_hyperview.E018`, even
 when `CACHE.FAILURE_MODE` is `bypass`: their non-atomic `add()` cannot protect
@@ -103,6 +106,9 @@ All keys are optional except the fields inside each configured source. Cache
 defaults apply only when `CACHE` is a non-empty mapping; omitting it or using an
 empty mapping disables Hyperview caching. `REALTIME` omitted or `None` is disabled;
 an empty realtime mapping is an error, not another disabled form.
+
+Every message that `python manage.py check` can report is listed in the
+[system check reference](#system-check-reference).
 
 Unknown keys are rejected, not ignored. A key that `HYPERVIEW`, a `SOURCES` entry,
 `CACHE`, `VALIDATION` or `ADMIN` does not define, such as `MAX_BYTE`, `PERMISION`
@@ -442,8 +448,37 @@ items matching `[A-Za-z0-9][A-Za-z0-9._:-]{0,127}`. Duplicates are coalesced, bu
 still count toward that input bound. Topics are server-selected, never query
 parameters. The broker prefixes them with `namespace:`.
 
-Call `publish_after_commit(event, topics, using="default")` with an explicit
-Django database alias. It snapshots the closed envelope and topics before
+### Redis permissions and TLS
+
+The package issues `PUBLISH` and `SUBSCRIBE` on channels named
+`<namespace>:<topic>`. Redis also receives `AUTH` when the URL carries
+credentials and `SELECT` when it selects a database other than 0. No scripting
+permission is required. Since Redis 7.0 the default for new ACL users is
+`resetchannels` (the `acl-pubsub-default` setting), so `+publish +subscribe` alone
+is refused with `NOPERM` until the user is also granted the namespace's channels:
+
+```text
+ACL SETUSER hv on >secret resetchannels &my-app-dev:* -@all +publish +subscribe +select
+```
+
+Replace `my-app-dev` with your `REALTIME.NAMESPACE`, drop `+select` when the URL
+uses database 0, and try the rule with a throwaway user on your Redis version. A
+rejected command shows up in the publisher log as
+`realtime_publish_failed error_type=NoPermissionError`; a subscription that cannot
+start raises `RealtimeUnavailable` without further detail, so check the ACL first
+when a stream never starts.
+
+TLS is deliberately narrow. A `rediss://` URL always verifies the certificate and
+the host name, and the URL accepts no query option except `db`, so there is no
+setting for a CA bundle, a client certificate or a key. A private CA must be
+trusted through the process's default trust store, for example with the
+`SSL_CERT_FILE` or `SSL_CERT_DIR` environment variables that OpenSSL reads. A
+`unix:///absolute/socket` URL carries no credentials; authenticate such a
+connection with the socket's file permissions.
+
+Call `broker.publish_after_commit(event, topics, *, using)` with an explicit
+Django database alias: `using` is keyword-only and has no default, so omitting it
+raises `TypeError`. It snapshots the closed envelope and topics before
 scheduling. Rollback publishes nothing; invalid inputs fail before scheduling.
 Publication failure never fails the committed business operation. It logs only
 a fixed code and the exception type name, as
@@ -485,3 +520,43 @@ again and must reauthorize before its new resync. A cancelled `__anext__` wait
 Idle connections have no two-second socket read timeout. The application owns
 heartbeat cadence, stream lifetime, authorization, connection admission caps,
 and `realtime_asgi`/`sse_response` composition.
+
+## System check reference
+
+`python manage.py check` reports these IDs. Each message names the failing setting
+and carries a hint; messages never include file paths, exception text or secret
+values. Errors fail the check, and warnings describe configuration that works but
+probably is not what you meant. `E020` is not used.
+
+| ID | Raised when | Fix |
+| --- | --- | --- |
+| `dj_hyperview.E001` | `HYPERVIEW` is not a mapping. | Make it a dictionary. |
+| `dj_hyperview.E002` | `TEMPLATE_DIRS` is not a sequence, or an entry is not a path. | Use a list or tuple of strings or `Path` objects. |
+| `dj_hyperview.E003` | `SOURCES` is not a sequence, an entry is not a mapping, its `BACKEND` cannot be imported (the message names the exception class), or its `OPTIONS` is not a mapping. | Correct the entry; use a dotted path to an importable source class. |
+| `dj_hyperview.E004` | `CACHE` is not a mapping, `CACHE.ALIAS` names no configured cache, or `CACHE.NAMESPACE` is not a non-empty string. | Define the alias in `CACHES` and supply a namespace. |
+| `dj_hyperview.E005` | `CACHE.TTL` is not an integer of at least 1, or `CACHE.NEGATIVE_TTL` is not an integer of at least 0. | Use a plain integer; `bool` is rejected. |
+| `dj_hyperview.E006` | `CACHE.FAILURE_MODE` is neither `bypass` nor `raise`. | Choose one of the two values. |
+| `dj_hyperview.E007` | `VALIDATION` is not a mapping, or the removed key `VALIDATION.MODE` is present. | Use a mapping with limits only; delete `MODE`. |
+| `dj_hyperview.E008` | The removed key `VALIDATION.SCHEMA` is present. | Delete it; validation cannot be replaced. |
+| `dj_hyperview.E009` | A `VALIDATION.MAX_*` limit is not a positive integer (a `bool` or other `int` subclass counts as invalid), or `MAX_DEPTH` is above 256. | Use a plain positive integer; keep `MAX_DEPTH` at 256 or less. |
+| `dj_hyperview.E010` | `DatabaseSource` is configured but `dj_hyperview.contrib.database` is not in `INSTALLED_APPS`. | Install the contrib app and migrate, or remove the source. |
+| `dj_hyperview.E011` | `DatabaseSource` `OPTIONS["using"]` is neither `None` nor a configured database alias. | Name an alias that exists in `DATABASES`. |
+| `dj_hyperview.E012` | `EXTRA_SCHEMAS` is not a sequence of files, one file is not a valid local XSD 1.1 schema, or the schemas do not compile together with the Hyperview schema. The message ends with `(reason: <code>)`, such as `unreadable`, `forbidden_schema_reference`, `schema_invalid` or `duplicate_schema_declaration`. | Fix the file named by the index, or declare each global name once; see [Automatic Hyperview XSD 1.1 validation](#automatic-hyperview-xsd-11-validation). |
+| `dj_hyperview.E013` | `xmlschema`, a required dependency, is not installed. | Repair the package installation. |
+| `dj_hyperview.E014` | `ADMIN` is not a mapping, or `ADMIN.EDITOR` is not a boolean. | Use a mapping and `True` or `False`. |
+| `dj_hyperview.E015` | `ADMIN.EDITOR` is on but `django-ace` is not installed. | Install `dj-hyperview[editor]`. |
+| `dj_hyperview.E016` | `ADMIN.EDITOR` is on but `django_ace` is not in `INSTALLED_APPS`. | Add `django_ace` before `dj_hyperview`. |
+| `dj_hyperview.E017` | `ADMIN.PERMISSION` is not a callable that accepts one request, or its dotted path cannot be imported. | Pass a callable, or a dotted path to a module that exists; see [Admin editor](#admin-editor). |
+| `dj_hyperview.E018` | `CACHE.ALIAS` uses `FileBasedCache` or a subclass, whose `add()` is not atomic. | Select another backend or omit `CACHE`; `bypass` does not override this. |
+| `dj_hyperview.E019` | The removed key `SCHEMA_PROFILE` is present. | Delete it; the corrected schema is automatic. |
+| `dj_hyperview.E021` | A `SCHEMA_EXTENSIONS` registration is invalid; the message names the path. | Follow [Register typed schema extensions](#register-typed-schema-extensions). |
+| `dj_hyperview.E022` | `REALTIME` is neither `None` nor a mapping with exactly a valid `REDIS_URL` and `NAMESPACE`. | See [Optional realtime broker](#optional-realtime-broker). |
+| `dj_hyperview.E023` | A key that `HYPERVIEW`, a `SOURCES` entry, `CACHE`, `VALIDATION` or `ADMIN` does not define. | Remove it or fix its spelling; the hint lists the valid keys. |
+| `dj_hyperview.E024` | `SOURCES[].OPTIONS` do not match the source constructor: an unknown keyword or a missing required argument. | Pass only keyword arguments the constructor accepts. |
+| `dj_hyperview.W001` | `CACHE.ALIAS` names a backend that cannot be initialized now. | Correct the `CACHES` entry; runtime behavior follows `CACHE.FAILURE_MODE`. |
+| `dj_hyperview.W002` | `TEMPLATE_DIRS` is set but no `FileSystemSource` is configured to use it. | Add `FileSystemSource` or remove `TEMPLATE_DIRS`. |
+| `dj_hyperview.W003` | A `FileSystemSource` has no template roots. | Set `TEMPLATE_DIRS` or `OPTIONS["template_dirs"]`. |
+| `dj_hyperview.W004` | `CACHE.ALIAS` is a `DummyCache`. | Omit `CACHE`; with `FAILURE_MODE="raise"` every lookup would fail. |
+| `dj_hyperview.W005` | No `SOURCES` are configured, so nothing resolves. | Add a source, or pass `using="django"` to the response. |
+| `dj_hyperview.W006` | A template root is not an available directory right now; it is skipped at runtime. | Create or mount the directory. |
+| `dj_hyperview.W007` | `REALTIME` is configured but redis-py is not installed. | Install `dj-hyperview[realtime]`. |

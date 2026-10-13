@@ -21,7 +21,7 @@ DOCS = (
     "mobile-getting-started.md",
     "configuration.md",
     "custom-schemas.md",
-    "hyperview-0.110.0.md",
+    "hyperview-compatibility.md",
     "filesystem.md",
     "database-admin.md",
     "cache-consistency.md",
@@ -101,7 +101,7 @@ def test_zensical_configuration_uses_pinned_tool_and_portable_navigation() -> No
                 {"Mobile Getting Started": "mobile-getting-started.md"},
                 {"Configuration": "configuration.md"},
                 {"Custom schemas": "custom-schemas.md"},
-                {"Hyperview compatibility": "hyperview-0.110.0.md"},
+                {"Hyperview compatibility": "hyperview-compatibility.md"},
             ]
         },
         {
@@ -180,7 +180,10 @@ def test_readme_introduces_automatic_schema_and_optional_editor() -> None:
 def test_hyperview_manifest_link_targets_the_public_repository() -> None:
     """The compatibility manifest remains reachable from the hosted site."""
     pages = _documentation_pages()
-    assert "(testing.md#hyperview-01100-compatibility)" in pages["hyperview-0.110.0.md"]
+    assert (
+        "(testing.md#hyperview-01100-compatibility)"
+        in pages["hyperview-compatibility.md"]
+    )
     page = pages["testing.md"]
 
     assert (
@@ -188,6 +191,18 @@ def test_hyperview_manifest_link_targets_the_public_repository() -> None:
         "tests/contracts/hyperview/0.110.0/manifest.json"
     ) in page
     assert "../tests/contracts/hyperview/0.110.0/manifest.json" not in page
+
+
+def test_compatibility_page_describes_the_active_contract() -> None:
+    """The navigation entry names the shipped schema version, not only history."""
+    from dj_hyperview import HYPERVIEW_SCHEMA_VERSION
+    from dj_hyperview._schema_revision import SCHEMA_REVISION
+
+    page = _documentation_pages()["hyperview-compatibility.md"]
+
+    assert page.startswith("# Hyperview compatibility\n")
+    assert f"Hyperview {HYPERVIEW_SCHEMA_VERSION}" in page
+    assert f"`{SCHEMA_REVISION}`" in page
 
 
 def test_custom_component_schema_example_is_valid_xsd_1_1() -> None:
@@ -612,7 +627,8 @@ def test_automatic_schema_adoption_requires_effective_database_review() -> None:
 
 
 @pytest.mark.parametrize(
-    "contract", ["Python", "Django", "Database engines", "Editor JavaScript"]
+    "contract",
+    ["Python", "Django", "Database engines", "Editor JavaScript", "Redis client"],
 )
 def test_documented_verification_scope_matches_configured_profiles(
     contract: str,
@@ -631,6 +647,11 @@ def test_documented_verification_scope_matches_configured_profiles(
         "Django": metadata["tool"]["dj-hyperview"]["supported-django"],
         "Database engines": sorted({value["ENGINE"] for value in DATABASES.values()}),
         "Editor JavaScript": [node],
+        # Only the locked "redis" group is installed for the live Redis job.
+        "Redis client": [
+            requirement.removeprefix("redis==")
+            for requirement in metadata["dependency-groups"]["redis"]
+        ],
     }
     assert matrix["python"] == expected["Python"]
     assert matrix["django"] == expected["Django"]

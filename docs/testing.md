@@ -54,7 +54,7 @@ CI; dependency ranges alone are not a test result.
 | Django | `5.2.17`, `6.1.1` | The base suite and separate optional database/Admin profile in each cell. |
 | Database engines | `django.db.backends.sqlite3` | Isolated in-memory default/replica databases, alias routing, commit/rollback and publication controls. |
 | Editor JavaScript | `24` | Node tests for the package's editor and documentation JavaScript, not a native app runner. |
-| Redis client | `7.4.1`, `8.1.0` | The scoped real-Redis transport compatibility profiles plus deterministic failure/lifecycle controls. |
+| Redis client | `8.1.0` | The scoped real-Redis transport profile, which installs the locked `redis` group, plus deterministic failure/lifecycle controls. `7.4.1` is the declared floor of the `[realtime]` extra and is not run against a live service. |
 
 The default profile does not require Redis. The Redis profile adds an actual
 service with unique test namespaces; it does not replace the default profile.
@@ -256,8 +256,10 @@ The existing Redis opt-in additionally runs
 all test subscriptions use fresh UUID namespaces and never flush. One test
 closes **only its own** Redis connection using CLIENT ID/KILL to verify that the
 real PubSub client does not reconnect. Production ACLs do not need that test-only
-permission. The profiles exercise redis-py 7.4.1 and 8.1.0 against the actual
-service, and the canonical `tools.test_matrix --redis` appends both base/admin
+permission. The profile exercises redis-py 8.1.0, the version in the locked
+`redis` dependency group, against the actual service; the `[realtime]` extra
+allows `>=7.4.1,<9`, but no run installs the 7.4.1 floor. The canonical
+`tools.test_matrix --redis` appends both base/admin
 coverage before independently checking line and branch thresholds. Unit-port
 controls do not claim real Redis or native mobile proof.
 

@@ -302,3 +302,15 @@ def test_security_text_safety_example_cleans_and_escapes_rendered_values(
         )
     assert 'value="Buy milk&#10;&amp; &quot;eggs&quot;"' in rendered
     assert "<text>Buy milk\n&amp; &quot;eggs&quot;</text>" in rendered
+
+
+def test_configuration_guide_documents_exactly_the_emitted_check_ids() -> None:
+    """Every system check the package can emit has a row, and no row is stale."""
+    source = (ROOT / "src/dj_hyperview/checks.py").read_text()
+    emitted = set(re.findall(r"\b([EW]\d{3})\b", source))
+    page = _read_document("configuration.md")
+    section = page.split("## System check reference", 1)[1]
+    documented = set(re.findall(r"^\| `dj_hyperview\.([EW]\d{3})` \|", section, re.M))
+
+    assert emitted
+    assert documented == emitted

@@ -12,7 +12,8 @@ application screens into the package.
 1. [Install dj-hyperview](installation.md).
 2. [Serve your first screen](quickstart.md).
 3. [Configure template resolution](configuration.md) for your deployment.
-4. Resolve a canonical template name through the public package API.
+4. [Resolve a canonical template name](api-reference.md#resolution-and-sources)
+   through the public package API.
 5. Explore [HyperTodo](https://github.com/eamigo86/HyperTodo), the maintained
    Django and Expo test application for dj-hyperview.
 
@@ -26,14 +27,15 @@ schema, route, and application decision.
 0.1.0b1 began the beta line. Review the
 [beta compatibility policy](api-reference.md#beta-compatibility-policy),
 [verified scope](testing.md#verified-scope) and [roadmap](roadmap.md) before
-adoption. Confirm that a source candidate has passed release checks and is
-published before installing it; beta is not universal production proof.
+adoption. Entries under *Unreleased* in the [changelog](changelog.md) are not part
+of any release. Beta is not universal production proof.
 
 ## Supported baseline
 
 - Python 3.12 through 3.14.
 - Django 5.2 and 6.1.
-- Hyperview markup contract 0.111.0 in 0.1.0b2; earlier b1 used 0.110.0.
+- Hyperview markup contract 0.111.0 in 0.1.0b2; earlier b1 used 0.110.0. See
+  [Hyperview compatibility](hyperview-compatibility.md).
 
 dj-hyperview does not ship application screens, runtime application HXML,
 Redis, or a required database app.
@@ -41,8 +43,9 @@ Redis, or a required database app.
 Choose the next guide for your source:
 
 - [Use filesystem sources](filesystem.md) for the smallest deployment.
-- [Publish through the database](database-admin.md) when editors need admin or
-  automatic schema validation and optional HXML authoring.
+- [Publish through the database](database-admin.md) when editors need Django
+  admin publication and optional HXML authoring. Schema validation is automatic
+  and does not need this app.
 - [Configure cache consistency](cache-consistency.md) only when caching is needed.
 - [Harden names and XML](security.md) before accepting authored templates.
 - [Add custom HXML elements](custom-schemas.md) when a mobile client extends

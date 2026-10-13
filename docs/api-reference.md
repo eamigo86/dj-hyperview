@@ -14,8 +14,9 @@ Modules and names beginning with an underscore remain implementation details.
 
 **Use the documented public APIs; test your integration before upgrading.**
 **0.1.0b1 starts the 0.1 beta line.** This is a prerelease for integration
-feedback, not a blanket production-readiness guarantee. Verify the published
-version and its release checks before adopting a source candidate.
+feedback, not a blanket production-readiness guarantee. Entries under
+*Unreleased* in the [changelog](changelog.md) are changes that are not part of any
+release.
 
 Within the 0.1 beta line, maintainers will preserve the documented public Python
 imports and call contracts, configuration keys, source protocol, HTTP media
@@ -110,7 +111,9 @@ for bodyless statuses, HEAD request context, and lazy callback semantics.
 | `HYPERVIEW_VERSION_HEADER` | Header used for client version metadata. |
 
 Detection reads client-controlled headers, so it identifies a claimed client and
-never establishes trust. A present `X-Hyperview-Version` header marks the request
+never establishes trust. The middleware adds no `Vary` header; see
+[Detect Hyperview clients](http-responses.md#detect-hyperview-clients) for setup,
+`request.hyperview` and caching. A present `X-Hyperview-Version` header marks the request
 as Hyperview, but `version` keeps its value only when it matches
 `[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}`; any other value, including an empty one,
 leaves `version` as `None`. An explicit Hyperview media type counts only when

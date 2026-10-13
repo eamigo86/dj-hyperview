@@ -6,9 +6,12 @@ Start with a normal blank Expo application and install Hyperview as a
 dependency. You do not need to clone the Hyperview repository or copy its
 example application.
 
-This guide records the 0.1.0b2 reference matrix exercised by automated
-HyperTodo tests. Native device acceptance remains pending; the earlier
-0.1.0b1 release used the 0.110.0 contract:
+This guide records the reference matrix that the 0.1.0b2 release was written
+against, pairing Hyperview 0.111.0 with the schema the package validates. It is a
+tested example, not a compatibility range, and native device acceptance remains
+pending. HyperTodo updates its own pins independently, so read its
+`mobile/package.json` for the versions it uses today. The earlier 0.1.0b1 release
+used the 0.110.0 contract; see [Hyperview compatibility](hyperview-compatibility.md).
 
 | Dependency | Tested version |
 | --- | --- |
@@ -114,9 +117,13 @@ The URL depends on where the client runs:
 | Android Emulator | `10.0.2.2` |
 | Physical device | Development machine LAN address |
 
-For a physical device, bind Django to `0.0.0.0`, use the machine's reachable
-LAN address, and configure Django `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS`.
-The phone and development machine must be on the same reachable network.
+For a physical device, use the machine's reachable LAN address and configure
+Django `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` for it. Prefer binding Django to
+that single address (`runserver 192.168.1.20:8000`); bind `0.0.0.0` only on a
+trusted development network, with those settings limited to the addresses you
+use, and never in a deployed environment. The phone and development machine must
+be on the same reachable network. The [SSE guide](realtime.md) applies the same
+rule.
 
 ## 5. Run through Expo Go
 

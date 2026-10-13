@@ -90,6 +90,65 @@ These cheap checks do not repeat XML parsing or XSD validation.
 Bodyless statuses may retain representation metadata such as `ETag` and
 `Content-Encoding` without a payload. This does not permit nonempty content.
 
+## Detect Hyperview clients
+
+Add `HyperviewMiddleware` when a view needs to know who is asking. It supports sync
+and async stacks and only reads the request:
+
+```python
+MIDDLEWARE = [
+    # Your other middleware.
+    "dj_hyperview.middleware.HyperviewMiddleware",
+]
+```
+
+The middleware sets `request.hyperview`, a `HyperviewRequestDetails` that is truthy
+for a request that claims to come from a Hyperview client. A request counts when
+it sends the `X-Hyperview-Version` header, or when its `Accept` header lists
+`application/vnd.hyperview+xml` or `application/vnd.hyperview_fragment+xml`
+explicitly and Django considers it acceptable. A bare `*/*` does not count.
+`request.hyperview.version` holds the version token, or `None` when the header is
+absent or malformed. Both headers are client-controlled, so the result is a claim:
+use it to choose a representation, never to grant access. Call
+`detect_hyperview_request(request)` to get the same answer without the middleware.
+
+```python
+from django.http import HttpRequest, HttpResponse
+from django.shortcuts import render
+
+from dj_hyperview import HyperviewTemplateResponse
+
+
+def home(request: HttpRequest) -> HttpResponse:
+    if request.hyperview:
+        return HyperviewTemplateResponse(request, "screens/home.xml")
+    return render(request, "web/home.html")
+```
+
+### Caches and `Vary`
+
+Detection is not content negotiation: the middleware adds no `Vary` header and
+changes no response. When one URL returns HXML to Hyperview clients and something
+else to other callers, a shared cache such as `cache_page`, a CDN or a reverse
+proxy can store one representation and serve it to the other. Declare what the
+view's choice depends on:
+
+```python
+from django.utils.cache import patch_vary_headers
+
+
+def home(request: HttpRequest) -> HttpResponse:
+    response = (
+        HyperviewTemplateResponse(request, "screens/home.xml")
+        if request.hyperview
+        else render(request, "web/home.html")
+    )
+    patch_vary_headers(response, ("Accept", "X-Hyperview-Version"))
+    return response
+```
+
+A separate URL for each representation avoids the problem altogether.
+
 ## Lazy rendering and HEAD requests
 
 Template responses remain unrendered until `render()`. Invalid output raises
@@ -190,10 +249,11 @@ make delivery durable. It implements no event ID, replay or automatic retry.
 ### Negotiated change metadata
 
 `INVALIDATION_VERSIONS == (1, 2)` advertises validator support, not client
-negotiation. The a21 API supports only version one. This release adds validator
-support, not application adaptation or new native acceptance. Applications must negotiate
-before sending version two and project an exact version-one invalidate to old
-clients. Control events (`resync`, `auth-required`) remain version one.
+negotiation. The a21 API supports only version one. The validator now also accepts
+version two, which adds no application adaptation or native acceptance.
+Applications must negotiate before sending version two and project an exact
+version-one invalidate to old clients. Control events (`resync`, `auth-required`)
+remain version one.
 
 A version-two invalidate has exactly `version: 2`, `resources`, `mutation_id`
 and `entities`. `mutation_id` is null or 40 lowercase hexadecimal characters.
@@ -231,5 +291,5 @@ Cleanup permits two seconds and requires cancellation-cooperative callbacks.
 Errors/timeouts log only fixed codes, never exception contents. A callback that
 ignores cancellation, or a loop shut down before cleanup, cannot be guaranteed
 closed by Python; a timeout is **not** a successful cleanup acknowledgement.
-Run `pytest -q tests/test_realtime_response.py` for actual Django ASGI pre-frame
+The package's own test suite exercises actual Django ASGI pre-frame
 error/disconnect/cancellation and never-iterated ownership regressions.

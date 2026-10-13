@@ -11,9 +11,8 @@ The beta adds no new SSE runtime behavior. See the
 [b2 release notes](changelog.md#010b2-2026-09-24),
 [compatibility policy](api-reference.md#beta-compatibility-policy) and
 [verified scope](testing.md#verified-scope). Installing a21 supports v1, not the
-new rich envelope. For a later source candidate, do not assume publication until
-its release gates succeed and PyPI lists it; evaluate unshipped changes only in
-an isolated reviewed checkout.
+new rich envelope. Changes listed under *Unreleased* in the
+[changelog](changelog.md) are not part of any release.
 
 !!! important "The package does not adapt your application automatically"
     `dj-hyperview` provides Python transport primitives. It does not automatically
@@ -157,21 +156,20 @@ redis-py is not installed, `python manage.py check` warns with
 `dj_hyperview.W007` instead of leaving the missing extra to surface as a runtime
 log line.
 
-### Adopt the verified release
+### Install the release
 
-After confirming that b2 is published, install it in **your application's
-Python environment**, not a global environment, and update that application's
-reviewed lock through its normal workflow:
+Install the package in **your application's Python environment**, not a global
+environment, and update that application's reviewed lock through its normal
+workflow:
 
 ```console
 python -m pip install 'dj-hyperview[realtime]==0.1.0b2'
 ```
 
-Before publication, use an explicit reviewed source checkout only for isolated
-evaluation (`python -m pip install -e '/path/to/candidate/django-hv[realtime]'`).
-Verify source versus installed distribution provenance; they are not equivalent
-acceptance profiles. If you choose Uvicorn and it is not installed in that
-environment, install it **separately**:
+Use a source checkout (`python -m pip install -e '/path/to/django-hv[realtime]'`)
+only for isolated evaluation of unreleased changes; a checkout and an installed
+distribution are not equivalent acceptance profiles. If you choose Uvicorn and
+it is not installed in that environment, install it **separately**:
 
 ```console
 python -m pip install uvicorn
@@ -179,28 +177,38 @@ python -m pip install uvicorn
 
 Django also needs a reachable Redis service. Use a development instance or your
 deployment's credentials/ACLs, without reusing personal data for a test. In
-production, configure TLS and minimum publish/subscribe permissions. See
+production, configure TLS and minimum publish/subscribe permissions; the
+[ACL rule and TLS limits](configuration.md#redis-permissions-and-tls) are
+documented with the broker settings. See
 [installation](installation.md), [configuration](configuration.md) and the
 [official Django Uvicorn guide](https://docs.djangoproject.com/en/dev/howto/deployment/asgi/uvicorn/).
 
 ## 3. Happy path: try it in HyperTodo
 
-File names and session policy in this section belong to **HyperTodo candidate**;
+File names and session policy in this section belong to **HyperTodo**;
 `HYPERVIEW["REALTIME"]` is the shared package setting. Use the checkout with both
-backend and mobile integration. Paths below start at that checkout's root.
+backend and mobile integration. Paths below start at that checkout's root, and
+its README and `backend/docs/installed-adoption.md` are the authority for its
+commands.
 
-### Step 1: configure transport and sessions
+### Step 1: review transport and sessions
 
-Create `backend/config/settings_realtime_local.py` for your development test,
-keeping HyperTodo's normal settings and adding this opt-in. Do not overwrite a
-real deployment's credentials or database. The environment variables in this
-example are not new package flags:
+HyperTodo needs no settings fork: its single `backend/config/settings.py` already
+enables `HYPERVIEW["REALTIME"]` from the `REDIS_URL` environment variable (default
+`redis://127.0.0.1:6379/15`) and `HYPERTODO_REALTIME_NAMESPACE` (default
+`hypertodo-development`). The Makefile forwards `REDIS_URL` to every backend
+launcher, and Redis must already be running. Do not point a test at a real
+deployment's credentials or database.
+
+To add the same configuration to **your own project**, merge a `REALTIME` section
+into the `HYPERVIEW` mapping you already have, as in this example. The
+environment variables in it are not new package flags:
 
 <!-- example: realtime-settings -->
 ```python
 import os
 
-from .settings import *  # Base HyperTodo settings, without replacing them.
+from .settings import *  # Your project's base settings, without replacing them.
 
 SESSION_ENGINE = "django.contrib.sessions.backends.db"
 HYPERVIEW = {
@@ -213,7 +221,8 @@ HYPERVIEW = {
 ```
 
 Omitting `REALTIME` or using `None` disables it. When enabled, it requires exactly
-`REDIS_URL` and `NAMESPACE`; HyperTodo additionally requires database sessions.
+`REDIS_URL` and `NAMESPACE`; HyperTodo's stream authorization additionally reads
+database-backed sessions, which is why the example sets `SESSION_ENGINE`.
 For example, `hypertodo-dev-alicia` uses lowercase letters, digits and hyphens;
 underscores are also allowed, up to 64 characters. Choose a different namespace
 for each application/environment.
@@ -247,14 +256,22 @@ The wrapper retains connection ownership for the **entire ASGI request**, even
 with synchronous Django middleware. Do not replace it with a callback attached
 only to the view's task.
 
-Concrete **local development only** example, from `backend/`, with local Redis
-and Uvicorn already available. In the same terminal, select the module you just
-created. These values are credential-free examples; the guide does not start
-Redis for you:
+Concrete **local development only** examples with Redis already running; the
+guide does not start it for you. In HyperTodo, run this from the checkout root
+(replace the address with your machine's verified private IP, or omit `LAN_IP`
+to bind loopback):
+
+```console
+LAN_IP=192.168.1.20 make backend-run-sse
+```
+
+In your own project, export the variables that your settings module from Step 1
+reads, select that module and start Uvicorn from the directory that contains your
+entrypoint. These values are credential-free examples:
 
 ```console
 export APP_REDIS_URL='redis://127.0.0.1:6379/0'
-export APP_REALTIME_NAMESPACE='hypertodo-dev-alicia'
+export APP_REALTIME_NAMESPACE='my-app-dev-alicia'
 export DJANGO_SETTINGS_MODULE='config.settings_realtime_local'
 python -m uvicorn config.asgi:application --host 127.0.0.1 --port 8000
 ```
@@ -267,16 +284,24 @@ Keep the appropriate `ALLOWED_HOSTS` and trusted origins; do not open them
 indiscriminately. An Android emulator needs its own host route or port forwarding;
 do not assume its loopback is the host's loopback.
 
-Do not bind a wildcard interface for convenience. The `make backend-run*`
-commands using `runserver` serve ordinary HXML, **not this authenticated SSE endpoint**.
+Bind to loopback, or to the single address the phone must reach. Bind a wildcard
+interface (`0.0.0.0`) only on a trusted development network and with
+`ALLOWED_HOSTS` and trusted origins limited to the addresses you use; never in a
+deployed environment. HyperTodo follows this rule: `make backend-run-sse` binds
+`LAN_IP` or loopback, and only `make backend-run-device` binds all interfaces,
+requiring `LAN_IP`. Every `make backend-run*` target starts Uvicorn with
+`config.asgi:application`, so each of them can serve the authenticated SSE
+endpoint; only the template cache and the bind address differ.
 
 ### Step 3: open the normal App and a list
 
-1. Set Expo's API origin as described in HyperTodo's README: `extra.apiUrl`,
-   including the `/hv/` prefix. Keep Host, Origin, cookies and CSRF valid;
-   do not disable guards to obtain connectivity.
-2. Start the normal mobile app following that README and open it in a compatible
-   Expo Go version. Do not use a test screen that bypasses `DefaultApp`.
+1. Point the app at your backend. HyperTodo reads `EXPO_PUBLIC_API_URL`, which
+   must include the `/hv/` prefix, and `LAN_IP=<address> make mobile-start-go`
+   sets it to `http://<address>:8000/hv/`. Keep Host, Origin, cookies and CSRF
+   valid; do not disable guards to obtain connectivity.
+2. Start the normal mobile app with that command, as described in HyperTodo's
+   README, and open it in a compatible Expo Go version. Do not use a test screen
+   that bypasses `DefaultApp`.
 3. Sign in with a user from your test environment. Open **Tasks**, on its first
    page. You may select a filter, such as Active.
 4. In Django Admin, edit the title of a visible task belonging to **that user**
@@ -510,7 +535,7 @@ notify other devices. The server-side after-commit producer does that.
 
 ## 6. Typed registration: what must be connected
 
-These pieces are already connected in HyperTodo candidate. Do not duplicate them
+These pieces are already connected in HyperTodo. Do not duplicate them
 or replace the application's entire registry when adding a page:
 
 | Piece | HyperTodo file | Responsibility |

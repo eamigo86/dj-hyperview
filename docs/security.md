@@ -88,8 +88,8 @@ validation cheap. Measured at the default limits with Python 3.12, lxml 6.1, and
 xmlschema 4.3 on an Apple M3 Max machine, a valid document of 20,000 elements
 (`MAX_NODES`) with up to three attributes each, 840 KB, validates in 0.7 to 0.9 s,
 and one of 9,807 elements with seven attributes each, 1,000,000 bytes
-(`MAX_BYTES`), in about 0.5 s; a document cannot reach both limits at once. The
-most expensive document found within the namespace caps, 20,000 elements that each
+(`MAX_BYTES`), in about 0.5 s. A document can also reach both limits at once: 20,000
+elements in 999,894 bytes validate in about 0.8 s. The most expensive document found within the namespace caps, 20,000 elements that each
 rebind a prefix below a path already at the cap, takes about 1.1 s, or 1.2 s with
 `MAX_DEPTH` at its ceiling of 256. A rejected document stops at its first schema error, so rejecting it costs
 about as much as validating the part before that error. Cost grows roughly in
@@ -259,8 +259,10 @@ hint/heartbeat. Select topics only from server-owned identity; never forward
 client topic names. The generic package does not implement authorization,
 connection quotas or app resource policy. Use a distinct app/environment
 namespace, TLS for remote Redis, and Redis ACLs permitting only the required
-Pub/Sub commands. No scripting permission is required. A database index does
-not isolate Redis Pub/Sub channels.
+Pub/Sub commands. No scripting permission is required. On Redis 7 and later the
+ACL must also grant the namespace's channels; the rule, and the limits of the TLS
+options, are in [Redis permissions and TLS](configuration.md#redis-permissions-and-tls).
+A database index does not isolate Redis Pub/Sub channels.
 
 Only closed logical envelopes cross the transport, never HXML, template names,
 user identifiers, URLs, credentials or request bodies. Limit app resource names

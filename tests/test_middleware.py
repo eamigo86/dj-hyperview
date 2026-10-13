@@ -211,3 +211,17 @@ def test_request_integration_api_is_exported_from_package_namespace():
     assert dj_hyperview.HyperviewMiddleware is HyperviewMiddleware
     assert dj_hyperview.HyperviewRequestDetails is HyperviewRequestDetails
     assert dj_hyperview.detect_hyperview_request is detect_hyperview_request
+
+
+def test_middleware_adds_no_vary_header_to_the_response():
+    """Detection is not negotiation: a caching layer must be told what varies."""
+    request = RequestFactory().get(
+        "/screen",
+        headers={"X-Hyperview-Version": "0.111.0", "Accept": "application/xml"},
+    )
+
+    response = HyperviewMiddleware(lambda incoming_request: HttpResponse("screen"))(
+        request
+    )
+
+    assert "Vary" not in response.headers
