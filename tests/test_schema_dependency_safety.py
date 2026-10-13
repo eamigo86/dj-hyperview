@@ -441,3 +441,100 @@ def test_compilation_warnings_cannot_silently_omit_schema_dependencies(
             _compile_schema(root)
     assert error.value.code == "schema_invalid"
     assert str(tmp_path) not in str(error.value)
+
+
+def test_parent_segments_cannot_hide_behind_a_physically_safe_symlink(
+    tmp_path: Path,
+) -> None:
+    """The compiler folds dots lexically, so the guard must not resolve them."""
+    base = tmp_path / "base"
+    (base / "sub" / "deep").mkdir(parents=True)
+    (base / "link").symlink_to(base / "sub" / "deep", target_is_directory=True)
+    (base / "outside.xsd").write_text(
+        schema_text('<xs:element name="decoy"/>'), encoding="utf-8"
+    )
+    (tmp_path / "outside.xsd").write_text(
+        schema_text('<xs:element name="outside"/>'), encoding="utf-8"
+    )
+    root = base / "root.xsd"
+    root.write_text(
+        schema_text('<xs:include schemaLocation="link/../../outside.xsd"/>'),
+        encoding="utf-8",
+    )
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+    assert str(tmp_path) not in str(error.value)
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
+        with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E012"):
+            validate_hyperview_schema(f'<view xmlns="{HV}"/>')
+
+
+def test_parent_segments_are_rejected_even_when_they_stay_inside_the_root(
+    tmp_path: Path,
+) -> None:
+    """A reference never needs dot-dot segments, so none is accepted."""
+    (tmp_path / "nested").mkdir()
+    (tmp_path / "leaf.xsd").write_text(schema_text(""), encoding="utf-8")
+    root = tmp_path / "root.xsd"
+    root.write_text(
+        schema_text('<xs:include schemaLocation="nested/../leaf.xsd"/>'),
+        encoding="utf-8",
+    )
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+
+
+@pytest.mark.parametrize("location", ["..leaf.xsd", "leaf..xsd", "dir../leaf.xsd"])
+def test_dotted_names_that_are_not_parent_segments_stay_valid(
+    tmp_path: Path, location: str
+) -> None:
+    """Only a complete dot-dot path segment is a parent reference."""
+    leaf = tmp_path / location
+    leaf.parent.mkdir(parents=True, exist_ok=True)
+    leaf.write_text(schema_text(""), encoding="utf-8")
+    root = tmp_path / "root.xsd"
+    root.write_text(
+        schema_text(f'<xs:include schemaLocation="{location}"/>'), encoding="utf-8"
+    )
+    assert set(_guard_local_references(root)) == {root.resolve(), leaf.resolve()}
+
+
+@pytest.mark.parametrize("name", ["pct%20dir", "a%2Fb", "a%41b"])
+def test_extra_schema_roots_with_percent_escapes_are_loaded_literally(
+    tmp_path: Path, name: str
+) -> None:
+    """Directory names that look percent-encoded are names, not encoded paths."""
+    directory = tmp_path / name
+    directory.mkdir()
+    root, _leaf = write_graph(directory)
+    document = f'<view xmlns="{HV}" xmlns:app="{APP}"><app:thing/></view>'
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
+        validate_hyperview_schema(document)
+        assert f"{{{APP}}}thing" in get_hyperview_catalog()["elements"]
+
+
+@pytest.mark.parametrize("registered", [False, True])
+def test_bundled_registry_compiles_under_a_percent_escaped_package_root(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, registered: bool
+) -> None:
+    """The generated overlay and the plain entry point both use literal paths."""
+    import shutil
+
+    from lxml import etree
+
+    from dj_hyperview import schema
+
+    root = tmp_path / "pct%20dir" / schema.HYPERVIEW_SCHEMA_VERSION
+    shutil.copytree(schema._SCHEMA_ROOT, root)
+    monkeypatch.setattr(schema, "_SCHEMA_ROOT", root)
+    behaviors = {"store-token": {"ATTRIBUTES": {"token": {"TYPE": "string"}}}}
+    configured = {"SCHEMA_EXTENSIONS": {"BEHAVIORS": behaviors}} if registered else {}
+    with override_settings(HYPERVIEW=configured):
+        extensions = get_settings().schema_extensions
+    # The wrapped function skips the process-wide cache, which ignores the root.
+    compiled = schema._cached_registry.__wrapped__((), extensions)
+    action = 'action="store-token" token="x"' if registered else 'action="reload"'
+    document = etree.fromstring(f'<view xmlns="{HV}"><behavior {action}/></view>')
+    assert next(compiled.iter_errors(document), None) is None

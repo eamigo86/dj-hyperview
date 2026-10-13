@@ -6,7 +6,7 @@ import re
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from threading import RLock
 from typing import Any
 from urllib.parse import unquote, urlparse
@@ -17,7 +17,7 @@ from lxml import etree
 
 from ._schema_duplicates import _guard_duplicate_declarations
 from ._schema_extensions import _EMPTY_EXTENSIONS, _SchemaExtensions
-from ._schema_overlay import _generated_overlay
+from ._schema_overlay import _file_uri, _generated_overlay
 from .conf import get_settings
 from .exceptions import TemplateValidationError
 
@@ -211,7 +211,7 @@ def _compile_schema(path: Path) -> Any:
     xmlschema = _xmlschema_module()
     try:
         compiled = xmlschema.XMLSchema11(
-            path, allow="local", use_fallback=False, defuse="always"
+            _file_uri(path), allow="local", use_fallback=False, defuse="always"
         )
     except Exception as error:
         raise TemplateValidationError("schema_invalid", "invalid schema") from error
@@ -283,10 +283,13 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
                     "forbidden_schema_reference",
                     "remote schema references are forbidden",
                 )
+            # The compiler folds ".." lexically while this guard resolves symlinks
+            # physically, so the two can name different files.
             if (
                 unquote(location) != location
                 or "\\" in location
                 or location != location.strip()
+                or ".." in PurePosixPath(location).parts
             ):
                 raise TemplateValidationError(
                     "forbidden_schema_reference",
@@ -354,12 +357,12 @@ def _cached_registry(
     xmlschema = _xmlschema_module()
     schema_path = _SCHEMA_ROOT / "r3" / "hyperview.xsd"
     roots = [Path(dependencies.root) for dependencies in state]
-    locations = [(_target_namespace(path), str(path)) for path in roots]
+    locations = [(_target_namespace(path), _file_uri(path)) for path in roots]
     try:
         compiled = xmlschema.XMLSchema11(
             _generated_overlay(schema_path, extensions)
             if extensions != _EMPTY_EXTENSIONS
-            else schema_path,
+            else _file_uri(schema_path),
             allow="local",
             locations=locations,
             use_fallback=False,

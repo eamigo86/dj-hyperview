@@ -197,11 +197,15 @@ schema/
 
 URLs, network retrieval, and paths such as `../shared.xsd` are rejected.
 `schemaLocation` must use a plain local path: percent encoding, backslashes,
-and surrounding whitespace are rejected because URI normalization could make
-the compiler load a different file from the one inspected by the safety guard. Symlinks cannot authorize
-dependencies outside the configured root directory. Each root is limited to
-256 distinct referenced files, including itself; local include cycles are
-visited once rather than recursively expanded forever.
+surrounding whitespace, and any `..` segment are rejected, even a segment such
+as `components/../swipe.xsd` that stays inside the root. URI normalization could
+make the compiler load a different file from the one inspected by the safety
+guard: the compiler folds `..` lexically, while the guard follows symlinks. The
+root file's own location is not restricted, so a directory named like `a%20b`
+loads literally. Symlinks cannot authorize dependencies outside the configured
+root directory. Each root is limited to 256 distinct referenced files, including
+itself; local include cycles are visited once rather than recursively expanded
+forever.
 
 The registry and custom completion caches share the complete transitive graph
 of resolved paths, sizes, and nanosecond modification times, keyed by the internal correction revision and normalized registrations.

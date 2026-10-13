@@ -92,8 +92,9 @@ as a separate bound on memory and parser work.
 Configured extra schemas may use local includes, imports, and redefines within
 their own directory. Remote schema references and traversal outside that root
 are rejected before compilation. References must use plain local paths:
-percent-encoded locations are rejected so URL decoding cannot redirect the
-compiler to a different dependency than the guard inspected. Each extra schema
+percent-encoded locations and any `..` segment are rejected so URL decoding
+and lexical path folding cannot redirect the compiler to a different dependency
+than the guard inspected. Each extra schema
 is bounded to 256 distinct canonical files, with include cycles visited once.
 `xs:override` is forbidden in extra schemas;
 only the fixed, packaged compatibility adaptation uses it. Duplicate

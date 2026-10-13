@@ -15,6 +15,15 @@ _ALERT = "https://hyperview.org/hyperview-alert"
 _SCROLL = "https://hyperview.org/hyperview-scroll"
 
 
+def _file_uri(path: Path) -> str:
+    """Return the absolute file URI of a local schema.
+
+    xmlschema percent-decodes plain path sources, which misreads a directory named
+    like "a%20b"; a file URI keeps every character of the name literal.
+    """
+    return path.resolve().as_uri()
+
+
 def _add(parent: etree._Element, tag: str, **attributes: str) -> etree._Element:
     """Append a schema node with safely escaped configuration attribute values."""
     return etree.SubElement(parent, f"{{{_XS}}}{tag}", **attributes)
@@ -76,9 +85,9 @@ def _generated_overlay(
             result,
             "import",
             namespace=namespace,
-            schemaLocation=str(schema_root / filename),
+            schemaLocation=_file_uri(schema_root / filename),
         )
-    override = _add(result, "override", schemaLocation=str(schema_path))
+    override = _add(result, "override", schemaLocation=_file_uri(schema_path))
     for name, attributes in extensions.element_attributes:
         declaration = revision.find(
             f"{{{_XS}}}override/{{{_XS}}}element[@name='{name}']"

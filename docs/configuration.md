@@ -164,10 +164,11 @@ HYPERVIEW["EXTRA_SCHEMAS"] = [
 
 Project schemas can declare namespaced custom elements and import the Hyperview
 namespace. Includes, imports, and redefines may reference only plain local files
-below their root schema's directory. Remote references, traversal, percent-encoded
-locations, backslash/URI ambiguity, DTD/entities, and arbitrary `xs:override` are
-rejected. Each extra schema may reference at most 256 distinct files, including
-its root; cycles are visited once and symlink escapes remain forbidden.
+below their root schema's directory. Remote references, traversal (any `..`
+segment), percent-encoded locations, backslash/URI ambiguity, DTD/entities, and
+arbitrary `xs:override` are rejected. Each extra schema may reference at most 256
+distinct files, including its root; cycles are visited once and symlink escapes
+remain forbidden.
 
 Validation, static Admin checks, and completion use one immutable registry
 identity: the internal correction revision, normalized registrations, and complete

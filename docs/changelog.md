@@ -27,6 +27,14 @@ This page records user-visible release changes, including unpublished attempts.
   found, so control characters and escape sequences in hostile names cannot reach
   logs. Passing a bare string to `select_template` raises `TypeError`, as Django
   does, instead of iterating its characters.
+- Reject any `..` segment in a schema reference of an `EXTRA_SCHEMAS` file with
+  the stable `forbidden_schema_reference` code (`dj_hyperview.E012` during
+  configuration checks). The dependency guard resolved symlinks physically while
+  the XSD compiler folded `..` lexically, so a reference such as
+  `link/../../outside.xsd` through a symlinked directory passed the guard and made
+  the compiler load a file outside the configured root. **A schema that relied on
+  `..` inside its own root, for example `components/../shared.xsd`, must now use
+  the plain path `shared.xsd`.**
 
 ### Added
 
@@ -42,6 +50,11 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
+- Schemas now load from a directory whose name contains percent escapes, such as
+  `pct%20dir` or `a%41b`. The XSD compiler percent-decoded plain path sources, so
+  a project, or an installation of the package, under such a directory failed with
+  `dj_hyperview.E012` or `schema_invalid` even with default settings. The package
+  now hands the compiler absolute file URIs.
 - A `VALIDATION` limit that is a `bool` or another `int` subclass now fails the
   system check with `dj_hyperview.E009`, the rule `ValidationSettings` already
   enforced. Before, the check accepted it and the first read of the settings
