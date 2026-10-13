@@ -25,7 +25,6 @@ from dj_hyperview.exceptions import (
     TemplateNotFound,
     TemplateValidationError,
 )
-from dj_hyperview.loaders import template_snapshot
 from dj_hyperview.schema import (
     HYPERVIEW_NAMESPACE,
     _get_compiled_registry,
@@ -384,13 +383,23 @@ def _include_error(
     return _diagnostic(code, message, template=template, line=line)
 
 
+@dataclass(slots=True)
+class _IncludeBudget:
+    """What literal includes may still consume across one draft and its includes."""
+
+    # Characters of source resolved so far, the draft included.
+    size: int
+    edges: int = 0
+    exhausted: bool = False
+
+
 def _expand_literal_includes(
     engine: HyperviewEngine,
     name: str,
     content: str,
     *,
     stack: tuple[str, ...],
-    budget: list[int],
+    budget: _IncludeBudget,
     hxml_context: bool = True,
 ) -> tuple[str, list[dict[str, Any]]]:
     """Resolve and recursively validate context-independent Django includes."""
@@ -415,16 +424,19 @@ def _expand_literal_includes(
                 )
             )
             continue
-        if budget[0] >= _MAX_LITERAL_INCLUDES:
+        if budget.exhausted or budget.edges >= _MAX_LITERAL_INCLUDES:
             # Expansion stops here and in every caller, with one note, because the
             # includes that were not expanded leave the result incomplete, not wrong.
-            if budget[0] == _MAX_LITERAL_INCLUDES:
-                budget[0] += 1
+            if not budget.exhausted:
+                budget.exhausted = True
                 diagnostics.append(_incomplete_schema_diagnostic(name, line))
             break
-        budget[0] += 1
+        budget.edges += 1
         try:
-            template = engine.get_template(target)
+            # Not engine.get_template, which compiles the target with Django's own
+            # lexer, and that takes quadratic time on a long line of openers.
+            resolved = engine.resolver.resolve(target)
+            validate_template_source(resolved.content, config=engine.validation)
         except InvalidTemplateName:
             diagnostics.append(
                 _include_error(
@@ -455,19 +467,27 @@ def _expand_literal_includes(
                 )
             )
             continue
+        budget.size += len(resolved.content)
+        if budget.size > engine.validation.max_bytes:
+            # The composed source would be larger than rendering accepts.
+            budget.exhausted = True
+            diagnostics.append(_incomplete_schema_diagnostic(name, line))
+            break
+        child_hxml_context = hxml_context and contexts.get(start) == "text"
+        try:
+            expanded, child_diagnostics = _expand_literal_includes(
+                engine,
+                resolved.name,
+                resolved.content,
+                stack=(*stack, target),
+                budget=budget,
+                hxml_context=child_hxml_context,
+            )
         except TemplateSyntaxError as error:
+            # Only the target's own source can raise here: deeper ones are caught
+            # by the include that holds them.
             diagnostics.append(_django_syntax_diagnostic(target, error))
             continue
-        resolved = template.origin.resolved
-        child_hxml_context = hxml_context and contexts.get(start) == "text"
-        expanded, child_diagnostics = _expand_literal_includes(
-            engine,
-            resolved.name,
-            resolved.content,
-            stack=(*stack, target),
-            budget=budget,
-            hxml_context=child_hxml_context,
-        )
         diagnostics.extend(child_diagnostics)
         if child_hxml_context:
             diagnostics.extend(_static_schema_diagnostics(resolved.name, expanded))
@@ -569,7 +589,10 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
     scan = _scan_template(content)
     value_marker, structure_marker = scan.value_marker, scan.structure_marker
-    has_dynamic_syntax = scan.first_structure_line is not None
+    # A verbatim body is not analyzed and may supply any markup.
+    has_dynamic_syntax = (
+        scan.first_structure_line is not None or scan.verbatim_line is not None
+    )
     wrapped = (
         f'<{_STATIC_ROOT} xmlns="{HYPERVIEW_NAMESPACE}">{scan.masked}</{_STATIC_ROOT}>'
     )
@@ -591,7 +614,9 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
         ]
     try:
         _check_limits(root, get_settings().validation)
-        _check_namespace_scope(root)
+        for child in root.iterchildren(etree.Element):
+            # The wrapper declares a namespace that the document does not.
+            _check_namespace_scope(child)
     except TemplateValidationError as error:
         return [_limit_diagnostic(name, error.code, error.message)]
 
@@ -825,14 +850,13 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
     engine = HyperviewEngine(validation=config)
     try:
         validate_template_source(content, config=config)
-        with template_snapshot(engine.resolver):
-            expanded, include_diagnostics = _expand_literal_includes(
-                engine,
-                name,
-                content,
-                stack=(name,),
-                budget=[0],
-            )
+        expanded, include_diagnostics = _expand_literal_includes(
+            engine,
+            name,
+            content,
+            stack=(name,),
+            budget=_IncludeBudget(size=len(content)),
+        )
     except TemplateSyntaxError as error:
         return {
             "ok": False,

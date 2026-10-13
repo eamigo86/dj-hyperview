@@ -438,6 +438,10 @@ def test_namespace_declaration_cap_allows_its_exact_limit() -> None:
     assert validate_hxml(document) == document
 
 
+def test_namespace_declaration_cap_rejects_one_declaration_over_its_limit() -> None:
+    assert_element_limit(rebinding_path(33), "32 namespace declarations")
+
+
 def test_one_declaration_over_the_path_cap_is_rejected() -> None:
     """The 33rd declaration on a path fails, however few prefixes are in scope."""
     assert_element_limit(rebinding_path(33), "32 namespace declarations")

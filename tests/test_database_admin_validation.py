@@ -14,6 +14,7 @@ from django.urls import reverse
 from dj_hyperview import validate_hyperview_schema
 from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import TemplateValidationError
+from dj_hyperview.validation import validate_hxml
 from tests.test_validation_hardening import (
     HYPERVIEW_XMLNS,
     prefixed_namespaces,
@@ -518,6 +519,20 @@ def _filesystem_admin_config(tmp_path) -> dict[str, Any]:
     }
 
 
+def _count_resolutions(monkeypatch) -> list[str]:
+    from dj_hyperview.resolver import TemplateResolver
+
+    calls: list[str] = []
+    original = TemplateResolver.resolve
+
+    def counting(self, name):
+        calls.append(name)
+        return original(self, name)
+
+    monkeypatch.setattr(TemplateResolver, "resolve", counting)
+    return calls
+
+
 @pytest.mark.django_db
 def test_validation_expands_a_literal_include_from_configured_sources(
     admin_client, tmp_path
@@ -763,14 +778,7 @@ def test_include_expansion_stops_at_the_limit_and_keeps_real_errors(
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "label.xml").write_text("<text>Label</text>", encoding="utf-8")
-    calls = []
-    original = module.HyperviewEngine.get_template
-
-    def counting(self, name):
-        calls.append(name)
-        return original(self, name)
-
-    monkeypatch.setattr(module.HyperviewEngine, "get_template", counting)
+    calls = _count_resolutions(monkeypatch)
     include = '{% include "partials/label.xml" %}'
     source = f'{include * 70}\n<style id="card" kk="1" />'
 
@@ -815,14 +823,7 @@ def test_include_expansion_limit_covers_nested_includes_with_one_note_per_templa
     (partials / "inner.xml").write_text(
         '{% include "partials/leaf.xml" %}' * 40, encoding="utf-8"
     )
-    calls = []
-    original = module.HyperviewEngine.get_template
-
-    def counting(self, name):
-        calls.append(name)
-        return original(self, name)
-
-    monkeypatch.setattr(module.HyperviewEngine, "get_template", counting)
+    calls = _count_resolutions(monkeypatch)
     source = (
         '{% include "partials/inner.xml" %}' * 2 + '{% include "partials/leaf.xml" %}'
     )
@@ -845,13 +846,13 @@ def test_include_expansion_limit_covers_nested_includes_with_one_note_per_templa
 def test_validation_reports_an_unavailable_literal_include_source_safely(
     admin_client, monkeypatch, tmp_path
 ) -> None:
-    module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     from dj_hyperview.exceptions import SourceUnavailable
+    from dj_hyperview.resolver import TemplateResolver
 
     def fail_source(self, name):
         raise SourceUnavailable("private:source", "private failure")
 
-    monkeypatch.setattr(module.HyperviewEngine, "get_template", fail_source)
+    monkeypatch.setattr(TemplateResolver, "resolve", fail_source)
 
     with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
         result = _validate(admin_client, '{% include "partials/label.xml" %}')
@@ -1738,3 +1739,243 @@ def test_validation_reports_recursion_in_the_static_stage_as_too_deep(
     result = _validate(admin_client, "<view />")
 
     assert [item["code"] for item in result["diagnostics"]] == ["too_deep"]
+
+
+@pytest.mark.django_db
+def test_literal_includes_are_not_compiled_by_djangos_template_class(
+    admin_client, monkeypatch, tmp_path
+) -> None:
+    """Template uses Django's lexer, which is quadratic: 40,000 openers took 15 s."""
+
+    def forbidden(self) -> None:
+        raise AssertionError("an include target was compiled by Template")
+
+    monkeypatch.setattr("django.template.base.Template.compile_nodelist", forbidden)
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "label.xml").write_text("<text>{{ label }}</text>", encoding="utf-8")
+    (partials / "openers.xml").write_text("<view>" + "{{ " * 40_000, encoding="utf-8")
+    source = f'<view xmlns="{HV}">{{% include "partials/label.xml" %}}</view>'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+        unclosed = _validate(admin_client, '{% include "partials/openers.xml" %}')
+
+    assert result == {"ok": True, "diagnostics": []}
+    assert unclosed["ok"] is False
+    assert [item["code"] for item in unclosed["diagnostics"]] == ["xml_syntax"]
+
+
+def _bounded_includes_config(tmp_path, max_bytes: int) -> dict[str, Any]:
+    return {
+        **_filesystem_admin_config(tmp_path),
+        "VALIDATION": {"MAX_BYTES": max_bytes},
+    }
+
+
+@pytest.mark.django_db
+def test_include_expansion_stops_when_the_composed_source_exceeds_max_bytes(
+    admin_client, monkeypatch, tmp_path
+) -> None:
+    """64 includes of a 990 KB template used 3.3 GB; the composed size is bounded."""
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "big.xml").write_text(f"<text>{'x' * 400}</text>", encoding="utf-8")
+    calls = _count_resolutions(monkeypatch)
+    source = f'<view xmlns="{HV}">' + '{% include "partials/big.xml" %}' * 6 + "</view>"
+
+    with override_settings(HYPERVIEW=_bounded_includes_config(tmp_path, 1000)):
+        result = _validate(admin_client, source)
+
+    assert len(calls) == 2
+    assert result["ok"] is True
+    assert [(item["code"], item["severity"]) for item in result["diagnostics"]] == [
+        ("schema_static_incomplete", "info")
+    ]
+
+
+@pytest.mark.django_db
+def test_include_size_limit_covers_nested_includes_with_one_note(
+    admin_client, monkeypatch, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "leaf.xml").write_text(f"<text>{'x' * 400}</text>", encoding="utf-8")
+    (partials / "inner.xml").write_text(
+        '{% include "partials/leaf.xml" %}' * 3, encoding="utf-8"
+    )
+    calls = _count_resolutions(monkeypatch)
+    source = (
+        f'<view xmlns="{HV}">' + '{% include "partials/inner.xml" %}' * 2 + "</view>"
+    )
+
+    with override_settings(HYPERVIEW=_bounded_includes_config(tmp_path, 1000)):
+        result = _validate(admin_client, source)
+
+    assert calls == ["partials/inner.xml", "partials/leaf.xml", "partials/leaf.xml"]
+    assert result["ok"] is True
+    assert sorted(
+        (item["template"], item["code"]) for item in result["diagnostics"]
+    ) == [
+        ("partials/inner.xml", "schema_static_incomplete"),
+        ("screens/draft.xml", "schema_static_incomplete"),
+    ]
+
+
+@pytest.mark.django_db
+def test_include_syntax_error_is_reported_for_the_target_and_expansion_goes_on(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "bad.xml").write_text("{% if ready %}<text />", encoding="utf-8")
+    (partials / "bad_style.xml").write_text(
+        f'<style xmlns="{HV}" id="card" kk="1" />', encoding="utf-8"
+    )
+    source = '{% include "partials/bad.xml" %}{% include "partials/bad_style.xml" %}'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert [(item["template"], item["code"]) for item in result["diagnostics"]] == [
+        ("partials/bad.xml", "django_syntax"),
+        ("partials/bad_style.xml", "schema_attribute"),
+        ("screens/draft.xml", "schema_static_incomplete"),
+    ]
+
+
+NAMESPACE_BOUNDARY_PASSES = [
+    pytest.param(rebinding_path(32), id="32-declarations"),
+    pytest.param(
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(7)}><text>ok</text></view>",
+        id="8-in-scope",
+    ),
+]
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize("source", NAMESPACE_BOUNDARY_PASSES)
+def test_validation_accepts_namespaces_exactly_at_the_runtime_caps(
+    admin_client, source: str
+) -> None:
+    """The synthetic root adds a declaration and a prefix that the document lacks."""
+    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+    assert validate_hxml(source) == source
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        (
+            rebinding_path(33),
+            "Element exceeds 32 namespace declarations on its ancestor path.",
+        ),
+        (
+            f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(8)}><text>ok</text></view>",
+            "Element exceeds 8 in-scope namespaces.",
+        ),
+    ],
+)
+def test_validation_rejects_namespaces_one_over_the_runtime_caps(
+    admin_client, source: str, message: str
+) -> None:
+    result = _validate(admin_client, source)
+
+    assert [(item["code"], item["message"]) for item in result["diagnostics"]] == [
+        ("max_attributes", message)
+    ]
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_counts_namespaces_per_top_level_element(admin_client) -> None:
+    """Sibling top-level elements, as includes make them, do not add up."""
+    sibling = f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(7)}><text>ok</text></view>"
+
+    assert _validate(admin_client, sibling * 3) == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    "source",
+    [
+        f'<doc xmlns="{HV}"><screen>{{% verbatim %}}<body/>{{% endverbatim %}}'
+        "</screen></doc>",
+        f'<body xmlns="{HV}">{{% verbatim %}}<view>{{% endverbatim %}}</view></body>',
+    ],
+    ids=["required-child", "split-tag"],
+)
+def test_validation_defers_markup_that_a_verbatim_body_supplies(
+    admin_client, source: str
+) -> None:
+    """A verbatim body is not analyzed, so what it may supply gets the note."""
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is True
+    assert [(item["code"], item["severity"]) for item in result["diagnostics"]] == [
+        ("schema_static_incomplete", "info")
+    ]
+    validate_hxml(_render(source))
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_the_static_pass_stops_collecting_element_findings_past_its_limit(
+    monkeypatch,
+) -> None:
+    module = _static_module()
+    created: list[str] = []
+    original = module._diagnostic
+
+    def counting(code, *args, **kwargs):
+        created.append(code)
+        return original(code, *args, **kwargs)
+
+    monkeypatch.setattr(module, "_diagnostic", counting)
+
+    found = module._static_schema_diagnostics("a.xml", "<x/>\n" * 5000)
+
+    assert len(found) == created.count("schema_element") == module._MAX_DIAGNOSTICS + 1
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize("limit", [1, 3, 10, 100])
+def test_the_structure_check_stops_at_the_limit_it_is_given(limit: int) -> None:
+    from lxml import etree
+
+    module = _static_module()
+    root = etree.fromstring(
+        f'<r xmlns="{HV}">' + "<screen><body/><body/></screen>\n" * 10 + "</r>"
+    )
+
+    found = module._static_structure_diagnostics(
+        "a.xml", root, module._get_compiled_registry(), limit
+    )
+
+    assert len(found) == min(limit, 10)
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("depth", "limit"),
+    [(300, 64), (9, 8)],
+    ids=["parser-ceiling", "configured-limit"],
+)
+def test_validation_words_the_depth_limit_like_rendering(
+    admin_client, depth: int, limit: int
+) -> None:
+    source = "<view>" * depth + "</view>" * depth
+
+    with override_settings(
+        HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": {"MAX_DEPTH": limit}}
+    ):
+        result = _validate(admin_client, source)
+
+    assert [(item["code"], item["message"]) for item in result["diagnostics"]] == [
+        ("max_depth", "Document exceeds MAX_DEPTH.")
+    ]

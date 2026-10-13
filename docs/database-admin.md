@@ -246,9 +246,10 @@ line when it is available. The request uses the existing Admin CSRF and
 or invalidate caches. Literal `{% include "..." %}` targets are resolved through
 the configured Hyperview source precedence, recursively compiled, and checked
 both independently and in their parent position. Missing targets and include
-cycles are errors. Expansion stops after 64 include edges, and the includes that
-were not expanded produce the informational note described below rather than an
-error, because the result is incomplete, not wrong.
+cycles are errors. Expansion stops after 64 include edges, or when the draft and
+the includes read so far would exceed `VALIDATION.MAX_BYTES` together, and the
+includes that were not expanded produce the informational note described below
+rather than an error, because the result is incomplete, not wrong.
 
 The check reads Django syntax the way Django does, from the tokens Django's lexer
 produces. A `{% comment %}` block hides everything up to `{% endcomment %}` from
@@ -261,7 +262,8 @@ document, such as text inside an element that allows only elements. A variable
 that applies the `safe` filter in element text, such as `{{ fragment|safe }}`, may
 render markup, so its position is runtime-dependent and gets the informational
 note instead of an error. A `{% verbatim %}` body is not analyzed and gets the
-same note.
+same note, including when markup it may supply is missing from the rest of the
+document, such as a required child or half of a tag.
 
 The check is bounded like rendering. Before any schema work it applies
 `VALIDATION.MAX_NODES` and `VALIDATION.MAX_DEPTH`, and the fixed limits of 128
@@ -273,7 +275,8 @@ of any single rendered document. Source nested more deeply than Django's recursi
 parser can compile is reported as `too_deep` instead of failing the request. The
 response lists at most 50 diagnostics, errors before notes, and ends with an
 informational `diagnostics_truncated` entry when more were found. Checking time
-grows in proportion to the size of the draft.
+grows in proportion to the size of the draft and of the includes it expands, which
+`VALIDATION.MAX_BYTES` bounds together.
 
 An informational note — **Static checks passed. Final HXML will be validated
 when served.** — is normal for dynamic templates, not a warning or a validation

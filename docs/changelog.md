@@ -57,6 +57,13 @@ This page records user-visible release changes, including unpublished attempts.
   draft with a lexer that finds the same tokens as Django's in linear time: Django's
   lazy pattern reads on to the end of the line for every `{{`, `{%` or `{#` without
   a closer, so 40,000 of them on one line (120 KB) took 10 s in its lexer alone.
+  Literal `{% include %}` targets are now read from their source and expanded with
+  that lexer. Before, each target was also compiled by Django's `Template`, so a
+  draft with one include of 40,000 `{{ ` took 10 s and four such includes took
+  42 s; they now take 0.3 s. The composed source is bounded as well: expansion
+  stops, with the informational note `schema_static_incomplete`, once the draft and
+  its includes together exceed `VALIDATION.MAX_BYTES`. A draft with 64 includes of
+  a 990 KB template used 3.3 GB and now uses 79 MB.
 - `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
   `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
   still lets a shared cache store the response and revalidate it later.
@@ -345,6 +352,14 @@ on, and says how to migrate.
   `{% if %}` blocks, no longer fails the Admin validation request and the Admin
   save with HTTP 500. The check, the Admin form, `publish_template` and model
   validation report it as `too_deep`, "Template is nested too deeply."
+- The Admin check no longer counts the namespace declaration and prefix of its own
+  synthetic root toward the namespace limits. A document with exactly 32
+  declarations on a path or 8 in-scope namespaces passed at render time and failed
+  in the Admin.
+- A `{% verbatim %}` body that supplies markup, such as the required child of an
+  element or half of a tag, now gets the informational note in the Admin check.
+  It used to be reported as the blocking `schema_structure` or `xml_syntax` error,
+  although the template renders.
 - The source check for forbidden declarations now agrees with Django about two
   constructs. A `{% comment %}` inside a `{% verbatim %}` body hides nothing, so a
   declaration there is rejected when the template is saved, as it was already when
