@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 
 import pytest
+import xmlschema
 from django.test import override_settings
 
 from dj_hyperview import validate_hyperview_schema
@@ -538,3 +539,158 @@ def test_bundled_registry_compiles_under_a_percent_escaped_package_root(
     action = 'action="store-token" token="x"' if registered else 'action="reload"'
     document = etree.fromstring(f'<view xmlns="{HV}"><behavior {action}/></view>')
     assert next(compiled.iter_errors(document), None) is None
+
+
+def link_or_skip(link: Path, target: Path, *, directory: bool = False) -> None:
+    """Create a symlink, or skip the test on a platform that cannot."""
+    try:
+        link.symlink_to(target, target_is_directory=directory)
+    except (OSError, NotImplementedError):
+        pytest.skip("symlinks are not available on this platform")
+
+
+def compiled_elements(root: Path) -> set[str]:
+    """Return the element names the XSD compiler itself loads from a root file."""
+    compiled = xmlschema.XMLSchema11(root, allow="local", use_fallback=False)
+    return {name.rsplit("}", 1)[-1] for name in compiled.elements}
+
+
+@pytest.mark.parametrize("reference", ["&#9;", "&#13;"])
+def test_stripped_control_characters_cannot_hide_a_parent_segment(
+    tmp_path: Path, reference: str
+) -> None:
+    """The compiler's URL parser drops TAB and CR, so ".<TAB>." is "..".
+
+    A directory literally named like that holds a decoy for the guard, while the
+    compiler reads the file one level above it.
+    """
+    character = {"&#9;": "\t", "&#13;": "\r"}[reference]
+    safe = tmp_path / "safe"
+    decoy = safe / f".{character}."
+    try:
+        decoy.mkdir(parents=True)
+    except OSError:
+        pytest.skip("the filesystem cannot name a directory with this character")
+    (decoy / "outside.xsd").write_text(
+        schema_text('<xs:element name="decoy"/>'), encoding="utf-8"
+    )
+    (tmp_path / "outside.xsd").write_text(
+        schema_text('<xs:element name="outside"/>'), encoding="utf-8"
+    )
+    root = safe / "root.xsd"
+    root.write_text(
+        schema_text(f'<xs:include schemaLocation=".{reference}./outside.xsd"/>'),
+        encoding="utf-8",
+    )
+    assert compiled_elements(root) == {"outside"}
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+    assert str(tmp_path) not in str(error.value)
+
+
+@pytest.mark.parametrize(
+    "location",
+    [
+        "x&#9;.xsd",
+        "x&#10;.xsd",
+        "x&#13;.xsd",
+        "x&#8203;.xsd",
+        "x&#160;.xsd",
+        "x&#8238;.xsd",
+    ],
+)
+def test_references_must_be_printable(tmp_path: Path, location: str) -> None:
+    """Control, invisible and reordering characters never belong in a plain path."""
+    root = tmp_path / "root.xsd"
+    root.write_text(
+        schema_text(f'<xs:include schemaLocation="{location}"/>'), encoding="utf-8"
+    )
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+
+
+@pytest.mark.parametrize("location", ["//[::1/x.xsd", "//[/x.xsd", "//x]/x.xsd"])
+def test_unparsable_references_are_forbidden_not_crashes(
+    tmp_path: Path, location: str
+) -> None:
+    """A location urlparse cannot split used to escape as a bare ValueError."""
+    root = tmp_path / "root.xsd"
+    root.write_text(
+        schema_text(f'<xs:include schemaLocation="{location}"/>'), encoding="utf-8"
+    )
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+    assert str(tmp_path) not in str(error.value)
+
+
+def test_symlinked_includer_cannot_escape_through_its_lexical_directory(
+    tmp_path: Path,
+) -> None:
+    """Nested includes resolve beside the link, not beside the link's target.
+
+    The compiler joins an include onto the including file's own location, so
+    base/a/link.xsd (a link to base/b/real.xsd) reads base/a/out/evil.xsd, which
+    base/a/out (a link to a directory outside the root) turns into a foreign file.
+    The guard must inspect that file, not the decoy base/b/out/evil.xsd.
+    """
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "evil.xsd").write_text(
+        schema_text('<xs:element name="outside"/>'), encoding="utf-8"
+    )
+    base = tmp_path / "base"
+    (base / "a").mkdir(parents=True)
+    (base / "b" / "out").mkdir(parents=True)
+    (base / "b" / "out" / "evil.xsd").write_text(
+        schema_text('<xs:element name="decoy"/>'), encoding="utf-8"
+    )
+    real = base / "b" / "real.xsd"
+    real.write_text(
+        schema_text('<xs:include schemaLocation="out/evil.xsd"/>'), encoding="utf-8"
+    )
+    link_or_skip(base / "a" / "link.xsd", real)
+    link_or_skip(base / "a" / "out", outside, directory=True)
+    root = base / "root.xsd"
+    root.write_text(
+        schema_text('<xs:include schemaLocation="a/link.xsd"/>'), encoding="utf-8"
+    )
+    assert compiled_elements(root) == {"outside"}
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+    assert str(tmp_path) not in str(error.value)
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
+        with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E012"):
+            validate_hyperview_schema(f'<view xmlns="{HV}"/>')
+
+
+def test_symlinked_includer_may_include_files_beside_the_link(
+    tmp_path: Path,
+) -> None:
+    """A link inside the root keeps working when its dependencies sit beside it."""
+    base = tmp_path / "base"
+    (base / "a").mkdir(parents=True)
+    (base / "b").mkdir()
+    real = base / "b" / "real.xsd"
+    real.write_text(
+        schema_text('<xs:include schemaLocation="leaf.xsd"/>'), encoding="utf-8"
+    )
+    leaf = base / "a" / "leaf.xsd"
+    leaf.write_text(schema_text('<xs:element name="thing"/>'), encoding="utf-8")
+    link_or_skip(base / "a" / "link.xsd", real)
+    root = base / "root.xsd"
+    root.write_text(
+        schema_text('<xs:include schemaLocation="a/link.xsd"/>'), encoding="utf-8"
+    )
+    assert set(_guard_local_references(root)) == {
+        root.resolve(),
+        real.resolve(),
+        leaf.resolve(),
+    }
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
+        validate_hyperview_schema(
+            f'<view xmlns="{HV}" xmlns:app="{APP}"><app:thing/></view>'
+        )

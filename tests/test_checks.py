@@ -369,6 +369,10 @@ XS = "http://www.w3.org/2001/XMLSchema"
             f'<schema xmlns="{XS}"><override schemaLocation="other.xsd"/></schema>',
             "forbidden_schema_reference",
         ),
+        (
+            f'<schema xmlns="{XS}"><include schemaLocation="//[::1/a.xsd"/></schema>',
+            "forbidden_schema_reference",
+        ),
     ],
 )
 def test_extra_schema_error_names_the_stable_cause(

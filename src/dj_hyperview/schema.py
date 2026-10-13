@@ -255,14 +255,16 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
         entrypoint = path.resolve(strict=True)
     except (OSError, RuntimeError, ValueError) as error:
         raise TemplateValidationError("schema_invalid", "invalid schema") from error
-    pending = [entrypoint]
+    # The compiler joins a reference onto the including file's own location, not
+    # onto the target of a symlink at that location. Each pending entry therefore
+    # keeps the location it was reached by, and is resolved only to read the file
+    # and to check containment.
+    pending = [(entrypoint, entrypoint)]
     scheduled = {entrypoint}
     visited: set[Path] = set()
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
     while pending:
-        current = pending.pop()
-        if current in visited:
-            continue
+        located, current = pending.pop()
         visited.add(current)
         try:
             document = etree.parse(current, parser)
@@ -283,16 +285,24 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
             location = reference.get("schemaLocation")
             if not location:
                 continue
-            parsed = urlparse(location)
+            try:
+                parsed = urlparse(location)
+            except ValueError as error:
+                raise TemplateValidationError(
+                    "forbidden_schema_reference",
+                    "schema references must use plain local paths",
+                ) from error
             if parsed.scheme or parsed.netloc:
                 raise TemplateValidationError(
                     "forbidden_schema_reference",
                     "remote schema references are forbidden",
                 )
-            # The compiler folds ".." lexically while this guard resolves symlinks
-            # physically, so the two can name different files.
+            # The compiler's URL parser drops TAB, CR and LF and folds ".." lexically,
+            # while this guard resolves symlinks physically, so the two can name
+            # different files.
             if (
-                unquote(location) != location
+                not location.isprintable()
+                or unquote(location) != location
                 or "\\" in location
                 or location != location.strip()
                 or ".." in PurePosixPath(location).parts
@@ -301,8 +311,9 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
                     "forbidden_schema_reference",
                     "schema references must use plain local paths",
                 )
+            lexical = located.parent / location
             try:
-                target = (current.parent / location).resolve()
+                target = lexical.resolve()
             except (OSError, RuntimeError, ValueError) as error:
                 raise TemplateValidationError(
                     "schema_invalid", "invalid schema"
@@ -312,13 +323,13 @@ def _guard_local_references(path: Path) -> tuple[Path, ...]:
                     "forbidden_schema_reference",
                     "schema references must remain inside their local root",
                 )
-            if target not in scheduled:
+            if lexical not in scheduled:
                 if len(scheduled) >= _MAX_SCHEMA_FILES:
                     raise TemplateValidationError(
                         "schema_invalid", "schema exceeds the local file limit"
                     )
-                scheduled.add(target)
-                pending.append(target)
+                scheduled.add(lexical)
+                pending.append((lexical, target))
     return tuple(sorted(visited))
 
 
