@@ -9,6 +9,7 @@ from django.http import HttpRequest, HttpResponse
 from django.http.response import HttpResponseBase, ResponseHeaders
 from django.template.backends.django import Template
 from django.template.response import ContentNotRenderedError, TemplateResponse
+from django.utils import http as django_http
 from django.utils.http import parse_header_parameters
 
 from .conf import get_settings
@@ -32,6 +33,9 @@ _HYPERVIEW_MEDIA_TYPES = {
 # RFC 9110 token, and the characters a quoted-string may carry (no control bytes).
 _TOKEN = re.compile(r"[!#$%&'*+.^_`|~0-9A-Za-z-]+")
 _QUOTABLE = re.compile(r"[\t\x20-\x7e\x80-\xff]*")
+# Django 6.1 refuses a longer header, and 5.2 has no cap although reading a header is
+# quadratic in the number of its parameters.
+_MAX_CONTENT_TYPE_LENGTH: int = getattr(django_http, "MAX_HEADER_LENGTH", 10_000)
 
 
 def _has_extended_name(header: str) -> bool:
@@ -72,6 +76,8 @@ def _parameter(key: str, value: str) -> str:
 def _normalized_response_metadata(
     content_type: str | None, charset: str | None
 ) -> tuple[str | None, str | None]:
+    if len(content_type or "") > _MAX_CONTENT_TYPE_LENGTH:
+        raise ValueError("Invalid Content-Type parameter")
     # Django 5.2 lets LookupError escape for an unknown extended-value encoding,
     # while 6.1 raises its own ValueError; both mean an unusable parameter.
     try:

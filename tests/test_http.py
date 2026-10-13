@@ -167,6 +167,8 @@ def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> No
         "a*=x",
         "profile=mobile; a*=utf-8''x%20y",
         'a *="x"',
+        "a* =x",
+        "a*\t= x",
         "a**=x",
         # Django ends a parameter at a semicolon after an even count of quotes, a
         # quote behind a backslash not counted, so these hide the star from a reader
@@ -192,6 +194,50 @@ def test_content_type_parameters_that_cannot_be_represented_are_rejected(
             '<text xmlns="https://hyperview.org/hyperview" />',
             content_type=f"{HYPERVIEW_MEDIA_TYPE}; {parameter}",
         )
+
+
+@pytest.mark.parametrize(
+    "header",
+    [
+        f"{HYPERVIEW_MEDIA_TYPE}; a*",
+        f"{HYPERVIEW_MEDIA_TYPE}; a*; profile=mobile",
+    ],
+)
+def test_a_content_type_parameter_without_a_value_is_dropped_by_django(
+    header: str,
+) -> None:
+    """Django keeps no name that has no "=", star or not, so nothing is altered.
+
+    That is unlike "a*=x", which Django keeps as "a=x" and so must be rejected.
+    """
+    response = HyperviewResponse(VALID_HXML, content_type=header)
+
+    assert response.headers["Content-Type"] in {
+        f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8",
+        f"{HYPERVIEW_MEDIA_TYPE}; profile=mobile; charset=utf-8",
+    }
+
+
+@pytest.mark.parametrize("media_type", [HYPERVIEW_MEDIA_TYPE, "text/plain"])
+@pytest.mark.parametrize("unit", ["x", "a=b;", ";"])
+def test_a_content_type_over_10000_characters_is_rejected_before_parsing(
+    media_type: str, unit: str
+) -> None:
+    """Django 6.1 refuses such a header and 5.2 has no cap, so both are held to it.
+
+    Reading the parameters is quadratic in their number, and 5.2 takes about 15 s
+    over 1 MB of semicolons.
+    """
+    prefix, suffix = f"{media_type}; p=", "; charset=utf-8"
+
+    def header(length: int) -> str:
+        return prefix + (unit * length)[: length - len(prefix) - len(suffix)] + suffix
+
+    assert len(header(10_000)) == 10_000
+    assert HyperviewResponse(VALID_HXML, content_type=header(10_000)).status_code == 200
+    for length in (10_001, 12_000):
+        with pytest.raises(ValueError, match="Invalid Content-Type parameter"):
+            HyperviewResponse(VALID_HXML, content_type=header(length))
 
 
 @pytest.mark.parametrize(

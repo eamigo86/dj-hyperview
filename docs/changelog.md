@@ -264,7 +264,9 @@ on, and says how to migrate.
   the way Django does, so a stray quote cannot hide a star from it. A header that
   Django cannot parse, such as an extended value with an unknown encoding (which
   Django 5.2 reports as `LookupError`), raises the same `ValueError` on both
-  supported Django versions. **A caller that
+  supported Django versions, and so does a `Content-Type` longer than 10,000
+  characters, which Django 6.1 already refused and Django 5.2 read without a cap
+  (1 MB of semicolons took about 15 s). **A caller that
   passes such a parameter must drop it or give it a value that fits: printable
   Latin-1 characters, and no backslash at the end.**
 - Source that nests blocks more than 100 levels deep, such as `{% if %}`, no longer
