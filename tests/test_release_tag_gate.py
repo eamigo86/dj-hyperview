@@ -176,11 +176,10 @@ def _allowed_maturities(version: Version) -> set[str]:
     """Return the Development Status values a release may carry.
 
     A prerelease must not claim more than its stage. A bare development build has
-    no stage yet: before 1.0 it may stand at any of the three, so that the next
-    release of a Beta project is not a downgrade, and at 1.0 it is still
-    Pre-Alpha. A development build after a final release follows that release. A
-    final release in the 0.x line may still call itself Beta; from 1.0 on it is
-    Production/Stable.
+    no stage yet, so it may stand at any prerelease stage, and past 1.0 it may also
+    keep the Production/Stable status of the line it continues. A development build
+    after a final release follows that release. A final release in the 0.x line
+    may still call itself Beta; from 1.0 on it is Production/Stable.
     """
     if version.pre:
         return {"a": {"3 - Alpha"}, "b": {"4 - Beta"}, "rc": {"4 - Beta"}}[
@@ -188,7 +187,9 @@ def _allowed_maturities(version: Version) -> set[str]:
         ]
     if version.dev is not None and version.post is None:
         stages = {"2 - Pre-Alpha", "3 - Alpha", "4 - Beta"}
-        return stages if version.major == 0 else {"2 - Pre-Alpha"}
+        if version.release > (1, 0, 0):
+            stages.add("5 - Production/Stable")
+        return stages
     if version.major == 0:
         return {"4 - Beta", "5 - Production/Stable"}
     return {"5 - Production/Stable"}
@@ -197,7 +198,11 @@ def _allowed_maturities(version: Version) -> set[str]:
 @pytest.mark.parametrize(
     ("version", "allowed"),
     [
-        ("1.0.0.dev1", {"2 - Pre-Alpha"}),
+        ("1.0.0.dev1", {"2 - Pre-Alpha", "3 - Alpha", "4 - Beta"}),
+        (
+            "1.1.0.dev1",
+            {"2 - Pre-Alpha", "3 - Alpha", "4 - Beta", "5 - Production/Stable"},
+        ),
         ("0.2.0.dev1", {"2 - Pre-Alpha", "3 - Alpha", "4 - Beta"}),
         ("0.1.0.post1.dev1", {"4 - Beta", "5 - Production/Stable"}),
         ("1.0.0.post1.dev1", {"5 - Production/Stable"}),
