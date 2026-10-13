@@ -2,6 +2,7 @@
 
 import importlib
 import json
+import time
 from types import ModuleType
 from typing import Any
 
@@ -9,6 +10,10 @@ import pytest
 from django.apps import apps
 from django.test import Client, override_settings
 from django.urls import reverse
+
+from dj_hyperview import validate_hyperview_schema
+from dj_hyperview.engine import HyperviewEngine
+from dj_hyperview.exceptions import TemplateValidationError
 
 pytestmark = pytest.mark.skipif(
     not apps.is_installed("django.contrib.admin"),
@@ -656,6 +661,24 @@ def test_validation_reports_django_syntax_in_a_literal_include(
 
 
 @pytest.mark.django_db
+def test_validation_does_not_check_an_include_used_inside_an_attribute_value(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "bad.xml").write_text(
+        '<style xmlns="https://hyperview.org/hyperview" id="card" kk="1" />',
+        encoding="utf-8",
+    )
+    source = f'<text xmlns="{HV}" style="{{% include \'partials/bad.xml\' %}}" />'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
 def test_validation_checks_literal_include_content_in_its_parent_position(
     admin_client, tmp_path
 ) -> None:
@@ -1146,3 +1169,169 @@ def test_conditional_structure_is_informational_without_hiding_errors(admin_clie
     invalid = _validate(admin_client, source.replace("<view>", '<view forbidden="1">'))
     assert invalid["ok"] is False
     assert any(item["severity"] == "error" for item in invalid["diagnostics"])
+
+
+HV = "https://hyperview.org/hyperview"
+
+
+def _render(source: str) -> str:
+    """Render with the real Django engine, as a response would."""
+    return HyperviewEngine().backend.from_string(source).render({})
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    "opening",
+    [
+        '{% comment "temporarily disabled" %}',
+        "{% comment 'note' %}",
+        "{% comment note %}",
+        "{% comment %}",
+    ],
+)
+def test_validation_ignores_commented_out_markup_whatever_the_note(
+    admin_client, opening: str
+) -> None:
+    """Django's comment tag ignores everything after its name, and so must we."""
+    source = (
+        f'<view xmlns="{HV}">{opening}<text bogus="1"/>{{% endcomment %}}'
+        "<text>ok</text></view>"
+    )
+
+    validate_hyperview_schema(_render(source))
+    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize("literal", ["{# note\n#}", "{{ value\n}}", "{% load i18n\n%}"])
+def test_validation_treats_a_delimiter_split_over_lines_as_the_text_django_renders(
+    admin_client, literal: str
+) -> None:
+    """Django's tag expression excludes line breaks, so these are literal text."""
+    source = f'<view xmlns="{HV}">{literal}<text>ok</text></view>'
+
+    with pytest.raises(TemplateValidationError):
+        validate_hyperview_schema(_render(source))
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert [item["code"] for item in result["diagnostics"]] == ["schema_structure"]
+    assert result["diagnostics"][0]["message"] == (
+        'Text content is not allowed inside element "view".'
+    )
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_accepts_a_split_delimiter_where_text_is_allowed(
+    admin_client,
+) -> None:
+    source = f'<text xmlns="{HV}">{{# note\n#}}</text>'
+
+    validate_hyperview_schema(_render(source))
+    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_reports_a_split_delimiter_inside_a_tag_as_malformed_xml(
+    admin_client,
+) -> None:
+    source = f'<text xmlns="{HV}" {{{{ attributes\n}}}}/>'
+
+    with pytest.raises(TemplateValidationError):
+        validate_hyperview_schema(_render(source))
+    result = _validate(admin_client, source)
+
+    assert [item["code"] for item in result["diagnostics"]] == ["xml_syntax"]
+    assert result["ok"] is False
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_cost_grows_linearly_with_the_number_of_django_tokens(
+    admin_client,
+) -> None:
+    """The context of each token used to be found by lexing the whole draft."""
+    body = "\n".join(f"<text>{{{{ v{index} }}}}</text>" for index in range(4000))
+    source = f'<view xmlns="{HV}">\n{body}\n</view>'
+
+    started = time.perf_counter()
+    result = _validate(admin_client, source)
+
+    assert result == {"ok": True, "diagnostics": []}
+    assert time.perf_counter() - started < 5  # 25 s before, 0.1 s now
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    ("build", "expected"),
+    [
+        (lambda: "{{\n" * 40_000, []),
+        (lambda: "<?xml " * 40_000, ["xml_syntax"]),
+        (lambda: "{{ a }}" + "<!--" * 40_000, ["xml_syntax"]),
+        (lambda: "{{ " * 40_000, []),
+    ],
+    ids=["open-braces", "open-declarations", "open-comments", "open-braces-one-line"],
+)
+def test_validation_scans_unterminated_constructs_in_linear_time(
+    admin_client, build, expected: list[str]
+) -> None:
+    """Unanchored lazy patterns rescanned the input for every unmatched opener."""
+    source = build()
+
+    started = time.perf_counter()
+    result = _validate(admin_client, source)
+
+    assert [item["code"] for item in result["diagnostics"]] == expected
+    assert time.perf_counter() - started < 10  # 30 to 50 s before
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    "expression",
+    ["fragment|safe", "fragment | safe", "fragment|default:''|safe|upper"],
+)
+def test_validation_defers_markup_injected_by_a_safe_variable(
+    admin_client, expression: str
+) -> None:
+    """A variable marked safe may render elements, so its position is not an error."""
+    source = f'<screen xmlns="{HV}">{{{{ {expression} }}}}<body /></screen>'
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is True
+    assert [item["code"] for item in result["diagnostics"]] == [
+        "schema_static_incomplete"
+    ]
+    assert result["diagnostics"][0]["severity"] == "info"
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    "expression", ["label", "label|upper", "items|safeseq", "label|default:'safe'"]
+)
+def test_validation_still_rejects_ordinary_text_variables_in_element_only_content(
+    admin_client, expression: str
+) -> None:
+    source = f'<screen xmlns="{HV}">{{{{ {expression} }}}}<body /></screen>'
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert [item["code"] for item in result["diagnostics"]] == ["schema_structure"]
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_does_not_defer_a_safe_variable_in_an_attribute_value(
+    admin_client,
+) -> None:
+    source = f'<view xmlns="{HV}" scroll-orientation="{{{{ direction|safe }}}}" />'
+
+    assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}

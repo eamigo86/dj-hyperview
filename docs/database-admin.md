@@ -233,6 +233,20 @@ the configured Hyperview source precedence, recursively compiled, and checked
 both independently and in their parent position. Missing targets and include
 cycles are errors; expansion is bounded to 64 include edges.
 
+The check reads Django syntax the way Django does, from the tokens Django's lexer
+produces. A
+`{% comment %}` block hides everything up to `{% endcomment %}` from the XML
+checks, whatever note follows the tag name, as in
+`{% comment "temporarily disabled" %}`, so commented-out markup is never
+validated. A Django delimiter never spans a line break: a `{# ... #}`,
+`{{ ... }}` or `{% ... %}` split over two lines is literal text, exactly as it is
+when the template is served, and the check reports what that text does to the
+document, such as text inside an element that allows only elements. A variable
+that applies the `safe` filter in element text, such as `{{ fragment|safe }}`, may
+render markup, so its position is runtime-dependent and gets the informational
+note instead of an error. A `{% verbatim %}` body is not analyzed and gets the
+same note.
+
 An informational note — **Static checks passed. Final HXML will be validated
 when served.** — is normal for dynamic templates, not a warning or a validation
 failure. It means the static checks passed, but Django markup such as a

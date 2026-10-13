@@ -4,13 +4,15 @@ from __future__ import annotations
 
 import json
 import re
+from bisect import bisect_left
+from dataclasses import dataclass
 from typing import Any
 
 from django.conf import settings
 from django.core.exceptions import RequestDataTooBig
 from django.http import HttpRequest, JsonResponse
 from django.template import Origin, TemplateSyntaxError
-from django.template.base import DebugLexer, Parser
+from django.template.base import TokenType
 from django.template.loader_tags import IncludeNode
 from lxml import etree
 
@@ -33,18 +35,51 @@ from dj_hyperview.schema import (
 from dj_hyperview.sources import canonicalize_template_name
 from dj_hyperview.validation import validate_template_source
 
+from ._template_syntax import _compile_nodelist, _LinearLexer
+
 _STATIC_ROOT = "djhv-static-validation-root"
 _DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"
 _DYNAMIC_STRUCTURE = "DJHVSTATICSTRUCTURE"
-_DJANGO_TOKEN = re.compile(r"({{[\s\S]*?}}|{%[\s\S]*?%}|{#[\s\S]*?#})")
-_XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)[\s\S]*?\?>", re.IGNORECASE)
-_XML_OPAQUE_BLOCK = re.compile(
-    r"<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<\?[\s\S]*?\?>",
-    re.IGNORECASE,
+_XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)", re.IGNORECASE)
+_NOT_NEWLINE = re.compile(r"[^\n]")
+_SAFE_FILTER = re.compile(r"\|\s*safe\b")
+# Tags whose output is one scalar value, so they cannot change the XML structure.
+_SCALAR_TAGS = frozenset(
+    {
+        "blocktranslate",
+        "endblocktranslate",
+        "firstof",
+        "now",
+        "static",
+        "trans",
+        "translate",
+        "url",
+        "widthratio",
+    }
 )
-_RAW_BLOCK = re.compile(r"{%\s*(comment|verbatim)(?:\s+([^\s%]+))?\s*%}")
-_LOAD_TAG = re.compile(r"{%\s*load(?:\s|%)")
 _MAX_LITERAL_INCLUDES = 64
+
+# What the scanner knows about the XML it is inside while it reads literal text.
+_TEXT, _TAG, _DOUBLE_QUOTED, _SINGLE_QUOTED, _COMMENT, _CDATA, _PI = range(7)
+_CONTEXT = {
+    _TEXT: "text",
+    _TAG: "tag",
+    _DOUBLE_QUOTED: "attribute",
+    _SINGLE_QUOTED: "attribute",
+    # Comments, CDATA and processing instructions hide their Django tokens from XML.
+    _COMMENT: "text",
+    _CDATA: "text",
+    _PI: "text",
+}
+_CLOSER = {
+    _DOUBLE_QUOTED: '"',
+    _SINGLE_QUOTED: "'",
+    _COMMENT: "-->",
+    _CDATA: "]]>",
+    _PI: "?>",
+}
+_TAG_DELIMITER = re.compile(r"[\"'>]")
+_AFTER_DELIMITER = {">": _TEXT, '"': _DOUBLE_QUOTED, "'": _SINGLE_QUOTED}
 
 
 def _diagnostic(
@@ -87,126 +122,184 @@ def _unique_object(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 def _blank_preserving_lines(value: str, marker: str = "") -> str:
     """Replace source text while preserving its line-coordinate space."""
-    return marker + "".join("\n" if character == "\n" else " " for character in value)
+    return marker + _NOT_NEWLINE.sub(" ", value)
 
 
-def _mask_raw_blocks(content: str) -> str:
-    """Hide comment and verbatim bodies that Django excludes from rendering."""
+def _unused_marker(content: str, base: str) -> str:
+    """Extend a marker with underscores until the source cannot contain it."""
+    longest = max(
+        (len(match.group(1)) for match in re.finditer(f"{base}(_*)", content)),
+        default=-1,
+    )
+    return base + "_" * (longest + 1)
+
+
+def _advance_xml_state(content: str, state: int, position: int, end: int) -> int:
+    """Move the XML scanner across the literal text from position to end.
+
+    Each search is bounded by end, so it either finds something and moves on or
+    consumes the rest of this text, which keeps the whole scan linear.
+    """
+    while position < end:
+        if state == _TEXT:
+            position = content.find("<", position, end)
+            if position < 0:
+                break
+            if content.startswith("<!--", position, end):
+                state, position = _COMMENT, position + 4
+            elif content.startswith("<![CDATA[", position, end):
+                state, position = _CDATA, position + 9
+            elif content.startswith("<?", position, end):
+                state, position = _PI, position + 2
+            else:
+                state, position = _TAG, position + 1
+        elif state == _TAG:
+            match = _TAG_DELIMITER.search(content, position, end)
+            if match is None:
+                break
+            position = match.end()
+            state = _AFTER_DELIMITER[match.group()]
+        else:
+            found = content.find(_CLOSER[state], position, end)
+            if found < 0:
+                break
+            position = found + len(_CLOSER[state])
+            state = _TAG if state in {_DOUBLE_QUOTED, _SINGLE_QUOTED} else _TEXT
+    return state
+
+
+def _blank_xml_declarations(text: str) -> str:
+    """Blank every XML declaration, which a synthetic root cannot contain."""
+    parts = []
     cursor = 0
-    masked = content
-    while match := _RAW_BLOCK.search(masked, cursor):
-        command, name = match.groups()
-        suffix = rf"\s+{re.escape(name)}" if name else ""
-        closing = re.compile(rf"{{%\s*end{command}{suffix}\s*%}}")
-        end = closing.search(masked, match.end())
-        if end is None:
-            return masked
-        span = masked[match.start() : end.end()]
-        replacement = _blank_preserving_lines(span)
-        masked = masked[: match.start()] + replacement + masked[end.end() :]
-        cursor = match.start() + len(replacement)
-    return masked
-
-
-def _xml_token_context(content: str, start: int) -> str:
-    """Locate a Django token in XML text, a tag, or a quoted attribute value."""
-    lexical = _mask_raw_blocks(content)
-    lexical = _DJANGO_TOKEN.sub(
-        lambda match: _blank_preserving_lines(match.group(0)), lexical
-    )
-    lexical = _XML_OPAQUE_BLOCK.sub(
-        lambda match: _blank_preserving_lines(match.group(0)), lexical
-    )
-    in_tag = False
-    quote = None
-    for character in lexical[:start]:
-        if not in_tag:
-            if character == "<":
-                in_tag = True
+    for opener in _XML_DECLARATION.finditer(text):
+        if opener.start() < cursor:
             continue
+        closer = text.find("?>", opener.end())
+        if closer < 0:
+            break
+        parts.append(text[cursor : opener.start()])
+        parts.append(_blank_preserving_lines(text[opener.start() : closer + 2]))
+        cursor = closer + 2
+    parts.append(text[cursor:])
+    return "".join(parts)
 
-        if quote is not None:
-            if character == quote:
-                quote = None
+
+@dataclass(frozen=True, slots=True)
+class _TemplateScan:
+    """Django syntax of one source, classified by the XML around each token."""
+
+    masked: str
+    value_marker: str
+    structure_marker: str
+    # The XML context of every token that renders output, by its start offset.
+    contexts: dict[int, str]
+    first_structure_line: int | None
+    verbatim_line: int | None
+
+
+def _scan_template(content: str) -> _TemplateScan:
+    """Locate Django syntax in XML once, in one pass over Django's own tokens.
+
+    Django decides what is a tag, a comment or a verbatim body, so the tokens come
+    from its lexer, and a tag split over lines is plain text, as it is when served.
+    The XML state is advanced only across the literal text between tokens.
+    """
+    value_marker = _unused_marker(content, _DYNAMIC_VALUE)
+    structure_marker = _unused_marker(content, _DYNAMIC_STRUCTURE)
+    tokens = _LinearLexer(content).tokenize()
+    parts: list[str] = []
+    contexts: dict[int, str] = {}
+    first_structure_line = verbatim_line = None
+    end_comments: list[int] | None = None
+    state = _TEXT
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        start, end = token.position
+        if token.token_type is TokenType.TEXT:
+            state = _advance_xml_state(content, state, start, end)
+            parts.append(content[start:end])
             continue
-
-        if character in {'"', "'"}:
-            quote = character
-        elif character == ">":
-            in_tag = False
-
-    if not in_tag:
-        return "text"
-    return "attribute" if quote is not None else "tag"
-
-
-def _requires_runtime_analysis(content: str, match: re.Match[str]) -> bool:
-    """Return whether one Django token can change statically visible markup."""
-    token = match.group(0)
-    if token.startswith("{#") or _LOAD_TAG.match(token):
-        return False
-    context = _xml_token_context(content, match.start())
-    if context == "attribute":
-        return False
-    if token.startswith("{{"):
-        return context == "tag"
-    command = token[2:-2].strip().split(maxsplit=1)[0]
-    scalar_tags = {
-        "blocktranslate",
-        "endblocktranslate",
-        "firstof",
-        "now",
-        "static",
-        "trans",
-        "translate",
-        "url",
-        "widthratio",
-    }
-    return command not in scalar_tags
+        command = ""
+        if token.token_type is TokenType.BLOCK:
+            command = token.contents.split(maxsplit=1)[0] if token.contents else ""
+            if command == "comment":
+                if end_comments is None:
+                    end_comments = [
+                        position
+                        for position, other in enumerate(tokens)
+                        if other.token_type is TokenType.BLOCK
+                        and other.contents == "endcomment"
+                    ]
+                at = bisect_left(end_comments, index)
+                if at < len(end_comments):
+                    closing = tokens[end_comments[at]]
+                    parts.append(
+                        _blank_preserving_lines(content[start : closing.position[1]])
+                    )
+                    index = end_comments[at] + 1
+                    continue
+            elif token.contents[:9] in {"verbatim", "verbatim "}:
+                verbatim_line = verbatim_line or token.lineno
+                # Django's lexer turns the body into text, so the next other token
+                # is the closing tag.
+                closing = index
+                while closing < len(tokens) and (
+                    tokens[closing].token_type is TokenType.TEXT
+                ):
+                    closing += 1
+                stop = (
+                    tokens[closing].position[1]
+                    if closing < len(tokens)
+                    else len(content)
+                )
+                parts.append(_blank_preserving_lines(content[start:stop]))
+                index = closing + 1
+                continue
+        if token.token_type is TokenType.COMMENT or command == "load":
+            parts.append(_blank_preserving_lines(content[start:end]))
+            continue
+        context = _CONTEXT[state]
+        contexts[start] = context
+        if token.token_type is TokenType.VAR:
+            # Markup can come from a variable in a tag, or one marked safe in text.
+            structure = context == "tag" or (
+                context == "text" and _SAFE_FILTER.search(token.contents) is not None
+            )
+        else:
+            structure = context != "attribute" and command not in _SCALAR_TAGS
+        if structure and first_structure_line is None:
+            first_structure_line = token.lineno
+        parts.append(
+            _blank_preserving_lines(
+                content[start:end], structure_marker if structure else value_marker
+            )
+        )
+    return _TemplateScan(
+        _blank_xml_declarations("".join(parts)),
+        value_marker,
+        structure_marker,
+        contexts,
+        first_structure_line,
+        verbatim_line,
+    )
 
 
 def _first_runtime_token_line(content: str) -> int | None:
     """Find the first Django token that can alter visible XML structure."""
-    masked_raw = _mask_raw_blocks(content)
-    for match in _DJANGO_TOKEN.finditer(masked_raw):
-        if _requires_runtime_analysis(masked_raw, match):
-            return content.count("\n", 0, match.start()) + 1
-    return None
+    return _scan_template(content).first_structure_line
 
 
 def _mask_template_syntax(content: str) -> tuple[str, str, str, bool]:
     """Make Django tokens and XML declarations safe inside a synthetic root."""
-
-    value_marker = _DYNAMIC_VALUE
-    while value_marker in content:
-        value_marker += "_"
-    structure_marker = _DYNAMIC_STRUCTURE
-    while structure_marker in content or structure_marker == value_marker:
-        structure_marker += "_"
-    masked_raw = _mask_raw_blocks(content)
-    dynamic_structure = any(
-        _requires_runtime_analysis(masked_raw, match)
-        for match in _DJANGO_TOKEN.finditer(masked_raw)
-    )
-
-    def replace_token(match: re.Match[str]) -> str:
-        token = match.group(0)
-        if token.startswith("{#") or _LOAD_TAG.match(token):
-            prefix = ""
-        elif _requires_runtime_analysis(masked_raw, match):
-            prefix = structure_marker
-        else:
-            prefix = value_marker
-        return _blank_preserving_lines(token, prefix)
-
-    masked = _DJANGO_TOKEN.sub(replace_token, masked_raw)
+    scan = _scan_template(content)
     return (
-        _XML_DECLARATION.sub(
-            lambda match: _blank_preserving_lines(match.group(0)), masked
-        ),
-        value_marker,
-        structure_marker,
-        dynamic_structure,
+        scan.masked,
+        scan.value_marker,
+        scan.structure_marker,
+        scan.first_structure_line is not None,
     )
 
 
@@ -245,15 +338,8 @@ def _django_syntax_diagnostic(name: str, error: TemplateSyntaxError) -> dict[str
 
 def _compile_django_source(engine: HyperviewEngine, name: str, content: str) -> Any:
     """Compile source with exact token spans and a canonical template origin."""
-    django_engine = engine.backend.engine
     origin = Origin(f"hyperview:{name}", template_name=name)
-    parser = Parser(
-        DebugLexer(content).tokenize(),
-        django_engine.template_libraries,
-        django_engine.template_builtins,
-        origin,
-    )
-    return parser.parse()
+    return _compile_nodelist(engine.backend.engine, content, origin)
 
 
 def _literal_include_name(node: IncludeNode) -> str | None:
@@ -290,9 +376,11 @@ def _expand_literal_includes(
 ) -> tuple[str, list[dict[str, Any]]]:
     """Resolve and recursively validate context-independent Django includes."""
     nodelist = _compile_django_source(engine, name, content)
+    includes = nodelist.get_nodes_by_type(IncludeNode)
+    contexts = _scan_template(content).contexts if includes else {}
     replacements = []
     diagnostics = []
-    for node in nodelist.get_nodes_by_type(IncludeNode):
+    for node in includes:
         start, end = node.token.position
         target = _literal_include_name(node)
         if target is None:
@@ -355,9 +443,7 @@ def _expand_literal_includes(
             diagnostics.append(_django_syntax_diagnostic(target, error))
             continue
         resolved = template.origin.resolved
-        child_hxml_context = (
-            hxml_context and _xml_token_context(content, start) == "text"
-        )
+        child_hxml_context = hxml_context and contexts.get(start) == "text"
         expanded, child_diagnostics = _expand_literal_includes(
             engine,
             resolved.name,
@@ -451,10 +537,12 @@ def _static_structure_diagnostics(
 def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     """Check statically visible elements and attributes against the XSD catalog."""
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
-    masked, value_marker, structure_marker, has_dynamic_syntax = _mask_template_syntax(
-        content
+    scan = _scan_template(content)
+    value_marker, structure_marker = scan.value_marker, scan.structure_marker
+    has_dynamic_syntax = scan.first_structure_line is not None
+    wrapped = (
+        f'<{_STATIC_ROOT} xmlns="{HYPERVIEW_NAMESPACE}">{scan.masked}</{_STATIC_ROOT}>'
     )
-    wrapped = f'<{_STATIC_ROOT} xmlns="{HYPERVIEW_NAMESPACE}">{masked}</{_STATIC_ROOT}>'
     try:
         root = etree.fromstring(wrapped.encode(), parser)
     except etree.XMLSyntaxError as error:
@@ -474,13 +562,10 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     elements = catalog["elements"]
     compiled = _get_compiled_registry()
     known_namespaces = {item["namespace"] for item in elements.values()}
-    diagnostics = []
-    incomplete_line = _first_runtime_token_line(content) if has_dynamic_syntax else None
-    if verbatim := re.search(r"{%\s*verbatim(?:\s|%)", content):
-        verbatim_line = content.count("\n", 0, verbatim.start()) + 1
-        incomplete_line = (
-            min(incomplete_line, verbatim_line) if incomplete_line else verbatim_line
-        )
+    diagnostics: list[dict[str, Any]] = []
+    incomplete_line = scan.first_structure_line
+    if scan.verbatim_line is not None:
+        incomplete_line = min(incomplete_line or scan.verbatim_line, scan.verbatim_line)
     for element in root.iterdescendants():
         if not isinstance(element.tag, str):
             continue

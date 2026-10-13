@@ -88,6 +88,17 @@ This page records user-visible release changes, including unpublished attempts.
   schema file whose name contains `?`, `#` or `:`, such as `a#b.xsd`, must be
   renamed. A schema file that is a symlink now finds its dependencies beside the
   link, as the compiler does, not beside its target.**
+- The Admin **Format and Validate** check, which the Admin form repeats before every
+  save when `ADMIN.EDITOR` is on, now takes time proportional to the size of the
+  draft. It used to lex the whole draft again for every Django token, and to rescan
+  the rest of the input for every `{{`, `{%`, `<?xml` or `<!--` that had no closer.
+  An authorized user could therefore occupy a worker, and hold the row lock of a
+  save, for tens of seconds: 4,000 tokens took 25 s, `"{{\n" * 40000` (120 KB)
+  30 s, `"<?xml " * 40000` (240 KB) 32 s, and `"{{ a }}" + "<!--" * 40000`
+  (160 KB) 49 s. They now take well under a second. The check also compiles the
+  draft with a lexer that finds the same tokens as Django's in linear time: Django's
+  lazy pattern reads on to the end of the line for every `{{`, `{%` or `{#` without
+  a closer, so 40,000 of them on one line (120 KB) took 10 s in its lexer alone.
 - `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
   `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
   still lets a shared cache store the response and revalidate it later.
@@ -110,6 +121,23 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Fixed
 
+- Admin **Format and Validate** now treats a Django delimiter the way Django's lexer
+  does. A `{% comment %}` block is ignored whatever follows its name, as in
+  `{% comment "temporarily disabled" %}`: the check looked for
+  `{% endcomment "temporarily disabled" %}`, which Django never needs, so the
+  commented-out markup was validated as live and could block a save of a template
+  that renders. A `{# ... #}`, `{{ ... }}` or `{% ... %}` that spans a line break is
+  literal text, as it is when the template is served, so the check now reports what
+  that text does to the document. A `{# note #}` comment with a line break inside it
+  between two elements used to pass the check, and the rendered document then failed
+  schema validation. The tokens are the ones Django's lexer produces, and the check
+  classifies all of them in a single pass instead of lexing the draft again for
+  each one.
+- A variable that applies the `safe` filter in element text, such as
+  `{{ fragment|safe }}` in an element that allows only elements, no longer fails the
+  Admin check. It may render markup, so its position is now reported with the
+  informational note, like other runtime-dependent structure. Variables without
+  `safe` still count as text, as before.
 - The system check now compiles the merged `EXTRA_SCHEMAS` registry. It compiled
   each extra schema alone, so two schemas that declare the same element differently,
   or an extra schema that declares a Hyperview or alert name differently from the

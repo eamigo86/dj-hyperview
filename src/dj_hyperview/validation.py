@@ -107,6 +107,24 @@ def _inline_django_comment_end(
     return end + 2
 
 
+def _forward_find(document: str) -> Callable[[str, int], int]:
+    """Return a str.find that never searches the same text twice for one marker.
+
+    The searches of each marker must start at or after the previous one. A previous
+    hit remains valid until it is consumed, and a previous miss covers every later
+    suffix, so a scan that retries a marker from every opener stays linear.
+    """
+    positions: dict[str, int] = {}
+
+    def find(marker: str, start: int) -> int:
+        position = positions.get(marker)
+        if position is None or 0 <= position < start:
+            position = positions[marker] = document.find(marker, start)
+        return position
+
+    return find
+
+
 def _contains_forbidden_declaration(
     document: str, *, template_source: bool = False
 ) -> bool:
@@ -117,16 +135,7 @@ def _contains_forbidden_declaration(
     """
     if "<!DOCTYPE" not in document and "<!ENTITY" not in document:
         return False
-    positions: dict[str, int] = {}
-
-    def find(marker: str, start: int) -> int:
-        # Callers advance monotonically for each marker. A previous hit remains
-        # valid until consumed; a previous miss covers every later suffix.
-        position = positions.get(marker)
-        if position is None or 0 <= position < start:
-            position = positions[marker] = document.find(marker, start)
-        return position
-
+    find = _forward_find(document)
     candidate = _TEMPLATE_CANDIDATE if template_source else _XML_CANDIDATE
     index = 0
     while index < len(document):
