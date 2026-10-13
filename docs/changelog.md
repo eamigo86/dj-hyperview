@@ -584,6 +584,12 @@ on, and says how to migrate.
 - Declare PyYAML, which the tests import, in the `dev` dependency group, make the
   release tag tool read the `pyproject.toml` beside it instead of the current
   directory's, and ignore the `site/` documentation build.
+- Stop shipping package data that nothing read at runtime: the unreferenced
+  `schemas/0.111.0/catalog.json`, and the package-owned `r2` corrections, margin
+  adaptation and committed catalog of the archived 0.110.0 schemas. The upstream
+  0.110.0 XSDs stay, so `get_hyperview_schema_path()` and `build_hyperview_catalog()`
+  are unchanged, and the package carries about 410 KB less data. The tests that only
+  compared those files with each other are removed with them.
 
 ## 0.1.0b2 — 2026-09-24
 

@@ -35,11 +35,13 @@ them; the package does not re-check them at runtime.
 
 ## History: 0.110.0
 
-The 0.110.0 resources remain in the package unchanged, together with the config-free
-helpers `get_hyperview_schema_path()` and `build_hyperview_catalog()`, which still
-inspect that archive rather than the active registry. The focused, test-only
-contract that exercises the HTTP and HXML boundary was written against 0.110.0 and
-is described in [Testing integrations](testing.md#hyperview-01100-compatibility).
+The upstream 0.110.0 XSDs remain in the package unchanged, together with the
+config-free helpers `get_hyperview_schema_path()` and `build_hyperview_catalog()`,
+which still inspect that archive rather than the active registry. Its package-owned
+`r2` corrections, margin adaptation and committed catalog are no longer shipped.
+The focused, test-only contract that exercises the HTTP and HXML boundary was
+written against 0.110.0 and is described in
+[Testing integrations](testing.md#hyperview-01100-compatibility).
 
 ## What this page does not claim
 
