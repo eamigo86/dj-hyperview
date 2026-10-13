@@ -216,7 +216,9 @@ on, and says how to migrate.
 - `ADMIN.PERMISSION` is called at most once per request. Every add, change and
   delete check of one request now shares the first result, which is also kept when
   the callback raises, so the failure is logged once. A page used to call the
-  callback eight times on the changelist. The next request calls it again.
+  callback eight times on the changelist. The next request calls it again. Only a
+  `bool` counts as the shared result, so a request object that invents attributes,
+  such as a mock, still runs the callback.
 - The database admin changelist no longer loads the template bodies; the change and
   delete pages still do.
 - The after-commit realtime publisher no longer builds a Redis client for every
@@ -286,7 +288,9 @@ on, and says how to migrate.
 - The database template admin no longer strips `content`: leading and trailing
   whitespace, including a final newline, is now stored exactly as submitted. Django's
   form field stripped it, so every admin save silently rewrote a template that
-  ended in a newline.
+  ended in a newline. With the editor off, content that is only whitespace is
+  therefore saved; the empty string is still rejected as required, and with the
+  editor on the source check still rejects whitespace-only content.
 - The editor's validation and completion URLs are now resolved on the `AdminSite`
   that serves the form. Before, they were always looked up in the default `admin`
   namespace, so a model registered on a custom site silently lost its validation

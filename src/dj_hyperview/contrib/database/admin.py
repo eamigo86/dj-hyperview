@@ -286,9 +286,10 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         Returns:
             True only when the callback returns the literal boolean True.
         """
-        # One callback call per request; the request owns the result.
+        # One callback call per request; the request owns the result. Only a bool is
+        # a result: a mock or a proxy request answers any attribute with an object.
         allowed = getattr(request, _PERMISSION_MEMO, None)
-        if allowed is None:
+        if not isinstance(allowed, bool):
             try:
                 allowed = get_settings().admin.permission(request) is True
             except HyperviewConfigurationError:

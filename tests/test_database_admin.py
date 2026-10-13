@@ -786,6 +786,64 @@ def test_admin_permission_is_evaluated_once_per_request(result: object) -> None:
 
 
 @pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("editor", "content", "errors"),
+    [
+        (False, "", ["This field is required."]),
+        (False, "  \n", []),
+        (True, "", ["This field is required."]),
+        (True, "  \n", ["Enter Hyperview template source."]),
+    ],
+)
+def test_admin_form_without_stripping_keeps_whitespace_only_content_valid_off_editor(
+    editor: bool, content: str, errors: list[str]
+) -> None:
+    """Only the editor's source check rejects content that is nothing but blanks."""
+    module, _ = _admin_types()
+
+    with override_settings(HYPERVIEW={"ADMIN": {"EDITOR": editor}}):
+        form = module.HyperviewTemplateAdminForm(
+            data={"name": "a.xml", "content": content, "active": True}
+        )
+        assert form.is_valid() is not bool(errors)
+
+    assert form.errors.get("content", []) == errors
+
+
+def test_admin_permission_memo_trusts_only_a_bool() -> None:
+    """A mock request invents every attribute, and none of them is a decision."""
+    from unittest.mock import MagicMock
+
+    _, model = _admin_types()
+    registered = admin.site.get_model_admin(model)
+    request = MagicMock()
+    calls: list[object] = []
+
+    with override_settings(
+        HYPERVIEW={"ADMIN": {"PERMISSION": _counting_permission(calls, False)}}
+    ):
+        assert registered.has_change_permission(request) is False
+        assert registered.has_delete_permission(request) is False
+
+    assert calls == [request]
+
+
+def test_admin_queryset_is_left_alone_when_the_request_has_no_resolved_url() -> None:
+    """Without a URL name nothing is locked and no column is deferred."""
+    _, model = _admin_types()
+    registered = admin.site.get_model_admin(model)
+
+    for request in (
+        RequestFactory().get("/admin/"),
+        RequestFactory().post("/admin/", {}),
+    ):
+        assert request.resolver_match is None
+        queryset = registered.get_queryset(request)
+        assert queryset.query.select_for_update is False
+        assert queryset.query.deferred_loading == (frozenset(), True)
+
+
+@pytest.mark.django_db
 def test_admin_pages_evaluate_the_permission_callback_once(admin_client) -> None:
     _, model = _admin_types()
     template = model.objects.create(name="screen.xml", content="<view />")
