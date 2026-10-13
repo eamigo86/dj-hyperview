@@ -12,7 +12,7 @@ from django.template.base import TokenType
 from django.utils.safestring import SafeData, mark_safe
 from lxml import etree
 
-from ._template_lexer import _forward_find, _LinearLexer, _unclosed_cost
+from ._template_lexer import _forward_find, _LinearLexer, _unclosed_cost_exceeds
 from .conf import ValidationSettings, get_settings
 from .exceptions import TemplateValidationError
 from .validators import _XML_ILLEGAL_CHARACTERS
@@ -33,10 +33,10 @@ _MAX_NAMESPACE_DECLARATIONS = 32
 # Django compiles a template with a lexer that reads on to the end of the line for every
 # "{{", "{%" or "{#" that closes no tag, so a line of them takes quadratic time: 40,000
 # on one line (120 KB) took 10.5 s. The sum of what it reads for them, counted in
-# linear time by _unclosed_cost, is limited to 10 million characters, about 45 ms of
-# its time. A source at the limit that is otherwise 1,000,000 bytes of ordinary tags
-# compiles in 0.39 s, against 0.35 s without the unclosed openers, and a source of
-# real tags costs nothing.
+# linear time by _unclosed_cost, is limited to 10 million characters. A source at the
+# limit that is otherwise 1,000,000 bytes of ordinary tags takes Django's lexer about a
+# tenth longer to compile than the same source without the unclosed openers, and a
+# source of real tags costs nothing.
 _MAX_UNCLOSED_COST = 10_000_000
 _DEPTH_LIMIT_MESSAGE = "Excessive depth in document"
 _MAX_DEPTH_MESSAGE = "document exceeds MAX_DEPTH"
@@ -186,7 +186,7 @@ def _guard_document(
     if _contains_forbidden_declaration(document, template_source=template_source):
         _fail("forbidden_declaration", FORBIDDEN_MESSAGE)
     if template_source:
-        if _unclosed_cost(document, _MAX_UNCLOSED_COST) > _MAX_UNCLOSED_COST:
+        if _unclosed_cost_exceeds(document, _MAX_UNCLOSED_COST):
             _fail("max_unclosed", "unclosed Django delimiters exceed the scan limit")
     return encoded
 

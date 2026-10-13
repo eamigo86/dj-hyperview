@@ -73,16 +73,15 @@ This page records user-visible release changes, including unpublished attempts.
   check (including the targets of literal includes) and the template loader now
   count those characters in linear time, as the sum over every opener that closes
   no tag of the characters up to the end of its line, and reject a source above 10
-  million. The count tracks Django's lexer to within a constant of about 4.5 ns per
-  character on an Apple M3 Max, so the worst accepted source costs it about 45 ms
-  more than the same source without the stray openers: a source of 1,000,000 bytes
-  at the limit compiles in 0.39 s, against 0.35 s for the same size of ordinary
-  tags. The limit is fixed and does not grow with `MAX_BYTES`. The loader applies it
-  before it hands any source to Django, so a stored row that predates the limit, or
-  that was written with `bulk_create()` or `save()`, fails when it is served
-  instead of occupying a worker. Filesystem templates are developer-owned and no
-  user can write them; they pass through the same loader check, which only a
-  deliberately pathological file reaches. See [Security](security.md).
+  million. The count tracks what Django's lexer reads, so the worst accepted source
+  costs it about a tenth more than the same source without the stray openers,
+  measured on 1,000,000 bytes of ordinary tags. The limit is fixed and does not grow
+  with `MAX_BYTES`. The loader applies it before it hands any source to Django, so a
+  stored row that predates the limit, or that was written with `bulk_create()` or
+  `save()`, fails when it is served instead of occupying a worker. Filesystem
+  templates are developer-owned and no user can write them; they pass through the
+  same loader check, which only a deliberately pathological file reaches. See
+  [Security](security.md).
 - `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
   `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
   still lets a shared cache store the response and revalidate it later.

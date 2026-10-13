@@ -10,7 +10,13 @@ import pytest
 from django.template import Engine, Origin, Template, TemplateSyntaxError
 from django.template.base import DebugLexer, Lexer, TokenType, tag_re
 
-from dj_hyperview._template_lexer import _LinearLexer, _tag_spans, _unclosed_cost
+from dj_hyperview import _template_lexer
+from dj_hyperview._template_lexer import (
+    _LinearLexer,
+    _tag_spans,
+    _unclosed_cost,
+    _unclosed_cost_exceeds,
+)
 from dj_hyperview.contrib.database import admin_validation as scanning
 from dj_hyperview.contrib.database._template_syntax import _compile_nodelist
 
@@ -200,6 +206,50 @@ def test_unclosed_cost_counts_the_line_that_each_unclosed_opener_makes_django_re
 def test_unclosed_cost_stops_counting_once_over_the_limit() -> None:
     # The first opener alone reads the whole line, so the scan ends there.
     assert _unclosed_cost("{" * 1_000_000, limit=10) == 1_000_000
+
+
+def test_exceeding_the_limit_is_decided_as_the_exact_cost_decides_it() -> None:
+    for seed in SEEDS:
+        source = _random_source(seed, LEXER_ATOMS)
+        cost = _unclosed_cost(source)
+
+        for limit in (0, max(cost - 1, 0), cost, cost + 1, 2 * cost, 10**7):
+            assert _unclosed_cost_exceeds(source, limit) == (cost > limit), (
+                source,
+                limit,
+            )
+
+
+def test_a_source_whose_bound_is_within_the_limit_is_not_scanned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Every opener is a brace and costs at most the longest line: 6 * 4 here."""
+
+    def forbidden(*args: Any) -> int:
+        raise AssertionError("scanned")
+
+    monkeypatch.setattr(_template_lexer, "_unclosed_cost", forbidden)
+
+    assert not _unclosed_cost_exceeds("{{ a\n{{\n{{ b", 6 * 4)
+    assert not _unclosed_cost_exceeds("no delimiter at all", 0)
+
+
+def test_a_source_whose_bound_passes_the_limit_is_scanned(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    scanned: list[tuple[str, float]] = []
+    exact = _template_lexer._unclosed_cost
+
+    def spy(source: str, limit: float = 0) -> int:
+        scanned.append((source, limit))
+        return exact(source, limit)
+
+    monkeypatch.setattr(_template_lexer, "_unclosed_cost", spy)
+
+    # Closed tags cost nothing, but only the scan can tell: the bound is 4 * 14.
+    assert not _unclosed_cost_exceeds("{{ a }}{{ b }}", 10)
+    assert _unclosed_cost_exceeds("{{ a }}{{ b", 3)
+    assert [limit for _, limit in scanned] == [10, 3]
 
 
 @pytest.mark.parametrize(

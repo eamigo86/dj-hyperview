@@ -129,18 +129,16 @@ the line for every `{{`, `{%` or `{#` that closes no tag, so a line of them take
 quadratic time: 40,000 on one line (120 KB, well under `MAX_BYTES`) took 10.5 s.
 The package counts those characters in linear time and rejects a source above 10
 million with the stable code `max_unclosed`. The limit is fixed, and raising
-`MAX_BYTES` does not raise it. Django's lexer reads about 4.5 ns per character on
-an Apple M3 Max machine, so the worst source this limit accepts costs its lexer
-about 45 ms more than the same source without the stray openers; a source of
-1,000,000 bytes at the limit compiles in 0.39 s, against 0.35 s for the same size
-of ordinary tags. A delimiter that closes a tag costs nothing, and a stray one
-costs at most the rest of its line, so templates with line breaks and a handful
-of literal `{#` or `{{` never come near it. Every path that compiles stored source
-applies it: publication, the model validator, the Admin check (including the
-targets of literal includes) and the template loader, which runs it again before
-it hands any source to Django. A row that was saved before the limit existed, or
-written with `bulk_create()`, therefore fails when it is served instead of
-occupying a worker. Filesystem templates are developer-owned and no user can
+`MAX_BYTES` does not raise it. The worst source this limit accepts costs Django's
+lexer about a tenth more than the same source without the stray openers, measured
+on 1,000,000 bytes of ordinary tags. A delimiter that closes a tag costs nothing,
+and a stray one costs at most the rest of its line, so templates with line breaks
+and a handful of literal `{#` or `{{` never come near it. Every path that compiles
+stored source applies it: publication, the model validator, the Admin check
+(including the targets of literal includes) and the template loader, which runs it
+again before it hands any source to Django. A row that was saved before the limit
+existed, or written with `bulk_create()`, therefore fails when it is served instead
+of occupying a worker. Filesystem templates are developer-owned and no user can
 write them; they pass through the same loader check, and only a deliberately
 pathological file reaches the limit.
 

@@ -68,9 +68,9 @@ def _unclosed_cost(source: str, limit: float = math.inf) -> int:
     """Count the characters Django's lexer reads for openers that close no tag.
 
     Each such opener makes the lazy pattern read on to the end of its line, so the
-    sum is the work that Django's lexer wastes on the source: about 4.5 ns per
-    character on a fast development machine. It is quadratic in the length of a line
-    of openers, which is why it is counted here, in linear time, and not measured.
+    sum is the work that Django's lexer wastes on the source. It is quadratic in the
+    length of a line of openers, which is why it is counted here, in linear time,
+    and not measured.
 
     Args:
         source: Template source.
@@ -86,6 +86,27 @@ def _unclosed_cost(source: str, limit: float = math.inf) -> int:
             if cost > limit:
                 break
     return cost
+
+
+def _unclosed_cost_exceeds(source: str, limit: int) -> bool:
+    """Tell whether the unclosed cost of the source is over the limit.
+
+    Every unclosed opener holds a brace and costs at most the longest line, so a
+    source whose braces times its longest line are within the limit cannot exceed it
+    and needs no scan. Both factors are counted at C speed, and the scan, which runs
+    in Python, is left to the sources that the bound cannot clear.
+
+    Args:
+        source: Template source.
+        limit: The largest cost that is accepted.
+
+    Returns:
+        Whether the unclosed cost is over the limit, as the exact scan decides it.
+    """
+    braces = source.count("{")
+    if braces == 0 or braces * max(map(len, source.split("\n"))) <= limit:
+        return False
+    return _unclosed_cost(source, limit) > limit
 
 
 class _LinearLexer(DebugLexer):
