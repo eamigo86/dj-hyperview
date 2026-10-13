@@ -170,6 +170,23 @@ def test_publication_rejects_invalid_django_template_syntax_before_writing(
     schedule.assert_not_called()
 
 
+def test_publication_reports_excessive_nesting_as_a_validation_error(
+    publication_model: type[Model],
+) -> None:
+    """Django's recursive parser gives up on deeply nested blocks."""
+    content = "{% if x %}" * 3000 + "{% endif %}" * 3000
+
+    with (
+        patch(SCHEDULE) as schedule,
+        pytest.raises(ValidationError) as captured,
+    ):
+        publish_template("screen.xml", content)
+
+    assert captured.value.error_dict["content"][0].code == "too_deep"
+    assert publication_model.objects.count() == 0
+    schedule.assert_not_called()
+
+
 def test_invalid_django_syntax_does_not_increment_an_existing_revision(
     publication_model: type[Model],
 ) -> None:

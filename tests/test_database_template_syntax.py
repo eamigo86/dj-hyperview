@@ -442,3 +442,54 @@ def test_scanning_unterminated_xml_constructs_takes_linear_time(
     scanning._scan_template(source)
 
     assert time.perf_counter() - started < 3  # 30 to 50 s with unanchored regexes
+
+
+def test_stored_source_validation_reports_excessive_nesting() -> None:
+    from django.core.exceptions import ValidationError
+
+    from dj_hyperview.contrib.database.validators import (
+        validate_stored_template_source,
+    )
+
+    with pytest.raises(ValidationError) as captured:
+        validate_stored_template_source("{% if x %}" * 3000 + "{% endif %}" * 3000)
+
+    assert captured.value.code == "too_deep"
+    assert captured.value.messages == ["Template is nested too deeply."]
+
+
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        ("{% if x %}", "Invalid Django template syntax at line 1."),
+        ("<a>\n{% unknown_tag %}", "Invalid Django template syntax at line 2."),
+        ("{{ x|no_such_filter }}", "Invalid Django template syntax at line 1."),
+    ],
+)
+def test_stored_source_validation_keeps_reporting_django_syntax_errors(
+    source: str, message: str
+) -> None:
+    from django.core.exceptions import ValidationError
+
+    from dj_hyperview.contrib.database.validators import (
+        validate_stored_template_source,
+    )
+
+    with pytest.raises(ValidationError) as captured:
+        validate_stored_template_source(source)
+
+    assert (captured.value.code, captured.value.messages) == (
+        "django_syntax",
+        [message],
+    )
+
+
+def test_stored_source_validation_lexes_unclosed_openers_in_linear_time() -> None:
+    from dj_hyperview.contrib.database.validators import (
+        validate_stored_template_source,
+    )
+
+    started = time.perf_counter()
+    validate_stored_template_source("{{ " * 40_000)
+
+    assert time.perf_counter() - started < 5  # about 10 s with Django's lexer

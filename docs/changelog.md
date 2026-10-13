@@ -150,6 +150,18 @@ This page records user-visible release changes, including unpublished attempts.
   Admin check. It may render markup, so its position is now reported with the
   informational note, like other runtime-dependent structure. Variables without
   `safe` still count as text, as before.
+- Source nested too deeply for Django's recursive parser, about 800 nested
+  `{% if %}` blocks, no longer fails the Admin validation request and the Admin
+  save with HTTP 500. The check, the Admin form, `publish_template` and model
+  validation report it as `too_deep`, "Template is nested too deeply."
+- Reaching the limit of 64 expanded literal includes is now the informational note
+  `schema_static_incomplete` and no longer the error `django_include_limit`, which
+  blocked the save of a template that was only too large to check completely.
+  Expansion stops at the limit, and the code `django_include_limit` is no longer
+  produced.
+- Publication and model validation compile stored source with the same linear lexer
+  as the Admin check, so 40,000 unclosed `{{` on one line (120 KB) validate in well
+  under a second instead of the 10 s Django's lexer takes.
 - The system check now compiles the merged `EXTRA_SCHEMAS` registry. It compiled
   each extra schema alone, so two schemas that declare the same element differently,
   or an extra schema that declares a Hyperview or alert name differently from the

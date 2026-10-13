@@ -737,18 +737,52 @@ def test_validation_limits_literal_include_expansion(admin_client, tmp_path) -> 
     with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
         result = _validate(admin_client, source)
 
+    assert result == {
+        "ok": True,
+        "diagnostics": [
+            {
+                "severity": "info",
+                "code": "schema_static_incomplete",
+                "message": (
+                    "Static checks passed. Final HXML will be validated when served."
+                ),
+                "template": "screens/draft.xml",
+                "coordinate_space": "source",
+                "line": 1,
+                "column": None,
+            }
+        ],
+    }
+
+
+@pytest.mark.django_db
+def test_include_expansion_stops_at_the_limit_and_keeps_real_errors(
+    admin_client, monkeypatch, tmp_path
+) -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "label.xml").write_text("<text>Label</text>", encoding="utf-8")
+    calls = []
+    original = module.HyperviewEngine.get_template
+
+    def counting(self, name):
+        calls.append(name)
+        return original(self, name)
+
+    monkeypatch.setattr(module.HyperviewEngine, "get_template", counting)
+    include = '{% include "partials/label.xml" %}'
+    source = f'{include * 70}\n<style id="card" kk="1" />'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert len(calls) == module._MAX_LITERAL_INCLUDES
     assert result["ok"] is False
-    assert result["diagnostics"] == [
-        {
-            "severity": "error",
-            "code": "django_include_limit",
-            "message": "Literal include expansion exceeds the validation limit.",
-            "template": "screens/draft.xml",
-            "coordinate_space": "source",
-            "line": 1,
-            "column": None,
-        }
-    ]
+    assert result["diagnostics"][0]["code"] == "schema_attribute"
+    assert {item["code"] for item in result["diagnostics"][1:]} == {
+        "schema_static_incomplete"
+    }
 
 
 @pytest.mark.django_db
@@ -768,6 +802,43 @@ def test_validation_deduplicates_findings_from_a_repeated_literal_include(
 
     assert result["ok"] is False
     assert [item["code"] for item in result["diagnostics"]] == ["schema_attribute"]
+
+
+@pytest.mark.django_db
+def test_include_expansion_limit_covers_nested_includes_with_one_note_per_template(
+    admin_client, monkeypatch, tmp_path
+) -> None:
+    module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "leaf.xml").write_text("<text>Leaf</text>", encoding="utf-8")
+    (partials / "inner.xml").write_text(
+        '{% include "partials/leaf.xml" %}' * 40, encoding="utf-8"
+    )
+    calls = []
+    original = module.HyperviewEngine.get_template
+
+    def counting(self, name):
+        calls.append(name)
+        return original(self, name)
+
+    monkeypatch.setattr(module.HyperviewEngine, "get_template", counting)
+    source = (
+        '{% include "partials/inner.xml" %}' * 2 + '{% include "partials/leaf.xml" %}'
+    )
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert len(calls) == module._MAX_LITERAL_INCLUDES
+    assert result["ok"] is True
+    assert sorted(
+        (item["template"], item["code"], item["severity"])
+        for item in result["diagnostics"]
+    ) == [
+        ("partials/inner.xml", "schema_static_incomplete", "info"),
+        ("screens/draft.xml", "schema_static_incomplete", "info"),
+    ]
 
 
 @pytest.mark.django_db
@@ -1177,6 +1248,7 @@ def test_conditional_structure_is_informational_without_hiding_errors(admin_clie
 
 
 HV = "https://hyperview.org/hyperview"
+NESTED_IF = "{% if x %}" * 3000 + "{% endif %}" * 3000
 
 
 def _render(source: str) -> str:
@@ -1574,6 +1646,72 @@ def test_validation_does_not_defer_a_safe_variable_in_an_attribute_value(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_reports_excessive_nesting_instead_of_failing(admin_client) -> None:
+    result = _validate(admin_client, NESTED_IF)
+
+    assert result == {
+        "ok": False,
+        "diagnostics": [
+            {
+                "severity": "error",
+                "code": "too_deep",
+                "message": "Template is nested too deeply.",
+                "template": "screens/draft.xml",
+                "coordinate_space": "source",
+                "line": None,
+                "column": None,
+            }
+        ],
+    }
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_admin_save_reports_excessive_nesting_on_the_content_field(
+    admin_client,
+) -> None:
+    _, model = _admin_types()
+
+    response = admin_client.post(
+        reverse("admin:dj_hyperview_database_hyperviewtemplate_add"),
+        {
+            "name": "screens/deep.xml",
+            "content": NESTED_IF,
+            "active": "on",
+            "_save": "Save",
+        },
+    )
+
+    errors = response.context["adminform"].form.errors.as_data()["content"]
+    assert response.status_code == 200
+    assert [error.code for error in errors] == ["too_deep"]
+    assert str(errors[0].message) == "Template is nested too deeply."
+    assert model.objects.count() == 0
+
+
+@pytest.mark.django_db
+def test_admin_save_reports_excessive_nesting_without_the_editor(admin_client) -> None:
+    """The model validator covers the standard textarea, which has no editor checks."""
+    _, model = _admin_types()
+
+    response = admin_client.post(
+        reverse("admin:dj_hyperview_database_hyperviewtemplate_add"),
+        {
+            "name": "screens/deep.xml",
+            "content": NESTED_IF,
+            "active": "on",
+            "_save": "Save",
+        },
+    )
+
+    errors = response.context["adminform"].form.errors.as_data()["content"]
+    assert response.status_code == 200
+    assert [error.code for error in errors] == ["too_deep"]
+    assert model.objects.count() == 0
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_stops_the_structure_check_at_the_diagnostic_limit(
     admin_client,
 ) -> None:
@@ -1585,3 +1723,18 @@ def test_validation_stops_the_structure_check_at_the_diagnostic_limit(
     assert len(result["diagnostics"]) == 51
     assert {item["code"] for item in result["diagnostics"][:50]} == {"schema_structure"}
     assert result["diagnostics"][50]["code"] == "diagnostics_truncated"
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_reports_recursion_in_the_static_stage_as_too_deep(
+    admin_client, monkeypatch
+) -> None:
+    def exhausted(name, content):
+        raise RecursionError
+
+    monkeypatch.setattr(_static_module(), "_static_schema_diagnostics", exhausted)
+
+    result = _validate(admin_client, "<view />")
+
+    assert [item["code"] for item in result["diagnostics"]] == ["too_deep"]

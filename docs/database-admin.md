@@ -231,12 +231,13 @@ line when it is available. The request uses the existing Admin CSRF and
 or invalidate caches. Literal `{% include "..." %}` targets are resolved through
 the configured Hyperview source precedence, recursively compiled, and checked
 both independently and in their parent position. Missing targets and include
-cycles are errors; expansion is bounded to 64 include edges.
+cycles are errors. Expansion stops after 64 include edges, and the includes that
+were not expanded produce the informational note described below rather than an
+error, because the result is incomplete, not wrong.
 
 The check reads Django syntax the way Django does, from the tokens Django's lexer
-produces. A
-`{% comment %}` block hides everything up to `{% endcomment %}` from the XML
-checks, whatever note follows the tag name, as in
+produces. A `{% comment %}` block hides everything up to `{% endcomment %}` from
+the XML checks, whatever note follows the tag name, as in
 `{% comment "temporarily disabled" %}`, so commented-out markup is never
 validated. A Django delimiter never spans a line break: a `{# ... #}`,
 `{{ ... }}` or `{% ... %}` split over two lines is literal text, exactly as it is
@@ -253,9 +254,11 @@ attributes on an element, 8 in-scope namespaces, and 32 namespace declarations o
 one path, to the template source, and it reports a source over a limit as an error
 with the same stable code: `max_nodes`, `max_depth`, or `max_attributes`. Because
 the source still holds every branch of a conditional, the counts can exceed those
-of any single rendered document. The response lists at most 50 diagnostics, errors
-before notes, and ends with an informational `diagnostics_truncated` entry when
-more were found. Checking time grows in proportion to the size of the draft.
+of any single rendered document. Source nested more deeply than Django's recursive
+parser can compile is reported as `too_deep` instead of failing the request. The
+response lists at most 50 diagnostics, errors before notes, and ends with an
+informational `diagnostics_truncated` entry when more were found. Checking time
+grows in proportion to the size of the draft.
 
 An informational note — **Static checks passed. Final HXML will be validated
 when served.** — is normal for dynamic templates, not a warning or a validation

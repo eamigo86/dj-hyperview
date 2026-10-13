@@ -414,17 +414,14 @@ def _expand_literal_includes(
                 )
             )
             continue
+        if budget[0] >= _MAX_LITERAL_INCLUDES:
+            # Expansion stops here and in every caller, with one note, because the
+            # includes that were not expanded leave the result incomplete, not wrong.
+            if budget[0] == _MAX_LITERAL_INCLUDES:
+                budget[0] += 1
+                diagnostics.append(_incomplete_schema_diagnostic(name, line))
+            break
         budget[0] += 1
-        if budget[0] > _MAX_LITERAL_INCLUDES:
-            diagnostics.append(
-                _include_error(
-                    "django_include_limit",
-                    "Literal include expansion exceeds the validation limit.",
-                    template=name,
-                    line=line,
-                )
-            )
-            continue
         try:
             template = engine.get_template(target)
         except InvalidTemplateName:
@@ -762,6 +759,16 @@ def validation_payload(request: HttpRequest) -> dict[str, str] | JsonResponse:
     return values
 
 
+def _too_deep(name: str) -> dict[str, Any]:
+    """Report source that Django's recursive parser cannot compile."""
+    return {
+        "ok": False,
+        "diagnostics": [
+            _diagnostic("too_deep", "Template is nested too deeply.", template=name)
+        ],
+    }
+
+
 def _limit_diagnostics(diagnostics: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """Keep the first diagnostics, errors before notes, and say if more existed."""
     if len(diagnostics) <= _MAX_DIAGNOSTICS:
@@ -830,6 +837,8 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
             "ok": False,
             "diagnostics": [_django_syntax_diagnostic(name, error)],
         }
+    except RecursionError:
+        return _too_deep(name)
     except TemplateValidationError as error:
         return {
             "ok": False,
@@ -870,6 +879,8 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
         ):
             diagnostics = [item for item in diagnostics if item["severity"] == "error"]
         diagnostics = _limit_diagnostics(diagnostics)
+    except RecursionError:
+        return _too_deep(name)
     except TemplateValidationError as error:
         return {
             "ok": False,

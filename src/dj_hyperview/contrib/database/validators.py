@@ -1,7 +1,8 @@
 """Migration-safe validators for stored Hyperview templates."""
 
 from django.core.exceptions import ValidationError
-from django.template import TemplateSyntaxError
+from django.template import Origin, TemplateSyntaxError
+from django.template.base import UNKNOWN_SOURCE
 
 from dj_hyperview.conf import get_settings
 from dj_hyperview.engine import HyperviewEngine
@@ -9,6 +10,7 @@ from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.validation import validate_template_source
 
 from ._identity import _canonical_name_or_none
+from ._template_syntax import _compile_nodelist
 
 
 def validate_canonical_template_name(value: str) -> None:
@@ -36,7 +38,13 @@ def validate_stored_template_source(value: str) -> None:
     config = get_settings().validation
     try:
         validate_template_source(value, config=config)
-        HyperviewEngine(validation=config).backend.from_string(value)
+        engine = HyperviewEngine(validation=config).backend.engine
+        _compile_nodelist(engine, value, Origin(UNKNOWN_SOURCE))
+    except RecursionError:
+        # Django's parser recurses once per nested block.
+        raise ValidationError(
+            "Template is nested too deeply.", code="too_deep"
+        ) from None
     except TemplateSyntaxError as error:
         token = getattr(error, "token", None)
         line = getattr(token, "lineno", None)
