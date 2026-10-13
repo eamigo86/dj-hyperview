@@ -51,6 +51,7 @@ def test_manifest_declares_audited_compatible_ranges() -> None:
         "pytest>=9.1,<10",
         "pytest-cov>=7.1,<8",
         "pytest-django>=4.14,<5",
+        "pyyaml>=6,<7",
         "ruff>=0.16.6,<0.17",
         "uv-build>=0.12.9,<0.13",
         "xmlschema>=4.3,<5",
