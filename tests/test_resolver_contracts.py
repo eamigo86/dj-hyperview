@@ -141,6 +141,49 @@ def test_a_cacheable_source_with_unsupported_options_is_reported_once(caplog) ->
     )
 
 
+class OpaqueOptionsSource:
+    """A cacheable source whose constructor option cannot be fingerprinted."""
+
+    cacheable = True
+
+    def __init__(self, opaque: object) -> None:
+        self.opaque = opaque
+
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        return None
+
+
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_settings_built_resolver_reports_an_unfingerprintable_source_once(
+    caplog,
+) -> None:
+    """The settings path computes identities on its own, and must report them too."""
+    configured = {
+        "SOURCES": [
+            {
+                "BACKEND": f"{__name__}.OpaqueOptionsSource",
+                "OPTIONS": {"opaque": object()},
+            }
+        ],
+        "CACHE": {"ALIAS": "screens"},
+    }
+
+    with override_settings(HYPERVIEW=configured):
+        with caplog.at_level(logging.DEBUG, logger=LOGGER):
+            resolver = TemplateResolver.from_settings()
+
+    assert resolver._source_ids == (None,)
+    assert resolver.cache is not None
+    assert [
+        (r.levelno, r.getMessage()) for r in caplog.records if r.name == LOGGER
+    ] == [
+        (
+            logging.INFO,
+            "template_source_uncacheable source_index=0 reason=unsupported_options",
+        )
+    ]
+
+
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_a_source_that_is_not_cacheable_by_choice_is_not_reported(caplog) -> None:
     source = Source()

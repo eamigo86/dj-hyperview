@@ -627,6 +627,30 @@ def test_unparsable_references_are_forbidden_not_crashes(
     assert str(tmp_path) not in str(error.value)
 
 
+@pytest.mark.parametrize("keyword", ["xs:include", "xs:import", "xs:redefine"])
+def test_an_inline_schema_string_is_a_forbidden_reference(
+    tmp_path: Path, keyword: str
+) -> None:
+    """The compiler reads a location that starts with "<" as XML, not as a path.
+
+    Any inline schema declares a namespace, so the ":" rule rejects it, and it is
+    reported as a forbidden reference instead of an invalid schema.
+    """
+    inline = f'<xs:schema xmlns:xs="{XS}"><xs:element name="inline"/></xs:schema>'
+    root = tmp_path / "root.xsd"
+    root.write_text(
+        schema_text(f"<{keyword} schemaLocation={quoteattr(inline)}/>"),
+        encoding="utf-8",
+    )
+    with pytest.raises(TemplateValidationError) as error:
+        _guard_local_references(root)
+    assert error.value.code == "forbidden_schema_reference"
+    assert "inline" not in str(error.value)
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
+        with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E012"):
+            validate_hyperview_schema(f'<view xmlns="{HV}"/>')
+
+
 def test_symlinked_includer_cannot_escape_through_its_lexical_directory(
     tmp_path: Path,
 ) -> None:
