@@ -400,6 +400,40 @@ def test_a_worker_ended_by_a_base_exception_still_closes_every_client(monkeypatc
         dispatcher.close()
 
 
+def test_a_client_that_raises_a_base_exception_when_closed_does_not_leak_the_rest(
+    monkeypatch,
+):
+    module = publisher()
+
+    class Stop(BaseException):
+        pass
+
+    ended_by = []
+    monkeypatch.setattr(threading, "excepthook", lambda args: ended_by.append(args))
+    made = fake_clients(monkeypatch, module)
+    first = module._Config("redis://127.0.0.1/0", "ns")
+    second = module._Config("redis://127.0.0.1/1", "ns")
+    dispatcher = module._Dispatcher()
+
+    def close(self):
+        self.closed = True
+        if self is made[0]:
+            raise Stop
+
+    try:
+        assert dispatcher.submit(first, ("a",), b"x") is True
+        assert dispatcher.submit(second, ("a",), b"x") is True
+        monkeypatch.setattr(made[0].__class__, "close", close)
+    finally:
+        dispatcher.close()
+        dispatcher.thread.join(2)
+
+    assert not dispatcher.thread.is_alive()
+    assert [client.closed for client in made] == [True, True]
+    # The BaseException still ends the worker; it is not swallowed on the way.
+    assert [args.exc_type for args in ended_by] == [Stop]
+
+
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_callers_queued_behind_a_worker_that_dies_return_at_once(monkeypatch):
     module = publisher()

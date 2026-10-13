@@ -346,7 +346,8 @@ on, and says how to migrate.
   a gevent `Timeout`, which ends the worker thread, the next commit starts a new
   worker instead of waiting for its full timeout, and the ended worker releases
   the commits queued behind it, which would otherwise wait out their own timeouts,
-  before it closes its clients, so a client that fails to close cannot hold them.
+  before it closes its clients, so a client that fails to close cannot hold them,
+  and a client that raises a `BaseException` on close does not leave the others open.
 - A failed realtime publication now logs the exception type name as well:
   `realtime_publish_failed error_type=<TypeName>`. The exception message is still
   never logged because it can contain the Redis URL.

@@ -167,9 +167,12 @@ class _Dispatcher:
                 if job is not None:
                     job.done.set()
             # Closed here, not in close(), so the worker is the only user of a client.
-            # A BaseException ends the worker, and every client still goes with it.
-            for target in self.targets.values():
-                _discard(target)
+            # A BaseException ends the worker, and every client still goes with it,
+            # also when closing one raises a BaseException: that one is raised once
+            # the others are closed, and not swallowed.
+            with contextlib.ExitStack() as clients:
+                for target in self.targets.values():
+                    clients.callback(_discard, target)
 
     def close(self) -> None:
         self.stopped.set()
