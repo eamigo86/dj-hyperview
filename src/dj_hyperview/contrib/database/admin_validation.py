@@ -33,7 +33,13 @@ from dj_hyperview.schema import (
     _schema_validation_message,
 )
 from dj_hyperview.sources import canonicalize_template_name
-from dj_hyperview.validation import validate_template_source
+from dj_hyperview.validation import (
+    _MAX_DEPTH_MESSAGE,
+    _check_limits,
+    _check_namespace_scope,
+    _is_depth_limit_error,
+    validate_template_source,
+)
 
 from ._template_syntax import _compile_nodelist, _LinearLexer
 
@@ -58,6 +64,18 @@ _SCALAR_TAGS = frozenset(
     }
 )
 _MAX_LITERAL_INCLUDES = 64
+_MAX_DIAGNOSTICS = 50
+# What only the composed source can add; its elements and attributes are already
+# reported once, beside the template that owns them.
+_COMPOSED_CODES = frozenset(
+    {
+        "schema_structure",
+        "schema_static_incomplete",
+        "max_nodes",
+        "max_depth",
+        "max_attributes",
+    }
+)
 
 # What the scanner knows about the XML it is inside while it reads literal text.
 _TEXT, _TAG, _DOUBLE_QUOTED, _SINGLE_QUOTED, _COMMENT, _CDATA, _PI = range(7)
@@ -480,9 +498,12 @@ def _unique_diagnostics(
 
 
 def _static_structure_diagnostics(
-    name: str, root: Any, compiled: Any
+    name: str, root: Any, compiled: Any, limit: int
 ) -> list[dict[str, Any]]:
-    """Validate statically visible child order and placement with the real XSD."""
+    """Validate statically visible child order and placement with the real XSD.
+
+    The check stops once it has found limit diagnostics.
+    """
     diagnostics = []
     seen = set()
     for candidate in root:
@@ -527,6 +548,8 @@ def _static_structure_diagnostics(
                         line=line,
                     )
                 )
+                if len(diagnostics) >= limit:
+                    return diagnostics
         except Exception as failure:
             raise TemplateValidationError(
                 "schema_invalid", "invalid schema"
@@ -534,8 +557,17 @@ def _static_structure_diagnostics(
     return diagnostics
 
 
+def _limit_diagnostic(name: str, code: str, message: str) -> dict[str, Any]:
+    """Report a resource limit with the code and wording rendering uses."""
+    return _diagnostic(code, f"{message[:1].upper()}{message[1:]}.", template=name)
+
+
 def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
-    """Check statically visible elements and attributes against the XSD catalog."""
+    """Check statically visible elements and attributes against the XSD catalog.
+
+    The same limits as rendering apply before any schema work, and the list stops
+    one entry past the number the caller will show.
+    """
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
     scan = _scan_template(content)
     value_marker, structure_marker = scan.value_marker, scan.structure_marker
@@ -546,6 +578,8 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     try:
         root = etree.fromstring(wrapped.encode(), parser)
     except etree.XMLSyntaxError as error:
+        if _is_depth_limit_error(error):
+            return [_limit_diagnostic(name, "max_depth", _MAX_DEPTH_MESSAGE)]
         line = error.position[0] if error.position else None
         if has_dynamic_syntax:
             return [_incomplete_schema_diagnostic(name, line)]
@@ -557,6 +591,11 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
                 line=line,
             )
         ]
+    try:
+        _check_limits(root, get_settings().validation)
+        _check_namespace_scope(root)
+    except TemplateValidationError as error:
+        return [_limit_diagnostic(name, error.code, error.message)]
 
     catalog = _get_static_validation_catalog()
     elements = catalog["elements"]
@@ -567,6 +606,8 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     if scan.verbatim_line is not None:
         incomplete_line = min(incomplete_line or scan.verbatim_line, scan.verbatim_line)
     for element in root.iterdescendants():
+        if len(diagnostics) > _MAX_DIAGNOSTICS:
+            break
         if not isinstance(element.tag, str):
             continue
         qualified_name = etree.QName(element)
@@ -668,8 +709,12 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
                         line=element.sourceline,
                     )
                 )
-    if not has_dynamic_syntax:
-        diagnostics.extend(_static_structure_diagnostics(name, root, compiled))
+    if not has_dynamic_syntax and len(diagnostics) <= _MAX_DIAGNOSTICS:
+        diagnostics.extend(
+            _static_structure_diagnostics(
+                name, root, compiled, _MAX_DIAGNOSTICS + 1 - len(diagnostics)
+            )
+        )
     if incomplete_line is not None:
         diagnostics.append(_incomplete_schema_diagnostic(name, incomplete_line))
     return diagnostics
@@ -715,6 +760,18 @@ def validation_payload(request: HttpRequest) -> dict[str, str] | JsonResponse:
     if source_size > config.validation.max_bytes:
         return _error("input_too_large", "Template source is too large.", 413)
     return values
+
+
+def _limit_diagnostics(diagnostics: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep the first diagnostics, errors before notes, and say if more existed."""
+    if len(diagnostics) <= _MAX_DIAGNOSTICS:
+        return diagnostics
+    return [
+        *diagnostics[:_MAX_DIAGNOSTICS],
+        _diagnostic(
+            "diagnostics_truncated", "More diagnostics were omitted.", severity="info"
+        ),
+    ]
 
 
 def validate_draft_source(name: str, content: str) -> dict[str, Any]:
@@ -802,7 +859,7 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
                 *(
                     item
                     for item in composed_diagnostics
-                    if item["code"] in {"schema_structure", "schema_static_incomplete"}
+                    if item["code"] in _COMPOSED_CODES
                 ),
             ]
         diagnostics = _unique_diagnostics(diagnostics)
@@ -812,6 +869,7 @@ def validate_draft_source(name: str, content: str) -> dict[str, Any]:
             for item in diagnostics
         ):
             diagnostics = [item for item in diagnostics if item["severity"] == "error"]
+        diagnostics = _limit_diagnostics(diagnostics)
     except TemplateValidationError as error:
         return {
             "ok": False,

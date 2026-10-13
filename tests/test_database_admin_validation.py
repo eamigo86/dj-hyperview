@@ -14,6 +14,11 @@ from django.urls import reverse
 from dj_hyperview import validate_hyperview_schema
 from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import TemplateValidationError
+from tests.test_validation_hardening import (
+    HYPERVIEW_XMLNS,
+    prefixed_namespaces,
+    rebinding_path,
+)
 
 pytestmark = pytest.mark.skipif(
     not apps.is_installed("django.contrib.admin"),
@@ -1179,6 +1184,21 @@ def _render(source: str) -> str:
     return HyperviewEngine().backend.from_string(source).render({})
 
 
+def _static_module() -> ModuleType:
+    return importlib.import_module("dj_hyperview.contrib.database.admin_validation")
+
+
+def _forbid(monkeypatch, *names: str) -> None:
+    """Fail the test if the static pass reaches the named stage."""
+    module = _static_module()
+
+    def unreachable(*args: object, **kwargs: object) -> None:
+        raise AssertionError("the static pass must stop before this stage")
+
+    for name in names:
+        monkeypatch.setattr(module, name, unreachable)
+
+
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize(
@@ -1292,6 +1312,221 @@ def test_validation_scans_unterminated_constructs_in_linear_time(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_rejects_too_many_nodes_before_the_schema_walk(
+    admin_client, monkeypatch
+) -> None:
+    _forbid(monkeypatch, "_get_compiled_registry", "_get_static_validation_catalog")
+
+    result = _validate(admin_client, "<x/>\n" * 80_000)
+
+    assert result == {
+        "ok": False,
+        "diagnostics": [
+            {
+                "severity": "error",
+                "code": "max_nodes",
+                "message": "Document exceeds MAX_NODES.",
+                "template": "screens/draft.xml",
+                "coordinate_space": "source",
+                "line": None,
+                "column": None,
+            }
+        ],
+    }
+
+
+@pytest.mark.django_db
+@pytest.mark.parametrize(
+    ("limits", "size", "code"),
+    [
+        ({"MAX_NODES": 5}, 4, None),
+        ({"MAX_NODES": 5}, 5, "max_nodes"),
+        ({"MAX_DEPTH": 2}, 1, None),
+        ({"MAX_DEPTH": 2}, 2, "max_depth"),
+    ],
+)
+def test_validation_applies_the_configured_node_and_depth_limits(
+    admin_client, limits: dict[str, int], size: int, code: str | None
+) -> None:
+    """MAX_NODES counts the view and its texts; MAX_DEPTH counts nested views."""
+    if "MAX_NODES" in limits:
+        body = "<text/>" * size
+    else:
+        body = "<view>" * (size - 1) + "<text/>" + "</view>" * (size - 1)
+    source = f'<view xmlns="{HV}">{body}</view>'
+
+    with override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": limits}):
+        result = _validate(admin_client, source)
+
+    assert [item["code"] for item in result["diagnostics"]] == (
+        [] if code is None else [code]
+    )
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_maps_the_parser_depth_ceiling_to_max_depth(admin_client) -> None:
+    source = "<view>" * 300 + "</view>" * 300
+
+    result = _validate(admin_client, source)
+
+    assert [item["code"] for item in result["diagnostics"]] == ["max_depth"]
+    assert result["ok"] is False
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize("attributes", [129, 200])
+def test_validation_caps_the_attributes_of_one_element_before_the_schema_walk(
+    admin_client, monkeypatch, attributes: int
+) -> None:
+    _forbid(monkeypatch, "_get_compiled_registry", "_get_static_validation_catalog")
+    names = " ".join(f"a{index}='1'" for index in range(attributes))
+
+    result = _validate(admin_client, f"<view {HYPERVIEW_XMLNS} {names} />")
+
+    assert [(item["code"], item["message"]) for item in result["diagnostics"]] == [
+        ("max_attributes", "Element exceeds 128 attributes.")
+    ]
+    assert "a0" not in json.dumps(result)
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize("elements", [10, 100])
+def test_validation_rejects_a_thousand_undeclared_attributes_before_any_structure_walk(
+    admin_client, monkeypatch, elements: int
+) -> None:
+    """Lax iteration took 10 s for 10 such elements and 97 s for 100 of them."""
+    _forbid(
+        monkeypatch,
+        "_get_compiled_registry",
+        "_get_static_validation_catalog",
+        "_static_structure_diagnostics",
+    )
+    names = " ".join(f"a{index}='1'" for index in range(1000))
+    source = f'<view xmlns="{HV}">' + f"<text {names}/>\n" * elements + "</view>"
+
+    started = time.perf_counter()
+    result = _validate(admin_client, source)
+
+    assert [(item["code"], item["message"]) for item in result["diagnostics"]] == [
+        ("max_attributes", "Element exceeds 128 attributes.")
+    ]
+    assert time.perf_counter() - started < 5
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_lets_an_element_with_exactly_the_attribute_cap_reach_the_schema(
+    admin_client,
+) -> None:
+    names = " ".join(f"a{index}='1'" for index in range(128))
+
+    result = _validate(admin_client, f"<view {HYPERVIEW_XMLNS} {names} />")
+
+    assert {item["code"] for item in result["diagnostics"][:50]} == {"schema_attribute"}
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    ("source", "message"),
+    [
+        (
+            f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(8)} />",
+            "Element exceeds 8 in-scope namespaces.",
+        ),
+        (
+            rebinding_path(40),
+            "Element exceeds 32 namespace declarations on its ancestor path.",
+        ),
+    ],
+)
+def test_validation_caps_namespaces_before_the_schema_walk(
+    admin_client, monkeypatch, source: str, message: str
+) -> None:
+    _forbid(monkeypatch, "_get_compiled_registry")
+
+    result = _validate(admin_client, source)
+
+    assert [(item["code"], item["message"]) for item in result["diagnostics"]] == [
+        ("max_attributes", message)
+    ]
+
+
+@pytest.mark.django_db
+def test_validation_rejects_a_flood_of_namespace_declarations_on_one_path(
+    admin_client, monkeypatch
+) -> None:
+    """1,008 declarations on a path took seconds in the schema walk."""
+    _forbid(monkeypatch, "_get_compiled_registry")
+
+    with override_settings(
+        HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": {"MAX_DEPTH": 256}}
+    ):
+        started = time.perf_counter()
+        result = _validate(admin_client, rebinding_path(1008))
+
+    assert [item["code"] for item in result["diagnostics"]] == ["max_attributes"]
+    assert time.perf_counter() - started < 5
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_returns_a_bounded_list_with_a_final_omission_note(
+    admin_client, monkeypatch
+) -> None:
+    _forbid(monkeypatch, "_static_structure_diagnostics")
+
+    result = _validate(admin_client, "<x/>\n" * 5000)
+
+    assert result["ok"] is False
+    assert len(result["diagnostics"]) == 51
+    assert {item["code"] for item in result["diagnostics"][:50]} == {"schema_element"}
+    assert result["diagnostics"][50] == {
+        "severity": "info",
+        "code": "diagnostics_truncated",
+        "message": "More diagnostics were omitted.",
+        "template": None,
+        "coordinate_space": None,
+        "line": None,
+        "column": None,
+    }
+    assert len(json.dumps(result)) < 20_000
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_stops_listing_after_the_limit_whatever_the_element_count(
+    admin_client,
+) -> None:
+    """850 elements with 128 undeclared attributes gave 108,800 diagnostics."""
+    names = " ".join(f"a{index}='1'" for index in range(128))
+    source = f'<view xmlns="{HV}">' + f"<text {names}/>\n" * 850 + "</view>"
+
+    result = _validate(admin_client, source)
+
+    assert len(result["diagnostics"]) == 51
+    assert result["diagnostics"][-1]["code"] == "diagnostics_truncated"
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_keeps_errors_ahead_of_notes_when_it_truncates(admin_client) -> None:
+    source = "<x/>\n" * 60 + "{% if a %}<text/>{% endif %}"
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert [item["severity"] for item in result["diagnostics"]] == [
+        *["error"] * 50,
+        "info",
+    ]
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize(
     "expression",
     ["fragment|safe", "fragment | safe", "fragment|default:''|safe|upper"],
@@ -1335,3 +1570,18 @@ def test_validation_does_not_defer_a_safe_variable_in_an_attribute_value(
     source = f'<view xmlns="{HV}" scroll-orientation="{{{{ direction|safe }}}}" />'
 
     assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_stops_the_structure_check_at_the_diagnostic_limit(
+    admin_client,
+) -> None:
+    source = f'<doc xmlns="{HV}">' + "<screen><body/><body/></screen>\n" * 60 + "</doc>"
+
+    result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert len(result["diagnostics"]) == 51
+    assert {item["code"] for item in result["diagnostics"][:50]} == {"schema_structure"}
+    assert result["diagnostics"][50]["code"] == "diagnostics_truncated"

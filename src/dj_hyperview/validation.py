@@ -3,7 +3,7 @@
 import codecs
 import re
 from collections import Counter
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -28,6 +28,7 @@ _MAX_ATTRIBUTES = 128
 _MAX_NAMESPACES = 8
 _MAX_NAMESPACE_DECLARATIONS = 32
 _DEPTH_LIMIT_MESSAGE = "Excessive depth in document"
+_MAX_DEPTH_MESSAGE = "document exceeds MAX_DEPTH"
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 ILLEGAL_CHARACTERS_MESSAGE = "document contains characters not allowed in XML 1.0"
 RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
@@ -247,6 +248,42 @@ def _check_namespace_scope(root: etree._Element) -> None:
                 del in_scope[prefix]
 
 
+def _is_depth_limit_error(error: etree.XMLSyntaxError) -> bool:
+    """Tell libxml2's depth ceiling from any other syntax error.
+
+    libxml2 echoes element and attribute names into its messages, so the word alone
+    proves nothing: only a resource-limit error about depth is MAX_DEPTH, or libxml2's
+    own message for it, which before 2.13 had another error code.
+    """
+    message = str(error)
+    return message.startswith(_DEPTH_LIMIT_MESSAGE) or (
+        error.code == etree.ErrorTypes.ERR_RESOURCE_LIMIT
+        and "depth" in message.casefold()
+    )
+
+
+def _check_limits(roots: Iterable[etree._Element], config: ValidationSettings) -> None:
+    """Bound the nodes, depth and attributes of the trees below the given roots.
+
+    The walk is iterative, linear and stops at the first node over a limit. It reads
+    the attributes of elements only: a processing instruction builds its attrib with
+    a regular expression that is quadratic in its data, so it must never be asked.
+    The attribute cap applies before the schema walk decodes them.
+    """
+    nodes = 0
+    pending = [(root, 1) for root in roots]
+    while pending:
+        node, depth = pending.pop()
+        nodes += 1
+        if depth > config.max_depth:
+            _fail("max_depth", _MAX_DEPTH_MESSAGE)
+        if nodes > config.max_nodes:
+            _fail("max_nodes", "document exceeds MAX_NODES")
+        if isinstance(node.tag, str) and len(node.attrib) > _MAX_ATTRIBUTES:
+            _fail("max_attributes", f"element exceeds {_MAX_ATTRIBUTES} attributes")
+        pending.extend((child, depth + 1) for child in node)
+
+
 def _parse(document: str, config: ValidationSettings) -> etree._Element:
     encoded = _guard_document(document, config)
     # After the guard, so that size, declaration and encoding failures keep their
@@ -256,34 +293,11 @@ def _parse(document: str, config: ValidationSettings) -> etree._Element:
     try:
         root = etree.fromstring(encoded, parser=_parser())
     except etree.XMLSyntaxError as error:
-        # libxml2 echoes element and attribute names into its messages, so the word
-        # alone proves nothing: only a resource-limit error about depth is MAX_DEPTH,
-        # or libxml2's own message for it, which before 2.13 had another error code.
-        message = str(error)
-        if message.startswith(_DEPTH_LIMIT_MESSAGE) or (
-            error.code == etree.ErrorTypes.ERR_RESOURCE_LIMIT
-            and "depth" in message.casefold()
-        ):
-            raise TemplateValidationError(
-                "max_depth", "document exceeds MAX_DEPTH"
-            ) from error
+        if _is_depth_limit_error(error):
+            raise TemplateValidationError("max_depth", _MAX_DEPTH_MESSAGE) from error
         raise TemplateValidationError("malformed_xml", "invalid XML") from error
 
-    nodes = 0
-    pending = [(root, 1)]
-    while pending:
-        node, depth = pending.pop()
-        nodes += 1
-        if depth > config.max_depth:
-            _fail("max_depth", "document exceeds MAX_DEPTH")
-        if nodes > config.max_nodes:
-            _fail("max_nodes", "document exceeds MAX_NODES")
-        # Cap the attributes of one element before the schema walk decodes them. Only
-        # elements have any: a processing instruction builds attrib with a regular
-        # expression that is quadratic in its data, so it must never be asked.
-        if isinstance(node.tag, str) and len(node.attrib) > _MAX_ATTRIBUTES:
-            _fail("max_attributes", f"element exceeds {_MAX_ATTRIBUTES} attributes")
-        pending.extend((child, depth + 1) for child in node)
+    _check_limits([root], config)
     # After the node and depth limits, so they bound this walk as well.
     _check_namespace_scope(root)
     return root

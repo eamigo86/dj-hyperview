@@ -99,6 +99,18 @@ This page records user-visible release changes, including unpublished attempts.
   draft with a lexer that finds the same tokens as Django's in linear time: Django's
   lazy pattern reads on to the end of the line for every `{{`, `{%` or `{#` without
   a closer, so 40,000 of them on one line (120 KB) took 10 s in its lexer alone.
+- The Admin **Format and Validate** check now applies the limits that rendering
+  applies before any schema work. It rejects a template whose source has more than
+  `VALIDATION.MAX_NODES` nodes or `MAX_DEPTH` levels, an element with more than 128
+  attributes or 8 in-scope namespaces, or a path with more than 32 namespace
+  declarations, using the stable codes `max_nodes`, `max_depth` and
+  `max_attributes`, and it returns at most 50 diagnostics, errors first, followed by
+  an informational `diagnostics_truncated` entry when more were found. Before, 1,008
+  namespace declarations on one path took 10 s, and 80,000 undeclared elements
+  produced 80,000 diagnostics and a 16 MB response. **The source of a template
+  counts every branch of a conditional, so a template whose branches together
+  exceed a limit now fails the check although each rendering would pass. Raise the
+  limit if you need such a template.**
 - `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
   `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
   still lets a shared cache store the response and revalidate it later.

@@ -247,6 +247,16 @@ render markup, so its position is runtime-dependent and gets the informational
 note instead of an error. A `{% verbatim %}` body is not analyzed and gets the
 same note.
 
+The check is bounded like rendering. Before any schema work it applies
+`VALIDATION.MAX_NODES` and `VALIDATION.MAX_DEPTH`, and the fixed limits of 128
+attributes on an element, 8 in-scope namespaces, and 32 namespace declarations on
+one path, to the template source, and it reports a source over a limit as an error
+with the same stable code: `max_nodes`, `max_depth`, or `max_attributes`. Because
+the source still holds every branch of a conditional, the counts can exceed those
+of any single rendered document. The response lists at most 50 diagnostics, errors
+before notes, and ends with an informational `diagnostics_truncated` entry when
+more were found. Checking time grows in proportion to the size of the draft.
+
 An informational note — **Static checks passed. Final HXML will be validated
 when served.** — is normal for dynamic templates, not a warning or a validation
 failure. It means the static checks passed, but Django markup such as a
