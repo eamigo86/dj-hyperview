@@ -30,6 +30,12 @@ LOCMEM_CACHES = {
         "LOCATION": "database-signal-edge-cases",
     }
 }
+# Django 5.2 keys a signal registration by the id of its sender and keeps no
+# reference to it, so a collected class leaves a registration that a later class
+# matches when it reuses the id: 165 of 400 unrelated classes did after 40 proxies
+# were collected. Keeping every class that gets handlers alive means no id is ever
+# reused, so test_other_models_keep_django_fast_delete cannot meet a stale match.
+CONNECTED_CLASSES: list[type[Model]] = []
 
 
 def database_config(namespace: str) -> dict[str, object]:
@@ -113,6 +119,7 @@ def proxy_model(
                     app_label = "dj_hyperview_database"
 
             model = NestedProxyTemplate
+        CONNECTED_CLASSES.append(model)
         yield model
 
 
@@ -133,6 +140,7 @@ def scoped_proxy_model(signal_model: type[Model]) -> Iterator[type[Model]]:
                 proxy = True
                 app_label = "dj_hyperview_database"
 
+        CONNECTED_CLASSES.append(LiveTemplate)
         yield LiveTemplate
 
 
@@ -222,6 +230,7 @@ def test_a_stale_registration_never_reaches_the_template_handlers(
                 return self.title
 
         database_signals._connect_model(Unrelated)
+        CONNECTED_CLASSES.append(Unrelated)
         with connection.schema_editor() as editor:
             editor.create_model(Unrelated)
         try:
