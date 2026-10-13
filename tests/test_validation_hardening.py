@@ -1,7 +1,9 @@
+import math
 import random
 import time
 
 import pytest
+from django.template import Template
 from django.test import RequestFactory, override_settings
 from lxml import etree
 
@@ -496,3 +498,82 @@ def test_namespace_cap_matches_the_widest_nsmap_lxml_reports(
                 validation_module._parse(document, ValidationSettings())
             assert error.value.code == "max_attributes", document
             assert f"{cap} in-scope namespaces" in error.value.message
+
+
+def _unclosed_openers_at_the_budget() -> int:
+    """Return how many "{" in a row cost Django's lexer exactly the budget or less.
+
+    Every "{" but the last opens a delimiter that never closes, and each one makes
+    Django's lexer read on to the end of the line, so n of them cost n(n+1)/2 - 1.
+    """
+    budget = validation_module._MAX_UNCLOSED_COST
+    count = math.isqrt(2 * budget)
+    while count * (count + 1) // 2 - 1 > budget:
+        count -= 1
+    return count
+
+
+def test_template_source_may_cost_djangos_lexer_the_whole_budget_and_no_more() -> None:
+    count = _unclosed_openers_at_the_budget()
+
+    assert validate_template_source("{" * count) == "{" * count
+    with pytest.raises(TemplateValidationError) as captured:
+        validate_template_source("{" * (count + 1))
+    assert captured.value.code == "max_unclosed"
+    assert captured.value.message == "unclosed Django delimiters exceed the scan limit"
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: "<view>" + "{{ " * 40_000,
+        lambda: "<view>" + "{% " * 40_000,
+        lambda: "<view>" + "{#" * 60_000,
+        lambda: "{" * 120_000,
+    ],
+    ids=["variables", "blocks", "comments", "braces"],
+)
+def test_pathological_source_is_rejected_without_being_lexed_by_django(
+    build, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Django's lexer took 10 s for 40,000 unclosed openers on one line."""
+
+    def forbidden(self) -> None:
+        raise AssertionError("Django compiled the source")
+
+    monkeypatch.setattr(Template, "compile_nodelist", forbidden)
+    engine = HyperviewEngine(TemplateResolver([TemplateSource(content=build())]))
+
+    with pytest.raises(TemplateValidationError) as captured:
+        engine.get_template("screen.xml")
+
+    assert captured.value.code == "max_unclosed"
+
+
+def test_budget_does_not_grow_with_max_bytes() -> None:
+    source = "{" * (_unclosed_openers_at_the_budget() + 1)
+
+    with pytest.raises(TemplateValidationError) as captured:
+        validate_template_source(source, config=ValidationSettings(max_bytes=10**7))
+
+    assert captured.value.code == "max_unclosed"
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: (
+            "<view>"
+            + "<text>{{ item.name }} {% if item.ok %}y{% endif %} {# n #}</text>"
+            * 14_000
+            + "</view>"
+        ),
+        lambda: "<text>{{ item }}</text> {{ stray\n" * 30_000,
+        lambda: "{{ " * 1_000,
+    ],
+    ids=["one-long-line", "a-stray-opener-on-each-short-line", "unclosed-but-cheap"],
+)
+def test_large_templates_of_ordinary_tokens_are_not_limited(build) -> None:
+    source = build()
+
+    assert validate_template_source(source) == source

@@ -63,6 +63,25 @@ This page records user-visible release changes, including unpublished attempts.
   stops, with the informational note `schema_static_incomplete`, once the draft and
   its includes together exceed `VALIDATION.MAX_BYTES`. A draft with 64 includes of
   a 990 KB template used 3.3 GB and now uses 79 MB.
+- Limit the work that unclosed template delimiters cost when a stored template is
+  compiled, using the new stable validation code `max_unclosed`. Django's lexer
+  reads on to the end of the line for every `{{`, `{%` or `{#` that closes no tag,
+  so a stored template of `"<view>" + "{{ " * 40000` (120 KB, far below
+  `VALIDATION.MAX_BYTES`) passed validation and then occupied a request worker for
+  10.5 s every time Django compiled it. Publication, model validation, the Admin
+  check (including the targets of literal includes) and the template loader now
+  count those characters in linear time, as the sum over every opener that closes
+  no tag of the characters up to the end of its line, and reject a source above 10
+  million. The count tracks Django's lexer to within a constant of about 4.5 ns per
+  character on an Apple M3 Max, so the worst accepted source costs it about 45 ms
+  more than the same source without the stray openers: a source of 1,000,000 bytes
+  at the limit compiles in 0.39 s, against 0.35 s for the same size of ordinary
+  tags. The limit is fixed and does not grow with `MAX_BYTES`. The loader applies it
+  before it hands any source to Django, so a stored row that predates the limit, or
+  that was written with `bulk_create()` or `save()`, fails when it is served
+  instead of occupying a worker. Filesystem templates are developer-owned and no
+  user can write them; they pass through the same loader check, which only a
+  deliberately pathological file reaches. See [Security](security.md).
 - `sse_response` now sends `Cache-Control: no-store, no-transform` instead of
   `no-cache, no-transform`. The stream is per authenticated user, and `no-cache`
   still lets a shared cache store the response and revalidate it later.
@@ -215,6 +234,15 @@ on, and says how to migrate.
   a name that contains a NUL or a lone surrogate, which used to let the lookup's
   own `ValueError` escape with another message. **Pass a standard spelling such as
   `utf-8`.**
+- Template source is now rejected with the stable code `max_unclosed` when the
+  unclosed `{{`, `{%` and `{#` delimiters on its lines make Django's lexer read more
+  than 10 million characters (see *Security*). Such a source was accepted before,
+  and every compile of it took seconds. Only a very long line of stray openers
+  reaches the limit: about 2,600 `{{ ` in a row (8 KB on one line) do, and a
+  template with line breaks, or one whose delimiters close, never does. **A stored
+  or filesystem template that reaches it must close the delimiters, spell them with
+  `{% templatetag openvariable %}` and its siblings, or break the line; a stored
+  row that reaches it fails when it is served.**
 
 ### Added
 
@@ -390,8 +418,10 @@ on, and says how to migrate.
   declaration after `{% endcomment note %}` is hidden and the template is accepted,
   as it renders.
 - Publication and model validation compile stored source with the same linear lexer
-  as the Admin check, so 40,000 unclosed `{{` on one line (120 KB) validate in well
-  under a second instead of the 10 s Django's lexer takes.
+  as the Admin check, so a long line of unclosed `{{` is checked in linear time
+  instead of the 10 s that Django's lexer takes for 40,000 of them (120 KB). How
+  much such a line may cost when the template is served has its own limit; see
+  *Security*.
 - With unusable `HYPERVIEW` settings, including conflicting extra schemas, the Admin
   no longer fails with a server error on the change page. The change page of an
   existing template renders read-only with a plain text area instead of the editor;

@@ -12,7 +12,7 @@ from django.template.base import TokenType
 from django.utils.safestring import SafeData, mark_safe
 from lxml import etree
 
-from ._template_lexer import _forward_find, _LinearLexer
+from ._template_lexer import _forward_find, _LinearLexer, _unclosed_cost
 from .conf import ValidationSettings, get_settings
 from .exceptions import TemplateValidationError
 from .validators import _XML_ILLEGAL_CHARACTERS
@@ -30,6 +30,14 @@ _XML_WHITESPACE = " \t\r\n"
 _MAX_ATTRIBUTES = 128
 _MAX_NAMESPACES = 8
 _MAX_NAMESPACE_DECLARATIONS = 32
+# Django compiles a template with a lexer that reads on to the end of the line for every
+# "{{", "{%" or "{#" that closes no tag, so a line of them takes quadratic time: 40,000
+# on one line (120 KB) took 10.5 s. The sum of what it reads for them, counted in
+# linear time by _unclosed_cost, is limited to 10 million characters, about 45 ms of
+# its time. A source at the limit that is otherwise 1,000,000 bytes of ordinary tags
+# compiles in 0.39 s, against 0.35 s without the unclosed openers, and a source of
+# real tags costs nothing.
+_MAX_UNCLOSED_COST = 10_000_000
 _DEPTH_LIMIT_MESSAGE = "Excessive depth in document"
 _MAX_DEPTH_MESSAGE = "document exceeds MAX_DEPTH"
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
@@ -177,6 +185,9 @@ def _guard_document(
         _fail("max_bytes", "document exceeds MAX_BYTES")
     if _contains_forbidden_declaration(document, template_source=template_source):
         _fail("forbidden_declaration", FORBIDDEN_MESSAGE)
+    if template_source:
+        if _unclosed_cost(document, _MAX_UNCLOSED_COST) > _MAX_UNCLOSED_COST:
+            _fail("max_unclosed", "unclosed Django delimiters exceed the scan limit")
     return encoded
 
 
@@ -184,6 +195,10 @@ def validate_template_source(
     document: str, *, config: ValidationSettings | None = None
 ) -> str:
     """Reject unsafe declarations and oversized source before compilation.
+
+    Besides the byte limit, the source may not make Django's lexer waste more than a
+    fixed amount of work on unclosed template delimiters, which fails with the code
+    max_unclosed.
 
     Args:
         document: Raw template source.

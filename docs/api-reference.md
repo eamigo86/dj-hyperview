@@ -196,11 +196,13 @@ Calling `invalidate_templates()` directly still only invalidates cache.
 optional one-based `line` and `column` coordinates. Its string form never
 includes rejected source content or internal filesystem paths.
 
-Resource-limit failures use the codes `max_bytes`, `max_depth`, `max_nodes`, and
-`max_attributes`. The first three match the `VALIDATION` settings of the same
-names; `max_attributes` reports the fixed caps of 128 attributes and 8 in-scope
-namespaces on one element, and of 32 namespace declarations on the path from the
-root to one element.
+Resource-limit failures use the codes `max_bytes`, `max_depth`, `max_nodes`,
+`max_attributes`, and `max_unclosed`. The first three match the `VALIDATION`
+settings of the same names; `max_attributes` reports the fixed caps of 128
+attributes and 8 in-scope namespaces on one element, and of 32 namespace
+declarations on the path from the root to one element. `max_unclosed` applies to
+template source only: it reports a fixed limit on the work that unclosed `{{`,
+`{%` and `{#` delimiters cost Django's lexer (see [Security](security.md)).
 
 Database publication is an optional contribution with its own service boundary.
 See [Database source and admin](database-admin.md) for those imports.

@@ -157,7 +157,9 @@ declarations, counting every rebinding, on the path from the root to one element
 exceeding any of them fails with the validation code `max_attributes`. They do not
 replace these three limits as the bounds on the whole document: lower the three
 settings for untrusted input, because validation cost grows with the nodes and
-attributes of a document (see [Security](security.md)).
+attributes of a document (see [Security](security.md)). Template source has one
+more fixed limit, on the work that unclosed `{{`, `{%` and `{#` delimiters cost
+Django's lexer; exceeding it fails with the code `max_unclosed`.
 
 `SCHEMA_PROFILE`, `VALIDATION.MODE`, and `VALIDATION.SCHEMA` are removed settings.
 Their presence produces a configuration error, including their former default

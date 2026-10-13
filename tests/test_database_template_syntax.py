@@ -10,7 +10,7 @@ import pytest
 from django.template import Engine, Origin, Template, TemplateSyntaxError
 from django.template.base import DebugLexer, Lexer, TokenType, tag_re
 
-from dj_hyperview._template_lexer import _LinearLexer, _tag_spans
+from dj_hyperview._template_lexer import _LinearLexer, _tag_spans, _unclosed_cost
 from dj_hyperview.contrib.database import admin_validation as scanning
 from dj_hyperview.contrib.database._template_syntax import _compile_nodelist
 
@@ -149,6 +149,57 @@ def test_linear_lexer_produces_the_tokens_of_djangos_debug_lexer() -> None:
 )
 def test_tag_spans_keep_djangos_delimiter_corner_cases(source: str) -> None:
     assert list(_tag_spans(source)) == [m.span() for m in tag_re.finditer(source)]
+
+
+_OPENERS = {"{{", "{%", "{#"}
+
+
+def _characters_read_by_djangos_lexer(source: str) -> int:
+    """Count what tag_re reads for openers that start no tag, the slow way.
+
+    Each such opener makes the lazy pattern read on to the end of its line.
+    """
+    inside_a_tag = {i for m in tag_re.finditer(source) for i in range(*m.span())}
+    cost = 0
+    for index in range(len(source) - 1):
+        if index not in inside_a_tag and source[index : index + 2] in _OPENERS:
+            line_end = source.find("\n", index)
+            cost += (len(source) if line_end < 0 else line_end) - index
+    return cost
+
+
+def test_unclosed_cost_matches_what_djangos_lexer_reads() -> None:
+    for seed in SEEDS:
+        source = _random_source(seed, LEXER_ATOMS)
+
+        assert _unclosed_cost(source) == _characters_read_by_djangos_lexer(source), (
+            source
+        )
+
+
+@pytest.mark.parametrize(
+    ("source", "cost"),
+    [
+        ("", 0),
+        ("{{ a }}<x/>{% if b %}{# c #}", 0),
+        ("{{ ", 3),
+        ("{{ a }} {% b", 4),
+        ("{# a\n{# b #}\n{% c", 4 + 4),
+        ("{{ }}\n{{ a\n}}", 4),
+        ("{" * 4_000, 4_000 * 4_001 // 2 - 1),
+        ("{{ " * 40_000, 3 * 40_000 * 40_001 // 2),
+        ("<view>" + "{{ a }}" * 100_000, 0),
+    ],
+)
+def test_unclosed_cost_counts_the_line_that_each_unclosed_opener_makes_django_read(
+    source: str, cost: int
+) -> None:
+    assert _unclosed_cost(source) == cost
+
+
+def test_unclosed_cost_stops_counting_once_over_the_limit() -> None:
+    # The first opener alone reads the whole line, so the scan ends there.
+    assert _unclosed_cost("{" * 1_000_000, limit=10) == 1_000_000
 
 
 @pytest.mark.parametrize(
@@ -546,12 +597,21 @@ def test_stored_source_validation_keeps_reporting_django_syntax_errors(
     )
 
 
-def test_stored_source_validation_lexes_unclosed_openers_in_linear_time() -> None:
+def test_stored_source_validation_rejects_unclosed_openers_in_linear_time() -> None:
+    """Serving compiles with Django's lexer, which took 10 s on the first source."""
+    from django.core.exceptions import ValidationError
+
     from dj_hyperview.contrib.database.validators import (
         validate_stored_template_source,
     )
 
+    validate_stored_template_source("{{ " * 1_000)
     started = time.perf_counter()
-    validate_stored_template_source("{{ " * 40_000)
+    with pytest.raises(ValidationError) as captured:
+        validate_stored_template_source("<view>" + "{{ " * 40_000)
 
-    assert time.perf_counter() - started < 5  # about 10 s with Django's lexer
+    assert captured.value.code == "max_unclosed"
+    assert captured.value.messages == [
+        "Invalid Hyperview template source (max_unclosed)."
+    ]
+    assert time.perf_counter() - started < 5

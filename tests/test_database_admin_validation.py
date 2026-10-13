@@ -1367,7 +1367,7 @@ def test_validation_cost_grows_linearly_with_the_number_of_django_tokens(
         (lambda: "{{\n" * 40_000, []),
         (lambda: "<?xml " * 40_000, ["xml_syntax"]),
         (lambda: "{{ a }}" + "<!--" * 40_000, ["xml_syntax"]),
-        (lambda: "{{ " * 40_000, []),
+        (lambda: "{{ " * 40_000, ["max_unclosed"]),
     ],
     ids=["open-braces", "open-declarations", "open-comments", "open-braces-one-line"],
 )
@@ -1783,7 +1783,7 @@ def test_literal_includes_are_not_compiled_by_djangos_template_class(
 
     assert result == {"ok": True, "diagnostics": []}
     assert unclosed["ok"] is False
-    assert [item["code"] for item in unclosed["diagnostics"]] == ["xml_syntax"]
+    assert [item["code"] for item in unclosed["diagnostics"]] == ["max_unclosed"]
 
 
 def _bounded_includes_config(tmp_path, max_bytes: int) -> dict[str, Any]:

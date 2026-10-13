@@ -34,9 +34,11 @@ class TrackedDocument(str):
 @pytest.mark.parametrize("opening", ["{%", "{#", "{% other ", "{% comment "])
 @pytest.mark.parametrize("count", [1_000, 2_000])
 def test_declaration_search_work_is_linear_for_unclosed_delimiters(
-    validator, opening: str, count: int
+    validator, opening: str, count: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """An inert XML declaration must not trigger repeated suffix searches."""
+    # The cost of the unclosed openers has its own limit, which is not under test.
+    monkeypatch.setattr(validation_module, "_MAX_UNCLOSED_COST", 10**12)
     document = TrackedDocument(
         f"<text xmlns='https://hyperview.org/hyperview'>{opening * count}"
         "<!-- <!DOCTYPE view> --></text>"

@@ -102,11 +102,12 @@ case-insensitive. `Home.xml` and `home.xml` are therefore distinct templates.
 The public services validate names and content, lock existing rows, increment
 revisions once, and use the selected write database:
 
-Publish-time content validation enforces encoding, size, and forbidden
-declaration safety. It deliberately accepts complete documents as well as
-multi-root and text-only partials containing Django syntax. Structural XML and
-schema guarantees apply to the final composed output during render-time validation,
-which is always active and cannot be disabled.
+Publish-time content validation enforces encoding, size, forbidden
+declaration safety, and a fixed limit on unclosed Django delimiters (the stable
+code `max_unclosed`; see [Security](security.md)). It deliberately accepts
+complete documents as well as multi-root and text-only partials containing Django
+syntax. Structural XML and schema guarantees apply to the final composed output
+during render-time validation, which is always active and cannot be disabled.
 
 ```python
 from dj_hyperview.contrib.database.services import (
@@ -269,16 +270,18 @@ The check is bounded like rendering. Before any schema work it applies
 `VALIDATION.MAX_NODES` and `VALIDATION.MAX_DEPTH`, and the fixed limits of 128
 attributes on an element, 8 in-scope namespaces, and 32 namespace declarations on
 one path, to the template source, and it reports a source over a limit as an error
-with the same stable code: `max_nodes`, `max_depth`, or `max_attributes`. Because
-the source still holds every branch of a conditional, the counts can exceed those
-of any single rendered document. Source that nests blocks, such as `{% if %}`, more
-than 100 levels deep is reported as `too_deep` instead of failing the request:
-Django's recursive parser compiles about 490 levels, but rendering fails at about
-330 in an empty stack, so deeper source could be saved and then fail when served. The
-response lists at most 50 diagnostics, errors before notes, and ends with an
-informational `diagnostics_truncated` entry when more were found. Checking time
-grows in proportion to the size of the draft and of the includes it expands, which
-`VALIDATION.MAX_BYTES` bounds together.
+with the same stable code: `max_nodes`, `max_depth`, or `max_attributes`. It also
+reports `max_unclosed` for a draft, or a literal include target, whose unclosed
+`{{`, `{%` or `{#` delimiters would make Django's lexer take too long to compile
+it when served. Because the source still holds every branch of a conditional, the
+counts can exceed those of any single rendered document. Source that nests blocks,
+such as `{% if %}`, more than 100 levels deep is reported as `too_deep` instead of
+failing the request: Django's recursive parser compiles about 490 levels, but
+rendering fails at about 330 in an empty stack, so deeper source could be saved and
+then fail when served. The response lists at most 50 diagnostics, errors before
+notes, and ends with an informational `diagnostics_truncated` entry when more were
+found. Checking time grows in proportion to the size of the draft and of the
+includes it expands, which `VALIDATION.MAX_BYTES` bounds together.
 
 An informational note — **Static checks passed. Final HXML will be validated
 when served.** — is normal for dynamic templates, not a warning or a validation
