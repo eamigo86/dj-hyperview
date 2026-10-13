@@ -175,18 +175,20 @@ def _project_file(tmp_path: Path, version: str) -> Path:
 def _allowed_maturities(version: Version) -> set[str]:
     """Return the Development Status values a release may carry.
 
-    A prerelease, a development build included, must not claim more than its
-    stage. A final release in the 0.x line may still call itself Beta; from 1.0 on
-    it is Production/Stable.
+    A prerelease must not claim more than its stage. A bare development build has
+    no stage yet: before 1.0 it may stand at any of the three, so that the next
+    release of a Beta project is not a downgrade, and at 1.0 it is still
+    Pre-Alpha. A development build after a final release follows that release. A
+    final release in the 0.x line may still call itself Beta; from 1.0 on it is
+    Production/Stable.
     """
-    if version.is_prerelease:
-        stage = version.pre[0] if version.pre else "dev"
-        return {
-            "dev": {"2 - Pre-Alpha"},
-            "a": {"3 - Alpha"},
-            "b": {"4 - Beta"},
-            "rc": {"4 - Beta"},
-        }[stage]
+    if version.pre:
+        return {"a": {"3 - Alpha"}, "b": {"4 - Beta"}, "rc": {"4 - Beta"}}[
+            version.pre[0]
+        ]
+    if version.dev is not None and version.post is None:
+        stages = {"2 - Pre-Alpha", "3 - Alpha", "4 - Beta"}
+        return stages if version.major == 0 else {"2 - Pre-Alpha"}
     if version.major == 0:
         return {"4 - Beta", "5 - Production/Stable"}
     return {"5 - Production/Stable"}
@@ -196,6 +198,10 @@ def _allowed_maturities(version: Version) -> set[str]:
     ("version", "allowed"),
     [
         ("1.0.0.dev1", {"2 - Pre-Alpha"}),
+        ("0.2.0.dev1", {"2 - Pre-Alpha", "3 - Alpha", "4 - Beta"}),
+        ("0.1.0.post1.dev1", {"4 - Beta", "5 - Production/Stable"}),
+        ("1.0.0.post1.dev1", {"5 - Production/Stable"}),
+        ("1.0.0rc1.post1", {"4 - Beta"}),
         ("1.0.0a1", {"3 - Alpha"}),
         ("1.0.0b1", {"4 - Beta"}),
         ("1.0.0rc1", {"4 - Beta"}),
