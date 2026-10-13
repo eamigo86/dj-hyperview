@@ -5,19 +5,18 @@ from functools import lru_cache
 from typing import Any
 
 from django.conf import settings as django_settings
+from django.core.signals import setting_changed
 from django.dispatch import receiver
 from django.http import HttpRequest
 from django.template import TemplateDoesNotExist
 from django.template.backends.django import DjangoTemplates
-from django.test.signals import setting_changed
 from django.utils.module_loading import import_string
-from django.utils.safestring import SafeData, mark_safe
 
 from .conf import _SETTING_DEPENDENCIES, ValidationSettings, get_settings
 from .exceptions import InvalidTemplateName, TemplateNotFound
 from .loaders import template_snapshot
 from .resolver import TemplateResolver
-from .validation import _validate_hxml_result, _ValidatedHxml
+from .validation import _rendered_hxml_text, _validate_hxml_result, _ValidatedHxml
 
 _INHERITED_DJANGO_TEMPLATE_OPTIONS = frozenset(
     {"builtins", "context_processors", "libraries", "string_if_invalid"}
@@ -47,12 +46,6 @@ def _consumer_django_template_options() -> dict[str, Any]:
             if key in _INHERITED_DJANGO_TEMPLATE_OPTIONS
         }
     return {}
-
-
-def _rendered_hxml_text(rendered: str) -> str:
-    """Keep template preambles compatible without trusting safe-string markup."""
-    stripped = rendered.lstrip()
-    return mark_safe(stripped) if isinstance(rendered, SafeData) else stripped
 
 
 class _ValidatedTemplate:

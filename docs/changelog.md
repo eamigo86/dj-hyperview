@@ -4,6 +4,37 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+### Security
+
+- Reject an element with more than 256 attributes or more than 64 in-scope
+  namespaces before XSD validation, using the new stable validation code
+  `max_attributes`. Validation time grew faster than linearly with both counts, so
+  a few kilobytes of untrusted markup could occupy a worker for seconds. The caps
+  are fixed and sit well above anything a valid Hyperview document needs.
+
+### Added
+
+- `dj_hyperview.validators.validate_xml_text`, a Django validator (error code
+  `xml_characters`) that rejects characters XML 1.0 cannot represent.
+- `hv_text` and `hv_attr` template filters that remove those characters and
+  escape element text or attribute values. `hv_attr` also encodes line feeds,
+  carriage returns and tabs so they survive XML attribute-value normalization.
+
+### Fixed
+
+- Importing the package no longer loads Django's test framework into production
+  processes: `setting_changed` now comes from `django.core.signals`.
+- A UTF-8 BOM followed by template whitespace before the XML declaration, such as
+  a file that starts with a BOM and `{% load dj_hyperview %}`, now renders. The BOM
+  is preserved and the whitespace after it is removed, as documented.
+
+### Changed
+
+- A rendered document that contains a character XML 1.0 cannot represent now fails
+  with `malformed_xml` and the message "document contains characters not allowed
+  in XML 1.0" instead of the generic "invalid XML". Validation still fails closed
+  and the message still does not echo document content.
+
 ### Compatibility
 
 - Hyperview 0.112.0 removes `createTestProps` and changes native test-ID behavior,

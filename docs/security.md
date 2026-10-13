@@ -54,6 +54,16 @@ registry is always enforced, with one internal set of verified corrections.
 `SCHEMA_PROFILE`, `VALIDATION.MODE`, and `VALIDATION.SCHEMA` are rejected, not
 ignored. Resource limits remain configurable, but no setting disables validation.
 
+Two further limits are fixed and cannot be configured. One element may declare at
+most 256 attributes and at most 64 in-scope namespaces; the default namespace and
+bindings inherited from ancestors count. XSD validation time grows faster than
+linearly with both numbers, so `MAX_BYTES`, `MAX_DEPTH`, and `MAX_NODES` alone do
+not bound it. An element over either cap fails before schema validation with the
+stable code `max_attributes`. The message says which cap was exceeded and never
+repeats attribute or prefix names. Standard Hyperview elements declare well under
+256 attributes, so valid documents are unaffected; extension schemas share the
+same caps.
+
 Eager Hyperview responses and public body mutations validate before committing a
 replacement; invalid mutations preserve the previous body. Lazy responses retain
 Django's deferred rendering and validate their generated representation before
@@ -92,6 +102,50 @@ before reusing cached results. Changes to dependency paths, sizes, modification
 times, or settings invalidate the shared identity, so completion cannot retain
 a stale included schema while validation uses its replacement.
 
+## Keep user-supplied text valid XML
+
+XML 1.0 cannot represent every character. It allows tab, line feed, carriage
+return, and characters from U+0020 upward, except lone surrogates, U+FFFE, and
+U+FFFF. Django autoescaping covers markup characters, not these. A context value
+such as `"Buy\x01milk"` that reaches the rendered document makes the whole
+document invalid. Validation fails closed with `TemplateValidationError` code
+`malformed_xml` and the fixed message "document contains characters not allowed
+in XML 1.0". It repairs nothing and names neither the character nor its position.
+
+Reject the text where you accept it, or neutralize it where you render it:
+
+- `dj_hyperview.validators.validate_xml_text` is a Django validator for model and
+  form fields. It raises `ValidationError` with the code `xml_characters` and
+  does not repeat the rejected value.
+- The `hv_text` filter removes those characters and escapes the rest for element
+  content. The `hv_attr` filter does the same for an attribute value and also
+  encodes line feeds, carriage returns, and tabs as character references; XML
+  parsers otherwise normalize them to spaces.
+
+```python
+from django.db import models
+
+from dj_hyperview.validators import validate_xml_text
+
+
+class Task(models.Model):
+    title = models.CharField(max_length=200, validators=[validate_xml_text])
+```
+
+```xml
+{% load dj_hyperview %}
+<?xml version="1.0" encoding="UTF-8"?>
+<view xmlns="https://hyperview.org/hyperview">
+  <text-field name="title" value="{{ task.title|hv_attr }}" />
+  <text>{{ task.title|hv_text }}</text>
+</view>
+```
+
+The filters return escaped markup, so Django does not escape their output a
+second time. They silently drop illegal characters, so prefer the validator when
+dropping data is not acceptable. Keep autoescape enabled and do not mark
+untrusted text safe yourself.
+
 ## Render a Hyperview CSRF field
 
 Load the package tag library and render `hv_csrf_token` inside a form:
@@ -113,8 +167,8 @@ Load the package tag library and render `hv_csrf_token` inside a form:
 The tag emits an escaped hidden Hyperview text field. Render validation removes
 leading whitespace produced before an XML declaration, and Hyperview responses
 require UTF-8 in both the declaration and HTTP charset.
-An initial UTF-8 BOM is preserved, but cannot hide a contradictory encoding
-declaration such as `ISO-8859-1`.
+An initial UTF-8 BOM is preserved and whitespace after it is removed, but it
+cannot hide a contradictory encoding declaration such as `ISO-8859-1`.
 
 Use Django template variables for dynamic values so autoescaping remains active;
 do not concatenate untrusted text into XML markup. `TemplateValidationError`

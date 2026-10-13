@@ -1,5 +1,7 @@
 """Linear declaration scanning and the UTF-8 wire contract."""
 
+from pathlib import Path
+
 import pytest
 
 import dj_hyperview.validation as validation_module
@@ -7,6 +9,7 @@ from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.http import HyperviewResponse
 from dj_hyperview.resolver import TemplateResolver
+from dj_hyperview.sources import FileSystemSource
 from dj_hyperview.validation import validate_hxml, validate_template_source
 
 from .stubs import TemplateSource
@@ -174,3 +177,24 @@ def test_public_engine_rejects_bom_hidden_incompatible_encoding() -> None:
         engine.render("screen.xml")
 
     assert captured.value.code == "invalid_encoding"
+
+
+def test_bom_template_with_a_load_tag_keeps_the_bom_and_drops_later_whitespace(
+    tmp_path: Path,
+) -> None:
+    """Whitespace emitted after an initial BOM cannot precede the declaration."""
+    (tmp_path / "screen.xml").write_text(
+        "\ufeff{% load dj_hyperview %}\n"
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        "<text xmlns='https://hyperview.org/hyperview'>ok</text>",
+        encoding="utf-8",
+    )
+    engine = HyperviewEngine(TemplateResolver([FileSystemSource([tmp_path])]))
+
+    rendered = engine.render("screen.xml")
+
+    assert rendered == (
+        '\ufeff<?xml version="1.0" encoding="UTF-8"?>'
+        "<text xmlns='https://hyperview.org/hyperview'>ok</text>"
+    )
+    assert validate_hxml(rendered) == rendered

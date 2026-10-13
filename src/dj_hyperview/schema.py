@@ -11,8 +11,8 @@ from threading import RLock
 from typing import Any
 from urllib.parse import unquote, urlparse
 
+from django.core.signals import setting_changed
 from django.dispatch import receiver
-from django.test.signals import setting_changed
 from lxml import etree
 
 from ._schema_duplicates import _guard_duplicate_declarations

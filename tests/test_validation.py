@@ -99,6 +99,16 @@ def test_render_validation_strips_template_whitespace_before_xml_declaration() -
     assert validate_rendered_hxml(document).startswith("<?xml")
 
 
+def test_render_validation_strips_whitespace_after_an_initial_bom() -> None:
+    """The documented BOM contract also holds for the public normalizer."""
+    document = (
+        '\ufeff\n\t<?xml version="1.0" encoding="UTF-8"?>'
+        "<view xmlns='https://hyperview.org/hyperview' />"
+    )
+
+    assert validate_rendered_hxml(document) == document.replace("\n\t", "")
+
+
 @pytest.mark.parametrize(
     "document",
     [

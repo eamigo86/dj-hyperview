@@ -3,8 +3,8 @@
 [Step-by-step SSE guide](realtime.md): setup, negotiated changes, compatibility examples and host responsibilities.
 
 Import documented public objects from `dj_hyperview`; catalog helpers are in
-`dj_hyperview.schema`. Modules and names beginning
-with an underscore remain implementation details.
+`dj_hyperview.schema` and text validators are in `dj_hyperview.validators`.
+Modules and names beginning with an underscore remain implementation details.
 
 | Symbol | Purpose |
 | --- | --- |
@@ -111,6 +111,19 @@ for bodyless statuses, HEAD request context, and lazy callback semantics.
 | `template_cache_key` | Produce a namespaced cache key. |
 | `invalidate_templates` | Invalidate one or more canonical names. |
 
+## XML text safety
+
+| Symbol | Purpose |
+| --- | --- |
+| `dj_hyperview.validators.validate_xml_text` | Django validator that rejects characters XML 1.0 cannot represent, with the error code `xml_characters`. |
+| `hv_text` | Template filter from `{% load dj_hyperview %}` that removes those characters and escapes element text. |
+| `hv_attr` | Template filter that does the same for attribute values and encodes line feeds, carriage returns and tabs as character references. |
+| `hv_csrf_token` | Template tag that renders Django's CSRF token as a hidden Hyperview text field. |
+
+A rendered document that still contains such a character fails with
+`TemplateValidationError` code `malformed_xml` and a fixed message; nothing is
+stripped silently. See [Security](security.md#keep-user-supplied-text-valid-xml).
+
 ## Committed template invalidations
 
 `TemplateInvalidation` and `template_invalidated` are public in `dj_hyperview`
@@ -152,6 +165,11 @@ Calling `invalidate_templates()` directly still only invalidates cache.
 `TemplateValidationError` exposes the stable `code` and `message` fields plus
 optional one-based `line` and `column` coordinates. Its string form never
 includes rejected source content or internal filesystem paths.
+
+Resource-limit failures use the codes `max_bytes`, `max_depth`, `max_nodes`, and
+`max_attributes`. The first three match the `VALIDATION` settings of the same
+names; `max_attributes` reports the fixed per-element caps of 256 attributes and
+64 in-scope namespaces.
 
 Database publication is an optional contribution with its own service boundary.
 See [Database source and admin](database-admin.md) for those imports.

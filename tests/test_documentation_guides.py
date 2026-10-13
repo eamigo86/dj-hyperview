@@ -274,3 +274,31 @@ def test_security_csrf_example_passes_automatic_render_validation(
         )
     assert 'name="csrfmiddlewaretoken"' in rendered
     assert 'hide="true"' in rendered
+
+
+def test_security_text_safety_example_cleans_and_escapes_rendered_values(
+    tmp_path: Path,
+) -> None:
+    """The documented filters strip illegal characters and keep attribute newlines."""
+    from types import SimpleNamespace
+
+    from django.test import override_settings
+
+    from dj_hyperview import HyperviewEngine
+
+    page = _read_document("security.md")
+    blocks = re.findall(r"```xml\n(.*?)```", page, flags=re.DOTALL)
+    source = next(block for block in blocks if "hv_text" in block)
+    (tmp_path / "text.xml").write_text(source, encoding="utf-8")
+    task = SimpleNamespace(title='Buy\x01 milk\n& "eggs"')
+    with override_settings(
+        HYPERVIEW={
+            "TEMPLATE_DIRS": [tmp_path],
+            "SOURCES": [{"BACKEND": "dj_hyperview.sources.FileSystemSource"}],
+        }
+    ):
+        rendered = HyperviewEngine(TemplateResolver.from_settings()).render_hxml(
+            "text.xml", {"task": task}
+        )
+    assert 'value="Buy milk&#10;&amp; &quot;eggs&quot;"' in rendered
+    assert "<text>Buy milk\n&amp; &quot;eggs&quot;</text>" in rendered

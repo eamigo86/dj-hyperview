@@ -11,7 +11,11 @@ from lxml import etree
 
 from .conf import ValidationSettings, get_settings
 from .exceptions import TemplateValidationError
+from .validators import _XML_ILLEGAL_CHARACTERS
 
+_BOM = "\ufeff"
+_MAX_ATTRIBUTES = 256
+_MAX_NAMESPACES = 64
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
 IGNORED_BLOCKS = (("<!--", "-->"), ("<![CDATA[", "]]>"), ("<?", "?>"))
@@ -25,6 +29,13 @@ DJANGO_ENDCOMMENT = re.compile(r"{%\s*endcomment(?=\s|%})")
 
 def _fail(code: str, message: str) -> None:
     raise TemplateValidationError(code, message)
+
+
+def _rendered_hxml_text(rendered: str) -> str:
+    """Keep template preambles compatible without trusting safe-string markup."""
+    bom = _BOM if rendered.startswith(_BOM) else ""
+    stripped = bom + rendered[len(bom) :].lstrip()
+    return mark_safe(stripped) if isinstance(rendered, SafeData) else stripped
 
 
 def _parser() -> etree.XMLParser:
@@ -157,6 +168,8 @@ def validate_template_source(
 
 
 def _parse(document: str, config: ValidationSettings) -> etree._Element:
+    if _XML_ILLEGAL_CHARACTERS.search(document):
+        _fail("malformed_xml", "document contains characters not allowed in XML 1.0")
     encoded = _guard_document(document, config)
     try:
         root = etree.fromstring(encoded, parser=_parser())
@@ -178,6 +191,14 @@ def _parse(document: str, config: ValidationSettings) -> etree._Element:
             _fail("max_depth", "document exceeds MAX_DEPTH")
         if nodes > config.max_nodes:
             _fail("max_nodes", "document exceeds MAX_NODES")
+        # XSD work grows super-linearly with per-element attributes and prefixes.
+        if len(node.attrib) > _MAX_ATTRIBUTES:
+            _fail("max_attributes", f"element exceeds {_MAX_ATTRIBUTES} attributes")
+        if len(node.nsmap) > _MAX_NAMESPACES:
+            _fail(
+                "max_attributes",
+                f"element exceeds {_MAX_NAMESPACES} in-scope namespaces",
+            )
         pending.extend((child, depth + 1) for child in node)
     return root
 
@@ -308,6 +329,4 @@ def validate_rendered_hxml(
         The normalized rendered document after mandatory safety and XSD validation.
     """
     resolved = config or get_settings().validation
-    stripped = document.lstrip()
-    document = mark_safe(stripped) if isinstance(document, SafeData) else stripped
-    return validate_hxml(document, config=resolved)
+    return validate_hxml(_rendered_hxml_text(document), config=resolved)

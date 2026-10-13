@@ -9,9 +9,9 @@ from typing import Any
 
 from django.conf import settings as django_settings
 from django.core.checks import ERROR
+from django.core.signals import setting_changed
 from django.dispatch import receiver
 from django.http import HttpRequest
-from django.test.signals import setting_changed
 from django.utils.module_loading import import_string
 
 from ._realtime_config import RealtimeSettings, _realtime_settings

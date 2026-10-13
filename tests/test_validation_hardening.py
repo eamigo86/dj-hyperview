@@ -54,7 +54,13 @@ def test_template_response_validates_django_fallbacks(using):
 
 
 def test_isolated_unicode_surrogate_is_a_typed_failure():
-    assert_malformed(lambda: validate_hxml("\ud800"))
+    with pytest.raises(TemplateValidationError) as error:
+        validate_hxml("\ud800")
+
+    assert error.value.code == "malformed_xml"
+    assert error.value.message == (
+        "document contains characters not allowed in XML 1.0"
+    )
 
 
 @pytest.mark.parametrize(
@@ -171,3 +177,83 @@ def test_active_and_post_render_constructed_declarations_remain_forbidden():
 
     assert source_error.value.code == "forbidden_declaration"
     assert rendered_error.value.code == "forbidden_declaration"
+
+
+HYPERVIEW_XMLNS = "xmlns='https://hyperview.org/hyperview'"
+
+
+def prefixed_namespaces(count: int, *, start: int = 0) -> str:
+    return " ".join(f"xmlns:p{i}='urn:p{i}'" for i in range(start, start + count))
+
+
+def assert_element_limit(document: str, fragment: str) -> None:
+    with pytest.raises(TemplateValidationError) as error:
+        validate_hxml(document)
+    assert error.value.code == "max_attributes"
+    assert fragment in error.value.message
+    assert "p0" not in str(error.value)
+    assert "a0" not in str(error.value)
+
+
+def test_attribute_flood_is_rejected_before_schema_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A per-element cap bounds super-linear XSD work without timing assertions."""
+
+    def forbidden_schema_walk(*args: object, **kwargs: object) -> None:
+        raise AssertionError("schema validation must not run")
+
+    monkeypatch.setattr(
+        "dj_hyperview.schema._validate_schema_root", forbidden_schema_walk
+    )
+    attributes = " ".join(f"a{i}='1'" for i in range(300))
+
+    assert_element_limit(f"<view {HYPERVIEW_XMLNS} {attributes} />", "256 attributes")
+
+
+def test_attribute_cap_counts_one_element_and_allows_its_exact_limit() -> None:
+    """Many elements may carry attributes; only a single element is capped."""
+    exact = " ".join(f"a{i}='1'" for i in range(256))
+    spread = "".join(f"<text id='t{i}' style='s{i}'>{i}</text>" for i in range(300))
+
+    with pytest.raises(TemplateValidationError) as exact_error:
+        validate_hxml(f"<view {HYPERVIEW_XMLNS} {exact} />")
+    validate_hxml(f"<view {HYPERVIEW_XMLNS}>{spread}</view>")
+
+    assert exact_error.value.code == "schema"
+
+
+def test_namespace_flood_is_rejected_on_the_declaring_element() -> None:
+    """The default namespace counts, so 65 prefixes exceed 64 in-scope bindings."""
+    assert_element_limit(
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(65)} />",
+        "64 in-scope namespaces",
+    )
+
+
+def test_inherited_namespaces_count_toward_the_in_scope_cap() -> None:
+    """No single element declares more than 64, but a descendant inherits them."""
+    document = (
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(40)}>"
+        f"<text {prefixed_namespaces(30, start=40)}>ok</text></view>"
+    )
+
+    assert_element_limit(document, "64 in-scope namespaces")
+
+
+def test_namespace_cap_allows_its_exact_limit() -> None:
+    """The default binding plus 63 prefixes is exactly 64 in-scope namespaces."""
+    document = (
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(63)}><text>ok</text></view>"
+    )
+
+    assert validate_hxml(document) == document
+
+
+def test_comments_and_processing_instructions_pass_the_element_caps() -> None:
+    """Non-element nodes have no attributes or namespaces to count."""
+    document = (
+        f"<view {HYPERVIEW_XMLNS}><!-- note --><?audit data?><text>ok</text></view>"
+    )
+
+    assert validate_hxml(document) == document
