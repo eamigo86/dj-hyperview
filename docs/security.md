@@ -60,22 +60,30 @@ registry is always enforced, with one internal set of verified corrections.
 `SCHEMA_PROFILE`, `VALIDATION.MODE`, and `VALIDATION.SCHEMA` are rejected, not
 ignored. Resource limits remain configurable, but no setting disables validation.
 
-Two further limits are fixed and cannot be configured. They bound one element,
-not the document: an element may declare at most 256 attributes and at most 64
-in-scope namespaces. The default namespace and bindings inherited from ancestors
-count, and rebinding a prefix counts once. XSD validation time grows faster than
-linearly with both numbers, so `MAX_BYTES`, `MAX_DEPTH`, and `MAX_NODES` alone do
-not bound it. An element over either cap fails before schema validation with the
-stable code `max_attributes`. The message says which cap was exceeded and never
-repeats attribute or prefix names. Standard Hyperview elements declare well under
-256 attributes, so valid documents are unaffected; extension schemas share the
-same caps.
+Three further limits are fixed and cannot be configured. They bound one element
+and the path from the root to it, not the document: an element may declare at most
+256 attributes and at most 64 in-scope namespaces, and the elements on the path
+from the root to any element may carry at most 256 namespace declarations in
+total. The default namespace and bindings inherited from ancestors count toward
+the 64, and rebinding a prefix counts once there. Toward the 256 on a path, every
+declaration counts, so rebinding the same prefixes at each level adds up. XSD
+validation time grows faster than linearly with the attributes of an element, and
+the schema validator reads every declaration on the ancestor path of every
+element, so `MAX_BYTES`, `MAX_DEPTH`, and `MAX_NODES` alone do not bound it. An
+element over any cap fails before schema validation with the stable code
+`max_attributes`. The message says which cap was exceeded and never repeats
+attribute or prefix names. Standard Hyperview elements declare well under 256
+attributes and a document rarely declares more than a handful of namespaces on one
+path, so valid documents are unaffected. That includes a screen composed of many
+fragments that each declare the default namespace and an application prefix: the
+declarations of a finished element leave the path, so siblings do not accumulate.
+Extension schemas share the same caps.
 
 Checking the caps takes time proportional to the number of nodes and declarations.
 They do not bound the cost of the whole document: schema validation time still
-grows with its size, and with deeply nested elements that each rebind many
-prefixes. `MAX_BYTES`, `MAX_NODES`, and `MAX_DEPTH` remain the global bounds, so
-lower them for untrusted input.
+grows with its size. The extra cost of namespace bindings per element is bounded
+by the 256 declarations of its path. `MAX_BYTES`, `MAX_NODES`, and `MAX_DEPTH`
+remain the global bounds, so lower them for untrusted input.
 
 Eager Hyperview responses and public body mutations validate before committing a
 replacement; invalid mutations preserve the previous body. Lazy responses retain

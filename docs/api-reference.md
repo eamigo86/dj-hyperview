@@ -189,8 +189,9 @@ includes rejected source content or internal filesystem paths.
 
 Resource-limit failures use the codes `max_bytes`, `max_depth`, `max_nodes`, and
 `max_attributes`. The first three match the `VALIDATION` settings of the same
-names; `max_attributes` reports the fixed per-element caps of 256 attributes and
-64 in-scope namespaces.
+names; `max_attributes` reports the fixed caps of 256 attributes and 64 in-scope
+namespaces on one element, and of 256 namespace declarations on the path from the
+root to one element.
 
 Database publication is an optional contribution with its own service boundary.
 See [Database source and admin](database-admin.md) for those imports.

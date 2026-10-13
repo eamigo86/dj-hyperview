@@ -18,6 +18,7 @@ _BOM = "\ufeff"
 _XML_WHITESPACE = " \t\r\n"
 _MAX_ATTRIBUTES = 256
 _MAX_NAMESPACES = 64
+_MAX_NAMESPACE_DECLARATIONS = 256
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 ILLEGAL_CHARACTERS_MESSAGE = "document contains characters not allowed in XML 1.0"
 RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
@@ -178,12 +179,16 @@ def validate_template_source(
 
 
 def _check_namespace_scope(root: etree._Element) -> None:
-    """Bound the namespaces in scope on any element in linear time.
+    """Bound the namespaces on any element and its ancestor path in linear time.
 
-    An element's nsmap is rebuilt from all of its ancestors, so reading it for every
-    element costs depth times declarations. Counting bindings as the walk enters and
-    leaves the elements that declare them needs only the declarations themselves,
-    and a flood of declarations fails at the first one over the cap.
+    An element's nsmap is rebuilt from all of its ancestors, so schema validation,
+    which reads it for every element, costs depth times declarations. Two caps keep
+    that product small. The distinct prefixes in scope are capped, and so is every
+    declaration on the path from the root, because rebinding the same few prefixes
+    at each level keeps the distinct count low while the path keeps growing.
+    Counting bindings as the walk enters and leaves the elements that declare them
+    needs only the declarations themselves, and a flood of declarations fails at
+    the first one over a cap.
     """
     in_scope: Counter[str] = Counter()
     declared: list[str] = []
@@ -192,6 +197,12 @@ def _check_namespace_scope(root: etree._Element) -> None:
             prefix = binding[0]
             declared.append(prefix)
             in_scope[prefix] += 1
+            if len(declared) > _MAX_NAMESPACE_DECLARATIONS:
+                _fail(
+                    "max_attributes",
+                    f"element exceeds {_MAX_NAMESPACE_DECLARATIONS} namespace "
+                    "declarations on its ancestor path",
+                )
             if len(in_scope) > _MAX_NAMESPACES:
                 _fail(
                     "max_attributes",

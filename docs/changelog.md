@@ -17,15 +17,18 @@ This page records user-visible release changes, including unpublished attempts.
   the template name and the constructor options; see
   [Cache consistency](cache-consistency.md#choose-which-sources-are-cached). The
   private `_dj_hyperview_cacheable` marker is removed and no longer has any effect.
-- Reject an element with more than 256 attributes or more than 64 in-scope
-  namespaces before XSD validation, using the new stable validation code
-  `max_attributes`. Validation time grew faster than linearly with both counts, so
-  a few kilobytes of untrusted markup could occupy a worker for seconds. The caps
-  are fixed, apply to one element, and sit well above anything a valid Hyperview
-  document needs. Checking them takes time proportional to the number of nodes and
-  declarations. They do not bound the whole document: `VALIDATION.MAX_BYTES`,
-  `MAX_NODES` and `MAX_DEPTH` remain the global limits, and schema validation time
-  still grows with document size and with nested elements that rebind many prefixes.
+- Reject an element with more than 256 attributes, more than 64 in-scope
+  namespaces, or more than 256 namespace declarations on the path from the root to
+  it, before XSD validation, using the new stable validation code `max_attributes`.
+  Validation time grew faster than linearly with these counts, so a few kilobytes
+  of untrusted markup could occupy a worker for seconds. The path cap counts every
+  declaration, including a prefix rebound at each level: a chain of 60 levels that
+  rebinds 60 prefixes, with 3,000 leaves, kept the distinct count low but took
+  about 1.5 seconds. The caps are fixed and sit well above anything a valid
+  Hyperview document needs; sibling elements do not add up. Checking them takes
+  time proportional to the number of nodes and declarations. They do not bound the
+  whole document: `VALIDATION.MAX_BYTES`, `MAX_NODES` and `MAX_DEPTH` remain the
+  global limits, and schema validation time still grows with document size.
 - Stop echoing rejected template names from an ordered selection. When every
   candidate misses, `TemplateNotFound` now lists only valid names that were not
   found, so control characters and escape sequences in hostile names cannot reach
