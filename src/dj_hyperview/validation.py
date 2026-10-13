@@ -2,15 +2,17 @@
 
 import re
 from collections import Counter
-from collections.abc import Callable, Iterable
+from collections.abc import Iterable
 from dataclasses import dataclass
 from encodings import normalize_encoding
 from encodings.aliases import aliases as _CODEC_ALIASES
 from typing import Any
 
+from django.template.base import TokenType
 from django.utils.safestring import SafeData, mark_safe
 from lxml import etree
 
+from ._template_lexer import _forward_find, _LinearLexer
 from .conf import ValidationSettings, get_settings
 from .exceptions import TemplateValidationError
 from .validators import _XML_ILLEGAL_CHARACTERS
@@ -42,13 +44,9 @@ XML_ENCODING = re.compile(
 # The name comes from the document, so it is never handed to codecs.lookup, which
 # keeps every name it is given, found or not, for the life of the process.
 _ENCODING_NAME = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,63}")
-DJANGO_COMMENT = re.compile(r"{%\s*comment(?=\s|%})")
-DJANGO_ENDCOMMENT = re.compile(r"{%\s*endcomment(?=\s|%})")
-# Every construct the declaration scan acts on starts at one of these: "<!" opens a
-# comment, a CDATA section or a declaration, "<?" a processing instruction, and
-# "{#" or "{%" a Django comment, which only template source recognizes.
+# Every construct the declaration scan acts on starts at "<!", which opens a comment,
+# a CDATA section or a declaration, or at "<?", a processing instruction.
 _XML_CANDIDATE = re.compile(r"<[!?]")
-_TEMPLATE_CANDIDATE = re.compile(r"<[!?]|\{[#%]")
 
 
 def _fail(code: str, message: str) -> None:
@@ -77,58 +75,34 @@ def _parser() -> etree.XMLParser:
     )
 
 
-def _django_comment_end(
-    document: str, index: int, find: Callable[[str, int], int]
-) -> int | None:
-    if DJANGO_COMMENT.match(document, index) is None:
-        return None
-    tag_end = find("%}", index + 2)
-    if tag_end < 0:
-        return None
-    cursor = tag_end + 2
-    while cursor < len(document):
-        tag_start = find("{%", cursor)
-        if tag_start < 0:
-            return len(document)
-        tag_end = find("%}", tag_start + 2)
-        if tag_end < 0:
-            return len(document)
-        if DJANGO_ENDCOMMENT.match(document, tag_start) is not None:
-            return tag_end + 2
-        cursor = tag_end + 2
-    return len(document)
+def _template_literal_text(source: str) -> str:
+    """Join the literal text of template source that Django renders as written.
 
-
-def _inline_django_comment_end(
-    document: str, index: int, find: Callable[[str, int], int]
-) -> int | None:
-    if not document.startswith("{#", index):
-        return None
-    end = find("#}", index + 2)
-    if end < 0:
-        return None
-    newline = find("\n", index + 2)
-    if 0 <= newline < end:
-        return None
-    return end + 2
-
-
-def _forward_find(document: str) -> Callable[[str, int], int]:
-    """Return a str.find that never searches the same text twice for one marker.
-
-    The searches of each marker must start at or after the previous one. A previous
-    hit remains valid until it is consumed, and a previous miss covers every later
-    suffix, so a scan that retries a marker from every opener stays linear.
+    Django's lexer decides what a comment, a verbatim body or a tag is, and its
+    comment tag ends at the first tag named exactly endcomment, so the tokens come
+    from the same linear lexer that the Admin check uses. Everything else that
+    renders output counts as empty, because only a declaration spelled out in the
+    source can be told apart from the data that fills it in.
     """
-    positions: dict[str, int] = {}
-
-    def find(marker: str, start: int) -> int:
-        position = positions.get(marker)
-        if position is None or 0 <= position < start:
-            position = positions[marker] = document.find(marker, start)
-        return position
-
-    return find
+    tokens = _LinearLexer(source).tokenize()
+    parts = []
+    index = 0
+    while index < len(tokens):
+        token = tokens[index]
+        index += 1
+        if token.token_type is TokenType.TEXT:
+            parts.append(token.contents)
+        elif token.token_type is TokenType.BLOCK and token.contents.split(maxsplit=1)[
+            :1
+        ] == ["comment"]:
+            # An unclosed comment is Django's compile error, so the rest is skipped.
+            while index < len(tokens) and not (
+                tokens[index].token_type is TokenType.BLOCK
+                and tokens[index].contents == "endcomment"
+            ):
+                index += 1
+            index += 1
+    return "".join(parts)
 
 
 def _contains_forbidden_declaration(
@@ -141,8 +115,9 @@ def _contains_forbidden_declaration(
     """
     if "<!DOCTYPE" not in document and "<!ENTITY" not in document:
         return False
+    if template_source:
+        document = _template_literal_text(document)
     find = _forward_find(document)
-    candidate = _TEMPLATE_CANDIDATE if template_source else _XML_CANDIDATE
     index = 0
     while index < len(document):
         for opening, closing in IGNORED_BLOCKS:
@@ -151,18 +126,10 @@ def _contains_forbidden_declaration(
                 index = len(document) if end < 0 else end + len(closing)
                 break
         else:
-            comment_end = None
-            if template_source:
-                comment_end = _inline_django_comment_end(document, index, find)
-                if comment_end is None:
-                    comment_end = _django_comment_end(document, index, find)
-            if comment_end is not None:
-                index = comment_end
-            elif document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
+            if document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
                 return True
-            else:
-                following = candidate.search(document, index + 1)
-                index = len(document) if following is None else following.start()
+            following = _XML_CANDIDATE.search(document, index + 1)
+            index = len(document) if following is None else following.start()
     return False
 
 

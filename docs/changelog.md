@@ -345,6 +345,12 @@ on, and says how to migrate.
   `{% if %}` blocks, no longer fails the Admin validation request and the Admin
   save with HTTP 500. The check, the Admin form, `publish_template` and model
   validation report it as `too_deep`, "Template is nested too deeply."
+- The source check for forbidden declarations now agrees with Django about two
+  constructs. A `{% comment %}` inside a `{% verbatim %}` body hides nothing, so a
+  declaration there is rejected when the template is saved, as it was already when
+  it was served. A comment ends at the first tag named exactly `endcomment`, so a
+  declaration after `{% endcomment note %}` is hidden and the template is accepted,
+  as it renders.
 - Reaching the limit of 64 expanded literal includes is now the informational note
   `schema_static_incomplete` and no longer the error `django_include_limit`, which
   blocked the save of a template that was only too large to check completely.

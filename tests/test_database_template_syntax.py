@@ -10,12 +10,9 @@ import pytest
 from django.template import Engine, Origin, Template, TemplateSyntaxError
 from django.template.base import DebugLexer, Lexer, TokenType, tag_re
 
+from dj_hyperview._template_lexer import _LinearLexer, _tag_spans
 from dj_hyperview.contrib.database import admin_validation as scanning
-from dj_hyperview.contrib.database._template_syntax import (
-    _compile_nodelist,
-    _LinearLexer,
-    _tag_spans,
-)
+from dj_hyperview.contrib.database._template_syntax import _compile_nodelist
 
 SEEDS = range(6000)
 LEXER_ATOMS = (

@@ -16,6 +16,7 @@ from django.template.base import TokenType
 from django.template.loader_tags import IncludeNode
 from lxml import etree
 
+from dj_hyperview._template_lexer import _LinearLexer
 from dj_hyperview.conf import get_settings
 from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import (
@@ -41,7 +42,7 @@ from dj_hyperview.validation import (
     validate_template_source,
 )
 
-from ._template_syntax import _compile_nodelist, _LinearLexer
+from ._template_syntax import _compile_nodelist
 
 _STATIC_ROOT = "djhv-static-validation-root"
 _DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"

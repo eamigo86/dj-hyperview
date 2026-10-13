@@ -6,6 +6,7 @@ import random
 import uuid
 
 import pytest
+from django.template import Context, Engine, Template, TemplateSyntaxError
 from django.test import RequestFactory, override_settings
 
 import dj_hyperview.validation as validation_module
@@ -17,8 +18,6 @@ from dj_hyperview.resolver import TemplateResolver
 from dj_hyperview.validation import (
     IGNORED_BLOCKS,
     _contains_forbidden_declaration,
-    _django_comment_end,
-    _inline_django_comment_end,
     _rendered_hxml_text,
     validate_fragment_hxml,
     validate_hxml,
@@ -86,13 +85,10 @@ def test_declaration_scan_visits_only_candidate_positions(
     assert document.startswith_calls < 50
 
 
-def reference_contains_forbidden_declaration(
-    document: str, *, template_source: bool = False
-) -> bool:
-    """The scanner as it was before it jumped between candidates, one index at a time.
+def reference_contains_forbidden_declaration(document: str) -> bool:
+    """The XML scanner as it was before it jumped between candidates.
 
-    The oracle of the differential test below. The Django comment helpers are
-    shared with the implementation, so this pins only the scanning loop.
+    The oracle of the differential tests below. It tests one index at a time.
     """
     if "<!DOCTYPE" not in document and "<!ENTITY" not in document:
         return False
@@ -112,17 +108,9 @@ def reference_contains_forbidden_declaration(
                 index = len(document) if end < 0 else end + len(closing)
                 break
         else:
-            comment_end = None
-            if template_source:
-                comment_end = _inline_django_comment_end(document, index, find)
-                if comment_end is None:
-                    comment_end = _django_comment_end(document, index, find)
-            if comment_end is not None:
-                index = comment_end
-            elif document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
+            if document.startswith(("<!DOCTYPE", "<!ENTITY"), index):
                 return True
-            else:
-                index += 1
+            index += 1
     return False
 
 
@@ -149,6 +137,11 @@ SCAN_TOKENS = [
     '{% comment "note" %}',
     "{% endcomment %}",
     "{% endcomment%}",
+    "{% endcomment note %}",
+    "{% verbatim %}",
+    "{% endverbatim %}",
+    "{% verbatim n %}",
+    "{% endverbatim n %}",
     "\n",
     "\r",
     " ",
@@ -173,23 +166,76 @@ def test_declaration_scan_matches_the_character_by_character_scanner() -> None:
     """Jumping between candidates is equivalent to testing every index."""
     rng = random.Random(20261013)
     with_literal = 0
-    outcomes: set[tuple[bool, bool]] = set()
+    outcomes: set[bool] = set()
     for _ in range(4_000):
         document = random_scan_document(rng)
         with_literal += "<!DOCTYPE" in document or "<!ENTITY" in document
-        for template_source in (False, True):
-            expected = reference_contains_forbidden_declaration(
-                document, template_source=template_source
-            )
-            actual = _contains_forbidden_declaration(
-                document, template_source=template_source
-            )
-            assert actual is expected, (template_source, document)
-            outcomes.add((template_source, expected))
+        expected = reference_contains_forbidden_declaration(document)
+        assert _contains_forbidden_declaration(document) is expected, document
+        outcomes.add(expected)
 
     # The sample must reach the block-aware path and both of its answers.
     assert with_literal > 1_000
-    assert outcomes == {(False, False), (False, True), (True, False), (True, True)}
+    assert outcomes == {False, True}
+
+
+def test_template_source_scan_matches_the_text_django_renders() -> None:
+    """Django decides what a comment or a verbatim body is, not a second lexer.
+
+    Every document here compiles and holds no variable, so its rendered output is
+    exactly the text the source scan has to judge.
+    """
+    rng = random.Random(20261014)
+    engine = Engine()
+    compiled = 0
+    outcomes: set[bool] = set()
+    for _ in range(6_000):
+        document = random_scan_document(rng)
+        try:
+            rendered = Template(document, engine=engine).render(Context())
+        except TemplateSyntaxError:
+            continue
+        compiled += "<!DOCTYPE" in document or "<!ENTITY" in document
+        expected = reference_contains_forbidden_declaration(rendered)
+        actual = _contains_forbidden_declaration(document, template_source=True)
+        assert actual is expected, document
+        outcomes.add(expected)
+
+    assert compiled > 300
+    assert outcomes == {False, True}
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "{% verbatim %}{% comment %}<!DOCTYPE x>{% endcomment %}{% endverbatim %}",
+        "{% verbatim n %}{# #}<!DOCTYPE x>{% endverbatim n %}",
+    ],
+)
+def test_template_source_scan_rejects_a_declaration_django_renders(
+    source: str,
+) -> None:
+    """A verbatim body is literal text, so a comment tag inside it hides nothing."""
+    assert_validation_error(
+        "forbidden_declaration", lambda: validate_template_source(source)
+    )
+    assert "<!DOCTYPE" in Template(source, engine=Engine()).render(Context())
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "{% comment %}{% endcomment x %}<!DOCTYPE x>{% endcomment %}",
+        "{%comment%}<!DOCTYPE x>{%endcomment%}",
+        "{% verbatim %}{% endverbatim %}{% comment %}<!DOCTYPE x>{% endcomment %}",
+    ],
+)
+def test_template_source_scan_accepts_a_declaration_django_never_renders(
+    source: str,
+) -> None:
+    """Only a tag named exactly endcomment ends a comment, as in Django."""
+    assert validate_template_source(source) == source
+    assert "<!DOCTYPE" not in Template(source, engine=Engine()).render(Context())
 
 
 @pytest.mark.parametrize("max_depth", [256])

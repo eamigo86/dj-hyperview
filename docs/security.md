@@ -116,9 +116,12 @@ Declaration scanning is linear in document length, including repeated unclosed
 Django delimiters. Only the source scan recognizes Django comments: after
 rendering, values such as `{% comment %}` are literal data, not template syntax.
 XML comments, CDATA and processing instructions remain inert in both passes.
-Source inline comments follow Django's LF-only boundary; malformed block
-comments are left for template compilation to reject. Keep byte limits enabled
-as a separate bound on memory and parser work.
+The source scan reads the text Django would render, from Django's own tokens, so
+an inline comment ends at the first `#}` on its line, a `{% comment %}` block ends
+at the first tag named exactly `endcomment`, and a `{% verbatim %}` body is
+literal text in which a comment tag hides nothing. Malformed block comments are
+left for template compilation to reject. Keep byte limits enabled as a separate
+bound on memory and parser work.
 
 Configured extra schemas may use local includes, imports, and redefines within
 their own directory. Remote schema references and traversal outside that root
