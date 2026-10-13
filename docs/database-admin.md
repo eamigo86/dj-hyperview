@@ -287,7 +287,11 @@ served, so chained includes can still nest more deeply than can be rendered. The
 response lists at most 50 diagnostics, errors before
 notes, and ends with an informational `diagnostics_truncated` entry when more were
 found. Checking time grows in proportion to the size of the draft and of the
-includes it expands, which `VALIDATION.MAX_BYTES` bounds together.
+includes it expands, which `VALIDATION.MAX_BYTES` bounds together. So does the
+memory: the check works on a copy of the draft in which each Django tag and
+variable is replaced by a marker of about 18 characters, and a draft made almost
+entirely of tags shorter than that, whose copy would exceed four times
+`MAX_BYTES`, is not checked further and gets the informational note below.
 
 An informational note — **Static checks passed. Final HXML will be validated
 when served.** — is normal for dynamic templates, not a warning or a validation

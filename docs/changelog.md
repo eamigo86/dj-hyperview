@@ -64,6 +64,23 @@ This page records user-visible release changes, including unpublished attempts.
   its includes together exceed `VALIDATION.MAX_BYTES`, counted in UTF-8 bytes as the
   limit is everywhere else. A draft with 64 includes of
   a 990 KB template used 3.3 GB and now uses 79 MB.
+- Bound the memory of the Admin **Format and Validate** check. The check replaces
+  every Django tag and variable with a marker, and it lengthened the marker with
+  underscores until the draft could not contain it, so a draft chose the length:
+  `DJHVSTATICDYNAMIC`, a long run of underscores, then `{{a}}` repeated made a
+  16 MB masked copy from 18 KB (47 MiB at peak), about 1 GiB from 144 KB, and would
+  have needed about 47 GiB from 1 MB. An authorized user could therefore exhaust the
+  memory of a worker. That is a user who may use the editor, a superuser unless
+  `ADMIN.PERMISSION` allows more. The marker is now numbered, such as
+  `DJHVSTATICDYNAMIC0`, one above the highest number that follows its name in the
+  draft, so it stays under 30 characters whatever the draft holds and still never
+  occurs in it. The same 1 MB draft now uses 53 MiB at peak. The copy is also
+  bounded in itself: when it would exceed four times `VALIDATION.MAX_BYTES`, which
+  only a draft made almost entirely of tags shorter than a marker reaches (200,000
+  `{{a}}` at the default), the check is skipped for that draft with the
+  informational note `schema_static_incomplete`. The 18 KB draft above was also
+  reported as invalid XML, because the parser refused a 16 MB text node, and is now
+  checked.
 - Limit the work that unclosed template delimiters cost when a stored template is
   compiled, using the new stable validation code `max_unclosed`. Django's lexer
   reads on to the end of the line for every `{{`, `{%` or `{#` that closes no tag,

@@ -332,11 +332,13 @@ def _reference_advance(text: str, state: str) -> str:
 
 
 def _reference_scan(source: str) -> dict[str, Any]:
-    value_marker, structure_marker = "DJHVSTATICDYNAMIC", "DJHVSTATICSTRUCTURE"
-    while value_marker in source:
-        value_marker += "_"
-    while structure_marker in source:
-        structure_marker += "_"
+    def marker(name: str) -> str:
+        # One more than the highest number that follows the name in the source.
+        numbers = map(int, re.findall(name + r"(\d{1,8})", source))
+        return f"{name}{max(numbers, default=-1) + 1}"
+
+    value_marker = marker("DJHVSTATICDYNAMIC")
+    structure_marker = marker("DJHVSTATICSTRUCTURE")
     lexer = Lexer(source)
     tokens, position, lineno = [], 0, 1
     for index, piece in enumerate(tag_re.split(source)):
@@ -514,14 +516,66 @@ def test_scan_stops_at_an_unclosed_verbatim_block() -> None:
     assert scan.verbatim_line == 1
 
 
-def test_markers_stay_unique_whatever_the_underscore_runs_in_the_source() -> None:
-    source = " ".join(f"DJHVSTATICDYNAMIC{'_' * run}" for run in (0, 3, 1))
+def test_markers_number_themselves_after_the_highest_one_in_the_source() -> None:
+    source = " ".join(
+        f"DJHVSTATICDYNAMIC{suffix}" for suffix in ("", "_" * 3, "0", "7", "012")
+    )
 
     scan = scanning._scan_template(source)
 
-    assert scan.value_marker == "DJHVSTATICDYNAMIC" + "_" * 4
+    assert scan.value_marker == "DJHVSTATICDYNAMIC13"
     assert scan.value_marker not in source
-    assert scan.structure_marker == "DJHVSTATICSTRUCTURE"
+    assert scan.structure_marker == "DJHVSTATICSTRUCTURE0"
+
+
+@pytest.mark.parametrize(
+    "suffix",
+    [
+        "",
+        "_",
+        "_" * 5000,
+        "0",
+        "00",
+        "9",
+        "99999999",
+        "123456789012",
+        "9" * 5000,
+    ],
+)
+def test_markers_stay_unique_and_short_whatever_follows_the_marker_name(
+    suffix: str,
+) -> None:
+    source = (
+        f"DJHVSTATICDYNAMIC{suffix} DJHVSTATICSTRUCTURE{suffix} {{{{ a }}}} {{% b %}}"
+    )
+
+    scan = scanning._scan_template(source)
+
+    for marker, name in (
+        (scan.value_marker, "DJHVSTATICDYNAMIC"),
+        (scan.structure_marker, "DJHVSTATICSTRUCTURE"),
+    ):
+        assert marker.startswith(name) and marker not in source
+        assert len(marker) <= len(name) + 9
+    assert scan.value_marker in scan.masked and scan.structure_marker in scan.masked
+
+
+@pytest.mark.parametrize("size", [18_000, 1_000_000])
+def test_a_run_of_underscores_does_not_lengthen_the_marker_or_the_masked_text(
+    size: int,
+) -> None:
+    """The marker used to outgrow the underscores, and every token carries it."""
+    head = "DJHVSTATICDYNAMIC"
+    run = (size - len(head)) // 2
+    tokens = (size - len(head) - run) // 5
+    source = head + "_" * run + "{{a}}" * tokens
+    # Checked first: with the old marker the scan below needs gigabytes.
+    assert len(scanning._unused_marker(source, head)) < 32
+
+    scan = scanning._scan_template(source)
+
+    assert scan.value_marker == head + "0"
+    assert len(scan.masked) == len(source) + tokens * len(scan.value_marker)
 
 
 def test_declarations_are_blanked_only_when_they_close() -> None:

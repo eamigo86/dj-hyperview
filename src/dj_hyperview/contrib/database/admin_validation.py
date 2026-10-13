@@ -46,6 +46,10 @@ from ._template_syntax import _compile_nodelist
 _STATIC_ROOT = "djhv-static-validation-root"
 _DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"
 _DYNAMIC_STRUCTURE = "DJHVSTATICSTRUCTURE"
+# The masked document may grow to this many times MAX_BYTES. Only a source made mostly
+# of tokens shorter than a marker (`{{a}}` has 5 characters, a marker about 18) gets
+# there.
+_MASK_FACTOR = 4
 _XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)", re.IGNORECASE)
 _NOT_NEWLINE = re.compile(r"[^\n]")
 _SAFE_FILTER = re.compile(r"\|\s*safe\b")
@@ -144,12 +148,18 @@ def _blank_preserving_lines(value: str, marker: str = "") -> str:
 
 
 def _unused_marker(content: str, base: str) -> str:
-    """Extend a marker with underscores until the source cannot contain it."""
-    longest = max(
-        (len(match.group(1)) for match in re.finditer(f"{base}(_*)", content)),
+    """Number a marker after the highest one in the source, so it never occurs there.
+
+    The length depends on the number, not on the source: every Django token is
+    masked by one marker, so a marker that grew with the source made the masked
+    document quadratic. Only the first eight digits of a run count, which bounds the
+    number, and the next one is above them, so it cannot start the run.
+    """
+    highest = max(
+        (int(match.group(1)) for match in re.finditer(base + r"(\d{1,8})", content)),
         default=-1,
     )
-    return base + "_" * (longest + 1)
+    return f"{base}{highest + 1}"
 
 
 def _advance_xml_state(content: str, state: int, position: int, end: int) -> int:
@@ -203,6 +213,10 @@ def _blank_xml_declarations(text: str) -> str:
     return "".join(parts)
 
 
+class _MaskTooLarge(Exception):
+    """The masked document would exceed a multiple of MAX_BYTES."""
+
+
 @dataclass(frozen=True, slots=True)
 class _TemplateScan:
     """Django syntax of one source, classified by the XML around each token."""
@@ -226,6 +240,13 @@ def _scan_template(content: str) -> _TemplateScan:
     value_marker = _unused_marker(content, _DYNAMIC_VALUE)
     structure_marker = _unused_marker(content, _DYNAMIC_STRUCTURE)
     tokens = _LinearLexer(content).tokenize()
+    # A marker starts every token's replacement, so the size is known before building.
+    marker_length = max(len(value_marker), len(structure_marker))
+    if (
+        len(content) + len(tokens) * marker_length
+        > _MASK_FACTOR * get_settings().validation.max_bytes
+    ):
+        raise _MaskTooLarge
     parts: list[str] = []
     contexts: dict[int, str] = {}
     first_structure_line = verbatim_line = None
@@ -405,7 +426,10 @@ def _expand_literal_includes(
     """Resolve and recursively validate context-independent Django includes."""
     nodelist = _compile_django_source(engine, name, content)
     includes = nodelist.get_nodes_by_type(IncludeNode)
-    contexts = _scan_template(content).contexts if includes else {}
+    try:
+        contexts = _scan_template(content).contexts if includes else {}
+    except _MaskTooLarge:
+        return content, [_incomplete_schema_diagnostic(name, None)]
     replacements = []
     diagnostics = []
     for node in includes:
@@ -590,7 +614,10 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     one entry past the number the caller will show.
     """
     parser = etree.XMLParser(resolve_entities=False, no_network=True, load_dtd=False)
-    scan = _scan_template(content)
+    try:
+        scan = _scan_template(content)
+    except _MaskTooLarge:
+        return [_incomplete_schema_diagnostic(name, None)]
     value_marker, structure_marker = scan.value_marker, scan.structure_marker
     # A verbatim body is not analyzed and may supply any markup.
     has_dynamic_syntax = (

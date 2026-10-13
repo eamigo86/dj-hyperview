@@ -4,6 +4,7 @@ import gc
 import importlib
 import json
 import time
+import tracemalloc
 from types import ModuleType
 from typing import Any
 
@@ -665,6 +666,29 @@ def test_validation_reports_schema_errors_in_a_literal_include(
 
 
 @pytest.mark.django_db
+def test_markers_never_occur_in_the_source_of_a_draft_or_its_includes(
+    admin_client, tmp_path
+) -> None:
+    """The draft and the include each hold a number, and the composed source both."""
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "marked.xml").write_text(
+        f'<view xmlns="{HV}" scroll-orientation="DJHVSTATICDYNAMIC0" '
+        'id="{{ id }}" />',
+        encoding="utf-8",
+    )
+    source = 'DJHVSTATICDYNAMIC1 {% include "partials/marked.xml" %}'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert ("partials/marked.xml", "schema_attribute_value") in [
+        (item["template"], item["code"]) for item in result["diagnostics"]
+    ]
+
+
+@pytest.mark.django_db
 def test_validation_reports_django_syntax_in_a_literal_include(
     admin_client, tmp_path
 ) -> None:
@@ -915,6 +939,12 @@ def test_validation_rejects_statically_visible_child_order(admin_client) -> None
         (
             '<view xmlns="https://hyperview.org/hyperview" '
             'scroll-orientation="DJHVSTATICDYNAMIC" />',
+            "schema_attribute_value",
+        ),
+        (
+            # The marker is numbered after the highest one in the source.
+            '<view xmlns="https://hyperview.org/hyperview" '
+            'scroll-orientation="DJHVSTATICDYNAMIC0" id="{{ id }}" />',
             "schema_attribute_value",
         ),
         (
@@ -1393,6 +1423,87 @@ def test_validation_scans_unterminated_constructs_in_linear_time(
 
     assert [item["code"] for item in result["diagnostics"]] == expected
     assert time.perf_counter() - started < 10  # 30 to 50 s before
+
+
+def _marker_name_then_underscores_then_tokens(size: int) -> str:
+    """The source that made the marker, and so the masked document, grow with it."""
+    head = _static_module()._DYNAMIC_VALUE
+    run = (size - len(head)) // 2
+    return head + "_" * run + "{{a}}" * ((size - len(head) - run) // 5)
+
+
+@pytest.mark.parametrize(
+    ("size", "limit"), [(18_000, 5 * 2**20), (1_000_000, 100 * 2**20)]
+)
+def test_static_check_memory_does_not_depend_on_underscores_after_the_marker_name(
+    size: int, limit: int
+) -> None:
+    """The marker used to grow with them, and every Django token carries one."""
+    module = _static_module()
+    source = _marker_name_then_underscores_then_tokens(size)
+    # Checked first: with the old marker the call below needs 31 MiB at 18 KB, and
+    # about 47 GiB at 1 MB.
+    assert len(module._unused_marker(source, module._DYNAMIC_VALUE)) < 32
+
+    tracemalloc.start()
+    try:
+        result = module._static_schema_diagnostics("screens/draft.xml", source)
+        peak = tracemalloc.get_traced_memory()[1]
+    finally:
+        tracemalloc.stop()
+
+    assert result == []
+    assert peak < limit
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_does_not_report_a_syntax_error_for_the_marker_amplifier() -> None:
+    """The 16 MB text node that the old marker produced was refused by the parser."""
+    source = _marker_name_then_underscores_then_tokens(18_000)
+
+    result = _static_module().validate_draft_source("screens/draft.xml", source)
+
+    assert result == {"ok": True, "diagnostics": []}
+
+
+def _incomplete(result: dict[str, Any]) -> list[tuple[str, str, int | None]]:
+    return [(i["code"], i["severity"], i["line"]) for i in result["diagnostics"]]
+
+
+@override_settings(
+    HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": {"MAX_BYTES": 10_000}}
+)
+@pytest.mark.parametrize(
+    "source",
+    [
+        "{{a}}" * 2_000,
+        # The scan that finds the include contexts is bounded as well.
+        '{% include "partials/missing.xml" %}' + "{{a}}" * 1_990,
+    ],
+    ids=["tokens", "tokens-and-include"],
+)
+def test_a_masked_document_beyond_four_times_max_bytes_is_not_built(
+    monkeypatch, source: str
+) -> None:
+    """Tokens shorter than their marker would multiply the source about 4.6 times."""
+    _forbid(monkeypatch, "_blank_xml_declarations")
+
+    result = _static_module().validate_draft_source("screens/draft.xml", source)
+
+    assert result["ok"] is True
+    assert _incomplete(result) == [("schema_static_incomplete", "info", None)]
+
+
+@override_settings(
+    HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": {"MAX_BYTES": 10_000}}
+)
+def test_a_masked_document_within_the_bound_is_checked_as_before() -> None:
+    source = f'<view xmlns="{HV}">' + "<text>{{ v }}</text>" * 400 + "</view>"
+    assert len(source) < 10_000
+
+    result = _static_module().validate_draft_source("screens/draft.xml", source)
+
+    assert result == {"ok": True, "diagnostics": []}
 
 
 @pytest.mark.django_db
