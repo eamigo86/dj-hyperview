@@ -577,7 +577,7 @@ def test_nesting_over_the_limit_is_too_deep_before_rendering_can_fail(
 
 @pytest.mark.parametrize("tag", NESTED_BLOCKS)
 def test_nesting_far_over_the_limit_is_too_deep_instead_of_a_crash(tag: str) -> None:
-    """A filter in an opening tag raised TypeError at about 495 levels, not too_deep."""
+    """A filter in an opening tag raised TypeError at about 490 levels, not too_deep."""
     from django.core.exceptions import ValidationError
 
     from dj_hyperview.contrib.database.validators import (

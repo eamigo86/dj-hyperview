@@ -274,7 +274,7 @@ on, and says how to migrate.
   check, the Admin form, `publish_template` and model validation report it as
   `too_deep`, "Template is nested too deeply." The levels are counted while the
   source is parsed, so an empty innermost block counts, and a filter in an opening
-  tag, such as `{% if a|upper %}`, no longer turns the failure at about 495 levels
+  tag, such as `{% if a|upper %}`, no longer turns the failure at about 490 levels
   into a `TypeError` and HTTP 500. For a literal include target the Admin reports
   `too_deep` for the target. The limit applies to each template on its own, so
   chained includes can still nest more deeply than can be rendered. **A stored
