@@ -6,10 +6,12 @@ touch these tests; they fail only when a safety property is lost.
 """
 
 import re
+import tomllib
 from pathlib import Path
 
 import pytest
 import yaml
+from packaging.version import Version
 
 WORKFLOW_DIR = Path(__file__).parents[1] / ".github" / "workflows"
 WORKFLOWS = sorted(WORKFLOW_DIR.glob("*.yml"))
@@ -20,6 +22,18 @@ PUBLISHING_SCOPES = {
     ("release.yml", "pages"): {"pages", "id-token"},
 }
 FULL_SHA_PIN = re.compile(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}")
+PROJECT_VERSION = tomllib.loads(
+    (Path(__file__).parents[1] / "pyproject.toml").read_text()
+)["project"]["version"]
+# What a green quality and packaging job has to run, whatever its step layout.
+CI_GATES = (
+    "uv lock --check",
+    "ruff check",
+    "ruff format --check",
+    "tools.package_guard",
+    "validate_hxml",  # the wheel smoke outside the checkout
+    "HyperviewAceWidget",  # the editor profile smoke
+)
 
 
 def _load(path: Path) -> dict:
@@ -159,3 +173,66 @@ def test_release_downloads_only_artifacts_that_an_earlier_job_uploads() -> None:
 
     assert downloaded
     assert downloaded <= uploaded
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
+def test_no_step_can_fail_without_failing_the_run(path: Path) -> None:
+    jobs = _load(path)["jobs"].values()
+    swallowed = [
+        unit.get("name") or unit.get("run") or unit.get("uses")
+        for job in jobs
+        for unit in (job, *job.get("steps", []))
+        if unit.get("continue-on-error") == "true"
+        or re.search(r"\|\|\s*true\b", unit.get("run", ""))
+    ]
+
+    assert swallowed == []
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
+def test_no_workflow_triggers_on_pull_request_target(path: Path) -> None:
+    assert "pull_request_target" not in str(_load(path)["on"])
+
+
+def test_publishing_to_pypi_and_pages_waits_for_a_deployment_environment() -> None:
+    jobs = _workflow("release.yml")["jobs"]
+
+    assert all(jobs[name].get("environment") for name in ("pypi", "pages"))
+
+
+def _marks_prerelease(tag: str) -> bool:
+    """Evaluate the release's prerelease expression for a tag, as Actions does."""
+    steps = _workflow("release.yml")["jobs"]["github-release"]["steps"]
+    expression = next(
+        step["with"]["prerelease"]
+        for step in steps
+        if "prerelease" in step.get("with", {})
+    )
+    needles = re.findall(r"contains\(github\.ref_name, '(\w+)'\)", expression)
+    terms = [f"contains(github.ref_name, '{needle}')" for needle in needles]
+    # Anything but a plain chain of contains() calls needs a new evaluator.
+    assert expression == "${{ " + " || ".join(terms) + " }}"
+    # contains() compares strings without regard to case.
+    return any(needle.lower() in tag.lower() for needle in needles)
+
+
+@pytest.mark.parametrize(
+    "tag",
+    [
+        f"v{PROJECT_VERSION}",
+        "v1.0.0a1",
+        "v1.0.0b2",
+        "v1.0.0rc1",
+        "v1.0.0.dev1",
+        "v1.0.0",
+        "v1.2.3.post1",
+    ],
+)
+def test_release_is_marked_prerelease_exactly_when_the_version_is(tag: str) -> None:
+    assert _marks_prerelease(tag) == Version(tag.removeprefix("v")).is_prerelease
+
+
+def test_ci_still_runs_the_quality_and_packaging_gates() -> None:
+    commands = "\n".join(step.get("run", "") for step in _steps(_workflow("ci.yml")))
+
+    assert [gate for gate in CI_GATES if gate not in commands] == []
