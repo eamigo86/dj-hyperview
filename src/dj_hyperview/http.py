@@ -215,6 +215,18 @@ class _HyperviewBody:
 
     @property
     def content(self) -> bytes:
+        """Return the validated body, in its gzip form when one was assigned.
+
+        Assigning a value validates the whole candidate before it replaces the
+        stored bytes, so a rejected value leaves the response unchanged.
+
+        Returns:
+            The body bytes, or empty bytes when a HEAD request suppresses transport.
+
+        Raises:
+            ContentNotRenderedError: If a template response is not rendered yet.
+            TemplateValidationError: If the body does not match the HTTP status.
+        """
         content = self._body_content()
         if self._head_suppressed:
             return b""
@@ -222,6 +234,11 @@ class _HyperviewBody:
 
     @property
     def text(self) -> str:
+        """Return the body decoded as UTF-8.
+
+        Returns:
+            The decoded body.
+        """
         return self.content.decode("utf-8")
 
     @content.setter
@@ -260,6 +277,14 @@ class _HyperviewBody:
         return content
 
     def __iter__(self) -> Iterator[bytes]:
+        """Iterate over the one chunk to send, after the transport checks.
+
+        Returns:
+            An iterator over the guarded body bytes.
+
+        Raises:
+            TemplateValidationError: If Content-Encoding does not match the body.
+        """
         return iter((self._emission_content(),))
 
     def serialize(self) -> bytes:
@@ -274,9 +299,25 @@ class _HyperviewBody:
     __bytes__ = serialize
 
     def write(self, content: _Content) -> None:
+        """Append content to the body, validating the complete document first.
+
+        Args:
+            content: Text, bytes, or an iterable of chunks to append.
+
+        Raises:
+            TemplateValidationError: If the resulting document is not valid.
+        """
         self._set_candidate(self._candidate(content, prefix=self._body_content()))
 
     def writelines(self, lines: Iterable[_Chunk]) -> None:
+        """Append chunks to the body, validating the complete document first.
+
+        Args:
+            lines: The chunks to append.
+
+        Raises:
+            TemplateValidationError: If the resulting document is not valid.
+        """
         self._set_candidate(self._candidate(lines, prefix=self._body_content()))
 
 
