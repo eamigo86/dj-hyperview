@@ -1,6 +1,5 @@
 """HTTP responses for Hyperview markup."""
 
-import codecs
 import re
 import zlib
 from collections.abc import Iterable, Mapping, Sequence
@@ -18,6 +17,7 @@ from .exceptions import TemplateValidationError
 from .validation import (
     ILLEGAL_CHARACTERS_MESSAGE,
     _is_current_hxml_result,
+    _is_utf8_encoding_name,
     _rendered_hxml_text,
     _validate_hxml_result,
     _ValidatedHxml,
@@ -47,12 +47,7 @@ def _normalized_response_metadata(
 ) -> tuple[str | None, str | None]:
     media_type, parameters = parse_header_parameters(content_type or "")
     for declared in (charset or "utf-8", parameters.get("charset", "utf-8")):
-        try:
-            encoding = codecs.lookup(declared).name
-        except (LookupError, ValueError) as error:
-            # A NUL or a lone surrogate raises ValueError, not LookupError.
-            raise ValueError("Hyperview responses require UTF-8") from error
-        if encoding != "utf-8":
+        if not _is_utf8_encoding_name(declared):
             raise ValueError("Hyperview responses require UTF-8")
     normalized_media_type = _HYPERVIEW_MEDIA_TYPES.get(media_type.casefold())
     if normalized_media_type is None:

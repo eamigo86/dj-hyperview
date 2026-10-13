@@ -1,10 +1,11 @@
 """Safe validation for rendered Hyperview XML."""
 
-import codecs
 import re
 from collections import Counter
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass
+from encodings import normalize_encoding
+from encodings.aliases import aliases as _CODEC_ALIASES
 from typing import Any
 
 from django.utils.safestring import SafeData, mark_safe
@@ -38,8 +39,8 @@ XML_ENCODING = re.compile(
     re.IGNORECASE,
 )
 # The EncName production of XML 1.0, capped at a length no codec name reaches.
-# codecs.lookup keeps every name it is given for the life of the process, so a
-# declaration must not be able to choose how many, or how long, those names are.
+# The name comes from the document, so it is never handed to codecs.lookup, which
+# keeps every name it is given, found or not, for the life of the process.
 _ENCODING_NAME = re.compile(r"[A-Za-z][A-Za-z0-9._-]{0,63}")
 DJANGO_COMMENT = re.compile(r"{%\s*comment(?=\s|%})")
 DJANGO_ENDCOMMENT = re.compile(r"{%\s*endcomment(?=\s|%})")
@@ -165,22 +166,33 @@ def _contains_forbidden_declaration(
     return False
 
 
+def _is_utf8_encoding_name(name: str) -> bool:
+    """Decide whether an encoding name selects UTF-8, without a codec lookup.
+
+    The registry resolves a name by normalizing it and reading the alias table
+    that this function reads too, so both give the same answer for every name of
+    the XML grammar. A name outside that grammar, such as one with a NUL or a
+    lone surrogate, is never UTF-8, and no name is remembered.
+
+    Args:
+        name: Encoding name taken from a document or a header.
+
+    Returns:
+        Whether the name is a spelling of UTF-8.
+    """
+    if not _ENCODING_NAME.fullmatch(name):
+        return False
+    key = normalize_encoding(name).lower()
+    resolved = _CODEC_ALIASES.get(key) or _CODEC_ALIASES.get(key.replace(".", "_"))
+    return (resolved or key) == "utf_8"
+
+
 def _encode_utf8(document: str) -> bytes:
     declaration = XML_ENCODING.match(document)
-    if declaration is not None:
-        name = declaration.group(2)
-        try:
-            # A NUL or a lone surrogate would raise ValueError; the shape check
-            # keeps both, and every other odd name, away from the lookup.
-            encoding = (
-                codecs.lookup(name).name if _ENCODING_NAME.fullmatch(name) else None
-            )
-        except LookupError:
-            encoding = None
-        if encoding != "utf-8":
-            raise TemplateValidationError(
-                "invalid_encoding", "XML declaration must use UTF-8"
-            ) from None
+    if declaration is not None and not _is_utf8_encoding_name(declaration.group(2)):
+        raise TemplateValidationError(
+            "invalid_encoding", "XML declaration must use UTF-8"
+        )
     try:
         return document.encode()
     except UnicodeEncodeError as error:

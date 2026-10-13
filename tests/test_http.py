@@ -1,3 +1,6 @@
+import encodings
+import uuid
+
 import pytest
 from django.core.exceptions import ImproperlyConfigured
 from django.template import TemplateDoesNotExist
@@ -761,6 +764,34 @@ def test_unlookupable_response_encoding_is_the_same_typed_failure(where, name):
         HyperviewResponse(VALID_HXML, **options)
 
     assert str(error.value) == "Hyperview responses require UTF-8"
+
+
+@pytest.mark.parametrize("where", ["argument", "content_type"])
+def test_distinct_charset_names_never_grow_the_codec_cache(where):
+    """A charset is decided from the alias table, not remembered by codecs.lookup."""
+    before = len(encodings._cache)
+    unique = uuid.uuid4().hex
+
+    for index in range(200):
+        name = f"zz{unique}{index}"
+        options = (
+            {"charset": name}
+            if where == "argument"
+            else {"content_type": f"application/xml; charset={name}"}
+        )
+        with pytest.raises(ValueError, match="UTF-8"):
+            HyperviewResponse(VALID_HXML, **options)
+
+    assert len(encodings._cache) == before
+
+
+@pytest.mark.parametrize("name", ["UTF-8", "utf8", "U8", "utf_8", "cp65001"])
+def test_every_spelling_of_utf8_is_still_a_valid_response_charset(name):
+    response = HyperviewResponse(
+        VALID_HXML, content_type=f"application/xml; charset={name}"
+    )
+
+    assert response.charset == "utf-8"
 
 
 def test_overridden_rendered_content_cannot_bypass_final_validation():

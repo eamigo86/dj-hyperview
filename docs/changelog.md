@@ -394,13 +394,19 @@ on, and says how to migrate.
   `validate_template_source`, `HyperviewResponse` and the template loader leaked a
   bare `ValueError` or `UnicodeEncodeError` that no `TemplateValidationError`
   handler caught, and `publish_template`, model validation and the Admin form raised
-  it instead of `ValidationError`. The grammar and length checks run before any
-  codec lookup. Python keeps every name it looks up for the life of the process, so
-  each distinct name in a declaration used to add an entry to a cache that is never
-  emptied: 5,000 distinct names added 5,000 entries, and 20 names of 200 KB each kept
-  4.2 MB. No valid name is affected, but a spelling that only the lookup's own
-  normalization accepted, such as `utf 8` or a trailing space, is now rejected here
-  instead of failing later in the parser.
+  it instead of `ValidationError`. The name is now decided from the alias table of
+  Python's `encodings` package, which is how the registry resolves it, and never
+  passed to `codecs.lookup`. Python keeps every name it looks up, found or not, for
+  the life of the process, so each distinct name in a declaration used to add an
+  entry to a cache that is never emptied: 5,000 distinct names added 5,000 entries,
+  20 names of 200 KB each kept 4.2 MB, and valid-looking names such as `zz0` to
+  `zz4999` still added 5,000 after a grammar check alone. Every spelling of UTF-8
+  that the registry accepts and the grammar allows is still accepted, for example
+  `utf-8`, `UTF8`, `u8`, `utf` and `cp65001`; a spelling that only the lookup's own
+  normalization accepted, such as `utf 8` or a trailing space, is rejected. The
+  `charset` argument of a response and the `charset` parameter of its `Content-Type`
+  follow the same rule, so a response with such a spelling raises the usual
+  `ValueError("Hyperview responses require UTF-8")`.
 - `HyperviewResponse` and the other response classes now raise their usual
   `ValueError("Hyperview responses require UTF-8")` for a `charset`, or a
   `Content-Type` charset parameter, that contains a NUL or a lone surrogate. They let

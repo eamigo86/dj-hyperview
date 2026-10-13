@@ -163,7 +163,9 @@ character count with `MAX_BYTES` before it encodes the text, so it still reports
 that names a non-UTF-8 encoding, or a name that is not a valid XML encoding name
 (letters, digits, `.`, `_` and `-`, starting with a letter, at most 64 characters)
 or that no codec knows, such as one containing NUL, still reports
-`invalid_encoding` first, before any codec lookup.
+`invalid_encoding` first. The name is compared with the alias table of Python's
+`encodings` package and never passed to `codecs.lookup`, which remembers every name
+it sees for the life of the process; a document therefore cannot grow that cache.
 
 Reject the text where you accept it, or neutralize it where you render it:
 

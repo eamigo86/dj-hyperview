@@ -1,5 +1,9 @@
+import codecs
+import encodings
+import encodings.aliases
+import pkgutil
 import random
-from types import SimpleNamespace
+import uuid
 
 import pytest
 from django.test import RequestFactory, override_settings
@@ -310,21 +314,10 @@ def test_encoding_names_that_cannot_be_looked_up_are_invalid_encoding(
     ],
 )
 @pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
-def test_malformed_or_oversized_encoding_names_never_reach_the_codec_registry(
-    monkeypatch: pytest.MonkeyPatch, validator, encoding: str
+def test_malformed_or_oversized_encoding_names_are_rejected_by_their_shape(
+    validator, encoding: str
 ) -> None:
-    """Python keeps every name it looks up for the life of the process.
-
-    A name that XML does not allow, or that is longer than any codec name, is
-    rejected by its shape, so hostile declarations cannot grow that cache.
-    """
-
-    def forbidden(name: str) -> None:
-        raise AssertionError("codecs.lookup must not see an invalid name")
-
-    monkeypatch.setattr(
-        validation_module, "codecs", SimpleNamespace(lookup=forbidden), raising=True
-    )
+    """A name that XML does not allow, or that no codec name reaches, is rejected."""
     document = (
         f'<?xml version="1.0" encoding="{encoding}"?>'
         "<view xmlns='https://hyperview.org/hyperview' />"
@@ -334,6 +327,105 @@ def test_malformed_or_oversized_encoding_names_never_reach_the_codec_registry(
 
     assert error.message == "XML declaration must use UTF-8"
     assert error.__cause__ is None
+
+
+@pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
+def test_distinct_encoding_names_never_grow_the_codec_cache(validator) -> None:
+    """Python keeps every name it looks up for the life of the process.
+
+    A declaration chooses its encoding name, so even a well-formed name that no
+    codec has must not be looked up: 5,000 of them used to add 5,000 entries to a
+    cache that is never emptied.
+    """
+    before = len(encodings._cache)
+    unique = uuid.uuid4().hex
+
+    for index in range(200):
+        document = (
+            f'<?xml version="1.0" encoding="zz{unique}{index}"?>'
+            "<view xmlns='https://hyperview.org/hyperview' />"
+        )
+        with pytest.raises(TemplateValidationError):
+            validator(document)
+
+    assert len(encodings._cache) == before
+
+
+@pytest.mark.parametrize(
+    "encoding",
+    [
+        "UTF-8",
+        "utf-8",
+        "utf8",
+        "UTF_8",
+        "U8",
+        "utf",
+        "cp65001",
+        "utf8_ucs2",
+        "utf8.ucs2",
+    ],
+)
+def test_utf8_spellings_are_decided_without_a_codec_lookup(
+    monkeypatch: pytest.MonkeyPatch, encoding: str
+) -> None:
+    looked_up: list[str] = []
+    real_lookup = codecs.lookup
+
+    def record(name: str) -> codecs.CodecInfo:
+        looked_up.append(name)
+        return real_lookup(name)
+
+    monkeypatch.setattr(codecs, "lookup", record)
+    document = (
+        f'<?xml version="1.0" encoding="{encoding}"?>'
+        "<view xmlns='https://hyperview.org/hyperview' />"
+    )
+
+    assert validate_hxml(document) == document
+    assert encoding not in looked_up
+
+
+def _spellings() -> set[str]:
+    """Every alias, codec module and common respelling that fits the XML grammar."""
+    names = set(encodings.aliases.aliases) | set(encodings.aliases.aliases.values())
+    names |= {info.name for info in pkgutil.iter_modules(encodings.__path__)}
+    names |= {"utf-8", "UTF-8", "Utf-8", "utf_8_sig", "utf-16", "latin-1", "u8"}
+    names |= {"us-ascii", "ascii", "iso-8859-1", "utf--8", "utf-8-", "utf8.ucs2"}
+    spellings = set()
+    for name in names:
+        for variant in (
+            name,
+            name.upper(),
+            name.title(),
+            name.replace("_", "-"),
+            name.replace("_", "."),
+            name.replace("-", "_"),
+        ):
+            if validation_module._ENCODING_NAME.fullmatch(variant):
+                spellings.add(variant)
+    return spellings
+
+
+def test_utf8_decision_matches_what_the_codec_registry_decides() -> None:
+    """The alias table gives the same answer as codecs.lookup for every spelling."""
+
+    def by_lookup(name: str) -> bool:
+        try:
+            return codecs.lookup(name).name == "utf-8"
+        except LookupError:
+            return False
+
+    spellings = _spellings()
+    assert len(spellings) > 1_000
+    for name in spellings:
+        assert validation_module._is_utf8_encoding_name(name) == by_lookup(name), name
+
+
+@pytest.mark.parametrize(
+    "name", ["latin-1", "iso-8859-1", "us-ascii", "ascii", "utf-16", "utf-8-sig"]
+)
+def test_other_encodings_are_not_utf8(name: str) -> None:
+    assert validation_module._is_utf8_encoding_name(name) is False
 
 
 @pytest.mark.parametrize("encoding", ["UTF-8", "utf-8", "utf8", "UTF_8", "U8"])
