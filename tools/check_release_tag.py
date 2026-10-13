@@ -9,7 +9,7 @@ from pathlib import Path
 
 from packaging.version import InvalidVersion, Version
 
-PROJECT_FILE = Path("pyproject.toml")
+PROJECT_FILE = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
 
 def _project_version(project_file: Path) -> str | None:

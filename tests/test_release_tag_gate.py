@@ -1,6 +1,7 @@
 """Release tag and project-version gate tests."""
 
 import runpy
+import subprocess
 import sys
 import tomllib
 from importlib import import_module
@@ -129,6 +130,21 @@ def test_release_tag_module_entrypoint_uses_process_arguments(
         )
 
     assert caught.value.code == 0
+
+
+def test_release_tag_gate_finds_the_project_from_any_working_directory(
+    tmp_path: Path,
+) -> None:
+    """The tool reads its own repository's metadata, not the current directory's."""
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    tag = f"v{project['project']['version']}"
+    script = ROOT / "tools" / "check_release_tag.py"
+
+    result = subprocess.run(
+        [sys.executable, str(script), tag], cwd=tmp_path, capture_output=True
+    )
+
+    assert (result.returncode, result.stderr) == (0, b"")
 
 
 def test_repository_release_version_is_synchronized() -> None:
