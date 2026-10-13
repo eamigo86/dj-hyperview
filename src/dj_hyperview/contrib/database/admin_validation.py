@@ -488,6 +488,9 @@ def _expand_literal_includes(
             # by the include that holds them.
             diagnostics.append(_django_syntax_diagnostic(target, error))
             continue
+        except RecursionError:
+            diagnostics.append(_too_deep_diagnostic(target))
+            continue
         diagnostics.extend(child_diagnostics)
         if child_hxml_context:
             diagnostics.extend(_static_schema_diagnostics(resolved.name, expanded))
@@ -785,14 +788,14 @@ def validation_payload(request: HttpRequest) -> dict[str, str] | JsonResponse:
     return values
 
 
+def _too_deep_diagnostic(name: str) -> dict[str, Any]:
+    """Report source that nests too deeply to compile or to render."""
+    return _diagnostic("too_deep", "Template is nested too deeply.", template=name)
+
+
 def _too_deep(name: str) -> dict[str, Any]:
-    """Report source that Django's recursive parser cannot compile."""
-    return {
-        "ok": False,
-        "diagnostics": [
-            _diagnostic("too_deep", "Template is nested too deeply.", template=name)
-        ],
-    }
+    """Report a draft that nests too deeply to compile or to render."""
+    return {"ok": False, "diagnostics": [_too_deep_diagnostic(name)]}
 
 
 def _limit_diagnostics(diagnostics: list[dict[str, Any]]) -> list[dict[str, Any]]:

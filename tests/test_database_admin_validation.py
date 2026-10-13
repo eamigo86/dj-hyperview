@@ -16,7 +16,7 @@ from dj_hyperview import validate_hyperview_schema
 from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.validation import validate_hxml
-from tests.test_database_template_syntax import nested
+from tests.test_database_template_syntax import NESTED_BLOCKS, nested
 from tests.test_validation_hardening import (
     HYPERVIEW_XMLNS,
     prefixed_namespaces,
@@ -1701,6 +1701,23 @@ def test_validation_reports_nesting_that_rendering_cannot_survive_as_too_deep(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize("tag", NESTED_BLOCKS)
+def test_validation_reports_deep_nesting_as_too_deep_whatever_the_opening_tag(
+    admin_client, tag: str
+) -> None:
+    """Filters in the opening tags used to end the request with HTTP 500."""
+    source = f"<view xmlns='{HV}'>" + nested(tag, 600) + "</view>"
+
+    result = _validate(admin_client, source)
+
+    assert [(item["code"], item["template"]) for item in result["diagnostics"]] == [
+        ("too_deep", "screens/draft.xml")
+    ]
+    assert _static_module().validate_draft_source("screens/draft.xml", source) == result
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_admin_save_reports_excessive_nesting_on_the_content_field(
     admin_client, finalized_garbage
 ) -> None:
@@ -1877,6 +1894,29 @@ def test_include_syntax_error_is_reported_for_the_target_and_expansion_goes_on(
         ("partials/bad_style.xml", "schema_attribute"),
         ("screens/draft.xml", "schema_static_incomplete"),
     ]
+
+
+@pytest.mark.django_db
+def test_include_nested_too_deeply_is_reported_for_the_target_and_expansion_goes_on(
+    admin_client, tmp_path
+) -> None:
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "deep.xml").write_text(nested("if-filter", 101), encoding="utf-8")
+    (partials / "bad_style.xml").write_text(
+        f'<style xmlns="{HV}" id="card" kk="1" />', encoding="utf-8"
+    )
+    source = '{% include "partials/deep.xml" %}{% include "partials/bad_style.xml" %}'
+
+    with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
+        result = _validate(admin_client, source)
+
+    assert [(item["template"], item["code"]) for item in result["diagnostics"]] == [
+        ("partials/deep.xml", "too_deep"),
+        ("partials/bad_style.xml", "schema_attribute"),
+        ("screens/draft.xml", "schema_static_incomplete"),
+    ]
+    assert result["ok"] is False
 
 
 NAMESPACE_BOUNDARY_PASSES = [

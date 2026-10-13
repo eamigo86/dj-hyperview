@@ -267,11 +267,18 @@ on, and says how to migrate.
   fails the Admin validation request and the Admin save with HTTP 500, and can no
   longer be saved only to fail with `RecursionError` when it is served. Django's
   parser compiles about 490 nested `{% if %}` blocks, but rendering recurses three
-  frames for each and fails at about 330 in an empty stack and at about 230 inside
-  a request, so the earlier check accepted source that could not render. The check,
-  the Admin form, `publish_template` and model validation report it as `too_deep`,
-  "Template is nested too deeply." **A stored template that nests blocks more than
-  100 levels deep is now rejected when it is saved; flatten it.**
+  frames for each and fails at about 330 in an empty stack and at about 230 below
+  300 frames of caller, where a view in a plain Django request was measured 8 to 24
+  frames deep, so the earlier check accepted source that could not render. The
+  check, the Admin form, `publish_template` and model validation report it as
+  `too_deep`, "Template is nested too deeply." The levels are counted while the
+  source is parsed, so an empty innermost block counts, and a filter in an opening
+  tag, such as `{% if a|upper %}`, no longer turns the failure at about 495 levels
+  into a `TypeError` and HTTP 500. For a literal include target the Admin reports
+  `too_deep` for the target. The limit applies to each template on its own, so
+  chained includes can still nest more deeply than can be rendered. **A stored
+  template that nests blocks more than 100 levels deep is now rejected when it is
+  saved; flatten it.**
 - The source check for forbidden declarations now agrees with Django about two
   constructs. A `{% comment %}` inside a `{% verbatim %}` body hides nothing, so a
   declaration there is rejected when the template is saved, as it was already when

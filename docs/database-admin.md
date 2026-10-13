@@ -276,9 +276,15 @@ reports `max_unclosed` for a draft, or a literal include target, whose unclosed
 it when served. Because the source still holds every branch of a conditional, the
 counts can exceed those of any single rendered document. Source that nests blocks,
 such as `{% if %}`, more than 100 levels deep is reported as `too_deep` instead of
-failing the request: Django's recursive parser compiles about 490 levels, but
-rendering fails at about 330 in an empty stack, so deeper source could be saved and
-then fail when served. The response lists at most 50 diagnostics, errors before
+failing the request, whether or not the innermost block holds anything and whatever
+filters the opening tags carry. In a literal include target the diagnostic names the
+target. Django's recursive parser compiles about 490 levels, but rendering fails at
+about 330 in an empty stack and at about 230 below 300 frames of caller, where a view
+in a plain Django request was measured 8 to 24 frames deep, so deeper source could be
+saved and then fail when served. The limit applies to each template on its own: when
+a template includes another, the depth of the included one adds to its own as it is
+served, so chained includes can still nest more deeply than can be rendered. The
+response lists at most 50 diagnostics, errors before
 notes, and ends with an informational `diagnostics_truncated` entry when more were
 found. Checking time grows in proportion to the size of the draft and of the
 includes it expands, which `VALIDATION.MAX_BYTES` bounds together.

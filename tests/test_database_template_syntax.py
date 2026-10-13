@@ -512,6 +512,12 @@ NESTED_BLOCKS = {
     "with": ("{% with b=a %}", "{% endwith %}"),
     "spaceless": ("{% spaceless %}", "{% endspaceless %}"),
     "autoescape": ("{% autoescape on %}", "{% endautoescape %}"),
+    # Django checks a filter's arguments with inspect, which turns a RecursionError
+    # into a TypeError.
+    "if-filter": ("{% if a|upper %}", "{% endif %}"),
+    "filter": ("{% filter lower %}", "{% endfilter %}"),
+    "with-filter": ("{% with b=a|upper %}", "{% endwith %}"),
+    "for-filter": ("{% for x in a|slice:':1' %}", "{% endfor %}"),
 }
 
 
@@ -558,6 +564,70 @@ def test_nesting_over_the_limit_is_too_deep_before_rendering_can_fail(
         validate_stored_template_source(nested(tag, _MAX_NESTING + 1))
 
     assert captured.value.code == "too_deep"
+
+
+@pytest.mark.parametrize("tag", NESTED_BLOCKS)
+def test_nesting_far_over_the_limit_is_too_deep_instead_of_a_crash(tag: str) -> None:
+    """A filter in an opening tag raised TypeError at about 495 levels, not too_deep."""
+    from django.core.exceptions import ValidationError
+
+    from dj_hyperview.contrib.database.validators import (
+        validate_stored_template_source,
+    )
+
+    with pytest.raises(ValidationError) as captured:
+        validate_stored_template_source(nested(tag, 600))
+
+    assert captured.value.code == "too_deep"
+
+
+@pytest.mark.parametrize("body", ["<view />", ""], ids=["with-content", "empty"])
+def test_nesting_is_capped_at_100_levels_whatever_the_innermost_body_holds(
+    body: str,
+) -> None:
+    """The limit is pinned here, so a change to _MAX_NESTING has to change this."""
+    from django.core.exceptions import ValidationError
+
+    from dj_hyperview.contrib.database.validators import (
+        validate_stored_template_source,
+    )
+
+    def source(depth: int) -> str:
+        return "{% if a %}" * depth + body + "{% endif %}" * depth
+
+    validate_stored_template_source(source(100))
+    with pytest.raises(ValidationError) as captured:
+        validate_stored_template_source(source(101))
+    assert captured.value.code == "too_deep"
+
+
+def test_a_recursion_error_that_django_turns_into_a_type_error_is_still_recursion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """inspect.getfullargspec raises TypeError from the RecursionError it caught."""
+
+    def exhausted(self: object, token: str) -> None:
+        try:
+            raise RecursionError
+        except RecursionError as error:
+            raise TypeError("unsupported callable") from error
+
+    monkeypatch.setattr("django.template.base.Parser.compile_filter", exhausted)
+
+    with pytest.raises(RecursionError):
+        _compile_nodelist(Engine(), "{{ a|upper }}", Origin("hyperview:x"))
+
+
+def test_an_unrelated_type_error_is_not_mistaken_for_recursion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def broken(self: object, token: str) -> None:
+        raise TypeError("not about recursion")
+
+    monkeypatch.setattr("django.template.base.Parser.compile_filter", broken)
+
+    with pytest.raises(TypeError, match="not about recursion"):
+        _compile_nodelist(Engine(), "{{ a|upper }}", Origin("hyperview:x"))
 
 
 def test_an_else_branch_does_not_deepen_the_nesting() -> None:
