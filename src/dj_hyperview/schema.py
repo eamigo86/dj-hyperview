@@ -527,6 +527,11 @@ def _active_catalog(
 def _validate_schema_root(root: Any, validator: Any) -> None:
     """Validate one already guarded XML tree without parsing a second time.
 
+    Validation stops at the first violation. xmlschema's lax mode builds an error for
+    every violation in the whole tree before it reports one, and an undeclared
+    attribute costs time proportional to the number of attributes on its element, so
+    rejecting a document could cost far more than accepting one of the same size.
+
     Args:
         root: Safely parsed rendered document or fragment.
         validator: Compiled corrected registry from the current snapshot.
@@ -534,23 +539,24 @@ def _validate_schema_root(root: Any, validator: Any) -> None:
     Raises:
         TemplateValidationError: If validation fails or the registry is invalid.
     """
+    xmlschema = _xmlschema_module()
     try:
-        error = next(validator.iter_errors(root), None)
+        validator.validate(root)
+    except xmlschema.XMLSchemaValidationError as error:
+        # Read what the diagnostic needs here: an exception kept after this block
+        # would tie its traceback to this frame in a reference cycle.
+        invalid_child = getattr(error, "invalid_child", None)
+        line = getattr(invalid_child, "sourceline", None)
+        if line is None:
+            line = getattr(error, "sourceline", None)
+        if line is None:
+            line = getattr(getattr(error, "elem", None), "sourceline", None)
+        message = _schema_validation_message(error)
     except Exception as failure:
         raise TemplateValidationError("schema_invalid", "invalid schema") from failure
-    if error is None:
+    else:
         return
-    invalid_child = getattr(error, "invalid_child", None)
-    line = getattr(invalid_child, "sourceline", None)
-    if line is None:
-        line = getattr(error, "sourceline", None)
-    if line is None:
-        line = getattr(getattr(error, "elem", None), "sourceline", None)
-    raise TemplateValidationError(
-        "schema",
-        _schema_validation_message(error),
-        line=line,
-    ) from None
+    raise TemplateValidationError("schema", message, line=line) from None
 
 
 def _schema_local_name(value: Any) -> str | None:

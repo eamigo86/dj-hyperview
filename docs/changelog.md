@@ -19,18 +19,35 @@ This page records user-visible release changes, including unpublished attempts.
   depends solely on the template name and the constructor options; see
   [Cache consistency](cache-consistency.md#choose-which-sources-are-cached). The
   private `_dj_hyperview_cacheable` marker is removed and no longer has any effect.
-- Reject an element with more than 256 attributes, more than 64 in-scope
-  namespaces, or more than 256 namespace declarations on the path from the root to
-  it, before XSD validation, using the new stable validation code `max_attributes`.
-  Validation time grew faster than linearly with these counts, so a few kilobytes
-  of untrusted markup could occupy a worker for seconds. The path cap counts every
-  declaration, including a prefix rebound at each level: a chain of 60 levels that
-  rebinds 60 prefixes, with 3,000 leaves, kept the distinct count low but took
-  about 1.5 seconds. The caps are fixed and sit well above anything a valid
-  Hyperview document needs; sibling elements do not add up. Checking them takes
-  time proportional to the number of nodes and declarations. They do not bound the
-  whole document: `VALIDATION.MAX_BYTES`, `MAX_NODES` and `MAX_DEPTH` remain the
-  global limits, and schema validation time still grows with document size.
+- Reject an element with more than 128 attributes, more than 8 in-scope namespaces,
+  or more than 32 namespace declarations on the path from the root to it, before XSD
+  validation, using the new stable validation code `max_attributes`. Validation time
+  grew faster than linearly with these counts, so a few kilobytes of untrusted
+  markup could occupy a worker for seconds. The schema validator rebuilds an
+  element's namespace map from all of its ancestors several times, and once more for
+  each in-scope prefix when the element declares a namespace, so the cost grows with
+  the declarations on a path times the prefixes in scope. The path cap counts every
+  declaration, including a prefix rebound at each level. Looser caps would not do:
+  at 64 prefixes and 256 declarations, 20,000 elements that each rebind a prefix
+  below a path at the cap take about 28 s at the default limits, against about 1.1 s
+  with these caps and about 0.6 s for 20,000 plain elements. The widest element the
+  bundled schema declares has 126 attributes. The HyperTodo templates, with their
+  includes expanded, use at most 13 attributes on an element, 5 namespace
+  declarations on a path and 2 prefixes in scope, and sibling elements do not add
+  up. Valid Hyperview markup has no reason to exceed a cap, and the caps are fixed,
+  so a document that does must be restructured. Checking them takes time
+  proportional to the number of nodes and declarations. They do not bound the whole
+  document: `VALIDATION.MAX_BYTES`, `MAX_NODES` and `MAX_DEPTH` remain the global
+  limits, a large valid document still costs one to two seconds of CPU on a fast
+  development machine, and untrusted input should lower them.
+- Schema validation now stops at the first violation. xmlschema's default (lax)
+  mode builds an error for every violation in the whole tree before it reports the
+  first, and an undeclared attribute costs time proportional to the number of
+  attributes on its element. Rejecting 300 elements with 256 undeclared attributes
+  each therefore took about 7.7 s, where a valid document of the same size takes
+  under a second. The reported error is unchanged: the first violation in document
+  order, with the same message and line. Validating a valid document costs the same
+  as before.
 - Stop echoing rejected template names from an ordered selection. When every
   candidate misses, `TemplateNotFound` now lists only valid names that were not
   found, so control characters and escape sequences in hostile names cannot reach

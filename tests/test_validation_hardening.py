@@ -215,47 +215,71 @@ def forbid_schema_validation(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_attribute_flood_is_rejected_before_schema_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A per-element cap bounds super-linear XSD work without timing assertions."""
+    """A per-element cap bounds the attribute work without timing assertions."""
     forbid_schema_validation(monkeypatch)
-    attributes = " ".join(f"a{i}='1'" for i in range(300))
+    attributes = " ".join(f"a{i}='1'" for i in range(200))
 
-    assert_element_limit(f"<view {HYPERVIEW_XMLNS} {attributes} />", "256 attributes")
+    assert_element_limit(f"<view {HYPERVIEW_XMLNS} {attributes} />", "128 attributes")
 
 
-def test_attribute_cap_counts_one_element_and_allows_its_exact_limit() -> None:
-    """Many elements may carry attributes; only a single element is capped."""
-    exact = " ".join(f"a{i}='1'" for i in range(256))
+@pytest.mark.parametrize(("count", "code"), [(128, "schema"), (129, "max_attributes")])
+def test_attribute_cap_counts_one_element_and_stops_just_over_its_limit(
+    count: int, code: str
+) -> None:
+    """Many elements may carry attributes; one may carry 128 but not 129.
+
+    The attributes are undeclared, so an element within the cap reaches the schema
+    walk and fails there, which proves it passed the guard.
+    """
+    attributes = " ".join(f"a{i}='1'" for i in range(count))
     spread = "".join(f"<text id='t{i}' style='s{i}'>{i}</text>" for i in range(300))
 
-    with pytest.raises(TemplateValidationError) as exact_error:
-        validate_hxml(f"<view {HYPERVIEW_XMLNS} {exact} />")
+    with pytest.raises(TemplateValidationError) as error:
+        validate_hxml(f"<view {HYPERVIEW_XMLNS} {attributes} />")
     validate_hxml(f"<view {HYPERVIEW_XMLNS}>{spread}</view>")
 
-    assert exact_error.value.code == "schema"
+    assert error.value.code == code
+
+
+def test_attribute_cap_admits_the_widest_element_the_schema_declares() -> None:
+    """A cap below the widest declared element would reject documents that are valid.
+
+    The documentation says 126: change it, and the cap if need be, with the schema.
+    """
+    from dj_hyperview.schema import _get_registry_snapshot
+
+    _, registry = _get_registry_snapshot()
+    widest = max(
+        len(getattr(element.type, "attributes", ()))
+        for element in registry.elements.values()
+    )
+
+    assert widest == 126
+    assert widest <= validation_module._MAX_ATTRIBUTES
 
 
 def test_namespace_flood_is_rejected_on_the_declaring_element() -> None:
-    """The default namespace counts, so 65 prefixes exceed 64 in-scope bindings."""
+    """The default namespace counts, so 8 prefixes exceed 8 in-scope bindings."""
     assert_element_limit(
-        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(65)} />",
-        "64 in-scope namespaces",
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(8)} />",
+        "8 in-scope namespaces",
     )
 
 
 def test_inherited_namespaces_count_toward_the_in_scope_cap() -> None:
-    """No single element declares more than 64, but a descendant inherits them."""
+    """No single element declares more than 5, but a descendant inherits them."""
     document = (
-        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(40)}>"
-        f"<text {prefixed_namespaces(30, start=40)}>ok</text></view>"
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(5)}>"
+        f"<text {prefixed_namespaces(3, start=5)}>ok</text></view>"
     )
 
-    assert_element_limit(document, "64 in-scope namespaces")
+    assert_element_limit(document, "8 in-scope namespaces")
 
 
 def test_namespace_cap_allows_its_exact_limit() -> None:
-    """The default binding plus 63 prefixes is exactly 64 in-scope namespaces."""
+    """The default binding plus 7 prefixes is exactly 8 in-scope namespaces."""
     document = (
-        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(63)}><text>ok</text></view>"
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(7)}><text>ok</text></view>"
     )
 
     assert validate_hxml(document) == document
@@ -334,25 +358,25 @@ def test_long_whitespace_in_a_processing_instruction_validates_quickly() -> None
 
 
 def test_namespace_declared_on_an_ancestor_counts_for_distant_descendants() -> None:
-    """The default binding and 63 prefixes fill the cap for the whole subtree."""
+    """The default binding and 7 prefixes fill the cap for the whole subtree."""
     document = (
-        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(63)}>"
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(7)}>"
         "<view><view><text xmlns:extra='urn:extra'>ok</text></view></view></view>"
     )
 
-    assert_element_limit(document, "64 in-scope namespaces")
+    assert_element_limit(document, "8 in-scope namespaces")
 
 
 def test_redeclaring_a_prefix_does_not_count_twice() -> None:
     """Descendants may rebind every in-scope prefix within both namespace caps.
 
-    The default binding and 63 prefixes stay at 64 in scope however often they are
-    rebound, so only the 256 declarations allowed on one path limit the chain.
+    The default binding and 7 prefixes stay at 8 in scope however often they are
+    rebound, so only the 32 declarations allowed on one path limit the chain.
     """
-    rebound = prefixed_namespaces(63).replace("urn:p", "urn:rebound")
+    rebound = prefixed_namespaces(7).replace("urn:p", "urn:rebound")
     chain = f"<view {rebound}>" * 3
     document = (
-        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(63)}>"
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(7)}>"
         f"{chain}<text>ok</text>{'</view>' * 3}</view>"
     )
 
@@ -362,27 +386,27 @@ def test_redeclaring_a_prefix_does_not_count_twice() -> None:
 def test_namespaces_leave_scope_with_their_element() -> None:
     """Siblings never see each other's declarations, so only the path counts."""
     document = (
-        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(20)}>"
-        f"<view {prefixed_namespaces(30, start=20)}><text>one</text></view>"
-        f"<view {prefixed_namespaces(30, start=50)}><text>two</text></view>"
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(2)}>"
+        f"<view {prefixed_namespaces(3, start=2)}><text>one</text></view>"
+        f"<view {prefixed_namespaces(3, start=5)}><text>two</text></view>"
         "</view>"
     )
 
     assert validate_hxml(document) == document
 
 
-def rebinding_path(declarations: int, *, per_level: int = 32, leaves: int = 1) -> str:
+def rebinding_path(declarations: int, *, distinct: int = 8, leaves: int = 1) -> str:
     """Nest views that rebind the same prefixes until one path holds `declarations`.
 
-    The root also binds the default namespace. Rebinding keeps at most per_level
-    distinct prefixes in scope, so only the declarations along the path grow.
+    The root also binds the default namespace. Rebinding keeps at most `distinct`
+    bindings in scope, so only the declarations along the path grow.
     """
     opening: list[str] = []
     remaining = declarations
     while remaining > 0:
         level = len(opening)
         bindings = [] if level else [HYPERVIEW_XMLNS]
-        count = min(per_level, remaining) - len(bindings)
+        count = min(distinct - 1, remaining - len(bindings))
         bindings += [f"xmlns:p{i}='urn:{level}:p{i}'" for i in range(count)]
         opening.append(f"<view {' '.join(bindings)}>")
         remaining -= len(bindings)
@@ -394,29 +418,29 @@ def test_rebinding_prefixes_along_a_deep_path_is_rejected_before_schema_validati
 ) -> None:
     """The same prefixes rebound at every level cost the schema walk per element.
 
-    Never more than 60 distinct prefixes are in scope, so the distinct cap passes,
-    yet xmlschema reads every declaration on the ancestor path of each of the
-    3,000 leaves: 3,600 declarations took about 1.5 seconds before this cap.
+    Never more than 8 bindings are in scope, so the distinct cap passes, yet
+    xmlschema reads every declaration on the ancestor path of each of the 3,000
+    leaves. Only the cap on the declarations along one path stops this chain.
     """
     forbid_schema_validation(monkeypatch)
-    document = rebinding_path(3_600, per_level=60, leaves=3_000)
+    document = rebinding_path(400, leaves=3_000)
 
     started = time.perf_counter()
-    assert_element_limit(document, "256 namespace declarations")
+    assert_element_limit(document, "32 namespace declarations")
 
     assert time.perf_counter() - started < 1.0
 
 
 def test_namespace_declaration_cap_allows_its_exact_limit() -> None:
-    """A path may hold 256 declarations, counting every rebinding of a prefix."""
-    document = rebinding_path(256)
+    """A path may hold 32 declarations, counting every rebinding of a prefix."""
+    document = rebinding_path(32)
 
     assert validate_hxml(document) == document
 
 
 def test_one_declaration_over_the_path_cap_is_rejected() -> None:
-    """The 257th declaration on a path fails, however few prefixes are in scope."""
-    assert_element_limit(rebinding_path(257), "256 namespace declarations")
+    """The 33rd declaration on a path fails, however few prefixes are in scope."""
+    assert_element_limit(rebinding_path(33), "32 namespace declarations")
 
 
 def test_sibling_fragments_that_declare_namespaces_do_not_accumulate() -> None:

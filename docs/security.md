@@ -40,7 +40,8 @@ string where a list is expected raises `TypeError`.
 
 ## Set explicit XML limits
 
-Defaults are safe for general use; lower them for smaller documents:
+Defaults are safe for general use; lower them for untrusted input or smaller
+documents:
 
 ```python
 HYPERVIEW = {
@@ -62,28 +63,39 @@ ignored. Resource limits remain configurable, but no setting disables validation
 
 Three further limits are fixed and cannot be configured. They bound one element
 and the path from the root to it, not the document: an element may declare at most
-256 attributes and at most 64 in-scope namespaces, and the elements on the path
-from the root to any element may carry at most 256 namespace declarations in
+128 attributes and at most 8 in-scope namespaces, and the elements on the path
+from the root to any element may carry at most 32 namespace declarations in
 total. The default namespace and bindings inherited from ancestors count toward
-the 64, and rebinding a prefix counts once there. Toward the 256 on a path, every
-declaration counts, so rebinding the same prefixes at each level adds up. XSD
-validation time grows faster than linearly with the attributes of an element, and
-the schema validator reads every declaration on the ancestor path of every
-element, so `MAX_BYTES`, `MAX_DEPTH`, and `MAX_NODES` alone do not bound it. An
-element over any cap fails before schema validation with the stable code
-`max_attributes`. The message says which cap was exceeded and never repeats
-attribute or prefix names. Standard Hyperview elements declare well under 256
-attributes and a document rarely declares more than a handful of namespaces on one
-path, so valid documents are unaffected. That includes a screen composed of many
-fragments that each declare the default namespace and an application prefix: the
-declarations of a finished element leave the path, so siblings do not accumulate.
-Extension schemas share the same caps.
+the 8, and rebinding a prefix counts once there. Toward the 32 on a path, every
+declaration counts, so rebinding the same prefixes at each level adds up. The
+schema validator rebuilds the namespace map of every element from all of its
+ancestors several times, and once more for each in-scope prefix when the element
+declares a namespace. Its cost therefore grows with the declarations on a path
+times the prefixes in scope, and `MAX_BYTES`, `MAX_DEPTH`, and `MAX_NODES` alone do
+not bound it. An element over any cap fails before schema validation with the
+stable code `max_attributes`. The message says which cap was exceeded and never
+repeats attribute or prefix names. The widest element the bundled schema declares
+has 126 attributes. The HyperTodo templates, with their includes expanded, use at
+most 13 attributes on an element, 5 namespace declarations on a path, and 2
+prefixes in scope, so valid documents are unaffected. That includes a screen
+composed of many fragments that each declare the default namespace and an
+application prefix: the declarations of a finished element leave the path, so
+siblings do not accumulate. Extension schemas share the same caps.
 
 Checking the caps takes time proportional to the number of nodes and declarations.
-They do not bound the cost of the whole document: schema validation time still
-grows with its size. The extra cost of namespace bindings per element is bounded
-by the 256 declarations of its path. `MAX_BYTES`, `MAX_NODES`, and `MAX_DEPTH`
-remain the global bounds, so lower them for untrusted input.
+They keep one document from costing far more than its size; they do not make
+validation cheap. Measured at the default limits with Python 3.12, lxml 6.1, and
+xmlschema 4.3 on an Apple M3 Max machine, a plain valid document of 20,000
+elements validates in about 0.6 s, and one of 19,000 elements with seven attributes
+each, close to the default byte limit, in about 1.5 s. The most expensive document
+found within the namespace caps, 20,000 elements that each rebind a prefix below a
+path already at the cap, takes about 1.1 s, or 1.2 s with `MAX_DEPTH` at its ceiling
+of 256. A rejected document stops at its first schema error, so rejecting it costs
+about as much as validating the part before that error. Cost grows roughly in
+proportion to the nodes and attributes, and your hardware may be slower, so plan for
+one to two seconds of CPU per large untrusted document at the defaults, and measure
+on yours. `MAX_BYTES`, `MAX_NODES`, and `MAX_DEPTH` remain the global bounds: lower
+them for untrusted input.
 
 Eager Hyperview responses and public body mutations validate before committing a
 replacement; invalid mutations preserve the previous body. Lazy responses retain

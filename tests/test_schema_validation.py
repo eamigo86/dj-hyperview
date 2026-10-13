@@ -126,6 +126,56 @@ def test_schema_error_explains_invalid_attributes(style: str, message: str) -> N
     assert "bananas" not in str(error.value)
 
 
+def test_validation_builds_one_error_however_many_violations_there_are(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Rejecting a document stops at its first violation.
+
+    xmlschema's default mode builds an error for every violation in the tree before it
+    reports the first. An undeclared attribute costs time proportional to the number
+    of attributes on its element, so rejecting 300 such elements took seconds.
+    """
+    import xmlschema
+
+    # Compile the registry first: building a schema constructs errors of its own.
+    validate_hxml(f'<view xmlns="{HV}" />')
+    created: list[object] = []
+    original = xmlschema.XMLSchemaValidationError.__init__
+
+    def counting(self: object, *args: object, **kwargs: object) -> None:
+        created.append(self)
+        original(self, *args, **kwargs)
+
+    monkeypatch.setattr(xmlschema.XMLSchemaValidationError, "__init__", counting)
+    attributes = " ".join(f'a{i}="1"' for i in range(100))
+    document = f'<view xmlns="{HV}">{f"<text {attributes} />" * 20}</view>'
+
+    with pytest.raises(TemplateValidationError) as error:
+        validate_hxml(document)
+
+    assert error.value.code == "schema"
+    assert error.value.message == 'attribute "a0" is not allowed on element "text"'
+    assert len(created) == 1
+
+
+def test_a_failure_of_the_schema_engine_is_not_a_document_error() -> None:
+    """Only validation errors describe the document; anything else is the registry."""
+    from dj_hyperview.schema import _validate_schema_root
+
+    class Broken:
+        def validate(self, root: object) -> None:
+            raise RuntimeError("private engine detail")
+
+    with pytest.raises(TemplateValidationError) as error:
+        _validate_schema_root(etree.Element("view"), Broken())
+
+    assert (error.value.code, error.value.message) == (
+        "schema_invalid",
+        "invalid schema",
+    )
+    assert "private engine detail" not in str(error.value)
+
+
 def test_schema_error_explains_a_missing_required_attribute() -> None:
     """Required-field failures name the attribute and owning element."""
     document = f'<image xmlns="{HV}" />'

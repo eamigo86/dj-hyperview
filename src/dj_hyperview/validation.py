@@ -16,9 +16,17 @@ from .validators import _XML_ILLEGAL_CHARACTERS
 
 _BOM = "\ufeff"
 _XML_WHITESPACE = " \t\r\n"
-_MAX_ATTRIBUTES = 256
-_MAX_NAMESPACES = 64
-_MAX_NAMESPACE_DECLARATIONS = 256
+# Fixed caps on one element and on the path from the root to it. The widest element
+# the bundled schema declares has 126 attributes, and real documents bind the default
+# namespace and one or two prefixes. xmlschema reads an element's namespace map
+# several times, and once more for each in-scope prefix when the element declares a
+# namespace, while lxml rebuilds the map from every ancestor. The cost of an accepted
+# document therefore grows with the product of the two namespace caps. Measured with
+# 20,000 leaves that each rebind a prefix: about 28 s at 64 prefixes and 256
+# declarations, about 1.1 s at 8 and 32, against 0.6 s for plain leaves.
+_MAX_ATTRIBUTES = 128
+_MAX_NAMESPACES = 8
+_MAX_NAMESPACE_DECLARATIONS = 32
 FORBIDDEN_MESSAGE = "DTD and entity declarations are forbidden"
 ILLEGAL_CHARACTERS_MESSAGE = "document contains characters not allowed in XML 1.0"
 RESTRICTED_FRAGMENT_ROOTS = frozenset({"body", "doc", "navigator", "screen"})
@@ -194,14 +202,15 @@ def validate_template_source(
 def _check_namespace_scope(root: etree._Element) -> None:
     """Bound the namespaces on any element and its ancestor path in linear time.
 
-    An element's nsmap is rebuilt from all of its ancestors, so schema validation,
-    which reads it for every element, costs depth times declarations. Two caps keep
-    that product small. The distinct prefixes in scope are capped, and so is every
-    declaration on the path from the root, because rebinding the same few prefixes
-    at each level keeps the distinct count low while the path keeps growing.
-    Counting bindings as the walk enters and leaves the elements that declare them
-    needs only the declarations themselves, and a flood of declarations fails at
-    the first one over a cap.
+    An element's nsmap is rebuilt from all of its ancestors, and schema validation
+    reads it several times for every element, and once for each in-scope prefix of an
+    element that declares a namespace. Its cost is therefore the declarations on the
+    path times the prefixes in scope, and two caps keep that product small. The
+    distinct prefixes in scope are capped, and so is every declaration on the path
+    from the root, because rebinding the same few prefixes at each level keeps the
+    distinct count low while the path keeps growing. Counting bindings as the walk
+    enters and leaves the elements that declare them needs only the declarations
+    themselves, and a flood of declarations fails at the first one over a cap.
     """
     in_scope: Counter[str] = Counter()
     declared: list[str] = []
@@ -257,9 +266,9 @@ def _parse(document: str, config: ValidationSettings) -> etree._Element:
             _fail("max_depth", "document exceeds MAX_DEPTH")
         if nodes > config.max_nodes:
             _fail("max_nodes", "document exceeds MAX_NODES")
-        # XSD work grows super-linearly with per-element attributes. Only elements
-        # have any: a processing instruction builds attrib with a regular expression
-        # that is quadratic in its data, so it must never be asked.
+        # Cap the attributes of one element before the schema walk decodes them. Only
+        # elements have any: a processing instruction builds attrib with a regular
+        # expression that is quadratic in its data, so it must never be asked.
         if isinstance(node.tag, str) and len(node.attrib) > _MAX_ATTRIBUTES:
             _fail("max_attributes", f"element exceeds {_MAX_ATTRIBUTES} attributes")
         pending.extend((child, depth + 1) for child in node)
