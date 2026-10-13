@@ -1,5 +1,6 @@
 """Tests for context-free validation of unsaved Admin HXML drafts."""
 
+import gc
 import importlib
 import json
 import time
@@ -1253,6 +1254,16 @@ HV = "https://hyperview.org/hyperview"
 NESTED_IF = "{% if x %}" * 3000 + "{% endif %}" * 3000
 
 
+@pytest.fixture
+def finalized_garbage() -> None:
+    """Finalize pending garbage here, not in the middle of a deep recursion.
+
+    A finalizer that the collector runs when the stack is nearly full fails with
+    RecursionError, and pytest then reports that as the failure of the test.
+    """
+    gc.collect()
+
+
 def _render(source: str) -> str:
     """Render with the real Django engine, as a response would."""
     return HyperviewEngine().backend.from_string(source).render({})
@@ -1648,7 +1659,9 @@ def test_validation_does_not_defer_a_safe_variable_in_an_attribute_value(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_reports_excessive_nesting_instead_of_failing(admin_client) -> None:
+def test_validation_reports_excessive_nesting_instead_of_failing(
+    admin_client, finalized_garbage
+) -> None:
     result = _validate(admin_client, NESTED_IF)
 
     assert result == {
@@ -1689,7 +1702,7 @@ def test_validation_reports_nesting_that_rendering_cannot_survive_as_too_deep(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_admin_save_reports_excessive_nesting_on_the_content_field(
-    admin_client,
+    admin_client, finalized_garbage
 ) -> None:
     _, model = _admin_types()
 
@@ -1711,7 +1724,9 @@ def test_admin_save_reports_excessive_nesting_on_the_content_field(
 
 
 @pytest.mark.django_db
-def test_admin_save_reports_excessive_nesting_without_the_editor(admin_client) -> None:
+def test_admin_save_reports_excessive_nesting_without_the_editor(
+    admin_client, finalized_garbage
+) -> None:
     """The model validator covers the standard textarea, which has no editor checks."""
     _, model = _admin_types()
 
