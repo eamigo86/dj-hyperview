@@ -1,8 +1,9 @@
 import sys
 from collections import Counter
 from pathlib import Path
+from types import ModuleType, SimpleNamespace
 from typing import TYPE_CHECKING
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from django.core.checks import WARNING
@@ -474,6 +475,34 @@ def test_disabled_realtime_does_not_require_redis_py(raw) -> None:
         messages = check_hyperview_settings()
 
     assert "dj_hyperview.W007" not in {message.id for message in messages}
+
+
+@pytest.mark.parametrize(
+    "make_stub",
+    [lambda: ModuleType("stub"), MagicMock, SimpleNamespace],
+    ids=["module", "magicmock", "namespace"],
+)
+@pytest.mark.parametrize(
+    ("raw", "module", "absent"),
+    [
+        (REALTIME, "redis", "dj_hyperview.W007"),
+        ({"ADMIN": {"EDITOR": True}}, "django_ace", "dj_hyperview.E015"),
+        ({}, "xmlschema", "dj_hyperview.E013"),
+    ],
+)
+def test_stub_module_without_a_spec_counts_as_installed(
+    monkeypatch: pytest.MonkeyPatch, make_stub, raw, module: str, absent: str
+) -> None:
+    """A stand-in module in sys.modules makes find_spec raise, not return None.
+
+    importlib reports a spec of None, or no spec at all, with ValueError. Such a
+    module still imports, so the check treats it as installed rather than crashing.
+    """
+    monkeypatch.setitem(sys.modules, module, make_stub())
+    with override_settings(HYPERVIEW=raw):
+        messages = check_hyperview_settings()
+
+    assert absent not in {message.id for message in messages}
 
 
 @pytest.mark.parametrize("admin_config", [True, [], {"EDITOR": "yes"}])

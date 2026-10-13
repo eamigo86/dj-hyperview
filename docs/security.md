@@ -241,7 +241,9 @@ not isolate Redis Pub/Sub channels.
 Only closed logical envelopes cross the transport, never HXML, template names,
 user identifiers, URLs, credentials or request bodies. Limit app resource names
 further than the generic ASCII grammar. Logs use fixed codes without Redis URL,
-topic, payload or exception representations. `realtime_asgi` owns cleanup for
-pre-iteration disconnects and adapted views; release admission in the explicit
-cleanup callback's `finally`. Do not interpret a timeout, resync or broker
-publish return as successful delivery or completed client rendering.
+topic or payload. A failed publication adds only the exception type name, as in
+`error_type=<TypeName>`, never its message, which can contain the Redis URL.
+`realtime_asgi` owns cleanup for pre-iteration disconnects and adapted views;
+release admission in the explicit cleanup callback's `finally`. Do not interpret
+a timeout, resync or broker publish return as successful delivery or completed
+client rendering.

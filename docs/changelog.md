@@ -121,6 +121,11 @@ This page records user-visible release changes, including unpublished attempts.
   `//[::1/x.xsd`, is now reported as `forbidden_schema_reference` (`dj_hyperview.E012`
   with `reason: forbidden_schema_reference` during configuration checks). Before,
   `urlparse` raised a bare `ValueError` that crashed `manage.py check`.
+- The dependency system checks (`dj_hyperview.W007`, `dj_hyperview.E013` and
+  `dj_hyperview.E015`) no longer crash with `ValueError` when the module they look
+  up is a stand-in in `sys.modules` without a spec, such as a `ModuleType`,
+  `MagicMock` or `SimpleNamespace` that a test installs. `importlib` raises for such
+  an entry, but it still imports, so the check now counts it as installed.
 - A `VALIDATION` limit that is an `int` subclass other than `bool` now fails the
   system check with `dj_hyperview.E009`, the rule `ValidationSettings` already
   enforced. Before, the check accepted it and the first read of the settings

@@ -46,6 +46,18 @@ else:
     _SIGNATURE_OPTIONS = {}
 
 
+def _is_installed(name: str) -> bool:
+    """Report whether a module can be imported, without importing it.
+
+    find_spec raises ValueError for a sys.modules entry that has no spec, such as
+    a test stub. That entry still imports, so it counts as installed.
+    """
+    try:
+        return find_spec(name) is not None
+    except ValueError:
+        return True
+
+
 def _error(
     code: str,
     path: str,
@@ -422,7 +434,7 @@ def _check_admin(value: Any) -> list[CheckMessage]:
     if not isinstance(editor, bool):
         errors.append(_error("E014", "ADMIN.EDITOR", "must be a boolean"))
     elif editor:
-        if find_spec("django_ace") is None:
+        if not _is_installed("django_ace"):
             errors.append(
                 Error(
                     "ADMIN.EDITOR requires the optional editor dependency.",
@@ -477,7 +489,7 @@ def _check_realtime(value: object) -> list[CheckMessage]:
                 "must be None or a mapping with exactly valid REDIS_URL and NAMESPACE",
             )
         ]
-    if configured and find_spec("redis") is None:
+    if configured and not _is_installed("redis"):
         return [
             Warning(
                 "REALTIME is configured but the optional redis-py dependency is "
@@ -549,7 +561,7 @@ def check_hyperview_settings(
                     "is a required dependency; repair the package installation",
                 )
             ]
-            if find_spec("xmlschema") is None
+            if not _is_installed("xmlschema")
             else []
         ),
         *_check_admin(raw.get("ADMIN", {})),
