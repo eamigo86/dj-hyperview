@@ -455,6 +455,71 @@ def test_stored_source_validation_reports_excessive_nesting() -> None:
     assert captured.value.messages == ["Template is nested too deeply."]
 
 
+NESTED_BLOCKS = {
+    "if": ("{% if a %}", "{% endif %}"),
+    "for": ("{% for x in a %}", "{% endfor %}"),
+    "with": ("{% with b=a %}", "{% endwith %}"),
+    "spaceless": ("{% spaceless %}", "{% endspaceless %}"),
+    "autoescape": ("{% autoescape on %}", "{% endautoescape %}"),
+}
+
+
+def nested(tag: str, depth: int) -> str:
+    opening, closing = NESTED_BLOCKS[tag]
+    return opening * depth + "<view />" + closing * depth
+
+
+@pytest.mark.parametrize("tag", NESTED_BLOCKS)
+def test_nesting_at_the_limit_is_accepted_and_renders_below_a_deep_caller(
+    tag: str,
+) -> None:
+    """Compiling takes about 490 nested blocks, but rendering fails at about 330."""
+    from dj_hyperview.contrib.database._template_syntax import _MAX_NESTING
+    from dj_hyperview.contrib.database.validators import (
+        validate_stored_template_source,
+    )
+    from dj_hyperview.engine import HyperviewEngine
+
+    source = nested(tag, _MAX_NESTING)
+    validate_stored_template_source(source)
+    template = HyperviewEngine().backend.from_string(source)
+
+    def below_a_request(frames: int) -> str:
+        if frames:
+            return below_a_request(frames - 1)
+        return template.render({"a": [1]})
+
+    assert below_a_request(300) == "<view />"
+
+
+@pytest.mark.parametrize("tag", NESTED_BLOCKS)
+def test_nesting_over_the_limit_is_too_deep_before_rendering_can_fail(
+    tag: str,
+) -> None:
+    from django.core.exceptions import ValidationError
+
+    from dj_hyperview.contrib.database._template_syntax import _MAX_NESTING
+    from dj_hyperview.contrib.database.validators import (
+        validate_stored_template_source,
+    )
+
+    with pytest.raises(ValidationError) as captured:
+        validate_stored_template_source(nested(tag, _MAX_NESTING + 1))
+
+    assert captured.value.code == "too_deep"
+
+
+def test_an_else_branch_does_not_deepen_the_nesting() -> None:
+    from dj_hyperview.contrib.database._template_syntax import _MAX_NESTING
+    from dj_hyperview.contrib.database.validators import (
+        validate_stored_template_source,
+    )
+
+    source = "{% if a %}x{% elif b %}y{% else %}z{% endif %}" * (_MAX_NESTING * 3)
+
+    validate_stored_template_source(source)
+
+
 @pytest.mark.parametrize(
     ("source", "message"),
     [

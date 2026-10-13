@@ -15,6 +15,7 @@ from dj_hyperview import validate_hyperview_schema
 from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.validation import validate_hxml
+from tests.test_database_template_syntax import nested
 from tests.test_validation_hardening import (
     HYPERVIEW_XMLNS,
     prefixed_namespaces,
@@ -1664,6 +1665,25 @@ def test_validation_reports_excessive_nesting_instead_of_failing(admin_client) -
             }
         ],
     }
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_validation_reports_nesting_that_rendering_cannot_survive_as_too_deep(
+    admin_client,
+) -> None:
+    """The draft compiles, but rendering recurses three frames for every level."""
+    from dj_hyperview.contrib.database._template_syntax import _MAX_NESTING
+
+    within = f"<view xmlns='{HV}'>" + nested("if", _MAX_NESTING) + "</view>"
+    over = f"<view xmlns='{HV}'>" + nested("if", _MAX_NESTING + 1) + "</view>"
+
+    assert [
+        item["code"] for item in _validate(admin_client, within)["diagnostics"]
+    ] == ["schema_static_incomplete"]
+    assert [item["code"] for item in _validate(admin_client, over)["diagnostics"]] == [
+        "too_deep"
+    ]
 
 
 @pytest.mark.django_db

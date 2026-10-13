@@ -348,10 +348,14 @@ on, and says how to migrate.
   Admin check. It may render markup, so its position is now reported with the
   informational note, like other runtime-dependent structure. Variables without
   `safe` still count as text, as before.
-- Source nested too deeply for Django's recursive parser, about 800 nested
-  `{% if %}` blocks, no longer fails the Admin validation request and the Admin
-  save with HTTP 500. The check, the Admin form, `publish_template` and model
-  validation report it as `too_deep`, "Template is nested too deeply."
+- Source that nests blocks more than 100 levels deep, such as `{% if %}`, no longer
+  fails the Admin validation request and the Admin save with HTTP 500, and can no
+  longer be saved only to fail with `RecursionError` when it is served. Django's
+  parser compiles about 490 nested `{% if %}` blocks, but rendering recurses three
+  frames for each and fails at about 330 in an empty stack and at about 230 inside
+  a request, so the earlier check accepted source that could not render. The check,
+  the Admin form, `publish_template` and model validation report it as `too_deep`,
+  "Template is nested too deeply."
 - The Admin check no longer counts the namespace declaration and prefix of its own
   synthetic root toward the namespace limits. A document with exactly 32
   declarations on a path or 8 in-scope namespaces passed at render time and failed

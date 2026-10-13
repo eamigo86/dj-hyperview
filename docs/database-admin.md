@@ -271,8 +271,10 @@ attributes on an element, 8 in-scope namespaces, and 32 namespace declarations o
 one path, to the template source, and it reports a source over a limit as an error
 with the same stable code: `max_nodes`, `max_depth`, or `max_attributes`. Because
 the source still holds every branch of a conditional, the counts can exceed those
-of any single rendered document. Source nested more deeply than Django's recursive
-parser can compile is reported as `too_deep` instead of failing the request. The
+of any single rendered document. Source that nests blocks, such as `{% if %}`, more
+than 100 levels deep is reported as `too_deep` instead of failing the request:
+Django's recursive parser compiles about 490 levels, but rendering fails at about
+330 in an empty stack, so deeper source could be saved and then fail when served. The
 response lists at most 50 diagnostics, errors before notes, and ends with an
 informational `diagnostics_truncated` entry when more were found. Checking time
 grows in proportion to the size of the draft and of the includes it expands, which
