@@ -33,6 +33,8 @@ class HyperviewTemplate(models.Model):
     objects = HyperviewTemplateManager()
 
     class Meta:
+        """Name the app, set the default ordering and require a positive revision."""
+
         app_label = "dj_hyperview_database"
         ordering = ("name",)
         verbose_name = "Hyperview template"

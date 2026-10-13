@@ -38,6 +38,9 @@ docstrings. Include `Args`, `Returns`, and `Raises` only when they apply. Parame
 and return type hints are mandatory; do not repeat types in
 docstrings. Do not place backticks inside Python docstrings.
 
+`ruff check` rejects public symbols without a docstring and parameters missing from
+an `Args` section; `tests/test_public_api_quality.py` rejects backticks.
+
 ## Documentation contract
 
 - Lead with the supported outcome, then disclose configuration and edge cases.

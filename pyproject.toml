@@ -87,4 +87,13 @@ line-length = 88
 src = ["src", "tests", "tools"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "DJ"]
+select = ["E", "F", "I", "UP", "B", "DJ", "D1", "D417"]
+
+[tool.ruff.lint.per-file-ignores]
+# Documentation rules apply to the shipped package only; migrations are generated.
+"tests/**" = ["D"]
+"tools/**" = ["D"]
+"**/migrations/*.py" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
