@@ -29,6 +29,17 @@ UNSAFE_UNICODE_NAMES = (
     "screens/\x85home.xml",
     "screens/\ud800.xml",
     "screens/\udfff.xml",
+    # Invisible or reordering characters (Cf) and line or paragraph separators.
+    "screens/\N{SOFT HYPHEN}home.xml",
+    "screens/\N{ZERO WIDTH SPACE}home.xml",
+    "screens/\N{ZERO WIDTH JOINER}home.xml",
+    "screens/\N{ZERO WIDTH NO-BREAK SPACE}home.xml",
+    "screens/home\N{RIGHT-TO-LEFT OVERRIDE}lmx.exe",
+    "screens/\N{LEFT-TO-RIGHT ISOLATE}home.xml",
+    "screens/\N{LANGUAGE TAG}home.xml",
+    "screens/\N{TAG LATIN CAPITAL LETTER A}home.xml",
+    "screens/\N{LINE SEPARATOR}home.xml",
+    "screens/\N{PARAGRAPH SEPARATOR}home.xml",
 )
 
 
@@ -39,7 +50,7 @@ UNSAFE_UNICODE_NAMES = (
         "screens/home.hxml",
         "niñez.xml",
         "screens/e\u0301.xml",
-        "screens/👩\u200d💻.xml",
+        "screens/👩💻.xml",
     ],
 )
 def test_canonical_name_preserves_relative_posix_path(name):

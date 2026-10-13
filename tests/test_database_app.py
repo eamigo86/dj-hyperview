@@ -22,6 +22,11 @@ UNSAFE_UNICODE_NAMES = (
     "screens/\x85home.xml",
     "screens/\ud800.xml",
     "screens/\udfff.xml",
+    "screens/\N{ZERO WIDTH SPACE}home.xml",
+    "screens/home\N{RIGHT-TO-LEFT OVERRIDE}lmx.exe",
+    "screens/\N{TAG LATIN CAPITAL LETTER A}home.xml",
+    "screens/\N{LINE SEPARATOR}home.xml",
+    "screens/\N{PARAGRAPH SEPARATOR}home.xml",
 )
 
 

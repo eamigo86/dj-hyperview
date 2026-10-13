@@ -122,7 +122,10 @@ def test_integrity_command_reports_corrupt_duplicate_and_invalid_rows_without_wr
 
 
 @pytest.mark.django_db(transaction=True, databases=ALIASES)
-@pytest.mark.parametrize("name", ["../invalid.xml", "x" * 256])
+@pytest.mark.parametrize(
+    "name",
+    ["../invalid.xml", "x" * 256, "home\N{RIGHT-TO-LEFT OVERRIDE}lmx.exe"],
+)
 def test_integrity_command_checks_name_even_when_identity_matches(
     integrity_model: type[Model], name: str
 ) -> None:

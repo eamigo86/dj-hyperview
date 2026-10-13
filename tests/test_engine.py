@@ -152,7 +152,16 @@ def test_select_template_rejects_a_bare_string_like_django() -> None:
 def test_select_template_miss_lists_only_valid_missing_names() -> None:
     """Rejected names are never echoed, even into logs, by a final miss."""
     engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
-    names = ["bad\nname\x1b[31m.xml", "../private.xml", "first.xml", None, 123]
+    names = [
+        "bad\nname\x1b[31m.xml",
+        "../private.xml",
+        "home\N{RIGHT-TO-LEFT OVERRIDE}lmx.exe",
+        "home\N{ZERO WIDTH SPACE}.xml",
+        "home\N{LINE SEPARATOR}.xml",
+        "first.xml",
+        None,
+        123,
+    ]
 
     with pytest.raises(TemplateNotFound) as error:
         engine.select_template([*names, "second.xml"])

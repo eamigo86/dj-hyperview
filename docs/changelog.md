@@ -31,6 +31,17 @@ This page records user-visible release changes, including unpublished attempts.
   found, so control characters and escape sequences in hostile names cannot reach
   logs. Passing a bare string to `select_template` raises `TypeError`, as Django
   does, instead of iterating its characters.
+- Reject invisible and reordering characters in template names. Format characters
+  (Unicode category Cf, such as bidirectional overrides and isolates, zero-width
+  characters, the soft hyphen, the byte order mark, and tag characters) and the
+  line and paragraph separators U+2028 and U+2029 now raise `InvalidTemplateName`,
+  like control characters and surrogates already did. They could make two names
+  look identical, or hide a file extension, in logs and error pages. The rule is
+  shared by the resolver, the engine, the cache and signal helpers, and the
+  database source, model validator and Admin editor. **A template whose name uses
+  one of these characters, for example a zero-width joiner in an emoji sequence,
+  must be renamed.** `check_hyperview_templates` reports a stored row with such a
+  name as `invalid_name`, and the row is no longer resolved.
 - Reject any `..` segment in a schema reference of an `EXTRA_SCHEMAS` file with
   the stable `forbidden_schema_reference` code (`dj_hyperview.E012` during
   configuration checks). The dependency guard resolved symlinks physically while
@@ -100,9 +111,10 @@ This page records user-visible release changes, including unpublished attempts.
   `None` or non-string name on Django 5.2 and 6.1 alike. Django 6.1 rejects these
   before any loader runs, which surfaced as `TemplateNotFound` and an HTTP 500
   instead of the 400 that unsafe names produce.
-- An `Accept` header with a media range longer than Django's 10,000 character
-  limit no longer makes `HyperviewMiddleware` fail the request. It is treated as
-  not accepting Hyperview.
+- On Django 6.1, an `Accept` header with a media range longer than Django's 10,000
+  character limit no longer makes `HyperviewMiddleware` fail the request. It is
+  treated as not accepting Hyperview. Django 5.2 has no such limit and parses the
+  header as before.
 
 ### Changed
 

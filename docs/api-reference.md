@@ -109,9 +109,10 @@ never establishes trust. A present `X-Hyperview-Version` header marks the reques
 as Hyperview, but `version` keeps its value only when it matches
 `[0-9A-Za-z][0-9A-Za-z.+_-]{0,63}`; any other value, including an empty one,
 leaves `version` as `None`. An explicit Hyperview media type counts only when
-Django can parse the `Accept` header. A header it refuses, such as a media range
-longer than 10,000 characters, is treated as not accepting Hyperview instead of
-failing the request.
+Django can parse the `Accept` header. Django 6.1 refuses to parse a media range
+longer than 10,000 characters, and the middleware then treats the header as not
+accepting Hyperview instead of failing the request. Django 5.2 has no such limit
+and parses the header normally.
 
 ## Validation and cache
 

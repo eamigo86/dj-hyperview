@@ -171,6 +171,7 @@ def test_database_contrib_without_admin_never_imports_admin_module() -> None:
         ("../private.xml", "<view />", "name", "invalid"),
         ("bad\n.xml", "<view />", "name", "invalid"),
         ("bad\ud800.xml", "<view />", "name", "invalid"),
+        ("bad\N{RIGHT-TO-LEFT OVERRIDE}.xml", "<view />", "name", "invalid"),
         (
             "screen.xml",
             "<!DOCTYPE view SYSTEM 'https://invalid.test/x'><view />",

@@ -84,9 +84,9 @@ template = TemplateResolver.from_settings().resolve("screens/home.xml")
 ```
 
 Sources are queried in order and the first hit wins. Absolute paths, traversal,
-backslashes, empty path segments, control characters, and surrogates are
-rejected. Omitting `CACHE` keeps caching disabled and avoids cache backend
-initialization.
+backslashes, empty path segments, control characters, invisible format
+characters, line and paragraph separators, and surrogates are rejected. Omitting
+`CACHE` keeps caching disabled and avoids cache backend initialization.
 
 `DummyCache` is not a valid Hyperview cache backend because it cannot preserve
 generation state. To disable caching, omit `CACHE` instead of selecting a dummy

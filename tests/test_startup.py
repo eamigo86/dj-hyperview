@@ -3,6 +3,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import django
 from django.core.checks import run_checks
 from django.test import override_settings
 
@@ -43,6 +44,7 @@ before = loaded()
 import dj_hyperview, dj_hyperview.apps, dj_hyperview.checks, dj_hyperview.conf
 import dj_hyperview.engine, dj_hyperview.schema, dj_hyperview.validators
 import dj_hyperview.templatetags.dj_hyperview
+print(django.get_version())
 print(",".join(sorted(loaded() - before)))
 """
     result = subprocess.run(
@@ -51,8 +53,15 @@ print(",".join(sorted(loaded() - before)))
         text=True,
         timeout=30,
         check=False,
-        env={**os.environ, "PYTHONPATH": str(SOURCE_ROOT)},
+        env={
+            **os.environ,
+            # Prepend, so a Django supplied through PYTHONPATH is still imported.
+            "PYTHONPATH": os.pathsep.join(
+                filter(None, [str(SOURCE_ROOT), os.environ.get("PYTHONPATH")])
+            ),
+        },
     )
 
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == ""
+    # The child must run the Django under test, also when PYTHONPATH supplies it.
+    assert result.stdout.splitlines() == [django.get_version(), ""]

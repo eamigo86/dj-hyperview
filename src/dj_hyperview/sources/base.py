@@ -7,6 +7,12 @@ from unicodedata import category
 
 from dj_hyperview.exceptions import InvalidTemplateName
 
+# Control, format, surrogate, line separator and paragraph separator characters.
+# Format characters such as bidirectional overrides, zero-width characters and tag
+# characters are invisible or reorder text, so two names can look identical, or
+# hide an extension, in logs and error pages.
+_UNSAFE_CATEGORIES = frozenset({"Cc", "Cf", "Cs", "Zl", "Zp"})
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedTemplate:
@@ -50,6 +56,10 @@ class TemplateSource(Protocol):
 def canonicalize_template_name(name: str) -> str:
     """Return a canonical consumer-owned template name.
 
+    A canonical name is a relative POSIX path. Absolute and Windows drive paths,
+    empty or dot segments, backslashes, NUL, and control, format, surrogate, line
+    separator and paragraph separator characters are rejected, never normalized.
+
     Args:
         name: Candidate template name.
 
@@ -69,7 +79,7 @@ def canonicalize_template_name(name: str) -> str:
         or PureWindowsPath(name).drive
         or "\\" in name
         or "\0" in name
-        or any(category(character) in {"Cc", "Cs"} for character in name)
+        or any(category(character) in _UNSAFE_CATEGORIES for character in name)
         or any(part in {"", ".", ".."} for part in parts)
     ):
         raise InvalidTemplateName(name)

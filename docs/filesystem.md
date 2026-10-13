@@ -43,9 +43,10 @@ order, and canonical names as the root template.
 ## Keep names inside the roots
 
 Template names cannot be absolute or contain empty segments, dot segments,
-backslashes, control characters, isolated surrogates, or NUL bytes. Filesystem
-sources also reject symlinks that escape a configured root. Public errors do not
-echo rejected names or filesystem paths.
+backslashes, control characters, isolated surrogates, NUL bytes, invisible format
+characters such as bidirectional overrides or zero-width characters, or line and
+paragraph separators. Filesystem sources also reject symlinks that escape a
+configured root. Public errors do not echo rejected names or filesystem paths.
 
 Long-lived source instances resolve their configured roots for every lookup, so
 atomic root symlink changes are visible without reconstructing the source. A
