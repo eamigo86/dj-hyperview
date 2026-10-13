@@ -11,10 +11,16 @@ from pathlib import Path
 from packaging.requirements import Requirement
 from packaging.specifiers import SpecifierSet
 from packaging.utils import canonicalize_name
+from packaging.version import Version
 
 ROOT = Path(__file__).parents[1]
 METADATA = tomllib.loads((ROOT / "pyproject.toml").read_text())
 POLICY = METADATA["tool"]["dj-hyperview"]
+DJANGO = next(
+    Requirement(text)
+    for text in METADATA["project"]["dependencies"]
+    if canonicalize_name(Requirement(text).name) == "django"
+)
 
 
 def _declared_requirements() -> list[str]:
@@ -88,18 +94,25 @@ def test_classifiers_list_exactly_the_tested_djangos() -> None:
         for classifier in METADATA["project"]["classifiers"]
         if classifier.startswith(prefix)
     ]
-    django = next(
-        Requirement(text)
-        for text in METADATA["project"]["dependencies"]
-        if canonicalize_name(Requirement(text).name) == "django"
-    )
 
     assert classified == [
         ".".join(version.split(".")[:2]) for version in POLICY["supported-django"]
     ]
     assert all(
-        django.specifier.contains(version) for version in POLICY["supported-django"]
+        DJANGO.specifier.contains(version) for version in POLICY["supported-django"]
     )
+
+
+def test_django_range_spans_exactly_the_tested_minors() -> None:
+    """The range opens at the oldest tested minor and closes at the next one."""
+    tested = sorted(Version(version) for version in POLICY["supported-django"])
+    oldest, newest = tested[0], tested[-1]
+    bounds = {specifier.operator: specifier.version for specifier in DJANGO.specifier}
+
+    assert bounds == {
+        ">=": f"{oldest.major}.{oldest.minor}",
+        "<": f"{newest.major}.{newest.minor + 1}",
+    }
 
 
 def test_manifest_and_repository_declare_the_mit_license() -> None:
