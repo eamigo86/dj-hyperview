@@ -375,6 +375,45 @@ def test_duplicate_extra_attribute_types_fail_in_every_consumer(tmp_path, operat
             operations[operation]()
 
 
+def test_extra_schema_that_starts_conflicting_after_startup_is_a_validation_error(
+    tmp_path,
+):
+    """Only a file edited after the settings snapshot reaches validation as a conflict.
+
+    Configuration time rejects a conflict with HyperviewConfigurationError, and the
+    snapshot is not taken again, so an edit made while the process runs surfaces
+    from the operation that notices it as TemplateValidationError.
+    """
+    paths = []
+    for name in ("first", "second"):
+        path = tmp_path / f"{name}.xsd"
+        path.write_text(
+            '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" '
+            'targetNamespace="https://example.test/late" '
+            f'elementFormDefault="qualified"><xs:element name="{name}" '
+            'type="xs:string"/></xs:schema>'
+        )
+        paths.append(path)
+    document = f'<view xmlns="{HV}"/>'
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": paths}):
+        assert get_settings().extra_schemas == tuple(paths)
+        validate_hyperview_schema(document)
+
+        paths[1].write_text(
+            '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" '
+            'targetNamespace="https://example.test/late" '
+            'elementFormDefault="qualified"><xs:element name="first" '
+            'type="xs:integer"/></xs:schema>'
+        )
+
+        with pytest.raises(TemplateValidationError) as validation:
+            validate_hyperview_schema(document)
+        with pytest.raises(TemplateValidationError):
+            get_hyperview_catalog()
+
+    assert validation.value.code == "duplicate_schema_declaration"
+
+
 def test_extra_alternative_without_default_preserves_its_declared_fallback(tmp_path):
     from dj_hyperview.schema import _get_static_validation_catalog
 

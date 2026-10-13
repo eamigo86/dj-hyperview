@@ -83,7 +83,10 @@ This page records user-visible release changes, including unpublished attempts.
   And the guard joined the references of a schema file that is a symlink onto the
   directory of its target, where the compiler joins them onto the directory of the
   link, so `out/evil.xsd` could name a decoy for the guard and a file outside the
-  root for the compiler. **A schema that relied on `..` inside its own root, for
+  root for the compiler. A `schemaLocation` that starts with `<`, which the XSD
+  compiler reads as inline XML rather than as a path, is rejected by the `:` rule,
+  because any inline schema declares a namespace; it was reported as
+  `schema_invalid`. **A schema that relied on `..` inside its own root, for
   example `components/../shared.xsd`, must now use the plain path `shared.xsd`. A
   schema file whose name contains `?`, `#` or `:`, such as `a#b.xsd`, must be
   renamed. A schema file that is a symlink now finds its dependencies beside the
@@ -162,21 +165,37 @@ This page records user-visible release changes, including unpublished attempts.
 - Publication and model validation compile stored source with the same linear lexer
   as the Admin check, so 40,000 unclosed `{{` on one line (120 KB) validate in well
   under a second instead of the 10 s Django's lexer takes.
-- The system check now compiles the merged `EXTRA_SCHEMAS` registry. It compiled
-  each extra schema alone, so two schemas that declare the same element differently,
-  or an extra schema that declares a Hyperview or alert name differently from the
-  bundled schemas, passed it. The conflict then surfaced as
-  `duplicate_schema_declaration` from every validation, which recompiled the
+- **Breaking change:** the system check now compiles the merged `EXTRA_SCHEMAS`
+  registry. It compiled each extra schema alone, so two schemas that declare the
+  same element differently, or an extra schema that declares a Hyperview or alert
+  name differently from the bundled schemas, passed it. The conflict then surfaced
+  as `duplicate_schema_declaration` from every validation, which recompiled the
   registry each time (70 to 90 ms, never cached). After every file passes on its
   own, the check compiles the registry the first request would use, once, and
   reports a failure as `dj_hyperview.E012` against the whole setting, with
-  `reason: duplicate_schema_declaration` or `reason: schema_invalid`. A registry
-  that compiles cleanly is cached, so the first request does not compile it again,
-  and a project without `EXTRA_SCHEMAS` pays nothing. **A project whose extra schemas
-  conflict now fails system checks, and `get_settings()` and the first request
-  raise `HyperviewConfigurationError` where they raised
-  `TemplateValidationError`.** The merge is skipped while `SCHEMA_EXTENSIONS` has
-  errors (`dj_hyperview.E021`).
+  `reason: duplicate_schema_declaration`, or `reason: schema_invalid` for any other
+  failure of the compiler, including one it does not translate. A registry that
+  compiles cleanly is cached, so the first request does not compile it again, and a
+  project without `EXTRA_SCHEMAS` pays nothing. The merge is skipped while
+  `SCHEMA_EXTENSIONS` has errors (`dj_hyperview.E021`). **A project whose extra
+  schemas conflict now fails system checks, and every call that reads the settings
+  raises `HyperviewConfigurationError`, a subclass of `HyperviewError` and
+  `ImproperlyConfigured` that is neither a `TemplateValidationError` nor a
+  `ValueError`.** These returned normally before: `get_settings()`,
+  `validate_template_source`, `HyperviewEngine()`, `TemplateResolver.from_settings()`,
+  `FileSystemSource()`, and `invalidate_templates()` when `CACHE` is set. These
+  raised `TemplateValidationError` before: `validate_hxml`, `validate_fragment_hxml`,
+  `validate_hyperview_schema`, the response classes, `render_template` once it
+  validates a rendered document, and `get_hyperview_catalog`. Code that handles
+  `TemplateValidationError` around them must handle `HyperviewConfigurationError` as
+  well. A schema file that starts to conflict after the settings were first read
+  still raises `TemplateValidationError` from the call that notices it.
+- With unusable `HYPERVIEW` settings, including conflicting extra schemas, the Admin
+  no longer fails with a server error on the change page. The change page of an
+  existing template renders read-only with a plain text area instead of the editor;
+  adding, changing and deleting are denied (HTTP 403), as for any invalid setting;
+  and the HXML completion endpoint answers with the same `configuration_error` JSON
+  diagnostic as the validation endpoint, instead of an unhandled exception.
 - A `SystemExit`, `KeyboardInterrupt` or other non-`Exception` raised while
   `RedisBroker.subscribe` opens a subscription is no longer converted into
   `RealtimeUnavailable`. The owned clients are still closed first, then the original

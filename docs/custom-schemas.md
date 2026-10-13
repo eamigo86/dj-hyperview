@@ -261,6 +261,11 @@ compiles cleanly is cached, so the first request reuses it instead of compiling 
 again. The merged compilation is skipped while `SCHEMA_EXTENSIONS` has errors
 (`dj_hyperview.E021`), because the registry cannot be built without them.
 
+A conflict is a configuration error: every call that reads the settings raises
+`HyperviewConfigurationError`, and the Admin shows existing templates read-only
+without the editor. A schema file that starts to conflict after the settings were
+first read raises `TemplateValidationError` from the call that notices it.
+
 Do not use `xs:override` in `EXTRA_SCHEMAS`: it is rejected with the stable
 `forbidden_schema_reference` validation code (`dj_hyperview.E012` during
 configuration checks). The only allowed override belongs to the package's fixed

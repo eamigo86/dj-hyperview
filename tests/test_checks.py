@@ -557,6 +557,31 @@ def test_check_compiles_without_reading_the_settings_it_is_validating(
         assert get_settings().extra_schemas == (schema,)
 
 
+@pytest.mark.parametrize("target", ["_compile_registry", "_compile_schema"])
+def test_unexpected_compile_failure_is_reported_instead_of_crashing_startup(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str
+) -> None:
+    """An exception the validator does not translate must not escape the check.
+
+    The check runs inside get_settings(), so a crash there would take every entry
+    point down with a traceback instead of one E012 with a stable reason.
+    """
+
+    def explode(*args: object, **kwargs: object) -> None:
+        raise RuntimeError(f"compiler failure in {tmp_path}")
+
+    schema = extra_schema(tmp_path / "app.xsd", '<xs:element name="w"/>')
+    monkeypatch.setattr(f"dj_hyperview.schema.{target}", explode)
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [schema]}):
+        messages = run_check()
+        with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E012"):
+            get_settings()
+
+    assert [message.id for message in messages] == ["dj_hyperview.E012"]
+    assert "(reason: schema_invalid)" in messages[0].msg
+    assert str(tmp_path) not in messages[0].msg + messages[0].hint
+
+
 @override_settings(HYPERVIEW={})
 def test_builtin_validator_requires_its_regular_dependency() -> None:
     """Every installation reports a missing mandatory dependency at startup."""

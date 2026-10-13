@@ -153,6 +153,104 @@ def test_schema_catalog_admin_endpoint_is_not_found_when_the_editor_is_disabled(
     assert response.status_code == 404
 
 
+def _conflicting_extra_schemas(tmp_path: Any) -> list[Any]:
+    """Write two schemas that compile alone and declare one name differently."""
+    paths = []
+    for index, declared in enumerate(("xs:string", "xs:integer")):
+        path = tmp_path / f"conflict{index}.xsd"
+        path.write_text(
+            '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" '
+            'targetNamespace="urn:app" elementFormDefault="qualified">'
+            f'<xs:element name="w" type="{declared}"/></xs:schema>',
+            encoding="utf-8",
+        )
+        paths.append(path)
+    return paths
+
+
+@pytest.mark.django_db
+def test_admin_degrades_when_the_extra_schemas_conflict(admin_client, tmp_path) -> None:
+    """An unusable configuration denies edits but never crashes the Admin.
+
+    The change page of an existing template renders read-only without the editor,
+    adding is denied like any other mutation, and the editor endpoints answer with
+    the same JSON error as the validation endpoint instead of a server error.
+    """
+    _, model = _admin_types()
+    template = model.objects.create(name="screens/home.xml", content="<view />")
+    prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
+    configured = {
+        "ADMIN": {"EDITOR": True},
+        "EXTRA_SCHEMAS": _conflicting_extra_schemas(tmp_path),
+    }
+
+    with override_settings(HYPERVIEW=configured):
+        change = admin_client.get(reverse(prefix + "change", args=[template.pk]))
+        add = admin_client.get(reverse(prefix + "add"))
+        catalog = admin_client.get(reverse(prefix + "hxml_catalog"))
+        validate = admin_client.post(
+            reverse(prefix + "hxml_validate"),
+            data={"name": "a.xml", "content": "<view />"},
+            content_type="application/json",
+        )
+
+    assert change.status_code == 200
+    assert "data-hyperview-editor" not in change.content.decode()
+    assert add.status_code == 403
+    for response in (catalog, validate):
+        assert response.status_code == 500
+        assert response.json()["diagnostics"][0]["code"] == "configuration_error"
+    assert str(tmp_path) not in catalog.content.decode()
+
+
+@pytest.mark.django_db
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+def test_catalog_endpoint_hides_the_cause_when_a_schema_changes_after_startup(
+    admin_client, monkeypatch
+) -> None:
+    from dj_hyperview.exceptions import TemplateValidationError
+
+    module, _ = _admin_types()
+
+    def broken() -> None:
+        raise TemplateValidationError("schema_invalid", "private schema path")
+
+    monkeypatch.setattr(module, "get_hyperview_catalog", broken)
+    url = reverse("admin:dj_hyperview_database_hyperviewtemplate_hxml_catalog")
+
+    response = admin_client.get(url)
+
+    assert response.status_code == 500
+    assert response.json()["diagnostics"][0]["code"] == "configuration_error"
+    assert "private schema path" not in response.content.decode()
+
+
+@pytest.mark.django_db
+def test_admin_form_uses_a_textarea_and_fails_closed_when_settings_are_unusable(
+    tmp_path,
+) -> None:
+    """The form builds and validates without the settings; it never validates a draft.
+
+    A blank content keeps the model field validator, which does read the settings
+    and fails loudly for a stored template, out of this test.
+    """
+    module, _ = _admin_types()
+    configured = {
+        "ADMIN": {"EDITOR": True},
+        "EXTRA_SCHEMAS": _conflicting_extra_schemas(tmp_path),
+    }
+
+    with override_settings(HYPERVIEW=configured):
+        form = module.HyperviewTemplateAdminForm(
+            data={"name": "screen.xml", "content": "", "active": True}
+        )
+        valid = form.is_valid()
+
+    assert type(form.fields["content"].widget).__name__ == "Textarea"
+    assert valid is False
+    assert form.non_field_errors().as_data()[0].code == "configuration_error"
+
+
 def test_database_contrib_without_admin_never_imports_admin_module() -> None:
     result = run_isolated(
         "tests.settings_database",

@@ -430,7 +430,10 @@ def get_hyperview_catalog() -> dict[str, Any]:
         Format 2 metadata including registered typed behavior variants.
 
     Raises:
-        TemplateValidationError: If a dependency is unsafe, invalid, or conflicts.
+        HyperviewConfigurationError: If the settings are invalid, including extra
+            schemas that conflict with each other or with the Hyperview schema.
+        TemplateValidationError: If a schema file changed after the settings were
+            first read and now is unsafe, invalid, or conflicts.
     """
     config = get_settings()
     return deepcopy(
@@ -470,7 +473,10 @@ def _get_registry_snapshot() -> tuple[tuple[Any, ...], Any]:
         Immutable revision/dependency/registration identity and its validator.
 
     Raises:
-        TemplateValidationError: If any dependency is unsafe or inconsistent.
+        HyperviewConfigurationError: If the settings are invalid, including extra
+            schemas that conflict with each other or with the Hyperview schema.
+        TemplateValidationError: If a schema file changed after the settings were
+            first read and now is unsafe, invalid, or conflicts.
     """
     config = get_settings()
     state = _registry_state(config.extra_schemas)
@@ -646,7 +652,11 @@ def validate_hyperview_schema(document: str) -> None:
         document: Rendered HXML document or fragment.
 
     Raises:
-        TemplateValidationError: If the document is unsafe or violates the XSD.
+        HyperviewConfigurationError: If the settings are invalid, including extra
+            schemas that conflict with each other or with the Hyperview schema.
+        TemplateValidationError: If the document is unsafe or violates the XSD, or
+            a schema file changed after the settings were first read and now is
+            unsafe, invalid, or conflicts.
     """
     from .validation import _validate_hxml_result
 

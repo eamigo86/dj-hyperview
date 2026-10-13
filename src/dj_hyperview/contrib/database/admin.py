@@ -19,7 +19,11 @@ from django.urls import path
 from django.utils.datastructures import MultiValueDict
 
 from dj_hyperview.conf import get_settings
-from dj_hyperview.exceptions import HyperviewConfigurationError, InvalidTemplateName
+from dj_hyperview.exceptions import (
+    HyperviewConfigurationError,
+    InvalidTemplateName,
+    TemplateValidationError,
+)
 from dj_hyperview.schema import get_hyperview_catalog
 
 from ._identity import template_name_identity
@@ -36,6 +40,18 @@ __all__ = ["HyperviewTemplateAdmin", "HyperviewTemplateAdminForm"]
 
 _CONFLICT_MESSAGE = "Template changed; reload and retry."
 logger = logging.getLogger(__name__)
+
+
+def _editor_enabled() -> bool:
+    """Report whether the HXML editor is on, treating unusable settings as off.
+
+    Returns:
+        True only when the settings are valid and enable the editor.
+    """
+    try:
+        return get_settings().admin.editor
+    except HyperviewConfigurationError:
+        return False
 
 
 def _submitted_revision(
@@ -95,7 +111,7 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
             else None
         )
         super().__init__(*args, **kwargs)
-        if get_settings().admin.editor and "content" in self.fields:
+        if _editor_enabled() and "content" in self.fields:
             from .admin_editor import HyperviewAceWidget
 
             self.fields["content"].widget = HyperviewAceWidget()
@@ -136,13 +152,13 @@ class HyperviewTemplateAdminForm(forms.ModelForm):
         Args:
             cleaned: Values accepted by field-level form validation.
         """
-        if not get_settings().admin.editor:
-            return
         name = cleaned.get("name")
         content = cleaned.get("content")
-        if not isinstance(name, str) or not isinstance(content, str):
-            return
         try:
+            if not get_settings().admin.editor:
+                return
+            if not isinstance(name, str) or not isinstance(content, str):
+                return
             result = validate_draft_source(name, content)
         except HyperviewConfigurationError:
             self.add_error(
@@ -344,13 +360,18 @@ class HyperviewTemplateAdmin(admin.ModelAdmin):
         """
         from django.core.exceptions import PermissionDenied
 
-        if not get_settings().admin.editor:
-            raise Http404
-        if not (
-            self.has_view_permission(request) or self.has_change_permission(request)
-        ):
-            raise PermissionDenied
-        return JsonResponse(get_hyperview_catalog())
+        try:
+            if not get_settings().admin.editor:
+                raise Http404
+            if not (
+                self.has_view_permission(request) or self.has_change_permission(request)
+            ):
+                raise PermissionDenied
+            return JsonResponse(get_hyperview_catalog())
+        except (HyperviewConfigurationError, TemplateValidationError):
+            return _error(
+                "configuration_error", "Template completion is unavailable.", 500
+            )
 
     def get_fields(
         self, request: HttpRequest, obj: HyperviewTemplate | None = None

@@ -392,7 +392,8 @@ def _extra_schema_cause(configured: Any) -> str | None:
     """Return a stable, path-free reason an extra schema is unusable, or None.
 
     The reason is the validation code of the failure, "unreadable" when the file
-    cannot be read, or "not_a_path" when the entry is not a path at all.
+    cannot be read, "not_a_path" when the entry is not a path at all, or
+    "schema_invalid" when the compiler fails in a way it does not translate.
     """
     from .exceptions import TemplateValidationError
     from .schema import _compile_schema, _guard_local_references
@@ -410,6 +411,9 @@ def _extra_schema_cause(configured: Any) -> str | None:
         return error.code
     except OSError:
         return "unreadable"
+    except Exception:
+        # The check runs inside get_settings(); a crash would escape every caller.
+        return "schema_invalid"
     return None
 
 
@@ -418,6 +422,7 @@ def _merged_registry_cause(
 ) -> str | None:
     """Return the validation code that stops the merged registry compiling, or None.
 
+    An exception the compiler does not translate is reported as "schema_invalid".
     This is the compilation, and the cache entry, of the first request, so a clean
     registry is compiled once for both. Conflicts between schemas, or with the
     Hyperview namespaces, only show up here. The paths are explicit because the
@@ -430,6 +435,8 @@ def _merged_registry_cause(
         _compile_registry(_registry_state(paths), extensions)
     except TemplateValidationError as error:
         return error.code
+    except Exception:
+        return "schema_invalid"
     return None
 
 
