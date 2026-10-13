@@ -90,9 +90,11 @@ def test_public_close_started_before_app_return_stays_owned_until_release():
         )
         await asyncio.wait_for(application_returning.wait(), timeout=1)
         try:
-            # Deadline is only a bounded liveness oracle, not transport timing.
-            done, _ = await asyncio.wait({task}, timeout=0.05)
-            returned_before_release = bool(done) and not release_finished.is_set()
+            # A fixed number of loop turns, not a wall-clock window: cleanup is
+            # blocked on release_allowed, so only a premature return can end the task.
+            for _ in range(50):
+                await asyncio.sleep(0)
+            returned_before_release = task.done() and not release_finished.is_set()
         finally:
             release_allowed.set()
             await asyncio.wait_for(task, timeout=1)

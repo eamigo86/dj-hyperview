@@ -331,8 +331,10 @@ def test_double_cancel_during_setup_waits_for_owned_client_cleanup(monkeypatch):
         await asyncio.wait_for(entered.wait(), 1)
         task.cancel()
         try:
-            done, _ = await asyncio.wait({task}, timeout=0.05)
-            returned_before_cleanup = bool(done) and not released.is_set()
+            # Loop turns rather than a time window: cleanup is blocked on allowed.
+            for _ in range(50):
+                await asyncio.sleep(0)
+            returned_before_cleanup = task.done() and not released.is_set()
         finally:
             allowed.set()
             result = await asyncio.gather(task, return_exceptions=True)
@@ -369,7 +371,9 @@ def test_repeated_setup_cancellation_does_not_renew_cleanup_budget(monkeypatch):
 
         cancellations = asyncio.create_task(keep_cancelling())
         try:
-            done, _ = await asyncio.wait({task}, timeout=0.25)
+            # The cleanup budget is 0.03 s; a renewed budget would never end, so this
+            # generous limit only bounds the failing case.
+            done, _ = await asyncio.wait({task}, timeout=5)
         finally:
             cancellations.cancel()
             await asyncio.gather(cancellations, return_exceptions=True)

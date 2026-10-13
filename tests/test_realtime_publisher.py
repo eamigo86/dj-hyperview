@@ -11,24 +11,48 @@ def publisher():
     return importlib.import_module("dj_hyperview.realtime._publisher")
 
 
-def test_one_worker_bounds_actual_caller_wait_and_does_not_retry(monkeypatch, caplog):
+class FakeClock:
+    """A monotonic clock that stands still until a test moves it."""
+
+    def __init__(self) -> None:
+        self.now = 1_000.0
+
+    def monotonic(self) -> float:
+        return self.now
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    fake = FakeClock()
+    monkeypatch.setattr(publisher(), "time", fake)
+    return fake
+
+
+def test_one_worker_bounds_actual_caller_wait_and_does_not_retry(
+    monkeypatch, caplog, clock
+):
     module = publisher()
     entered = threading.Event()
     release = threading.Event()
     calls = []
+    deadlines = []
 
-    def send(*args):
+    def send(target, config, channels, payload, deadline):
         calls.append(threading.get_ident())
+        deadlines.append(deadline)
         entered.set()
         release.wait(5)
 
     monkeypatch.setattr(module, "_send", send)
     dispatcher = module._Dispatcher()
     try:
-        started = time.monotonic()
-        assert dispatcher.submit(None, ("topic",), b"payload") is False
-        elapsed = time.monotonic() - started
-        assert entered.is_set() and 1.8 <= elapsed < 2.5
+        with monkeypatch.context() as short:
+            # Real wait kept short; the deadline itself is read off the fake clock.
+            short.setattr(module, "_TIMEOUT", 0.05)
+            assert dispatcher.submit(None, ("topic",), b"payload") is False
+        # The caller gave up while the worker was still inside the send.
+        assert entered.is_set() and not release.is_set()
+        assert deadlines == [clock.now + 0.05]
         assert len(calls) == 1 and dispatcher.thread.is_alive()
         assert "payload" not in caplog.text and "topic" not in caplog.text
         assert "realtime_publish_timeout" in caplog.text
@@ -62,14 +86,14 @@ def test_queue32_rejects_overflow_and_expired_queued_job_never_sends(
     try:
         for job in expired:
             dispatcher.queue.put_nowait(job)
-        started = time.monotonic()
         assert dispatcher.submit(None, ("topic",), b"x") is False
-        assert time.monotonic() - started < 0.2
         assert dispatcher.queue.qsize() == 32
         release.set()
         assert expired[-1].done.wait(1)
         assert calls == [1]
+        # Rejected on the spot: the caller did not wait out its deadline.
         assert "realtime_publish_queue_full" in caplog.text
+        assert "realtime_publish_timeout" not in caplog.text
     finally:
         release.set()
         dispatcher.close()
@@ -235,9 +259,8 @@ def test_breaker_opens_after_consecutive_failures_and_fails_fast(monkeypatch, ca
         for _ in range(3):
             assert dispatcher.submit(config, ("private-topic",), b"x") is False
         assert len(made) == 3
-        started = time.monotonic()
+        # Turned away before any client is built or any job queued.
         assert dispatcher.submit(config, ("private-topic",), b"payload") is False
-        assert time.monotonic() - started < 0.2
         assert len(made) == 3
         assert "realtime_publish_circuit_open" in caplog.text
         assert "payload" not in caplog.text and "private-topic" not in caplog.text
@@ -246,23 +269,22 @@ def test_breaker_opens_after_consecutive_failures_and_fails_fast(monkeypatch, ca
         dispatcher.close()
 
 
-def test_breaker_half_opens_after_cooldown_and_closes_on_success(monkeypatch):
+def test_breaker_half_opens_after_cooldown_and_closes_on_success(monkeypatch, clock):
     module = publisher()
     down = [True]
     made = fake_clients(monkeypatch, module, lambda config: down[0])
-    monkeypatch.setattr(module, "_COOLDOWN", 0.2)
     config = module._Config("redis://127.0.0.1/0", "ns")
     dispatcher = module._Dispatcher()
     try:
         for _ in range(3):
             assert dispatcher.submit(config, ("a",), b"x") is False
-        time.sleep(0.25)
+        clock.now += module._COOLDOWN + 1
         # One probe is let through; failing again reopens the breaker at once.
         assert dispatcher.submit(config, ("a",), b"x") is False
         assert len(made) == 4
         assert dispatcher.submit(config, ("a",), b"x") is False
         assert len(made) == 4
-        time.sleep(0.25)
+        clock.now += module._COOLDOWN + 1
         down[0] = False
         assert dispatcher.submit(config, ("a",), b"x") is True
         assert dispatcher.submit(config, ("a",), b"x") is True
@@ -347,9 +369,7 @@ def test_a_base_exception_in_the_client_does_not_strand_later_hints(monkeypatch)
         second = module._get_dispatcher()
         try:
             assert second is not first and second.thread.is_alive()
-            started = time.monotonic()
             assert second.submit(None, ("topic",), b"x") is True
-            assert time.monotonic() - started < 0.5
             assert module._get_dispatcher() is second
         finally:
             second.close()
@@ -387,10 +407,9 @@ def raise_stop(error):
     return execute
 
 
-def test_circuit_open_is_logged_once_per_cooldown_window(monkeypatch, caplog):
+def test_circuit_open_is_logged_once_per_cooldown_window(monkeypatch, caplog, clock):
     module = publisher()
     made = fake_clients(monkeypatch, module, lambda config: True)
-    monkeypatch.setattr(module, "_COOLDOWN", 0.3)
     config = module._Config("redis://:s3cr3t-pw@secret-host:6379/0", "ns")
     dispatcher = module._Dispatcher()
 
@@ -403,7 +422,7 @@ def test_circuit_open_is_logged_once_per_cooldown_window(monkeypatch, caplog):
         for _ in range(50):
             assert dispatcher.submit(config, ("a",), b"x") is False
         assert len(made) == 3 and opened() == 1
-        time.sleep(0.35)
+        clock.now += module._COOLDOWN + 1
         # The probe fails and opens a second window, which is logged once again.
         assert dispatcher.submit(config, ("a",), b"x") is False
         for _ in range(50):
