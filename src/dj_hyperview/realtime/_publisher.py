@@ -17,6 +17,9 @@ _TIMEOUT = 2.0
 # A pooled connection idle for longer may have been dropped by the server or a
 # middlebox, and the first command on it would fail without a retry.
 _IDLE = 30.0
+# A connection under steady traffic is never idle, so it is also replaced after this
+# age, which makes the next one resolve the host name again.
+_MAX_AGE = 300.0
 # Consecutive failures that open the breaker, and how long it then fails fast.
 _FAILURES = 3
 _COOLDOWN = 5.0
@@ -36,11 +39,13 @@ class _Job:
 class _Target:
     """Worker-owned client and circuit breaker state for one configuration.
 
-    Only the worker thread touches the client, its last use and the failure count.
-    The open_until deadline is one float written by the worker and read by callers.
+    Only the worker thread touches the client, its age, its last use and the failure
+    count. The open_until deadline is one float written by the worker and read by
+    callers.
     """
 
     client: Any = None
+    born: float = 0.0
     used: float = 0.0
     failures: int = 0
     open_until: float = 0.0
@@ -60,11 +65,15 @@ def _send(
     payload: bytes,
     deadline: float,
 ) -> None:
-    if target.client is not None and time.monotonic() - target.used > _IDLE:
+    now = time.monotonic()
+    if target.client is not None and (
+        now - target.used > _IDLE or now - target.born > _MAX_AGE
+    ):
         _discard(target)
-    if target.client is None:
-        target.client = _sync_client(config)
     try:
+        if target.client is None:
+            target.client = _sync_client(config)
+            target.born = now
         with target.client.pipeline(transaction=False) as pipeline:
             for channel in channels:
                 pipeline.publish(channel, payload)
@@ -77,6 +86,8 @@ def _send(
         target.failures += 1
         if target.failures >= _FAILURES:
             target.open_until = time.monotonic() + _COOLDOWN
+            # Once per window: the callers that the open breaker turns away are silent.
+            _LOGGER.warning("realtime_publish_circuit_open")
         raise
     target.failures = 0
     target.used = time.monotonic()
@@ -97,7 +108,6 @@ class _Dispatcher:
         if self.stopped.is_set() or time.monotonic() >= deadline:
             return False
         if self._open(config):
-            _LOGGER.warning("realtime_publish_circuit_open")
             return False
         job = _Job(config, channels, payload, deadline)
         try:
@@ -115,25 +125,30 @@ class _Dispatcher:
         return target is not None and time.monotonic() < target.open_until
 
     def _run(self) -> None:
-        while not self.stopped.is_set():
-            job = self.queue.get()
-            if job is None:
-                break
-            try:
-                if time.monotonic() < job.deadline and not self._open(job.config):
-                    target = self.targets.setdefault(job.config, _Target())
-                    _send(target, job.config, job.channels, job.payload, job.deadline)
-                    job.success = True
-            except Exception as error:
-                # The type name is code-defined; the message may carry a URL.
-                _LOGGER.warning(
-                    "realtime_publish_failed error_type=%s", type(error).__name__
-                )
-            finally:
-                job.done.set()
-        # Closed here, not in close(), so the worker is the only user of a client.
-        for target in self.targets.values():
-            _discard(target)
+        try:
+            while not self.stopped.is_set():
+                job = self.queue.get()
+                if job is None:
+                    break
+                try:
+                    if time.monotonic() < job.deadline and not self._open(job.config):
+                        target = self.targets.setdefault(job.config, _Target())
+                        _send(
+                            target, job.config, job.channels, job.payload, job.deadline
+                        )
+                        job.success = True
+                except Exception as error:
+                    # The type name is code-defined; the message may carry a URL.
+                    _LOGGER.warning(
+                        "realtime_publish_failed error_type=%s", type(error).__name__
+                    )
+                finally:
+                    job.done.set()
+        finally:
+            # Closed here, not in close(), so the worker is the only user of a client.
+            # A BaseException ends the worker, and every client still goes with it.
+            for target in self.targets.values():
+                _discard(target)
 
     def close(self) -> None:
         self.stopped.set()
@@ -161,7 +176,9 @@ def _get_dispatcher() -> _Dispatcher:
     if _pid != os.getpid():
         _after_fork()
     with _lock:
-        if _dispatcher is None:
+        # A BaseException ends the worker thread, and a dead one would leave every
+        # later commit waiting for its full timeout.
+        if _dispatcher is None or not _dispatcher.thread.is_alive():
             _dispatcher = _Dispatcher()
         return _dispatcher
 

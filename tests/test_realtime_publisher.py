@@ -4,6 +4,8 @@ import importlib
 import threading
 import time
 
+import pytest
+
 
 def publisher():
     return importlib.import_module("dj_hyperview.realtime._publisher")
@@ -318,3 +320,152 @@ def test_stopped_dispatcher_and_changed_pid_do_not_reuse_worker(monkeypatch):
     finally:
         second.close()
         module._after_fork()
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_base_exception_in_the_client_does_not_strand_later_hints(monkeypatch):
+    """A gevent Timeout is a BaseException: it ends the worker, so a new one starts."""
+    module = publisher()
+
+    class Stop(BaseException):
+        pass
+
+    calls = []
+
+    def send(*args):
+        calls.append(1)
+        if len(calls) == 1:
+            raise Stop
+
+    monkeypatch.setattr(module, "_send", send)
+    module._after_fork()
+    first = module._get_dispatcher()
+    try:
+        assert first.submit(None, ("topic",), b"x") is False
+        first.thread.join(2)
+        assert not first.thread.is_alive()
+        second = module._get_dispatcher()
+        try:
+            assert second is not first and second.thread.is_alive()
+            started = time.monotonic()
+            assert second.submit(None, ("topic",), b"x") is True
+            assert time.monotonic() - started < 0.5
+            assert module._get_dispatcher() is second
+        finally:
+            second.close()
+    finally:
+        first.close()
+        module._after_fork()
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_worker_ended_by_a_base_exception_still_closes_every_client(monkeypatch):
+    module = publisher()
+
+    class Stop(BaseException):
+        pass
+
+    made = fake_clients(monkeypatch, module)
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    other = module._Config("redis://127.0.0.1/1", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        assert dispatcher.submit(config, ("a",), b"x") is True
+        monkeypatch.setattr(made[0].__class__, "execute", raise_stop(Stop))
+        assert dispatcher.submit(other, ("a",), b"x") is False
+        dispatcher.thread.join(2)
+        assert not dispatcher.thread.is_alive()
+        assert all(client.closed for client in made) and len(made) == 2
+    finally:
+        dispatcher.close()
+
+
+def raise_stop(error):
+    def execute(self):
+        raise error
+
+    return execute
+
+
+def test_circuit_open_is_logged_once_per_cooldown_window(monkeypatch, caplog):
+    module = publisher()
+    made = fake_clients(monkeypatch, module, lambda config: True)
+    monkeypatch.setattr(module, "_COOLDOWN", 0.3)
+    config = module._Config("redis://:s3cr3t-pw@secret-host:6379/0", "ns")
+    dispatcher = module._Dispatcher()
+
+    def opened():
+        return caplog.text.count("realtime_publish_circuit_open")
+
+    try:
+        for _ in range(3):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        for _ in range(50):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        assert len(made) == 3 and opened() == 1
+        time.sleep(0.35)
+        # The probe fails and opens a second window, which is logged once again.
+        assert dispatcher.submit(config, ("a",), b"x") is False
+        for _ in range(50):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        assert len(made) == 4 and opened() == 2
+        assert "s3cr3t" not in caplog.text and "secret-host" not in caplog.text
+    finally:
+        dispatcher.close()
+
+
+def test_failures_must_be_consecutive_to_open_the_breaker(monkeypatch, caplog):
+    module = publisher()
+    outcomes = iter([True, True, False, True, True, False])
+    made = fake_clients(monkeypatch, module, lambda config: next(outcomes))
+    config = module._Config("redis://127.0.0.1/0", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        results = [dispatcher.submit(config, ("a",), b"x") for _ in range(6)]
+        assert results == [False, False, True, False, False, True]
+        assert len(made) == 5
+        assert "realtime_publish_circuit_open" not in caplog.text
+    finally:
+        dispatcher.close()
+
+
+def test_a_client_that_cannot_be_built_counts_toward_the_breaker(monkeypatch, caplog):
+    module = publisher()
+    built = []
+
+    def broken(config):
+        built.append(config)
+        raise ValueError("redis://:s3cr3t-pw@secret-host:6379/0")
+
+    monkeypatch.setattr(module, "_sync_client", broken)
+    config = module._Config("redis://:s3cr3t-pw@secret-host:6379/0", "ns")
+    dispatcher = module._Dispatcher()
+    try:
+        for _ in range(3):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        assert dispatcher.submit(config, ("a",), b"x") is False
+        assert len(built) == 3 and dispatcher.thread.is_alive()
+        assert "realtime_publish_failed error_type=ValueError" in caplog.text
+        assert "realtime_publish_circuit_open" in caplog.text
+        assert "s3cr3t" not in caplog.text and "secret-host" not in caplog.text
+    finally:
+        dispatcher.close()
+
+
+def test_a_connection_is_replaced_after_its_maximum_age_despite_traffic(monkeypatch):
+    """A busy connection is never idle, yet DNS must be resolved again some day."""
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    target = module._Target()
+    deadline = time.monotonic() + 60
+
+    module._send(target, None, ("a",), b"x", deadline)
+    module._send(target, None, ("a",), b"x", deadline)
+    assert len(made) == 1 and not made[0].closed
+
+    target.born -= module._MAX_AGE + 1
+    module._send(target, None, ("a",), b"x", deadline)
+
+    assert len(made) == 2 and made[0].closed and not made[1].closed
+    module._send(target, None, ("a",), b"x", deadline)
+    assert len(made) == 2

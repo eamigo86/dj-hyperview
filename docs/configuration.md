@@ -488,11 +488,15 @@ jobs; each commit caller waits at most two seconds including queue time. Expired
 not start I/O. Forked children create their own worker, not an inherited client.
 The worker keeps one Redis connection per configuration and reuses it for later
 hints, sending all channels of a hint in one pipeline round trip. It replaces the
-connection after a failure or after 30 seconds without use. After three
-consecutive failures of one configuration, publications for it fail fast for five
-seconds instead of each paying the connection timeout, and log the fixed code
-`realtime_publish_circuit_open`. The first publication after that pause is the
-probe: success closes the breaker, failure reopens it for another five seconds.
+connection after a failure, after 30 seconds without use, or after five minutes of
+age, so that the host name is resolved again even under steady traffic. After three
+consecutive failures of one configuration, including a client that cannot be built,
+publications for it fail fast for five seconds instead of each paying the
+connection timeout. The breaker logs the fixed code `realtime_publish_circuit_open`
+once when it opens, not for each dropped hint. The first publication after that
+pause is the probe: success closes the breaker, failure reopens it for another five
+seconds. A worker ended by a `BaseException`, such as a gevent `Timeout`, is
+replaced by the next commit.
 Hints dropped this way follow the same at-most-once rule as every other failure.
 
 **The caller deadline is not a total I/O deadline.** DNS resolution cannot be
