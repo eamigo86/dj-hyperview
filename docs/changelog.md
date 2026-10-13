@@ -12,9 +12,11 @@ This page records user-visible release changes, including unpublished attempts.
   options. A source whose content depends on ambient state, such as a `ContextVar`
   that holds the current tenant, therefore served one caller's content to another
   once `HYPERVIEW["CACHE"]` was enabled. `FileSystemSource` and `DatabaseSource`
-  with an explicit `using` alias keep their caching. To keep caching a custom
-  source, set `cacheable = True` on it, but only when its output depends solely on
-  the template name and the constructor options; see
+  with an explicit `using` alias keep their caching, but only while `resolve()` is
+  their own: a subclass that overrides `resolve()`, for example to select a
+  tenant's directory, is no longer cached until it sets `cacheable = True`. To keep
+  caching a custom source, set `cacheable = True` on it, but only when its output
+  depends solely on the template name and the constructor options; see
   [Cache consistency](cache-consistency.md#choose-which-sources-are-cached). The
   private `_dj_hyperview_cacheable` marker is removed and no longer has any effect.
 - Reject an element with more than 256 attributes, more than 64 in-scope
@@ -61,8 +63,10 @@ This page records user-visible release changes, including unpublished attempts.
 
 - A public, optional `cacheable` attribute on template sources. It defaults to
   `False`; `FileSystemSource.cacheable` is `True` and `DatabaseSource.cacheable`
-  is `True` only with an explicit `using` alias. The `TemplateSource` protocol
-  still requires only `resolve()`.
+  is `True` only with an explicit `using` alias, each only while the instance uses
+  the built-in `resolve()`. Both can be assigned, for example `self.cacheable =
+  False` in a subclass constructor, or overridden by a class attribute. The
+  `TemplateSource` protocol still requires only `resolve()`.
 - `dj_hyperview.validators.validate_xml_text`, a Django validator (error code
   `xml_characters`) that rejects characters XML 1.0 cannot represent.
 - `hv_text` and `hv_attr` template filters that remove those characters and
@@ -101,10 +105,13 @@ This page records user-visible release changes, including unpublished attempts.
   a project, or an installation of the package, under such a directory failed with
   `dj_hyperview.E012` or `schema_invalid` even with default settings. The package
   now hands the compiler absolute file URIs.
-- A `VALIDATION` limit that is a `bool` or another `int` subclass now fails the
+- A `VALIDATION` limit that is an `int` subclass other than `bool` now fails the
   system check with `dj_hyperview.E009`, the rule `ValidationSettings` already
   enforced. Before, the check accepted it and the first read of the settings
   raised a bare `ValueError`.
+- The `ADMIN.PERMISSION` system check no longer crashes with `NameError` on
+  Python 3.14 when the permission callable annotates a parameter with a type that
+  is imported only under `TYPE_CHECKING`.
 - Importing the package no longer loads Django's test framework into production
   processes: `setting_changed` now comes from `django.core.signals`.
 - A UTF-8 BOM followed by template whitespace before the XML declaration, such as
@@ -139,7 +146,10 @@ This page records user-visible release changes, including unpublished attempts.
 - `SOURCES[].OPTIONS` is bound to the backend constructor during system checks.
   Options the constructor does not accept, or required arguments it does not
   receive, produce `dj_hyperview.E024`. Before, such a project passed the checks
-  and raised `TypeError` on every request.
+  and raised `TypeError` on every request. On Python 3.14, where annotations are
+  evaluated lazily, the check reads the constructor signature without resolving
+  annotations; a name imported only under `TYPE_CHECKING` would otherwise raise
+  `NameError` and silently disable the check for that backend.
 - `requires-python` is now `>=3.12` with no upper bound. The previous `<3.15` cap
   stopped installers on Python 3.15 from installing the package at all. Python
   3.12, 3.13 and 3.14 remain the tested set, declared by the classifiers and the

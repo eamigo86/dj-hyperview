@@ -14,7 +14,7 @@ from dj_hyperview.exceptions import (
     TemplateValidationError,
 )
 
-from .base import ResolvedTemplate, canonicalize_template_name
+from .base import ResolvedTemplate, _BuiltinCacheable, canonicalize_template_name
 
 
 def _is_within_root(candidate: Path, root: Path) -> bool:
@@ -29,12 +29,13 @@ class FileSystemSource:
     """Resolve UTF-8 templates below configured directories.
 
     Output depends only on the configured roots and the template name, so the
-    source opts in to raw-template caching with a true cacheable attribute.
-    Subclasses inherit that declaration; a subclass whose output depends on
-    anything else, such as the current tenant, must set cacheable to False.
+    source opts in to raw-template caching: its cacheable attribute is True while
+    resolve is this class's own. A subclass that overrides resolve may depend on
+    anything else, such as the current tenant, so it is not cached until it
+    declares cacheable True itself, as a class attribute or an instance attribute.
     """
 
-    cacheable: bool = True
+    cacheable = _BuiltinCacheable()
 
     def __init__(self, template_dirs: Iterable[str | Path] | None = None) -> None:
         """Initialize a filesystem source.

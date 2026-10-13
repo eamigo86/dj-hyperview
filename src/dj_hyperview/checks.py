@@ -1,5 +1,6 @@
 """Django system checks for consumer Hyperview configuration."""
 
+import sys
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import fields
 from importlib.util import find_spec
@@ -33,6 +34,16 @@ _SOURCE_KEYS = frozenset({"BACKEND", "OPTIONS"})
 # Removed keys keep their dedicated errors, so E023 must not report them again.
 _RETIRED_KEYS = frozenset({"SCHEMA_PROFILE"})
 _RETIRED_VALIDATION_KEYS = {"MODE": "E007", "SCHEMA": "E008"}
+
+if sys.version_info >= (3, 14):
+    from annotationlib import Format
+
+    # Python 3.14 evaluates annotations lazily, so a name imported only under
+    # TYPE_CHECKING makes signature() raise NameError. FORWARDREF keeps such a name
+    # as a placeholder instead of silently skipping, or crashing, the check.
+    _SIGNATURE_OPTIONS: dict[str, Any] = {"annotation_format": Format.FORWARDREF}
+else:
+    _SIGNATURE_OPTIONS = {}
 
 
 def _error(code: str, path: str, requirement: str, hint: str | None = None) -> Error:
@@ -114,7 +125,7 @@ def _backend(path: Any) -> Any:
 def _options_match(backend: Any, options: Mapping[str, Any]) -> bool:
     """Whether the backend constructor accepts these keyword arguments."""
     try:
-        constructor = signature(backend)
+        constructor = signature(backend, **_SIGNATURE_OPTIONS)
     except Exception:  # Not introspectable: construction at runtime decides.
         return True
     try:
@@ -392,7 +403,7 @@ def _check_admin(value: Any) -> list[CheckMessage]:
     accepts_request = callable(permission)
     if accepts_request:
         try:
-            signature(permission).bind(object())
+            signature(permission, **_SIGNATURE_OPTIONS).bind(object())
         except (TypeError, ValueError):
             accepts_request = False
     if not accepts_request:

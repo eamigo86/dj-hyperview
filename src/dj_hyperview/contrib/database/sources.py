@@ -10,6 +10,7 @@ from django.utils.connection import ConnectionDoesNotExist
 
 from dj_hyperview.exceptions import SourceUnavailable
 from dj_hyperview.sources import ResolvedTemplate, canonicalize_template_name
+from dj_hyperview.sources.base import _BuiltinCacheable
 
 from ._config import _database_alias_is_configured
 from ._identity import template_name_identity
@@ -40,7 +41,16 @@ def _get_active(manager: Any, model: type[Any], name: str) -> Any:
 
 
 class DatabaseSource:
-    """Resolve raw templates from the optional database application."""
+    """Resolve raw templates from the optional database application.
+
+    The cacheable attribute is True only for an explicit database alias, because
+    without one Django routing can select a different database for each request.
+    It is also True only while resolve is this class's own: a subclass that
+    overrides resolve is not cached until it declares cacheable True itself, as a
+    class attribute or an instance attribute.
+    """
+
+    cacheable = _BuiltinCacheable(lambda source: source.using is not None)
 
     def __init__(self, *, using: str | None = None) -> None:
         """Initialize a database source.
@@ -49,16 +59,6 @@ class DatabaseSource:
             using: Explicit database alias, or None to defer to Django routing.
         """
         self.using = using
-
-    @property
-    def cacheable(self) -> bool:
-        """Whether resolved content may be cached.
-
-        Returns:
-            True only for an explicit database alias. Without one, Django routing
-            can select a different database for each request.
-        """
-        return self.using is not None
 
     def _dj_hyperview_cache_safe(self) -> bool:
         if self.using is None:

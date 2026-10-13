@@ -1,5 +1,7 @@
+import sys
 from collections import Counter
 from pathlib import Path
+from typing import TYPE_CHECKING
 from unittest.mock import patch
 
 import pytest
@@ -10,6 +12,9 @@ from dj_hyperview.checks import check_hyperview_settings
 from dj_hyperview.conf import get_settings
 from dj_hyperview.exceptions import HyperviewConfigurationError
 from dj_hyperview.resolver import TemplateResolver
+
+if TYPE_CHECKING:
+    from decimal import Decimal
 
 FILESYSTEM = "dj_hyperview.sources.FileSystemSource"
 DATABASE_SOURCE = "dj_hyperview.contrib.database.sources.DatabaseSource"
@@ -24,6 +29,33 @@ class RequiredOptionSource:
 
     def resolve(self, name: str) -> None:
         return None
+
+
+class QuotedAnnotationSource:
+    """Source whose constructor names a type that only static checkers import."""
+
+    def __init__(self, *, limit: "Decimal") -> None:
+        self.limit = limit
+
+    def resolve(self, name: str) -> None:
+        return None
+
+
+# Names a type that is never imported. Python 3.14 stores such an annotation without
+# evaluating it, but earlier versions evaluate it when the definition runs, so the
+# definitions are compiled only by the test that needs them.
+LAZY_ANNOTATIONS = """
+class LazyAnnotationSource:
+    def __init__(self, *, token: NeverImported) -> None:
+        self.token = token
+
+    def resolve(self, name):
+        return None
+
+
+def lazy_annotation_permission(request: NeverImported) -> bool:
+    return True
+"""
 
 
 class Limit(int):
@@ -584,6 +616,53 @@ def test_signature_introspection_failure_never_breaks_or_fails_the_check() -> No
         "SOURCES": [{"BACKEND": f"{__name__}.OPAQUE_BACKEND", "OPTIONS": {"x": 1}}]
     }
     with override_settings(HYPERVIEW=configured):
+        assert _ids(check_hyperview_settings()) == []
+
+
+@pytest.mark.parametrize(
+    ("options", "expected"), [({"limit": 3}, []), ({"limt": 3}, ["E024"])]
+)
+def test_annotations_naming_checker_only_types_do_not_affect_the_options_check(
+    options: dict, expected: list[str]
+) -> None:
+    """The constructor is bound without evaluating or resolving its annotations."""
+    configured = {
+        "SOURCES": [
+            {"BACKEND": f"{__name__}.QuotedAnnotationSource", "OPTIONS": options}
+        ]
+    }
+    with override_settings(HYPERVIEW=configured):
+        assert _ids(check_hyperview_settings()) == expected
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 14),
+    reason="Python 3.14 evaluates annotations lazily, so a missing name fails on use",
+)
+def test_unresolved_annotation_names_neither_skip_e024_nor_crash_e017(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """signature() raises NameError for such a name unless it reads FORWARDREF."""
+    definitions: dict[str, object] = {}
+    exec(LAZY_ANNOTATIONS, definitions)
+    for name in ("LazyAnnotationSource", "lazy_annotation_permission"):
+        monkeypatch.setattr(
+            sys.modules[__name__], name, definitions[name], raising=False
+        )
+    source = f"{__name__}.LazyAnnotationSource"
+
+    def configured(options: dict, permission: str = "tests.stubs.allow_template_admin"):
+        return {
+            "SOURCES": [{"BACKEND": source, "OPTIONS": options}],
+            "ADMIN": {"PERMISSION": permission},
+        }
+
+    with override_settings(HYPERVIEW=configured({"toke": 1})):
+        assert _ids(check_hyperview_settings()) == ["E024"]
+    with override_settings(HYPERVIEW=configured({"token": 1})):
+        assert _ids(check_hyperview_settings()) == []
+    permission = f"{__name__}.lazy_annotation_permission"
+    with override_settings(HYPERVIEW=configured({"token": 1}, permission)):
         assert _ids(check_hyperview_settings()) == []
 
 

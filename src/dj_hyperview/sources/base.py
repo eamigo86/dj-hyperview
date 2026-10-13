@@ -1,8 +1,9 @@
 """Shared template source contracts."""
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import PureWindowsPath
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 from unicodedata import category
 
 from dj_hyperview.exceptions import InvalidTemplateName
@@ -38,7 +39,9 @@ class TemplateSource(Protocol):
     the current tenant, user, request or language, must not opt in, because cached
     content would be served to a different caller. Subclasses inherit the
     attribute; a subclass that changes what resolve reads must set cacheable to
-    False.
+    False. The built-in sources are stricter: they report cacheable only while
+    resolve is their own, so a subclass that overrides resolve must declare
+    cacheable True itself.
     """
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
@@ -51,6 +54,34 @@ class TemplateSource(Protocol):
             The resolved template when found, otherwise a source-local miss.
         """
         ...
+
+
+class _BuiltinCacheable:
+    """The cacheable attribute of a built-in source, assignable per instance.
+
+    Reading returns an explicit assignment when there is one. Otherwise the source
+    is cacheable by default only while it runs the resolve of the built-in class
+    that holds this descriptor. A subclass that overrides resolve may read ambient
+    state, such as the current tenant, so it is not cached until it declares
+    cacheable itself, as a class attribute or by assigning the instance attribute.
+    """
+
+    def __init__(self, default: Callable[[Any], bool] = lambda source: True) -> None:
+        self._default = default
+
+    def __set_name__(self, owner: type, name: str) -> None:
+        self._owner = owner
+        self._name = name
+
+    def __get__(self, source: Any, owner: type | None = None) -> Any:
+        if source is None:
+            return self
+        if self._name in source.__dict__:
+            return source.__dict__[self._name]
+        return type(source).resolve is self._owner.resolve and self._default(source)
+
+    def __set__(self, source: Any, value: bool) -> None:
+        source.__dict__[self._name] = value
 
 
 def canonicalize_template_name(name: str) -> str:

@@ -52,9 +52,10 @@ with any other value, is read on every lookup and creates no cache entries.
 
 | Source | Cached |
 | --- | --- |
-| `FileSystemSource` | Yes: it declares `cacheable = True`. |
+| `FileSystemSource` | Yes: it reports `cacheable = True`. |
 | `DatabaseSource` with an explicit `using` alias | Yes. |
 | `DatabaseSource` without `using` | No: Django routing can select a different database per request. |
+| A subclass of either that overrides `resolve()` | Only when it declares `cacheable = True` itself. |
 | A custom source | Only when it declares `cacheable = True`. |
 
 A custom source opts in with a class attribute, an instance attribute, or a
@@ -83,9 +84,14 @@ state, for example a `ContextVar` that selects the current tenant, thread-local
 data, or the active translation, must not opt in: the first caller's content
 would be served to every other caller until the entry expires or is invalidated.
 
-Subclasses inherit the attribute. `FileSystemSource` declares `cacheable = True`,
-so a subclass whose `resolve()` depends on anything beyond its roots must set
-`cacheable = False`.
+Subclasses of your own sources inherit the attribute, so a subclass whose
+`resolve()` reads more than its parent does must set `cacheable = False`. The
+built-in sources are stricter. `FileSystemSource` and `DatabaseSource` report
+`cacheable` as `True` only while `resolve()` is their own implementation, so a
+subclass that overrides `resolve()`, for example to select a tenant's directory, is
+not cached until it declares `cacheable = True` itself. Do that only when the rule
+above still holds. Both built-in sources accept the class attribute and the
+instance attribute (`self.cacheable = False` in `__init__`).
 
 Earlier betas cached every custom source that lacked a private marker. Custom
 sources are no longer cached until they declare `cacheable = True`. Add the

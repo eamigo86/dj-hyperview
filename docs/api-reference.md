@@ -66,11 +66,13 @@ A `TemplateSource` requires only `resolve(name)`, which returns a `ResolvedTempl
 or `None` for a source-local miss. A source may also expose an optional
 `cacheable` attribute, `False` unless declared. The resolver caches a source only
 when `cacheable` is exactly `True`, so a source that does not declare it is read
-on every lookup. `FileSystemSource` declares `cacheable = True`; `DatabaseSource`
-reports `True` only with an explicit `using` alias. Declare `cacheable = True` in
-a custom source only when its output depends solely on the template name and the
-constructor options, never on ambient state such as the current tenant, user or
-request. Subclasses inherit the attribute. See
+on every lookup. `FileSystemSource` reports `cacheable = True`; `DatabaseSource`
+reports `True` only with an explicit `using` alias. Both report it only while
+`resolve()` is their own, so a subclass that overrides `resolve()` must declare
+`cacheable = True` itself. Declare `cacheable = True` in a custom source only when
+its output depends solely on the template name and the constructor options, never
+on ambient state such as the current tenant, user or request. Other subclasses
+inherit the attribute. See
 [cache consistency](cache-consistency.md#choose-which-sources-are-cached).
 
 ## Rendering and HTTP
