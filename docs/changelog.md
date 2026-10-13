@@ -335,19 +335,22 @@ on, and says how to migrate.
   hint. The worker keeps one connection per configuration, replaces it after a
   failure, after 30 seconds without use, or after five minutes of age under steady
   traffic so that the host name is resolved again, and still sends the channels of
-  a hint in one pipeline round trip. A short circuit breaker also stops each commit
-  from waiting for the connection timeout while Redis is down: after three
-  consecutive failures of a configuration, hints for it are dropped immediately for
-  five seconds, and the next hint probes the server. A client that cannot be built
-  counts as a failure. The breaker logs the fixed code `realtime_publish_circuit_open`
-  once when it opens, not once per dropped hint. Publication stays best-effort and
-  at-most-once, and a failure still never fails the committing request. The log
-  carries no payload, topic or URL. If the client raises a `BaseException`, such as
-  a gevent `Timeout`, which ends the worker thread, the next commit starts a new
-  worker instead of waiting for its full timeout, and the ended worker releases
-  the commits queued behind it, which would otherwise wait out their own timeouts,
-  before it closes its clients, so a client that fails to close cannot hold them,
-  and a client that raises a `BaseException` on close does not leave the others open.
+  a hint in one pipeline round trip. It checks every connection against those
+  limits on each hint and after 30 seconds without one, so a configuration that is
+  never used again does not keep its connection until the process ends. A short
+  circuit breaker also stops each commit from waiting for the connection timeout
+  while Redis is down: after three consecutive failures of a configuration, hints
+  for it are dropped immediately for five seconds, and the next hint probes the
+  server. A client that cannot be built counts as a failure. The breaker logs the
+  fixed code `realtime_publish_circuit_open` once when it opens, not once per
+  dropped hint. Publication stays best-effort and at-most-once, and a failure still
+  never fails the committing request. The log carries no payload, topic or URL. If
+  the client raises a `BaseException`, such as a gevent `Timeout`, which ends the
+  worker thread, the next commit starts a new worker instead of waiting for its
+  full timeout, and the ended worker releases the commits queued behind it, which
+  would otherwise wait out their own timeouts, before it closes its clients, so a
+  client that fails to close cannot hold them, and a client that raises a
+  `BaseException` on close does not leave the others open.
 - A failed realtime publication now logs the exception type name as well:
   `realtime_publish_failed error_type=<TypeName>`. The exception message is still
   never logged because it can contain the Redis URL.

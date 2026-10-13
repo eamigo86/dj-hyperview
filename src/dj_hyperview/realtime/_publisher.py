@@ -58,6 +58,13 @@ def _discard(target: _Target) -> None:
             client.close()
 
 
+def _expire(target: _Target, now: float) -> None:
+    if target.client is not None and (
+        now - target.used > _IDLE or now - target.born > _MAX_AGE
+    ):
+        _discard(target)
+
+
 def _send(
     target: _Target,
     config: _Config,
@@ -66,10 +73,7 @@ def _send(
     deadline: float,
 ) -> None:
     now = time.monotonic()
-    if target.client is not None and (
-        now - target.used > _IDLE or now - target.born > _MAX_AGE
-    ):
-        _discard(target)
+    _expire(target, now)
     try:
         if target.client is None:
             target.client = _sync_client(config)
@@ -134,13 +138,35 @@ class _Dispatcher:
         target = self.targets.get(config)
         return target is not None and time.monotonic() < target.open_until
 
+    def _sweep(self) -> None:
+        """Close the clients that no job will come back for, and forget their state.
+
+        A configuration that is never used again would keep its connection until the
+        worker ends. Failure and breaker state stays, as the next job needs it.
+        """
+        now = time.monotonic()
+        for config, target in list(self.targets.items()):
+            _expire(target, now)
+            if (
+                target.client is None
+                and not target.failures
+                and now >= target.open_until
+            ):
+                del self.targets[config]
+
     def _run(self) -> None:
         try:
             while not self.stopped.is_set():
-                job = self.queue.get()
+                try:
+                    job = self.queue.get(timeout=_IDLE)
+                except queue.Empty:
+                    # No job came: expired clients still go, not at the next one.
+                    self._sweep()
+                    continue
                 if job is None:
                     break
                 try:
+                    self._sweep()
                     if time.monotonic() < job.deadline and not self._open(job.config):
                         target = self.targets.setdefault(job.config, _Target())
                         _send(

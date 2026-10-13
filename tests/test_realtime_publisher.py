@@ -201,14 +201,14 @@ def test_worker_reuses_one_pipelined_client_and_closes_it_on_stop(monkeypatch):
     assert made[0].closed
 
 
-def test_idle_connection_is_replaced_before_use(monkeypatch):
+def test_idle_connection_is_replaced_before_use(monkeypatch, clock):
     module = publisher()
     made = fake_clients(monkeypatch, module)
-    monkeypatch.setattr(module, "_IDLE", -1)
     config = module._Config("redis://127.0.0.1/0", "ns")
     dispatcher = module._Dispatcher()
     try:
         assert dispatcher.submit(config, ("a",), b"x") is True
+        clock.now += module._IDLE + 1
         assert dispatcher.submit(config, ("a",), b"x") is True
         assert len(made) == 2 and made[0].closed and not made[1].closed
     finally:
@@ -645,3 +645,133 @@ def test_a_connection_is_replaced_after_its_maximum_age_despite_traffic(monkeypa
     assert len(made) == 2 and made[0].closed and not made[1].closed
     module._send(target, None, ("a",), b"x", deadline)
     assert len(made) == 2
+
+
+def configs(module, count):
+    return [module._Config("redis://127.0.0.1/0", f"ns{i}") for i in range(count)]
+
+
+def wait_until(condition, timeout=2.0):
+    end = time.monotonic() + timeout
+    while not condition() and time.monotonic() < end:
+        time.sleep(0.005)
+    return condition()
+
+
+@pytest.mark.parametrize("age", ["_IDLE", "_MAX_AGE"])
+def test_a_job_closes_the_clients_of_configurations_never_used_again(
+    monkeypatch, clock, age
+):
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    first, *others = configs(module, 6)
+    dispatcher = module._Dispatcher()
+    try:
+        for config in (first, *others):
+            assert dispatcher.submit(config, ("a",), b"x") is True
+        assert len(made) == 6 and not any(client.closed for client in made)
+
+        clock.now += getattr(module, age) + 1
+        assert dispatcher.submit(first, ("a",), b"x") is True
+
+        # Only the configuration in use again was asked for, yet none is left open
+        # but its replacement, and the others do not stay in the table either.
+        assert [client.closed for client in made] == [True] * 6 + [False]
+        assert list(dispatcher.targets) == [first]
+    finally:
+        dispatcher.close()
+
+
+def test_a_busy_configuration_keeps_its_client_while_an_idle_one_goes(
+    monkeypatch, clock
+):
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    busy, idle = configs(module, 2)
+    dispatcher = module._Dispatcher()
+    try:
+        assert dispatcher.submit(busy, ("a",), b"x") is True
+        assert dispatcher.submit(idle, ("a",), b"x") is True
+        for _ in range(2):
+            clock.now += module._IDLE * 0.6
+            assert dispatcher.submit(busy, ("a",), b"x") is True
+
+        assert [client.config for client in made] == [busy, idle]
+        assert not made[0].closed and made[1].closed
+        assert list(dispatcher.targets) == [busy]
+    finally:
+        dispatcher.close()
+
+
+def test_an_idle_worker_closes_expired_clients_without_any_job(monkeypatch, clock):
+    module = publisher()
+    made = fake_clients(monkeypatch, module)
+    # The worker wakes up this often, in real time, while nothing is submitted.
+    monkeypatch.setattr(module, "_IDLE", 0.01)
+    dispatcher = module._Dispatcher()
+    try:
+        for config in configs(module, 3):
+            assert dispatcher.submit(config, ("a",), b"x") is True
+        assert not any(client.closed for client in made)
+
+        clock.now += 1
+
+        assert wait_until(lambda: all(client.closed for client in made))
+        assert dispatcher.targets == {}
+        assert dispatcher.thread.is_alive()
+    finally:
+        dispatcher.close()
+
+
+def test_the_worker_waits_on_the_queue_with_a_timeout_instead_of_spinning(
+    monkeypatch,
+):
+    module = publisher()
+    waits = []
+
+    class Spy(module.queue.Queue):
+        def get(self, block=True, timeout=None):
+            waits.append((block, timeout))
+            return super().get(block, timeout)
+
+    monkeypatch.setattr(module.queue, "Queue", Spy)
+    fake_clients(monkeypatch, module)
+    (config,) = configs(module, 1)
+    dispatcher = module._Dispatcher()
+    try:
+        assert dispatcher.submit(config, ("a",), b"x") is True
+        assert wait_until(lambda: len(waits) >= 2)
+    finally:
+        dispatcher.close()
+
+    # Blocking for up to _IDLE each time: neither forever nor a busy loop.
+    assert waits[:2] == [(True, module._IDLE)] * 2
+
+
+def test_a_sweep_keeps_the_breaker_state_of_a_failing_configuration(monkeypatch, clock):
+    module = publisher()
+    made = fake_clients(
+        monkeypatch, module, lambda config: config.url.endswith("/down")
+    )
+    down = module._Config("redis://127.0.0.1/down", "ns")
+    up = module._Config("redis://127.0.0.1/up", "ns")
+    dispatcher = module._Dispatcher()
+
+    def connections():
+        return [client.config for client in made].count(down)
+
+    try:
+        for _ in range(3):
+            assert dispatcher.submit(down, ("a",), b"x") is False
+        # A job for another configuration sweeps while the breaker is open...
+        assert dispatcher.submit(up, ("a",), b"x") is True
+        assert dispatcher.submit(down, ("a",), b"x") is False
+        assert connections() == 3
+        # ...and again once it may probe, which still reopens it on one failure.
+        clock.now += module._COOLDOWN + 1
+        assert dispatcher.submit(up, ("a",), b"x") is True
+        assert dispatcher.submit(down, ("a",), b"x") is False
+        assert dispatcher.submit(down, ("a",), b"x") is False
+        assert connections() == 4
+    finally:
+        dispatcher.close()
