@@ -445,6 +445,84 @@ def test_callers_queued_behind_a_worker_that_dies_return_at_once(monkeypatch):
         dispatcher.close()
 
 
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_callers_are_released_even_when_closing_a_client_ends_the_cleanup(
+    monkeypatch,
+):
+    """A BaseException from close() must not skip releasing the queued callers."""
+    module = publisher()
+
+    class Stop(BaseException):
+        pass
+
+    made = fake_clients(monkeypatch, module)
+    healthy = module._Config("redis://127.0.0.1/0", "ns")
+    dying = module._Config("redis://127.0.0.1/1", "ns")
+    entered = threading.Event()
+    release = threading.Event()
+    outcomes = []
+
+    def close(self):
+        self.closed = True
+        if self is made[0]:
+            raise Stop
+
+    def die_when_released(self):
+        entered.set()
+        release.wait(5)
+        raise Stop
+
+    def caller(config):
+        # A deadline far beyond the test: only the dying worker can end the wait.
+        outcomes.append(
+            dispatcher.submit(config, ("a",), b"x", deadline=time.monotonic() + 60)
+        )
+
+    dispatcher = module._Dispatcher()
+    callers = [
+        threading.Thread(target=caller, args=(config,), daemon=True)
+        for config in (dying, healthy, healthy)
+    ]
+    try:
+        # The first client stays open, and closing it is what raises.
+        assert dispatcher.submit(healthy, ("a",), b"x") is True
+        monkeypatch.setattr(made[0].__class__, "close", close)
+        monkeypatch.setattr(made[0].__class__, "execute", die_when_released)
+        callers[0].start()
+        assert entered.wait(2)
+        callers[1].start()
+        callers[2].start()
+        while dispatcher.queue.qsize() < 2:
+            time.sleep(0.001)
+        release.set()
+        for thread in callers:
+            thread.join(2)
+        assert not any(thread.is_alive() for thread in callers)
+        assert outcomes == [False, False, False]
+        assert dispatcher.stopped.is_set()
+    finally:
+        release.set()
+        dispatcher.close()
+
+
+def test_a_dispatcher_that_stops_while_a_job_is_queued_returns_at_once(monkeypatch):
+    """The worker may stop between the check on entry and the put: nobody serves it."""
+    module = publisher()
+    dispatcher = module._Dispatcher()
+    try:
+        # The put that races with the stop, which the worker never gets to serve.
+        monkeypatch.setattr(
+            dispatcher.queue, "put_nowait", lambda job: dispatcher.stopped.set()
+        )
+        started = time.monotonic()
+
+        assert dispatcher.submit(None, ("a",), b"x", deadline=started + 10) is False
+        assert time.monotonic() - started < 5
+    finally:
+        monkeypatch.undo()
+        dispatcher.close()
+
+
 def raise_stop(error):
     def execute(self):
         raise error

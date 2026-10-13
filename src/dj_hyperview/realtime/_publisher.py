@@ -122,6 +122,9 @@ class _Dispatcher:
         except queue.Full:
             _LOGGER.warning("realtime_publish_queue_full")
             return False
+        if self.stopped.is_set():
+            # The worker ended after the check above, so nobody will serve the job.
+            return False
         if not job.done.wait(max(0, deadline - time.monotonic())):
             _LOGGER.warning("realtime_publish_timeout")
             return False
@@ -152,12 +155,9 @@ class _Dispatcher:
                 finally:
                     job.done.set()
         finally:
-            # Closed here, not in close(), so the worker is the only user of a client.
-            # A BaseException ends the worker, and every client still goes with it.
-            for target in self.targets.values():
-                _discard(target)
             # Nothing will serve the callers still queued, and they would wait out
-            # their deadlines. Their jobs end unsent, as a timed-out job does.
+            # their deadlines. Their jobs end unsent, as a timed-out job does. This
+            # comes first: closing a client may raise a BaseException of its own.
             self.stopped.set()
             while True:
                 try:
@@ -166,6 +166,10 @@ class _Dispatcher:
                     break
                 if job is not None:
                     job.done.set()
+            # Closed here, not in close(), so the worker is the only user of a client.
+            # A BaseException ends the worker, and every client still goes with it.
+            for target in self.targets.values():
+                _discard(target)
 
     def close(self) -> None:
         self.stopped.set()
