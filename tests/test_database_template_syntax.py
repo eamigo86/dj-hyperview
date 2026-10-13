@@ -427,6 +427,15 @@ def test_scan_hides_comment_blocks_whatever_their_note() -> None:
     assert scan.first_structure_line is None
 
 
+def test_scan_does_not_take_a_tag_that_starts_with_comment_for_a_comment() -> None:
+    source = "<a>{% commentx %}<b x=1>{% endcomment %}</a>"
+
+    scan = scanning._scan_template(source)
+
+    assert "<b x=1>" in scan.masked
+    assert scan.first_structure_line == 1
+
+
 def test_scan_treats_an_unclosed_comment_as_one_runtime_token() -> None:
     scan = scanning._scan_template("{% comment %}\n<b x=1>")
 

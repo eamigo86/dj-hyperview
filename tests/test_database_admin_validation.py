@@ -1920,6 +1920,25 @@ def test_include_nested_too_deeply_is_reported_for_the_target_and_expansion_goes
 
 
 @pytest.mark.django_db
+def test_include_expansion_validates_the_source_of_each_resolved_target(
+    admin_client, tmp_path
+) -> None:
+    """The include is checked against the same limits as the draft, before compiling."""
+    partials = tmp_path / "partials"
+    partials.mkdir()
+    (partials / "big.xml").write_text(f"<text>{'x' * 1500}</text>", encoding="utf-8")
+    source = f'<view xmlns="{HV}">{{% include "partials/big.xml" %}}</view>'
+
+    with override_settings(HYPERVIEW=_bounded_includes_config(tmp_path, 1000)):
+        result = _validate(admin_client, source)
+
+    assert result["ok"] is False
+    assert [(item["code"], item["template"]) for item in result["diagnostics"]] == [
+        ("max_bytes", "screens/draft.xml")
+    ]
+
+
+@pytest.mark.django_db
 def test_include_size_limit_counts_bytes_not_characters(
     admin_client, monkeypatch, tmp_path
 ) -> None:
