@@ -190,7 +190,7 @@ def test_content_type_parameters_that_cannot_be_represented_are_rejected(
     ],
 )
 def test_none_content_type_is_the_default_media_type(response_type, media_type):
-    """Passing None behaves like omitting the argument, not like text/html."""
+    """Passing None gives the media type of the class, as the default does."""
     document = '<text xmlns="https://hyperview.org/hyperview" />'
 
     assert response_type(document, content_type=None).headers["Content-Type"] == (
@@ -253,6 +253,59 @@ def test_none_content_type_keeps_a_content_type_header_for_template_responses(
     )
 
     assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
+
+
+def _one_shot_headers(content_type: str):
+    """Headers as a generator, which can be read only once."""
+    return (
+        pair
+        for pair in [
+            ("Cache-Control", "no-store"),
+            ("Content-Type", f"{content_type}; charset=utf-8"),
+        ]
+    )
+
+
+@pytest.mark.parametrize(
+    "response_type,media_type",
+    [
+        (HyperviewResponse, HYPERVIEW_MEDIA_TYPE),
+        (HyperviewFragmentResponse, HYPERVIEW_FRAGMENT_MEDIA_TYPE),
+    ],
+)
+def test_none_content_type_keeps_every_header_of_a_one_shot_iterable(
+    response_type, media_type
+):
+    document = '<text xmlns="https://hyperview.org/hyperview" />'
+
+    response = response_type(
+        document, content_type=None, headers=_one_shot_headers(media_type)
+    )
+
+    assert dict(response.headers) == {
+        "Cache-Control": "no-store",
+        "Content-Type": f"{media_type}; charset=utf-8",
+    }
+
+
+@pytest.mark.parametrize(
+    "response_type,media_type",
+    [
+        (HyperviewTemplateResponse, HYPERVIEW_MEDIA_TYPE),
+        (HyperviewFragmentTemplateResponse, HYPERVIEW_FRAGMENT_MEDIA_TYPE),
+    ],
+)
+def test_none_content_type_keeps_every_header_of_a_one_shot_iterable_for_templates(
+    response_type, media_type
+):
+    response = response_type(
+        None, "screen.xml", content_type=None, headers=_one_shot_headers(media_type)
+    )
+
+    assert dict(response.headers) == {
+        "Cache-Control": "no-store",
+        "Content-Type": f"{media_type}; charset=utf-8",
+    }
 
 
 def test_a_content_type_header_still_rejects_a_non_utf8_charset() -> None:

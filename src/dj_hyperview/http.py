@@ -85,12 +85,12 @@ class _HyperviewBody:
         self,
         content_type: str | None,
         charset: str | None,
-        headers: Mapping[str, str] | None,
+        headers: ResponseHeaders,
     ) -> tuple[str | None, str | None]:
         # None means "not given", as it does for Django, not "no media type". Headers
         # that carry a Content-Type are the other way to give it, and Django rejects
         # both together, so None stays None there.
-        if content_type is None and "Content-Type" not in ResponseHeaders(headers):
+        if content_type is None and "Content-Type" not in headers:
             content_type = (
                 HYPERVIEW_FRAGMENT_MEDIA_TYPE
                 if self._fragment
@@ -303,11 +303,17 @@ class HyperviewResponse(_HyperviewBody, HttpResponse):
             ValueError: If a Hyperview response selects a non-UTF-8 encoding or a
                 Content-Type parameter cannot be represented.
         """
-        content_type, charset = self._initial_metadata(
-            content_type, charset, kwargs.get("headers")
-        )
+        # Read once: headers can be a generator, which a second read finds empty.
+        headers = ResponseHeaders(kwargs.pop("headers", None))
+        content_type, charset = self._initial_metadata(content_type, charset, headers)
         self._head_request = request is not None and request.method == "HEAD"
-        super().__init__(content, content_type=content_type, charset=charset, **kwargs)
+        super().__init__(
+            content,
+            content_type=content_type,
+            charset=charset,
+            headers=headers,
+            **kwargs,
+        )
 
 
 class HyperviewTemplateResponse(_HyperviewBody, TemplateResponse):
@@ -340,6 +346,8 @@ class HyperviewTemplateResponse(_HyperviewBody, TemplateResponse):
             ValueError: If a Hyperview response selects a non-UTF-8 encoding or a
                 Content-Type parameter cannot be represented.
         """
+        # Read once: headers can be a generator, which a second read finds empty.
+        headers = ResponseHeaders(headers)
         content_type, charset = self._initial_metadata(content_type, charset, headers)
         self._head_request = request is not None and request.method == "HEAD"
         self._initializing_hyperview_template = True
