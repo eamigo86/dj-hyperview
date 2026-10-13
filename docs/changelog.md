@@ -21,7 +21,11 @@ This page records user-visible release changes, including unpublished attempts.
   namespaces before XSD validation, using the new stable validation code
   `max_attributes`. Validation time grew faster than linearly with both counts, so
   a few kilobytes of untrusted markup could occupy a worker for seconds. The caps
-  are fixed and sit well above anything a valid Hyperview document needs.
+  are fixed, apply to one element, and sit well above anything a valid Hyperview
+  document needs. Checking them takes time proportional to the number of nodes and
+  declarations. They do not bound the whole document: `VALIDATION.MAX_BYTES`,
+  `MAX_NODES` and `MAX_DEPTH` remain the global limits, and schema validation time
+  still grows with document size and with nested elements that rebind many prefixes.
 - Stop echoing rejected template names from an ordered selection. When every
   candidate misses, `TemplateNotFound` now lists only valid names that were not
   found, so control characters and escape sequences in hostile names cannot reach

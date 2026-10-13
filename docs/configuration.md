@@ -145,9 +145,10 @@ The package always validates final rendered documents and fragments against one
 corrected Hyperview 0.111.0 registry. Raw source remains context-free: safety and
 Django compilation do not invent variables or render a scenario. Configuring
 `VALIDATION` changes only `MAX_BYTES`, `MAX_DEPTH`, and `MAX_NODES`; it cannot
-skip or replace standard validation. Separate fixed caps allow at most 256
-attributes and 64 in-scope namespaces on one element; exceeding either fails with
-the validation code `max_attributes` (see [Security](security.md)).
+skip or replace standard validation. Separate fixed per-element caps allow at most
+256 attributes and 64 in-scope namespaces on one element; exceeding either fails
+with the validation code `max_attributes`. They do not replace these three limits
+as the bounds on the whole document (see [Security](security.md)).
 
 `SCHEMA_PROFILE`, `VALIDATION.MODE`, and `VALIDATION.SCHEMA` are removed settings.
 Their presence produces a configuration error, including their former default

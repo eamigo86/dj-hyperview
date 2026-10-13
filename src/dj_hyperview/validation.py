@@ -2,6 +2,7 @@
 
 import codecs
 import re
+from collections import Counter
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
@@ -167,6 +168,33 @@ def validate_template_source(
     return document
 
 
+def _check_namespace_scope(root: etree._Element) -> None:
+    """Bound the namespaces in scope on any element in linear time.
+
+    An element's nsmap is rebuilt from all of its ancestors, so reading it for every
+    element costs depth times declarations. Counting bindings as the walk enters and
+    leaves the elements that declare them needs only the declarations themselves,
+    and a flood of declarations fails at the first one over the cap.
+    """
+    in_scope: Counter[str] = Counter()
+    declared: list[str] = []
+    for event, binding in etree.iterwalk(root, events=("start-ns", "end-ns")):
+        if event == "start-ns":
+            prefix = binding[0]
+            declared.append(prefix)
+            in_scope[prefix] += 1
+            if len(in_scope) > _MAX_NAMESPACES:
+                _fail(
+                    "max_attributes",
+                    f"element exceeds {_MAX_NAMESPACES} in-scope namespaces",
+                )
+        else:
+            prefix = declared.pop()
+            in_scope[prefix] -= 1
+            if not in_scope[prefix]:
+                del in_scope[prefix]
+
+
 def _parse(document: str, config: ValidationSettings) -> etree._Element:
     if _XML_ILLEGAL_CHARACTERS.search(document):
         _fail("malformed_xml", "document contains characters not allowed in XML 1.0")
@@ -191,15 +219,14 @@ def _parse(document: str, config: ValidationSettings) -> etree._Element:
             _fail("max_depth", "document exceeds MAX_DEPTH")
         if nodes > config.max_nodes:
             _fail("max_nodes", "document exceeds MAX_NODES")
-        # XSD work grows super-linearly with per-element attributes and prefixes.
-        if len(node.attrib) > _MAX_ATTRIBUTES:
+        # XSD work grows super-linearly with per-element attributes. Only elements
+        # have any: a processing instruction builds attrib with a regular expression
+        # that is quadratic in its data, so it must never be asked.
+        if isinstance(node.tag, str) and len(node.attrib) > _MAX_ATTRIBUTES:
             _fail("max_attributes", f"element exceeds {_MAX_ATTRIBUTES} attributes")
-        if len(node.nsmap) > _MAX_NAMESPACES:
-            _fail(
-                "max_attributes",
-                f"element exceeds {_MAX_NAMESPACES} in-scope namespaces",
-            )
         pending.extend((child, depth + 1) for child in node)
+    # After the node and depth limits, so they bound this walk as well.
+    _check_namespace_scope(root)
     return root
 
 

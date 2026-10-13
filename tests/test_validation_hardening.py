@@ -1,6 +1,12 @@
+import random
+import time
+
 import pytest
 from django.test import RequestFactory, override_settings
+from lxml import etree
 
+import dj_hyperview.validation as validation_module
+from dj_hyperview.conf import ValidationSettings
 from dj_hyperview.engine import HyperviewEngine
 from dj_hyperview.exceptions import TemplateValidationError
 from dj_hyperview.http import HyperviewTemplateResponse
@@ -257,3 +263,136 @@ def test_comments_and_processing_instructions_pass_the_element_caps() -> None:
     )
 
     assert validate_hxml(document) == document
+
+
+def watch_maps(base: type, kind: str, accessed: set[tuple[str, str]]) -> type:
+    """Subclass an lxml node class so reads of attrib and nsmap are recorded."""
+
+    def recorded(name: str) -> property:
+        inherited = getattr(base, name)
+
+        def read(node: object) -> object:
+            accessed.add((kind, name))
+            return inherited.__get__(node)
+
+        return property(read)
+
+    members = {name: recorded(name) for name in ("attrib", "nsmap")}
+    return type(f"Watched{kind}", (base,), members)
+
+
+def test_element_caps_inspect_only_the_attributes_of_elements(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No node evaluates nsmap, and comments and PIs never evaluate attrib.
+
+    A processing instruction builds attrib by running a regular expression over
+    its data, which is quadratic on long whitespace runs. nsmap walks every
+    ancestor, so reading it per element costs depth times declarations.
+    """
+    accessed: set[tuple[str, str]] = set()
+    parser_factory = validation_module._parser
+
+    def watching_parser() -> etree.XMLParser:
+        parser = parser_factory()
+        parser.set_element_class_lookup(
+            etree.ElementDefaultClassLookup(
+                element=watch_maps(etree.ElementBase, "element", accessed),
+                comment=watch_maps(etree.CommentBase, "comment", accessed),
+                pi=watch_maps(etree.PIBase, "pi", accessed),
+            )
+        )
+        return parser
+
+    monkeypatch.setattr(validation_module, "_parser", watching_parser)
+    document = (
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(3)}>"
+        "<!-- note --><?audit data?><text>ok</text></view>"
+    )
+
+    validation_module._parse(document, ValidationSettings())
+
+    assert accessed == {("element", "attrib")}
+
+
+def test_long_whitespace_in_a_processing_instruction_validates_quickly() -> None:
+    """PI data is never parsed into pseudo-attributes, which took 8 seconds here."""
+    document = f"<view {HYPERVIEW_XMLNS}><?audit a{' ' * 40_000}x?></view>"
+
+    started = time.perf_counter()
+    assert validate_hxml(document) == document
+
+    assert time.perf_counter() - started < 1.0
+
+
+def test_namespace_declared_on_an_ancestor_counts_for_distant_descendants() -> None:
+    """The default binding and 63 prefixes fill the cap for the whole subtree."""
+    document = (
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(63)}>"
+        "<view><view><text xmlns:extra='urn:extra'>ok</text></view></view></view>"
+    )
+
+    assert_element_limit(document, "64 in-scope namespaces")
+
+
+def test_redeclaring_a_prefix_does_not_count_twice() -> None:
+    """Descendants may rebind every in-scope prefix at any depth within the cap."""
+    rebound = prefixed_namespaces(63).replace("urn:p", "urn:rebound")
+    chain = f"<view {rebound}>" * 20
+    document = (
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(63)}>"
+        f"{chain}<text>ok</text>{'</view>' * 20}</view>"
+    )
+
+    assert validate_hxml(document) == document
+
+
+def test_namespaces_leave_scope_with_their_element() -> None:
+    """Siblings never see each other's declarations, so only the path counts."""
+    document = (
+        f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(20)}>"
+        f"<view {prefixed_namespaces(30, start=20)}><text>one</text></view>"
+        f"<view {prefixed_namespaces(30, start=50)}><text>two</text></view>"
+        "</view>"
+    )
+
+    assert validate_hxml(document) == document
+
+
+def random_namespace_document(rng: random.Random) -> str:
+    """Build a small tree that declares, rebinds and undeclares random prefixes."""
+
+    def element(depth: int) -> str:
+        names = rng.sample(["", "a", "b", "c", "d"], rng.randint(0, 3))
+        declarations = " ".join(
+            f"xmlns:{name}='urn:{rng.randint(1, 2)}'"
+            if name
+            else f"xmlns='{rng.choice(['', 'urn:0'])}'"
+            for name in names
+        )
+        children = "".join(
+            element(depth + 1) for _ in range(rng.randint(0, 3) if depth < 4 else 0)
+        )
+        return f"<e {declarations}>{children}</e>"
+
+    return element(0)
+
+
+def test_namespace_cap_matches_the_widest_nsmap_lxml_reports(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Counting by scope reproduces nsmap, including rebinding and undeclaring."""
+    rng = random.Random(20261013)
+    for _ in range(150):
+        document = random_namespace_document(rng)
+        root = etree.fromstring(document)
+        widest = max(len(node.nsmap) for node in root.iter(etree.Element))
+        for cap in range(1, 6):
+            monkeypatch.setattr(validation_module, "_MAX_NAMESPACES", cap)
+            if widest <= cap:
+                validation_module._parse(document, ValidationSettings())
+                continue
+            with pytest.raises(TemplateValidationError) as error:
+                validation_module._parse(document, ValidationSettings())
+            assert error.value.code == "max_attributes", document
+            assert f"{cap} in-scope namespaces" in error.value.message
