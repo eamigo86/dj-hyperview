@@ -341,3 +341,30 @@ def test_a_resolved_template_subclass_is_cached_as_its_five_base_fields(
         "source",
         "revision",
     }
+
+
+@pytest.mark.parametrize("kind", [TextExtra, NumberExtra])
+@override_settings(CACHES=LOCMEM_CACHES)
+def test_cache_set_stores_exactly_the_five_contract_fields_of_a_subclass(kind) -> None:
+    """A direct write follows the reader's five-field rule, like the resolver's."""
+    cache = TemplateCache(f"set-{kind.__name__}", alias="screens")
+    template = kind("screen.xml", "<view/>", "memory:screen.xml", "memory", "r1")
+    base = ResolvedTemplate(
+        "screen.xml", "<view/>", "memory:screen.xml", "memory", "r1"
+    )
+
+    cache.set(template)
+
+    payload = json.loads(
+        cache.backend.get(cache.key(template.source, template.name, template.revision))
+    )
+    assert payload["template"] == {
+        "name": "screen.xml",
+        "content": "<view/>",
+        "origin": "memory:screen.xml",
+        "source": "memory",
+        "revision": "r1",
+    }
+    entry = cache.get(template.source, template.name, template.revision)
+    assert entry is not None and entry.template == base
+    assert type(entry.template) is ResolvedTemplate
