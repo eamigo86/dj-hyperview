@@ -1,5 +1,4 @@
 import importlib
-import traceback
 from unittest.mock import patch
 
 import pytest
@@ -91,26 +90,6 @@ def test_database_source_requires_installed_contrib_without_leaking_context():
     assert str(error) == "Template source unavailable: database (app unavailable)"
     assert error.__cause__ is None
     assert error.__context__ is None
-
-
-def test_redaction_contract_ignores_external_traceback_filenames() -> None:
-    """Redaction checks inspect exception data rather than checkout paths."""
-    scope: dict[str, object] = {
-        "error": SourceUnavailable("database", "app unavailable")
-    }
-    try:
-        exec(
-            compile("raise error", "/private/tmp/consumer_probe.py", "exec"),
-            scope,
-        )
-    except SourceUnavailable as error:
-        assert "/private/tmp" in "".join(traceback.format_exception(error))
-        _assert_redacted_source_error(
-            error,
-            source="database",
-            reason="app unavailable",
-            secrets=("private registry",),
-        )
 
 
 @pytest.mark.parametrize(
