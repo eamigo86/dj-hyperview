@@ -139,7 +139,14 @@ in XML 1.0". It repairs nothing and names neither the character nor its position
 Eager responses and `write()` give the same message for a lone surrogate. A
 document that also exceeds `MAX_BYTES`, declares a DTD or entity, or declares a
 non-UTF-8 encoding reports `max_bytes`, `forbidden_declaration`, or
-`invalid_encoding` instead, because those checks run first.
+`invalid_encoding` instead, because those checks run first. A lone surrogate is
+the exception to the first two: the guard encodes the document before it measures
+or scans it, so the validators report `malformed_xml` for a document that also
+exceeds `MAX_BYTES` or declares a DTD or entity. An eager response compares its
+character count with `MAX_BYTES` before it encodes the text, so it still reports
+`max_bytes` when the text is already longer than the limit. An XML declaration
+that names a non-UTF-8 encoding, or a name that no codec can look up, such as one
+containing NUL, still reports `invalid_encoding` first.
 
 Reject the text where you accept it, or neutralize it where you render it:
 

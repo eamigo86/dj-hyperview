@@ -119,6 +119,16 @@ def test_missing_expected_revision_conflicts_without_write(
     [
         ("../private.xml", "<view />", InvalidTemplateName),
         ("screen.xml", "<!DOCTYPE view><view />", ValidationError),
+        (
+            "screen.xml",
+            '<?xml version="1.0" encoding="UTF-8\x00"?><view />',
+            ValidationError,
+        ),
+        (
+            "screen.xml",
+            '<?xml version="1.0" encoding="UTF-8\U0000d800"?><view />',
+            ValidationError,
+        ),
     ],
 )
 def test_invalid_publication_never_persists(

@@ -163,6 +163,11 @@ def test_name_validator_drops_invalid_name_exception_context():
             "forbidden_declaration",
         ),
         ("<view>\ud800</view>", "malformed_xml"),
+        ('<?xml version="1.0" encoding="UTF-8\x00"?><view />', "invalid_encoding"),
+        (
+            '<?xml version="1.0" encoding="UTF-8\U0000d800"?><view />',
+            "invalid_encoding",
+        ),
     ],
 )
 def test_full_clean_rejects_invalid_template_source_without_leaking_it(content, code):

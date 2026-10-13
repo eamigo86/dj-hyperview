@@ -323,6 +323,9 @@ def test_element_caps_inspect_only_the_attributes_of_elements(
 def test_long_whitespace_in_a_processing_instruction_validates_quickly() -> None:
     """PI data is never parsed into pseudo-attributes, which took 8 seconds here."""
     document = f"<view {HYPERVIEW_XMLNS}><?audit a{' ' * 40_000}x?></view>"
+    # The first validation in a process compiles the schema registry. Time the
+    # document, not that one-off cost, which a slow runner can stretch past the limit.
+    validate_hxml(f"<view {HYPERVIEW_XMLNS} />")
 
     started = time.perf_counter()
     assert validate_hxml(document) == document

@@ -15,6 +15,7 @@ from dj_hyperview.validation import (
     _django_comment_end,
     _inline_django_comment_end,
     _rendered_hxml_text,
+    validate_fragment_hxml,
     validate_hxml,
     validate_rendered_hxml,
     validate_template_source,
@@ -251,6 +252,31 @@ def test_non_utf8_xml_declarations_are_rejected(validator) -> None:
     assert error.__cause__ is None
 
 
+@pytest.mark.parametrize("encoding", ["UTF-8\x00", "\x00", "UTF-8\U0000d800"])
+@pytest.mark.parametrize(
+    "validator",
+    [
+        validate_template_source,
+        validate_hxml,
+        validate_fragment_hxml,
+        validate_rendered_hxml,
+    ],
+)
+def test_encoding_names_that_cannot_be_looked_up_are_invalid_encoding(
+    validator, encoding: str
+) -> None:
+    """codecs.lookup raises ValueError, not LookupError, for NUL and for a surrogate."""
+    document = (
+        f'<?xml version="1.0" encoding="{encoding}"?>'
+        "<view xmlns='https://hyperview.org/hyperview' />"
+    )
+
+    error = assert_validation_error("invalid_encoding", lambda: validator(document))
+
+    assert error.message == "XML declaration must use UTF-8"
+    assert error.__cause__ is None
+
+
 def test_render_validation_strips_template_whitespace_before_xml_declaration() -> None:
     """Django load tags may precede a declaration without breaking the response."""
     document = (
@@ -336,6 +362,32 @@ def test_leading_unicode_whitespace_is_rejected_not_stripped(
 def test_guard_codes_take_precedence_over_illegal_characters(document, config, code):
     """A control character must not mask a failure that protects the parser."""
     assert_validation_error(code, lambda: validate_hxml(document, config=config))
+
+
+@pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
+@pytest.mark.parametrize(
+    ("document", "config"),
+    [
+        ("<!DOCTYPE view>\U0000d800<view />", ValidationSettings()),
+        ("<view>\U0000d800\xe9</view>", ValidationSettings(max_bytes=14)),
+    ],
+)
+def test_a_lone_surrogate_is_reported_before_size_and_declarations(
+    validator, document, config
+):
+    """The guard encodes first, and a lone surrogate cannot be encoded."""
+    error = assert_validation_error(
+        "malformed_xml", lambda: validator(document, config=config)
+    )
+
+    assert error.message == ILLEGAL_MESSAGE
+
+
+def test_a_non_utf8_declaration_is_reported_before_a_lone_surrogate():
+    """The declaration is read from the text, before anything is encoded."""
+    document = '<?xml version="1.0" encoding="ISO-8859-1"?>\U0000d800<view />'
+
+    assert_validation_error("invalid_encoding", lambda: validate_hxml(document))
 
 
 @pytest.mark.parametrize(

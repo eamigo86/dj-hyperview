@@ -147,7 +147,9 @@ def _encode_utf8(document: str) -> bytes:
     if declaration is not None:
         try:
             encoding = codecs.lookup(declaration.group(2)).name
-        except LookupError:
+        except (LookupError, ValueError):
+            # Not only unknown names: a NUL raises ValueError, and a lone surrogate
+            # UnicodeEncodeError, which is a ValueError too.
             encoding = None
         if encoding != "utf-8":
             raise TemplateValidationError(

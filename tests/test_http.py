@@ -365,6 +365,33 @@ def test_lone_surrogates_get_the_actionable_xml_character_message(
         assert response.content == VALID_HXML.encode()
 
 
+@pytest.mark.parametrize(
+    "response_type", [HyperviewResponse, HyperviewFragmentResponse]
+)
+@pytest.mark.parametrize("as_bytes", [False, True])
+@pytest.mark.parametrize("mutation", ["construct", "content"])
+def test_a_nul_in_the_declared_encoding_is_a_typed_failure(
+    response_type, as_bytes, mutation
+):
+    """codecs.lookup raises a bare ValueError for NUL, which must not escape."""
+    document = (
+        '<?xml version="1.0" encoding="UTF-8\x00"?>'
+        '<text xmlns="https://hyperview.org/hyperview" />'
+    )
+    value = document.encode() if as_bytes else document
+    response = None if mutation == "construct" else response_type(VALID_HXML)
+    with pytest.raises(TemplateValidationError) as error:
+        if response is None:
+            response_type(value)
+        else:
+            response.content = value
+
+    assert error.value.code == "invalid_encoding"
+    assert error.value.message == "XML declaration must use UTF-8"
+    if response is not None:
+        assert response.content == VALID_HXML.encode()
+
+
 def test_writelines_assembles_once_before_validating():
     response = HyperviewResponse(VALID_HXML)
     response.writelines(iter(["<!--", "comment", "-->"]))

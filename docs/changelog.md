@@ -36,17 +36,21 @@ This page records user-visible release changes, including unpublished attempts.
   found, so control characters and escape sequences in hostile names cannot reach
   logs. Passing a bare string to `select_template` raises `TypeError`, as Django
   does, instead of iterating its characters.
-- Reject invisible and reordering characters in template names. Format characters
-  (Unicode category Cf, such as bidirectional overrides and isolates, zero-width
-  characters, the soft hyphen, the byte order mark, and tag characters) and the
-  line and paragraph separators U+2028 and U+2029 now raise `InvalidTemplateName`,
-  like control characters and surrogates already did. They could make two names
-  look identical, or hide a file extension, in logs and error pages. The rule is
-  shared by the resolver, the engine, the cache and signal helpers, and the
-  database source, model validator and Admin editor. **A template whose name uses
-  one of these characters, for example a zero-width joiner in an emoji sequence,
-  must be renamed.** `check_hyperview_templates` reports a stored row with such a
-  name as `invalid_name`, and the row is no longer resolved.
+- Reject format characters, and line and paragraph separators, in template names.
+  The rule is a denylist of Unicode categories: Cf (format characters, such as
+  bidirectional overrides and isolates, zero-width characters, the soft hyphen, the
+  byte order mark, and tag characters), Zl and Zp (the line and paragraph
+  separators U+2028 and U+2029) now raise `InvalidTemplateName`, like Cc (control
+  characters) and Cs (surrogates) already did. It is not a general test for
+  invisible or confusable names: space separators (Zs, such as U+00A0 or U+3000)
+  and letters or symbols that merely look blank, such as U+3164 HANGUL FILLER or
+  U+2800 BRAILLE PATTERN BLANK, are still accepted. The rejected characters could
+  make two names look identical, or hide a file extension, in logs and error pages.
+  The rule is shared by the resolver, the engine, the cache and signal helpers, and
+  the database source, model validator and Admin editor. **A template whose name
+  uses one of these characters, for example a zero-width joiner in an emoji
+  sequence, must be renamed.** `check_hyperview_templates` reports a stored row
+  with such a name as `invalid_name`, and the row is no longer resolved.
 - Reject any `..` segment and any non-printable character in a schema reference
   of an `EXTRA_SCHEMAS` file with the stable `forbidden_schema_reference` code
   (`dj_hyperview.E012` during configuration checks), and read the references of a
@@ -130,6 +134,14 @@ This page records user-visible release changes, including unpublished attempts.
   system check with `dj_hyperview.E009`, the rule `ValidationSettings` already
   enforced. Before, the check accepted it and the first read of the settings
   raised a bare `ValueError`.
+- An XML declaration whose encoding name contains a NUL or a lone surrogate now
+  fails with `invalid_encoding`, like any other encoding that is not UTF-8. The
+  codec lookup raises `ValueError` for such a name, not `LookupError`, so
+  `validate_hxml`, `validate_fragment_hxml`, `validate_rendered_hxml`,
+  `validate_template_source`, `HyperviewResponse` and the template loader leaked a
+  bare `ValueError` or `UnicodeEncodeError` that no `TemplateValidationError`
+  handler caught. `publish_template`, model validation and the Admin form raised it
+  instead of `ValidationError`.
 - A document is reported as `max_depth` only when libxml2 stops with a
   resource-limit error that mentions depth. Before, any syntax error whose message
   contained "depth" was reported as `max_depth`, so a mismatched end tag in an
@@ -199,7 +211,10 @@ This page records user-visible release changes, including unpublished attempts.
   surrogate passed to `HyperviewResponse`, `HyperviewFragmentResponse` or
   `write()`. A document that also exceeds `MAX_BYTES`, declares a DTD or entity, or
   declares a non-UTF-8 encoding keeps reporting `max_bytes`,
-  `forbidden_declaration` or `invalid_encoding`.
+  `forbidden_declaration` or `invalid_encoding`, with one exception: a lone
+  surrogate cannot be encoded, so the validators report `malformed_xml` for it even
+  when the document also exceeds `MAX_BYTES` or declares a DTD or entity. A
+  non-UTF-8 declaration is still reported first.
 - Render validation now removes only XML whitespace (space, tab, carriage return
   and line feed) before the document, after an optional BOM. Before, it also
   dropped other whitespace and control characters silently, such as U+00A0,
