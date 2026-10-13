@@ -69,10 +69,12 @@ XML declarations must use UTF-8; an incompatible response charset raises
 
 `content_type=None` means that no media type was given: the response uses the
 Hyperview media type of its class, not Django's `text/html`, unless `headers`
-already carries a `Content-Type`, in any letter case, which it keeps. When you
-pass a Hyperview media type with parameters, the response rebuilds the header
-with `charset=utf-8`. A parameter value that is not a plain token, such as
-`profile="mobile app"`, is quoted and escaped as RFC 9110 requires. A parameter
+already carries a `Content-Type`, in any letter case, which it keeps. Omitting the
+argument is different in that case: the default is a media type itself, so Django
+raises `ValueError` for it, as for any `content_type` given beside a `Content-Type`
+header. When you pass a Hyperview media type with parameters, the response rebuilds
+the header with `charset=utf-8`. A parameter value that is not a plain token, such
+as `profile="mobile app"`, is quoted and escaped as RFC 9110 requires. A parameter
 name that is not a token, or a value with a control character, a character above
 U+00FF, or a trailing backslash, raises `ValueError`. Other media types are passed
 through unchanged.

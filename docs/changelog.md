@@ -280,13 +280,16 @@ on, and says how to migrate.
   chained includes can still nest more deeply than can be rendered. **A stored
   template that nests blocks more than 100 levels deep is now rejected when it is
   saved; flatten it.**
-- The source check for forbidden declarations now agrees with Django about two
+- The source check for forbidden declarations now agrees with Django about three
   constructs. A `{% comment %}` inside a `{% verbatim %}` body hides nothing, so a
   declaration there is rejected when the template is saved, as it was already when
   it was served. A comment ends at the first tag named exactly `endcomment`, so a
   declaration after `{% endcomment note %}` is hidden and the template is accepted,
-  as it renders. **A template that hid a declaration in a `{% comment %}` inside a
-  `{% verbatim %}` body is now rejected when it is saved; remove the declaration.**
+  as it renders. A tag whose delimiters are split over a line break, such as `{%`,
+  a newline and `comment %}`, is plain text in Django and now hides nothing either.
+  **A template that hid a declaration in a `{% comment %}` inside a `{% verbatim %}`
+  body, or after a comment tag split over a line break, is now rejected when it is
+  saved; remove the declaration.**
 
 ### Added
 
@@ -389,11 +392,12 @@ on, and says how to migrate.
   namespace, so a model registered on a custom site silently lost its validation
   and completion.
 - `content_type=None` on `HyperviewResponse`, `HyperviewTemplateResponse` and the
-  fragment classes now behaves like omitting the argument and yields the
-  Hyperview media type of the class. Before, it fell through to Django's default
-  `text/html`. When `headers` carries a `Content-Type` (in any letter case),
-  `None` keeps that header, as it does in Django, instead of raising Django's
-  `ValueError` about giving the type twice.
+  fragment classes now yields the Hyperview media type of the class, as the default
+  argument does, when `headers` has no `Content-Type`. Before, it fell through to
+  Django's default `text/html`. When `headers` carries a `Content-Type` (in any
+  letter case), `None` keeps that header, as it does in Django. Omitting the
+  argument with such a header still raises Django's `ValueError` about giving the
+  type twice, because the default is a content type too.
 - A `Content-Encoding` other than `gzip` or `identity` now fails at iteration and
   serialization with the message "only gzip Content-Encoding is supported". Before,
   it reported only that the header does not match the transport, which hid that the

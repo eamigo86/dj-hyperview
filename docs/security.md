@@ -118,10 +118,10 @@ rendering, values such as `{% comment %}` are literal data, not template syntax.
 XML comments, CDATA and processing instructions remain inert in both passes.
 The source scan reads the text Django would render, from Django's own tokens, so
 an inline comment ends at the first `#}` on its line, a `{% comment %}` block ends
-at the first tag named exactly `endcomment`, and a `{% verbatim %}` body is
-literal text in which a comment tag hides nothing. Malformed block comments are
-left for template compilation to reject. Keep byte limits enabled as a separate
-bound on memory and parser work.
+at the first tag named exactly `endcomment`, a tag split over a line break is text
+that hides nothing, and a `{% verbatim %}` body is literal text in which a comment
+tag hides nothing. Malformed block comments are left for template compilation to
+reject. Keep byte limits enabled as a separate bound on memory and parser work.
 
 One more fixed limit applies to template source, not to rendered documents.
 Django compiles a template with a lexer whose lazy pattern reads on to the end of
