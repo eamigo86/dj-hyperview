@@ -73,7 +73,10 @@ def test_release_validates_metadata_before_one_reusable_ci_build() -> None:
     commands = [step["run"] for step in metadata["steps"] if "run" in step]
 
     assert metadata["steps"] == [
-        {"uses": f"actions/checkout@{PINS['actions/checkout']}"},
+        {
+            "uses": f"actions/checkout@{PINS['actions/checkout']}",
+            "with": {"persist-credentials": "false"},
+        },
         {
             "uses": f"actions/setup-python@{PINS['actions/setup-python']}",
             "with": {"python-version": "3.12"},

@@ -575,6 +575,15 @@ on, and says how to migrate.
   published package's version or runtime dependency bounds.
 - Pin the CI uv patch to 0.12.22, the release that regenerated `uv.lock` (lock
   format revision 5), so `uv sync --locked` in CI uses the uv that wrote the lock.
+- Give every workflow a `concurrency` group, in which only a pull request cancels
+  its earlier run, and make every checkout drop its token from the git
+  configuration (`persist-credentials: false`). The CI group has its own prefix,
+  because a workflow that the release calls sees the release's name in
+  `github.workflow`, and the same group in both deadlocks the run. The default
+  token was already read-only, with write access granted per job.
+- Declare PyYAML, which the tests import, in the `dev` dependency group, make the
+  release tag tool read the `pyproject.toml` beside it instead of the current
+  directory's, and ignore the `site/` documentation build.
 
 ## 0.1.0b2 — 2026-09-24
 

@@ -524,7 +524,7 @@ APPROVED_JOB_KEYS = {
 
 APPROVED_STEP_KEYS = {
     "quality": (
-        {"uses"},
+        {"with", "uses"},
         {"with", "uses"},
         {"with", "uses"},
         {"with", "uses"},
@@ -535,7 +535,7 @@ APPROVED_STEP_KEYS = {
         {"run", "name"},
     ),
     "compatibility": (
-        {"uses"},
+        {"with", "uses"},
         {"with", "uses"},
         {"with", "uses"},
         {"if", "run", "name"},
@@ -544,7 +544,7 @@ APPROVED_STEP_KEYS = {
         {"if", "with", "name", "uses"},
     ),
     "redis": (
-        {"uses"},
+        {"with", "uses"},
         {"with", "uses"},
         {"with", "uses"},
         {"run"},
@@ -554,7 +554,7 @@ APPROVED_STEP_KEYS = {
         {"with", "name", "uses"},
     ),
     "coverage": (
-        {"uses"},
+        {"with", "uses"},
         {"with", "uses"},
         {"with", "name", "uses"},
         {"if", "with", "name", "uses"},
@@ -569,7 +569,7 @@ APPROVED_STEP_KEYS = {
         {"if", "with", "name", "uses"},
     ),
     "artifacts": (
-        {"uses"},
+        {"with", "uses"},
         {"with", "uses"},
         {"with", "uses"},
         {"run"},
@@ -579,7 +579,7 @@ APPROVED_STEP_KEYS = {
         {"run", "name"},
         {"with", "name", "uses"},
     ),
-    "coverage-receipt": ({"uses"}, {"with", "uses"}, {"env", "run", "name"}),
+    "coverage-receipt": ({"with", "uses"}, {"with", "uses"}, {"env", "run", "name"}),
 }
 
 
