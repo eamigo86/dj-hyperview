@@ -21,7 +21,13 @@ PUBLISHING_SCOPES = {
     ("release.yml", "github-release"): {"contents"},
     ("release.yml", "pages"): {"pages", "id-token"},
 }
+# The deployment environments that hold the approval gate and the publishing trust.
+PUBLISHING_ENVIRONMENTS = {"pypi": "pypi", "pages": "github-pages"}
+# Events that run with the base repository's secrets and write token.
+PRIVILEGED_EVENTS = ("pull_request_target", "workflow_run")
 FULL_SHA_PIN = re.compile(r"[\w.-]+/[\w./-]+@[0-9a-f]{40}")
+# A shell command that ends in success whatever the command before it did.
+SWALLOWED_FAILURE = re.compile(r"\|\|\s*(true\b|:|exit\s+0\b|echo\b)|;\s*true\b")
 PROJECT_VERSION = tomllib.loads(
     (Path(__file__).parents[1] / "pyproject.toml").read_text()
 )["project"]["version"]
@@ -159,6 +165,13 @@ def test_release_calls_ci_with_inputs_and_secrets_it_declares() -> None:
     assert set(call["secrets"]) <= set(declared["secrets"])
 
 
+def test_release_runs_the_live_redis_acceptance() -> None:
+    call = _workflow("release.yml")["jobs"]["ci"]
+    default = _workflow("ci.yml")["on"]["workflow_call"]["inputs"]["redis"]["default"]
+
+    assert call.get("with", {}).get("redis", default) == "true"
+
+
 def test_release_downloads_only_artifacts_that_an_earlier_job_uploads() -> None:
     def names(action: str, *workflows: str) -> set[str]:
         return {
@@ -182,22 +195,54 @@ def test_no_step_can_fail_without_failing_the_run(path: Path) -> None:
         unit.get("name") or unit.get("run") or unit.get("uses")
         for job in jobs
         for unit in (job, *job.get("steps", []))
-        if unit.get("continue-on-error") == "true"
-        or re.search(r"\|\|\s*true\b", unit.get("run", ""))
+        if unit.get("continue-on-error", "false") != "false"
+        or SWALLOWED_FAILURE.search(unit.get("run", ""))
     ]
 
     assert swallowed == []
 
 
+@pytest.mark.parametrize(
+    "command,swallowed",
+    [
+        ("make || true", True),
+        ("make ||true", True),
+        ("make || :", True),
+        ("make ||   exit  0", True),
+        ("make || echo ignored", True),
+        ("make; true", True),
+        ("make ;true", True),
+        ("make && true", False),
+        ("make || exit 1", False),
+        ("make || trueish", False),
+        ("make --echo || exit 2", False),
+    ],
+)
+def test_the_swallowed_failure_pattern_matches_the_ways_to_write_it(
+    command: str, swallowed: bool
+) -> None:
+    assert bool(SWALLOWED_FAILURE.search(command)) is swallowed
+
+
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
-def test_no_workflow_triggers_on_pull_request_target(path: Path) -> None:
-    assert "pull_request_target" not in str(_load(path)["on"])
+def test_no_workflow_triggers_on_an_event_that_runs_with_privileges(
+    path: Path,
+) -> None:
+    triggers = str(_load(path)["on"])
+
+    assert [event for event in PRIVILEGED_EVENTS if event in triggers] == []
 
 
-def test_publishing_to_pypi_and_pages_waits_for_a_deployment_environment() -> None:
+def test_publishing_to_pypi_and_pages_waits_for_their_deployment_environment() -> None:
     jobs = _workflow("release.yml")["jobs"]
 
-    assert all(jobs[name].get("environment") for name in ("pypi", "pages"))
+    def environment(name: str) -> str | None:
+        declared = jobs[name].get("environment")
+        return declared.get("name") if isinstance(declared, dict) else declared
+
+    assert {name: environment(name) for name in PUBLISHING_ENVIRONMENTS} == (
+        PUBLISHING_ENVIRONMENTS
+    )
 
 
 def _marks_prerelease(tag: str) -> bool:
