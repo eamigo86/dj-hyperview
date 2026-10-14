@@ -1506,6 +1506,27 @@ def test_a_masked_document_within_the_bound_is_checked_as_before() -> None:
     assert result == {"ok": True, "diagnostics": []}
 
 
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    "source",
+    [
+        # A marker one above this run would have nine digits and occur in the value.
+        f'<view xmlns="{HV}" scroll-orientation="DJHVSTATICDYNAMIC100000000" '
+        'id="DJHVSTATICDYNAMIC99999999" />',
+        f'<view xmlns="{HV}"><DJHVSTATICSTRUCTURE100000000 bad="1" />'
+        "<DJHVSTATICSTRUCTURE99999999 /></view>",
+    ],
+    ids=["value", "structure"],
+)
+def test_a_draft_holding_the_largest_marker_number_is_reported_as_incomplete(
+    source: str,
+) -> None:
+    result = _static_module().validate_draft_source("screens/draft.xml", source)
+
+    assert result["ok"] is True
+    assert _incomplete(result) == [("schema_static_incomplete", "info", None)]
+
+
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_rejects_too_many_nodes_before_the_schema_walk(

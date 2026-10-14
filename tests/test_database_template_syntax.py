@@ -537,9 +537,8 @@ def test_markers_number_themselves_after_the_highest_one_in_the_source() -> None
         "0",
         "00",
         "9",
-        "99999999",
+        "99999998",
         "123456789012",
-        "9" * 5000,
     ],
 )
 def test_markers_stay_unique_and_short_whatever_follows_the_marker_name(
@@ -558,6 +557,24 @@ def test_markers_stay_unique_and_short_whatever_follows_the_marker_name(
         assert marker.startswith(name) and marker not in source
         assert len(marker) <= len(name) + 9
     assert scan.value_marker in scan.masked and scan.structure_marker in scan.masked
+
+
+@pytest.mark.parametrize(
+    "digits",
+    ["99999999", "9" * 5000, "\uff19" * 8, "99999999" + "\uff19" * 3],
+    ids=["eight", "long-run", "fullwidth", "eight-then-fullwidth"],
+)
+@pytest.mark.parametrize("name", ["DJHVSTATICDYNAMIC", "DJHVSTATICSTRUCTURE"])
+def test_a_marker_that_cannot_be_numbered_above_every_run_is_refused(
+    name: str, digits: str
+) -> None:
+    """The next number would have nine digits, and the source can hold that prefix."""
+    source = f"{name}{digits} {name}100000000"
+
+    with pytest.raises(scanning._MaskTooLarge):
+        scanning._unused_marker(source, name)
+    with pytest.raises(scanning._MaskTooLarge):
+        scanning._scan_template(source)
 
 
 @pytest.mark.parametrize("size", [18_000, 1_000_000])

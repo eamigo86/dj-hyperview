@@ -147,18 +147,26 @@ def _blank_preserving_lines(value: str, marker: str = "") -> str:
     return marker + _NOT_NEWLINE.sub(" ", value)
 
 
+class _MaskTooLarge(Exception):
+    """The static check cannot build a safe masked document for this source."""
+
+
 def _unused_marker(content: str, base: str) -> str:
     """Number a marker after the highest one in the source, so it never occurs there.
 
     The length depends on the number, not on the source: every Django token is
     masked by one marker, so a marker that grew with the source made the masked
     document quadratic. Only the first eight digits of a run count, which bounds the
-    number, and the next one is above them, so it cannot start the run.
+    number. Below the largest eight-digit number the next one has at most eight
+    digits and is above those of every run, so it cannot start one. Above it, the
+    next number has nine, and a run may start with them.
     """
     highest = max(
         (int(match.group(1)) for match in re.finditer(base + r"(\d{1,8})", content)),
         default=-1,
     )
+    if highest >= 99_999_999:
+        raise _MaskTooLarge
     return f"{base}{highest + 1}"
 
 
@@ -211,10 +219,6 @@ def _blank_xml_declarations(text: str) -> str:
         cursor = closer + 2
     parts.append(text[cursor:])
     return "".join(parts)
-
-
-class _MaskTooLarge(Exception):
-    """The masked document would exceed a multiple of MAX_BYTES."""
 
 
 @dataclass(frozen=True, slots=True)

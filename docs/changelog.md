@@ -74,7 +74,9 @@ This page records user-visible release changes, including unpublished attempts.
   `ADMIN.PERMISSION` allows more. The marker is now numbered, such as
   `DJHVSTATICDYNAMIC0`, one above the highest number that follows its name in the
   draft, so it stays under 30 characters whatever the draft holds and still never
-  occurs in it. The same 1 MB draft now uses 53 MiB at peak. The copy is also
+  occurs in it. A draft that already holds the number 99999999 after a marker name,
+  which would leave no eight-digit number above it, is skipped with the note
+  `schema_static_incomplete`. The same 1 MB draft now uses 53 MiB at peak. The copy is also
   bounded in itself: when it would exceed four times `VALIDATION.MAX_BYTES`, which
   only a draft made almost entirely of tags shorter than a marker reaches (200,000
   `{{a}}` at the default), the check is skipped for that draft with the
