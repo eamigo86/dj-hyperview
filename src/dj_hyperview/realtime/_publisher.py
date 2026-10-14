@@ -39,9 +39,9 @@ class _Job:
 class _Target:
     """Worker-owned client and circuit breaker state for one configuration.
 
-    Only the worker thread touches the client, its age, its last use and the failure
-    count. The open_until deadline is one float written by the worker and read by
-    callers.
+    Only the worker thread touches the client, its age, the time of its last attempt
+    and the failure count. The open_until deadline is one float written by the worker
+    and read by callers.
     """
 
     client: Any = None
@@ -87,6 +87,7 @@ def _send(
             pipeline.execute()
     except BaseException:
         _discard(target)
+        target.used = time.monotonic()
         target.failures += 1
         if target.failures >= _FAILURES:
             target.open_until = time.monotonic() + _COOLDOWN
@@ -101,6 +102,7 @@ class _Dispatcher:
     def __init__(self) -> None:
         self.queue: queue.Queue[_Job | None] = queue.Queue(maxsize=32)
         self.targets: dict[_Config, _Target] = {}
+        self.swept = time.monotonic()
         self.stopped = threading.Event()
         self.thread = threading.Thread(
             target=self._run, name="djhv-realtime-publisher", daemon=True
@@ -142,15 +144,19 @@ class _Dispatcher:
         """Close the clients that no job will come back for, and forget their state.
 
         A configuration that is never used again would keep its connection until the
-        worker ends. Failure and breaker state stays, as the next job needs it.
+        worker ends, and one that only ever failed would stay in the table. A target
+        goes when it holds no client, its breaker is no longer open, which callers
+        read, and nothing was attempted on it for _IDLE. The failures it counted are
+        forgotten with it.
         """
         now = time.monotonic()
+        self.swept = now
         for config, target in list(self.targets.items()):
             _expire(target, now)
             if (
                 target.client is None
-                and not target.failures
                 and now >= target.open_until
+                and now - target.used > _IDLE
             ):
                 del self.targets[config]
 
@@ -166,7 +172,9 @@ class _Dispatcher:
                 if job is None:
                     break
                 try:
-                    self._sweep()
+                    # Once per _IDLE, not per job: the walk is linear in the targets.
+                    if time.monotonic() - self.swept >= _IDLE:
+                        self._sweep()
                     if time.monotonic() < job.deadline and not self._open(job.config):
                         target = self.targets.setdefault(job.config, _Target())
                         _send(

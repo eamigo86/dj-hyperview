@@ -359,9 +359,13 @@ on, and says how to migrate.
   hint. The worker keeps one connection per configuration, replaces it after a
   failure, after 30 seconds without use, or after five minutes of age under steady
   traffic so that the host name is resolved again, and still sends the channels of
-  a hint in one pipeline round trip. It checks every connection against those
-  limits on each hint and after 30 seconds without one, so a configuration that is
-  never used again does not keep its connection until the process ends. A short
+  a hint in one pipeline round trip. It checks the connection that a hint uses
+  against those limits, and sweeps every connection at most every 30 seconds,
+  whether hints arrive or not, so a configuration that is never used again does not
+  keep its connection until the process ends. The sweep also forgets a
+  configuration, with the failures counted for it, once nothing was attempted on it
+  for 30 seconds and its breaker is not open, so one that only ever failed does not
+  stay in memory, and a failure that old stops counting toward the breaker. A short
   circuit breaker also stops each commit from waiting for the connection timeout
   while Redis is down: after three consecutive failures of a configuration, hints
   for it are dropped immediately for five seconds, and the next hint probes the

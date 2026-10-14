@@ -783,3 +783,150 @@ def test_a_sweep_keeps_the_breaker_state_of_a_failing_configuration(monkeypatch,
         assert connections() == 4
     finally:
         dispatcher.close()
+
+
+def count_expiries(monkeypatch, module):
+    """Record each target that a sweep or a send looks at."""
+    walked = []
+    expire = module._expire
+
+    def counting(target, now):
+        walked.append(target)
+        expire(target, now)
+
+    monkeypatch.setattr(module, "_expire", counting)
+    return walked
+
+
+def test_a_failed_attempt_counts_as_the_last_use_of_a_target(monkeypatch, clock):
+    module = publisher()
+    fake_clients(monkeypatch, module, lambda config: True)
+    target = module._Target()
+
+    with pytest.raises(ConnectionError):
+        module._send(target, None, ("a",), b"x", clock.now + 60)
+
+    assert target.client is None and target.failures == 1
+    assert target.used == clock.now
+
+
+def test_a_burst_of_failing_configurations_costs_work_linear_in_their_number(
+    monkeypatch, clock
+):
+    module = publisher()
+    fake_clients(monkeypatch, module, lambda config: True)
+    walked = count_expiries(monkeypatch, module)
+    dispatcher = module._Dispatcher()
+    try:
+        for config in configs(module, 100):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+    finally:
+        dispatcher.close()
+
+    # One look from each send. A sweep per job added 0 + 1 + ... + 99 more.
+    assert len(walked) <= 2 * 100
+
+
+def test_failed_configurations_are_forgotten_after_the_idle_period(monkeypatch, clock):
+    module = publisher()
+    fake_clients(monkeypatch, module, lambda config: config.namespace != "ns0")
+    good, *failing = configs(module, 50)
+    dispatcher = module._Dispatcher()
+    try:
+        for config in failing:
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        clock.now += module._IDLE - 1
+        dispatcher._sweep()
+        assert len(dispatcher.targets) == 49
+
+        clock.now += module._IDLE + 1
+        assert dispatcher.submit(good, ("a",), b"x") is True
+        assert list(dispatcher.targets) == [good]
+
+        # A job a month later walks only the configurations that are still live.
+        walked = count_expiries(monkeypatch, module)
+        clock.now += 30 * 24 * 3600
+        assert dispatcher.submit(good, ("a",), b"x") is True
+        assert len(walked) == 2 and list(dispatcher.targets) == [good]
+    finally:
+        dispatcher.close()
+
+
+def test_jobs_sweep_at_most_once_per_idle_period(monkeypatch, clock):
+    module = publisher()
+    fake_clients(monkeypatch, module)
+    sweeps = []
+    sweep = module._Dispatcher._sweep
+    monkeypatch.setattr(
+        module._Dispatcher, "_sweep", lambda self: (sweeps.append(1), sweep(self))[1]
+    )
+    dispatcher = module._Dispatcher()
+    try:
+        for config in configs(module, 20):
+            assert dispatcher.submit(config, ("a",), b"x") is True
+        assert len(sweeps) <= 1
+        clock.now += module._IDLE
+        for config in configs(module, 20):
+            assert dispatcher.submit(config, ("a",), b"x") is True
+        assert len(sweeps) <= 2
+    finally:
+        dispatcher.close()
+
+
+def test_failures_older_than_the_idle_period_do_not_count_toward_the_breaker(
+    monkeypatch, clock
+):
+    module = publisher()
+    made = fake_clients(monkeypatch, module, lambda config: True)
+    (config,) = configs(module, 1)
+    dispatcher = module._Dispatcher()
+    try:
+        for _ in range(2):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        clock.now += module._IDLE + 1
+        # Two more failures: the first two were forgotten, so the breaker is not open.
+        for _ in range(2):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        assert len(made) == 4 and not dispatcher._open(config)
+        assert dispatcher.submit(config, ("a",), b"x") is False
+        assert len(made) == 5 and dispatcher._open(config)
+    finally:
+        dispatcher.close()
+
+
+def test_a_sustained_outage_costs_one_attempt_per_cooldown(monkeypatch, clock):
+    module = publisher()
+    made = fake_clients(monkeypatch, module, lambda config: True)
+    (config,) = configs(module, 1)
+    dispatcher = module._Dispatcher()
+    try:
+        for _ in range(600):
+            clock.now += 1
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        # Three failures open the breaker, then one probe in each window of five
+        # seconds, however many sweeps ran in ten minutes.
+        assert len(made) == 3 + len(range(8, 601, 5))
+        assert config in dispatcher.targets
+    finally:
+        dispatcher.close()
+
+
+def test_a_sweep_never_forgets_a_target_whose_breaker_is_open(monkeypatch, clock):
+    module = publisher()
+    monkeypatch.setattr(module, "_COOLDOWN", 3 * module._IDLE)
+    fake_clients(monkeypatch, module, lambda config: True)
+    (config,) = configs(module, 1)
+    dispatcher = module._Dispatcher()
+    try:
+        for _ in range(3):
+            assert dispatcher.submit(config, ("a",), b"x") is False
+        # Long unused, but callers still read open_until to turn their hints away.
+        clock.now += 2 * module._IDLE
+        dispatcher._sweep()
+        assert config in dispatcher.targets and dispatcher._open(config)
+
+        clock.now += module._IDLE
+        dispatcher._sweep()
+        assert config not in dispatcher.targets
+    finally:
+        dispatcher.close()

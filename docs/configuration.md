@@ -496,9 +496,13 @@ The worker keeps one Redis connection per configuration and reuses it for later
 hints, sending all channels of a hint in one pipeline round trip. It replaces the
 connection after a failure, after 30 seconds without use, or after five minutes of
 age, so that the host name is resolved again even under steady traffic. It checks
-every connection against those limits on each hint and after 30 seconds without
-one, so a configuration that is never used again does not keep its connection open
-until the process ends. After three consecutive failures of one configuration,
+the connection that a hint uses against those limits, and sweeps every connection
+at most every 30 seconds, whether hints arrive or not, so a configuration that is
+never used again does not keep its connection open until the process ends. The
+sweep also forgets a configuration, with the failures counted for it, once nothing
+was attempted on it for 30 seconds and its breaker is not open: a configuration
+that only ever failed does not stay in memory, and a failure that old stops
+counting toward the breaker. After three consecutive failures of one configuration,
 including a client that cannot be built, publications for it fail fast for five
 seconds instead of each paying the connection timeout. The breaker logs the fixed
 code `realtime_publish_circuit_open` once when it opens, not for each dropped hint.
