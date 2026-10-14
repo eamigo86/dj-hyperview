@@ -84,6 +84,10 @@ This page records user-visible release changes, including unpublished attempts.
   draft with the informational note `schema_static_incomplete`. The 18 KB draft
   above was also reported as invalid XML, because the parser refused a 16 MB text
   node, and is now checked.
+- Stop the Admin **Format and Validate** check from showing its internal marker. A
+  Django tag or variable inside an element or attribute name, such as `<a{{ x }} />`,
+  was reported as `Element "aDJHVSTATICSTRUCTURE0" is not declared...`; the message
+  now reads `Element "a{...}" is not declared...`.
 - Limit the work that unclosed template delimiters cost when a stored template is
   compiled, using the new stable validation code `max_unclosed`. Django's lexer
   reads on to the end of the line for every `{{`, `{%` or `{#` that closes no tag,

@@ -1543,6 +1543,38 @@ def test_the_masked_document_may_be_exactly_four_times_max_bytes_long(
 
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize(
+    ("source", "messages"),
+    [
+        (
+            f'<view xmlns="{HV}"><a{{{{ x }}}} /></view>',
+            ['Element "a{...}" is not declared by the selected schema.'],
+        ),
+        (
+            f'<view xmlns="{HV}"><text a{{{{ x }}}}="1" /></view>',
+            ['Attribute "a{...}" is not allowed on element "text".'],
+        ),
+        (
+            f'<view xmlns="{HV}"><text{{% now "Y" %}} /></view>',
+            [
+                'Element "text{...}" is not declared by the selected schema.',
+                'Element "text{...}" is not allowed inside "view" at this position.',
+            ],
+        ),
+    ],
+    ids=["structure-in-name", "structure-in-attribute-name", "value-in-name"],
+)
+def test_a_token_inside_a_name_does_not_leak_a_marker_into_a_message(
+    source: str, messages: list[str]
+) -> None:
+    result = _static_module().validate_draft_source("screens/draft.xml", source)
+
+    reported = [item["message"] for item in result["diagnostics"]]
+    assert all(message in reported for message in messages)
+    assert not any("DJHVSTATIC" in message for message in reported)
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
     "source",
     [
         # A marker one above this run would have nine digits and occur in the value.

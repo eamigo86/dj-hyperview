@@ -770,6 +770,10 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
                 name, root, compiled, _MAX_DIAGNOSTICS + 1 - len(diagnostics)
             )
         )
+    # A token inside a name leaves its marker in the name the parser reports.
+    markers = re.compile(f"{value_marker}|{structure_marker}")
+    for item in diagnostics:
+        item["message"] = markers.sub("{...}", item["message"])
     if incomplete_line is not None:
         diagnostics.append(_incomplete_schema_diagnostic(name, incomplete_line))
     return diagnostics
