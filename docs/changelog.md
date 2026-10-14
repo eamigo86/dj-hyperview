@@ -74,16 +74,20 @@ This page records user-visible release changes, including unpublished attempts.
   `ADMIN.PERMISSION` allows more. The marker is now numbered, such as
   `DJHVSTATICDYNAMIC0`, one above the highest number that follows its name in the
   draft, so it stays under 30 characters whatever the draft holds and still never
-  occurs in it. A draft that already holds the number 99999999 after a marker name,
-  which would leave no eight-digit number above it, is skipped with the note
-  `schema_static_incomplete`. The same 1 MB draft now uses 53 MiB at peak. The copy is also
-  bounded in itself: it is the draft plus one marker for each tag or variable that
-  renders output, not for text, comments, `{% load %}` or `{% verbatim %}`. When it
-  would exceed four times `VALIDATION.MAX_BYTES`, counted in UTF-8 bytes like the
-  limit itself, which only a draft made almost entirely of tags shorter than a
-  marker reaches, the check is skipped for that draft with the informational note
-  `schema_static_incomplete`. The 18 KB draft above was also reported as invalid
-  XML, because the parser refused a 16 MB text node, and is now checked.
+  occurs in it. The number is also chosen after the numeric character references of
+  the draft are resolved, as the parser resolves them: `&#68;JHVSTATICDYNAMIC0` is
+  the marker text once parsed, and a draft that spelled its value that way used to
+  pass the check although serving it was rejected. A draft that already holds the
+  number 99999999 after a marker name, in either form, which would leave no
+  eight-digit number above it, is skipped with the note `schema_static_incomplete`.
+  The same 1 MB draft now uses 53 MiB at peak. The copy is also bounded in itself:
+  it is the draft plus one marker for each tag or variable that renders output, not
+  for text, comments, `{% load %}` or `{% verbatim %}`. When it would exceed four
+  times `VALIDATION.MAX_BYTES`, counted in UTF-8 bytes like the limit itself, which
+  only a draft made almost entirely of tags shorter than a marker reaches, the check
+  is skipped for that draft with the informational note `schema_static_incomplete`.
+  The 18 KB draft above was also reported as invalid XML, because the parser
+  refused a 16 MB text node, and is now checked.
 - Stop the Admin **Format and Validate** check from showing its internal marker. A
   Django tag or variable inside an element or attribute name, such as `<a{{ x }} />`,
   was reported as `Element "aDJHVSTATICSTRUCTURE0" is not declared...`; the message

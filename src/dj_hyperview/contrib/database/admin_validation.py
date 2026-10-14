@@ -151,6 +151,29 @@ class _MaskTooLarge(Exception):
     """The static check cannot build a safe masked document for this source."""
 
 
+# A reference may have any number of leading zeros. Beyond seven decimal or six
+# hexadecimal digits the number is above U+10FFFF, which the parser refuses.
+_CHARACTER_REFERENCE = re.compile(r"&#(?:0*([0-9]{1,7})|x0*([0-9a-fA-F]{1,6}));")
+
+
+def _decode_character_references(content: str) -> str:
+    """Return the text the XML parser sees once it resolves numeric references.
+
+    A reference can spell a marker: "&#68;JHVSTATICDYNAMIC0" is the marker text
+    after parsing. The text is decoded once, as the parser does it. The five named
+    entities are left alone: they spell no letter or digit of a marker.
+    """
+
+    def decode(match: re.Match[str]) -> str:
+        decimal, hexadecimal = match.groups()
+        try:
+            return chr(int(decimal) if decimal else int(hexadecimal, 16))
+        except ValueError:  # Above U+10FFFF: the parser refuses it, so leave it.
+            return match.group()
+
+    return _CHARACTER_REFERENCE.sub(decode, content)
+
+
 def _unused_marker(content: str, base: str) -> str:
     """Number a marker after the highest one in the source, so it never occurs there.
 
@@ -241,8 +264,10 @@ def _scan_template(content: str) -> _TemplateScan:
     from its lexer, and a tag split over lines is plain text, as it is when served.
     The XML state is advanced only across the literal text between tokens.
     """
-    value_marker = _unused_marker(content, _DYNAMIC_VALUE)
-    structure_marker = _unused_marker(content, _DYNAMIC_STRUCTURE)
+    # The parser reads a reference as its character, so both texts must lack the marker.
+    searched = f"{content}\n{_decode_character_references(content)}"
+    value_marker = _unused_marker(searched, _DYNAMIC_VALUE)
+    structure_marker = _unused_marker(searched, _DYNAMIC_STRUCTURE)
     tokens = _LinearLexer(content).tokenize()
     # The masked text is the source plus one marker for each token that gets one, so
     # the room left is known before anything is appended. Blanks and markers are ASCII

@@ -1625,6 +1625,127 @@ def test_a_draft_holding_the_largest_marker_number_is_reported_as_incomplete(
     assert _incomplete(result) == [("schema_static_incomplete", "info", None)]
 
 
+def _page_with(kind: str, text: str) -> str:
+    """A draft whose attribute value is the text, next to the tag the kind needs."""
+    if kind == "value":
+        return f'<view xmlns="{HV}" scroll-orientation="{text}" id="{{{{ id }}}}" />'
+    if kind == "structure":
+        return (
+            f'<view xmlns="{HV}" scroll-orientation="{text}">'
+            "<text>{{ x|safe }}</text></view>"
+        )
+    return (
+        f'<view xmlns="{HV}" id="{{{{ id }}}}">'
+        f'<behavior trigger="press" action="{text}" bogus="1" /></view>'
+    )
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    ("kind", "marker", "spelled"),
+    [
+        ("value", "DJHVSTATICDYNAMIC0", "&#68;JHVSTATICDYNAMIC0"),
+        ("value", "DJHVSTATICDYNAMIC0", "&#x44;JHVSTATICDYNAMIC&#x30;"),
+        ("value", "DJHVSTATICDYNAMIC0", "&#68;&#x4a;HVSTATICDYNAMIC&#48;"),
+        ("value", "DJHVSTATICDYNAMIC0", "&#0000068;JHVSTATICDYNAMIC&#x0030;"),
+        (
+            "value",
+            "DJHVSTATICDYNAMIC0",
+            "".join(f"&#{ord(char)};" for char in "DJHVSTATICDYNAMIC0"),
+        ),
+        ("structure", "DJHVSTATICSTRUCTURE0", "&#68;JHVSTATICSTRUCTURE0"),
+        ("structure", "DJHVSTATICSTRUCTURE0", "&#x44;JHVSTATICSTRUCTURE&#x30;"),
+        ("action", "DJHVSTATICDYNAMIC0", "&#68;JHVSTATICDYNAMIC0"),
+    ],
+    ids=[
+        "value-decimal",
+        "value-hexadecimal",
+        "value-mixed",
+        "value-zero-padded",
+        "value-every-letter",
+        "structure-decimal",
+        "structure-hexadecimal",
+        "action",
+    ],
+)
+def test_a_character_reference_cannot_spell_a_marker(
+    kind: str, marker: str, spelled: str
+) -> None:
+    """The parser decodes the reference, so the text is real content, not a tag."""
+    module = _static_module()
+
+    def verdict(text: str) -> tuple[bool, list[tuple[str, str, int | None]]]:
+        result = module.validate_draft_source(
+            "screens/draft.xml", _page_with(kind, text)
+        )
+        return result["ok"], _incomplete(result)
+
+    literal = verdict(marker)
+
+    assert literal[0] is False
+    assert verdict(spelled) == literal
+
+
+def test_character_references_are_decoded_once_as_the_parser_does() -> None:
+    decode = _static_module()._decode_character_references
+
+    assert decode("&#68;&#x4a;&#0000072;&#x0056;") == "DJHV"
+    # The parser decodes the text once, so this is a reference again after it.
+    assert decode("&#38;#68;") == "&#68;"
+    assert decode("&amp;#68; and no reference") == "&amp;#68; and no reference"
+
+
+@override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
+@pytest.mark.parametrize(
+    ("reference", "decoded"),
+    [
+        ("&#" + "9" * 4_000 + ";", None),
+        ("&#x" + "f" * 4_000 + ";", None),
+        ("&#1114112;", None),
+        ("&#x110000;", None),
+        ("&#9999999;", None),
+        ("&#xffffff;", None),
+        # Leading zeros are valid, however many, and stay one bounded number.
+        ("&#" + "0" * 4_000 + "68;", "D"),
+    ],
+    ids=[
+        "decimal-digits",
+        "hexadecimal-digits",
+        "above-unicode",
+        "above-unicode-hexadecimal",
+        "largest-decimal",
+        "largest-hexadecimal",
+        "zero-padded",
+    ],
+)
+def test_an_oversized_character_reference_is_left_for_the_parser_to_refuse(
+    reference: str, decoded: str | None
+) -> None:
+    module = _static_module()
+
+    assert module._decode_character_references(reference) == (decoded or reference)
+    result = module.validate_draft_source(
+        "screens/draft.xml", _page_with("value", reference)
+    )
+
+    assert result["ok"] is False
+
+
+def test_a_scan_decodes_the_references_of_the_source_once(monkeypatch) -> None:
+    module = _static_module()
+    decode = module._decode_character_references
+    calls = []
+    monkeypatch.setattr(
+        module,
+        "_decode_character_references",
+        lambda text: calls.append(1) or decode(text),
+    )
+
+    module._scan_template("&#68;JHVSTATICDYNAMIC0 {{ a }} {% b %}")
+
+    assert len(calls) == 1
+
+
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_rejects_too_many_nodes_before_the_schema_walk(
