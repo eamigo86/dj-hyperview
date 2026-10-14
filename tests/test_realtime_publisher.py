@@ -708,6 +708,14 @@ def test_an_idle_worker_closes_expired_clients_without_any_job(monkeypatch, cloc
     made = fake_clients(monkeypatch, module)
     # The worker wakes up this often, in real time, while nothing is submitted.
     monkeypatch.setattr(module, "_IDLE", 0.01)
+    expire = module._expire
+
+    def slow_expire(target, now):
+        expire(target, now)
+        # The sweep forgets a target only after it has closed the client.
+        time.sleep(0.05)
+
+    monkeypatch.setattr(module, "_expire", slow_expire)
     dispatcher = module._Dispatcher()
     try:
         for config in configs(module, 3):
@@ -717,7 +725,7 @@ def test_an_idle_worker_closes_expired_clients_without_any_job(monkeypatch, cloc
         clock.now += 1
 
         assert wait_until(lambda: all(client.closed for client in made))
-        assert dispatcher.targets == {}
+        assert wait_until(lambda: dispatcher.targets == {})
         assert dispatcher.thread.is_alive()
     finally:
         dispatcher.close()
