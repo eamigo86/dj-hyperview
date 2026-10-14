@@ -47,8 +47,8 @@ _STATIC_ROOT = "djhv-static-validation-root"
 _DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"
 _DYNAMIC_STRUCTURE = "DJHVSTATICSTRUCTURE"
 # The masked document may grow to this many times MAX_BYTES. Only a source made mostly
-# of tokens shorter than a marker (`{{a}}` has 5 characters, a marker about 18) gets
-# there.
+# of tags and variables shorter than a marker (`{{a}}` has 5 characters, a marker about
+# 18) gets there.
 _MASK_FACTOR = 4
 _XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)", re.IGNORECASE)
 _NOT_NEWLINE = re.compile(r"[^\n]")
@@ -244,12 +244,10 @@ def _scan_template(content: str) -> _TemplateScan:
     value_marker = _unused_marker(content, _DYNAMIC_VALUE)
     structure_marker = _unused_marker(content, _DYNAMIC_STRUCTURE)
     tokens = _LinearLexer(content).tokenize()
-    # A marker starts every token's replacement, so the size is known before building.
-    marker_length = max(len(value_marker), len(structure_marker))
-    if (
-        len(content) + len(tokens) * marker_length
-        > _MASK_FACTOR * get_settings().validation.max_bytes
-    ):
+    # The masked text is the source plus one marker for each token that gets one, so
+    # the room left is known before anything is appended.
+    room = _MASK_FACTOR * get_settings().validation.max_bytes - len(content)
+    if room < 0:
         raise _MaskTooLarge
     parts: list[str] = []
     contexts: dict[int, str] = {}
@@ -315,11 +313,11 @@ def _scan_template(content: str) -> _TemplateScan:
             structure = context != "attribute" and command not in _SCALAR_TAGS
         if structure and first_structure_line is None:
             first_structure_line = token.lineno
-        parts.append(
-            _blank_preserving_lines(
-                content[start:end], structure_marker if structure else value_marker
-            )
-        )
+        marker = structure_marker if structure else value_marker
+        room -= len(marker)
+        if room < 0:
+            raise _MaskTooLarge
+        parts.append(_blank_preserving_lines(content[start:end], marker))
     return _TemplateScan(
         _blank_xml_declarations("".join(parts)),
         value_marker,

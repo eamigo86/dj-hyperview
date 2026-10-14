@@ -1506,6 +1506,41 @@ def test_a_masked_document_within_the_bound_is_checked_as_before() -> None:
     assert result == {"ok": True, "diagnostics": []}
 
 
+@override_settings(
+    HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": {"MAX_BYTES": 10_000}}
+)
+def test_text_and_comments_add_nothing_to_the_masked_document() -> None:
+    """Only a token that is replaced by a marker lengthens the document."""
+    source = f'<view xmlns="{HV}"><text>' + "x{##}" * 1_900 + "</text></view>"
+    assert len(source) < 10_000
+
+    result = _static_module().validate_draft_source("screens/draft.xml", source)
+
+    assert result == {"ok": True, "diagnostics": []}
+
+
+@override_settings(HYPERVIEW={"VALIDATION": {"MAX_BYTES": 10_000}})
+@pytest.mark.parametrize(
+    ("unit", "marker", "tokens"),
+    [
+        ("{{a}}", "DJHVSTATICDYNAMIC0", 1_700),
+        ("{% a %}", "DJHVSTATICSTRUCTURE0", 1_300),
+    ],
+    ids=["value", "structure"],
+)
+def test_the_masked_document_may_be_exactly_four_times_max_bytes_long(
+    unit: str, marker: str, tokens: int
+) -> None:
+    padding = 4 * 10_000 - tokens * (len(unit) + len(marker))
+    module = _static_module()
+
+    scan = module._scan_template(unit * tokens + "x" * padding)
+
+    assert len(scan.masked) == 4 * 10_000
+    with pytest.raises(module._MaskTooLarge):
+        module._scan_template(unit * tokens + "x" * (padding + 1))
+
+
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize(
     "source",
