@@ -5,10 +5,10 @@ without navigating away and back. With the coordinated contextual client, own
 changes stay quiet and a dirty form warns only for relevant remote changes,
 without automatically losing what the user is typing.
 
-This guide targets **0.1.0b2**, retaining the negotiated contextual
+This guide targets **0.1.0b3**, retaining the negotiated contextual
 invalidation contract formalized in b1 and the SSE primitives introduced in a21.
-The beta adds no new SSE runtime behavior. See the
-[b2 release notes](changelog.md#010b2-2026-09-24),
+The beta improves publisher reliability without changing the SSE envelope. See the
+[b3 release notes](changelog.md#010b3-2026-10-14),
 [compatibility policy](api-reference.md#beta-compatibility-policy) and
 [verified scope](testing.md#verified-scope). Installing a21 supports v1, not the
 new rich envelope. Changes listed under *Unreleased* in the
@@ -163,7 +163,7 @@ environment, and update that application's reviewed lock through its normal
 workflow:
 
 ```console
-python -m pip install 'dj-hyperview[realtime]==0.1.0b2'
+python -m pip install 'dj-hyperview[realtime]==0.1.0b3'
 ```
 
 Use a source checkout (`python -m pip install -e '/path/to/django-hv[realtime]'`)

@@ -4,6 +4,10 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+No changes have been recorded since 0.1.0b3.
+
+## 0.1.0b3 — 2026-10-14
+
 ### Security
 
 - Reject an element with more than 128 attributes, more than 8 in-scope namespaces,
@@ -618,15 +622,15 @@ on, and says how to migrate.
 ### Compatibility
 
 - Hyperview 0.112.0 removes `createTestProps` and changes native test-ID behavior
-  in the client. The server contract is unchanged: 0.1.0b2 ships and validates
-  against the corrected 0.111.0 schema, and this repository records upstream
-  provenance for 0.110.0 and 0.111.0 only. This note does not publish a new beta.
+  in the client. The server contract is unchanged: 0.1.0b3 continues to validate
+  against the corrected 0.111.0 schema introduced in 0.1.0b2. This repository
+  records upstream provenance for 0.110.0 and 0.111.0 only.
 
 ### Maintenance
 
 - Refresh compatible documentation/development dependencies, the pinned CI uv
   patch, and verified setup-node/setup-uv action releases without changing the
-  published package's version or runtime dependency bounds.
+  runtime dependency bounds.
 - Pin the CI uv patch to 0.12.22, the release that regenerated `uv.lock` (lock
   format revision 5), so `uv sync --locked` in CI uses the uv that wrote the lock.
 - Give every workflow a `concurrency` group, in which only a pull request cancels

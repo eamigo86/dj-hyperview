@@ -6,7 +6,8 @@ mobile app does not change that schema.
 
 | dj-hyperview | Active validation contract | Runtime schema |
 | --- | --- | --- |
-| 0.1.0b2 (current) | Hyperview 0.111.0 | Upstream 0.111.0 XSDs plus package-owned corrections, revision `r3` |
+| 0.1.0b3 (current) | Hyperview 0.111.0 | Upstream 0.111.0 XSDs plus package-owned corrections, revision `r3` |
+| 0.1.0b2 | Hyperview 0.111.0 | Upstream 0.111.0 XSDs plus package-owned corrections, revision `r3` |
 | 0.1.0b1 | Hyperview 0.110.0 | Upstream 0.110.0 XSDs plus package-owned corrections, revision `r2` |
 
 `dj_hyperview.HYPERVIEW_SCHEMA_VERSION` reports the active version, and

@@ -3,8 +3,9 @@
 Start with the [API compatibility commitment](api-reference.md#beta-compatibility-policy)
 and [verified test scope](testing.md#verified-scope) before adopting a prerelease.
 **0.1.0b1** began the 0.1 beta line by formalizing the a22 contract and its
-documented limits, and **0.1.0b2** moved validation to the corrected Hyperview
-0.111.0 schema. Neither adds new SSE runtime behavior. Releases pass the
+documented limits, **0.1.0b2** moved validation to the corrected Hyperview
+0.111.0 schema, and **0.1.0b3** hardens security and reliability while preserving
+the SSE protocol. Releases pass the
 [CI, Codecov and publication gates](release-rollback.md); entries under
 *Unreleased* in the [changelog](changelog.md) are not part of any release.
 
