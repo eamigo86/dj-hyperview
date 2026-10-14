@@ -79,11 +79,11 @@ This page records user-visible release changes, including unpublished attempts.
   `schema_static_incomplete`. The same 1 MB draft now uses 53 MiB at peak. The copy is also
   bounded in itself: it is the draft plus one marker for each tag or variable that
   renders output, not for text, comments, `{% load %}` or `{% verbatim %}`. When it
-  would exceed four times `VALIDATION.MAX_BYTES`, which only a draft made almost
-  entirely of tags shorter than a marker reaches, the check is skipped for that
-  draft with the informational note `schema_static_incomplete`. The 18 KB draft
-  above was also reported as invalid XML, because the parser refused a 16 MB text
-  node, and is now checked.
+  would exceed four times `VALIDATION.MAX_BYTES`, counted in UTF-8 bytes like the
+  limit itself, which only a draft made almost entirely of tags shorter than a
+  marker reaches, the check is skipped for that draft with the informational note
+  `schema_static_incomplete`. The 18 KB draft above was also reported as invalid
+  XML, because the parser refused a 16 MB text node, and is now checked.
 - Stop the Admin **Format and Validate** check from showing its internal marker. A
   Django tag or variable inside an element or attribute name, such as `<a{{ x }} />`,
   was reported as `Element "aDJHVSTATICSTRUCTURE0" is not declared...`; the message

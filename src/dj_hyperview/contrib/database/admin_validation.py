@@ -46,9 +46,9 @@ from ._template_syntax import _compile_nodelist
 _STATIC_ROOT = "djhv-static-validation-root"
 _DYNAMIC_VALUE = "DJHVSTATICDYNAMIC"
 _DYNAMIC_STRUCTURE = "DJHVSTATICSTRUCTURE"
-# The masked document may grow to this many times MAX_BYTES. Only a source made mostly
-# of tags and variables shorter than a marker (`{{a}}` has 5 characters, a marker about
-# 18) gets there.
+# The masked document may grow to this many times MAX_BYTES, as UTF-8 bytes like the
+# limit. Only a source made mostly of tags and variables shorter than a marker (`{{a}}`
+# has 5 bytes, a marker about 18) gets there.
 _MASK_FACTOR = 4
 _XML_DECLARATION = re.compile(r"<\?xml(?:\s|\?)", re.IGNORECASE)
 _NOT_NEWLINE = re.compile(r"[^\n]")
@@ -245,8 +245,9 @@ def _scan_template(content: str) -> _TemplateScan:
     structure_marker = _unused_marker(content, _DYNAMIC_STRUCTURE)
     tokens = _LinearLexer(content).tokenize()
     # The masked text is the source plus one marker for each token that gets one, so
-    # the room left is known before anything is appended.
-    room = _MASK_FACTOR * get_settings().validation.max_bytes - len(content)
+    # the room left is known before anything is appended. Blanks and markers are ASCII
+    # and a token has one blank per character, so the bytes of the source bound it.
+    room = _MASK_FACTOR * get_settings().validation.max_bytes - len(content.encode())
     if room < 0:
         raise _MaskTooLarge
     parts: list[str] = []

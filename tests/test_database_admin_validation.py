@@ -1541,6 +1541,37 @@ def test_the_masked_document_may_be_exactly_four_times_max_bytes_long(
         module._scan_template(unit * tokens + "x" * (padding + 1))
 
 
+@override_settings(HYPERVIEW={"VALIDATION": {"MAX_BYTES": 10_000}})
+@pytest.mark.parametrize("wide", ["\u00e9", "\u754c", "\U0001d49c"])
+@pytest.mark.parametrize("count", [100, 400])
+def test_the_masked_document_budget_counts_utf8_bytes(wide: str, count: int) -> None:
+    """Characters of two to four bytes used to count as one, so the text grew."""
+    module = _static_module()
+    budget = 4 * 10_000
+    # {{a}} is five bytes and becomes a marker of 18 bytes and five blanks.
+    tokens = (budget - count * len(wide.encode())) // 23
+
+    scan = module._scan_template("{{a}}" * tokens + wide * count)
+
+    assert budget - 23 < len(scan.masked.encode()) <= budget
+    with pytest.raises(module._MaskTooLarge):
+        module._scan_template("{{a}}" * (tokens + 1) + wide * count)
+
+
+@override_settings(
+    HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": {"MAX_BYTES": 10_000}}
+)
+def test_the_worst_draft_for_the_masked_budget_is_reported_as_incomplete() -> None:
+    """It is 9,996 bytes long, and the character count let it grow to 41,028."""
+    source = "{{a}}" * 1_724 + "\U0001d49c" * 344
+    assert len(source.encode()) <= 10_000
+
+    result = _static_module().validate_draft_source("screens/draft.xml", source)
+
+    assert result["ok"] is True
+    assert _incomplete(result) == [("schema_static_incomplete", "info", None)]
+
+
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize(
     ("source", "messages"),
