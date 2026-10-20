@@ -131,17 +131,35 @@ def test_body_mutation_checks_the_snapshot_once(snapshots, response_type, action
     assert len(snapshots) == 1
 
 
-def test_overridden_rendered_content_is_validated_again_once(snapshots):
+def test_overridden_rendered_content_output_is_what_the_response_holds(snapshots):
     class Overriding(HyperviewTemplateResponse):
         @property
         def rendered_content(self):
-            return super().rendered_content
+            return OTHER_DOCUMENT
 
     response = Overriding(RequestFactory().get("/"), "screen.xml", using="django")
     response.render()
-    assert response.content == DOCUMENT.encode()
-    # One validation for the text the subclass returns and one for the assignment.
-    assert len(snapshots) == 2
+    assert response.content == OTHER_DOCUMENT.encode()
+
+
+@pytest.mark.parametrize(
+    ("output", "code"),
+    [
+        ("<view", "malformed_xml"),
+        (f'<view xmlns="{HV}"><unknown/></view>', "schema"),
+    ],
+)
+def test_overridden_rendered_content_output_is_validated(snapshots, output, code):
+    class Overriding(HyperviewTemplateResponse):
+        @property
+        def rendered_content(self):
+            return output
+
+    response = Overriding(RequestFactory().get("/"), "screen.xml", using="django")
+    with pytest.raises(TemplateValidationError) as error:
+        response.render()
+    assert error.value.code == code
+    assert not response.is_rendered
 
 
 def test_gzip_handoff_checks_the_snapshot_once_more(snapshots):
@@ -193,66 +211,150 @@ def test_assigned_content_rechecks_limits_changed_before_commit(snapshots, monke
     assert response.content == DOCUMENT.encode()
 
 
+def validated(document, **kwargs):
+    """Validate as a response does: read the settings snapshot, then validate."""
+    snapshot = get_settings()
+    return validation._validate_hxml_result(document, **kwargs), snapshot
+
+
 def test_commit_rechecks_a_result_validated_for_another_root_mode(snapshots):
     document = f'<doc xmlns="{HV}"><screen><body/></screen></doc>'
-    result = validation._validate_hxml_result(document)
+    result, under = validated(document)
     response = HyperviewFragmentResponse(OTHER_DOCUMENT)
     with pytest.raises(TemplateValidationError) as error:
-        response._commit_result(result)
+        response._commit_result(result, under)
     assert error.value.code == "restricted_fragment_root"
     assert response.content == OTHER_DOCUMENT.encode()
 
 
-def test_same_call_check_does_not_guard_the_dependencies_again(snapshots, extra_schema):
-    result = validation._validate_hxml_result(DOCUMENT)
+def test_check_under_the_same_settings_does_not_guard_the_dependencies_again(
+    snapshots, extra_schema
+):
+    result, under = validated(DOCUMENT)
     snapshots.clear()
-    assert validation._is_current_hxml_result(result, same_call=True)
+    assert validation._is_current_hxml_result(result, validated_under=under)
     assert snapshots == []
     # A result from the same call chain was guarded an instant ago, so a changed
     # file is not what this check looks for. The default check still is.
     extra_schema.write_text(STRICT_XSD, encoding="utf-8")
-    assert validation._is_current_hxml_result(result, same_call=True)
+    assert validation._is_current_hxml_result(result, validated_under=under)
     assert not validation._is_current_hxml_result(result)
 
 
-def test_same_call_check_falls_back_to_the_full_check_after_a_settings_change(
+def test_check_falls_back_to_the_full_check_after_a_settings_change(
     snapshots, extra_schema
 ):
-    result = validation._validate_hxml_result(DOCUMENT)
+    result, under = validated(DOCUMENT)
     changed = hyperview(extra_schema, VALIDATION={"MAX_NODES": 50})
     with override_settings(HYPERVIEW=changed):
-        assert not validation._is_current_hxml_result(result, same_call=True)
-    snapshots.clear()
-    # Equal settings behind a new snapshot object are the same contract.
+        assert not validation._is_current_hxml_result(result, validated_under=under)
+    # Equal settings behind a new snapshot object are the same contract, and only
+    # the full check can tell: it guards the dependencies.
     with override_settings(HYPERVIEW=hyperview(extra_schema)):
-        assert validation._is_current_hxml_result(result, same_call=True)
-        assert snapshots
+        # Building the settings snapshot guards the schemas as well, so warm it
+        # first: what is counted below is the check itself.
+        get_settings()
+        snapshots.clear()
+        assert validation._is_current_hxml_result(result, validated_under=under)
+        assert len(snapshots) == 1
 
 
-def test_same_call_check_guards_the_dependencies_when_the_settings_changed(
+def test_check_guards_the_dependencies_when_the_settings_changed(
     snapshots, extra_schema
 ):
-    result = validation._validate_hxml_result(DOCUMENT)
+    result, under = validated(DOCUMENT)
     extra_schema.write_text(STRICT_XSD, encoding="utf-8")
     with override_settings(HYPERVIEW=hyperview(extra_schema)):
-        assert not validation._is_current_hxml_result(result, same_call=True)
+        assert not validation._is_current_hxml_result(result, validated_under=under)
 
 
-def test_same_call_check_compares_the_limits_the_result_was_validated_with(snapshots):
+def test_check_compares_the_limits_the_result_was_validated_with(snapshots):
     narrow = ValidationSettings(max_nodes=50)
-    result = validation._validate_hxml_result(DOCUMENT, config=narrow)
-    assert not validation._is_current_hxml_result(result, same_call=True)
-    assert validation._is_current_hxml_result(result, config=narrow, same_call=True)
-    explicit = validation._validate_hxml_result(
-        DOCUMENT, config=get_settings().validation
+    result, under = validated(DOCUMENT, config=narrow)
+    assert not validation._is_current_hxml_result(result, validated_under=under)
+    assert validation._is_current_hxml_result(
+        result, config=narrow, validated_under=under
     )
+    explicit, under = validated(DOCUMENT, config=get_settings().validation)
     snapshots.clear()
-    assert validation._is_current_hxml_result(explicit, same_call=True)
+    assert validation._is_current_hxml_result(explicit, validated_under=under)
     assert snapshots == []
 
 
-def test_same_call_check_compares_the_root_mode_and_the_explicit_config(snapshots):
-    result = validation._validate_hxml_result(DOCUMENT)
-    assert not validation._is_current_hxml_result(result, fragment=True, same_call=True)
+def test_check_compares_the_root_mode_and_the_explicit_config(snapshots):
+    result, under = validated(DOCUMENT)
+    assert not validation._is_current_hxml_result(
+        result, fragment=True, validated_under=under
+    )
     narrow = ValidationSettings(max_nodes=50)
-    assert not validation._is_current_hxml_result(result, config=narrow, same_call=True)
+    assert not validation._is_current_hxml_result(
+        result, config=narrow, validated_under=under
+    )
+
+
+def test_check_without_the_settings_it_was_validated_under_is_the_full_check(snapshots):
+    result, _ = validated(DOCUMENT)
+    snapshots.clear()
+    assert validation._is_current_hxml_result(result)
+    assert len(snapshots) == 1
+
+
+def test_settings_that_change_while_content_validates_are_checked_at_commit(
+    snapshots, extra_schema, monkeypatch
+):
+    """A change after the settings were read still needs the dependency guard."""
+    from dj_hyperview import http
+
+    response = HyperviewResponse(DOCUMENT)
+    original = http._validate_hxml_result
+    strict = extra_schema.with_name("strict.xsd")
+    strict.write_text(STRICT_XSD, encoding="utf-8")
+    changed = override_settings(HYPERVIEW=hyperview(strict))
+    enabled = []
+
+    def validated_then_changed(*args, **kwargs):
+        result = original(*args, **kwargs)
+        if not enabled:
+            enabled.append(changed.enable())
+        return result
+
+    monkeypatch.setattr(http, "_validate_hxml_result", validated_then_changed)
+    try:
+        with pytest.raises(TemplateValidationError) as error:
+            response.content = DOCUMENT
+    finally:
+        if enabled:
+            changed.disable()
+    assert error.value.code == "schema"
+    assert response.content == DOCUMENT.encode()
+
+
+def test_settings_that_change_while_a_template_renders_are_checked_at_commit(
+    snapshots, extra_schema, monkeypatch
+):
+    original = HyperviewTemplateResponse._rendered_result
+    strict = extra_schema.with_name("strict.xsd")
+    strict.write_text(STRICT_XSD, encoding="utf-8")
+    changed = override_settings(HYPERVIEW=hyperview(strict))
+    enabled = []
+
+    def rendered_then_changed(self):
+        result = original(self)
+        if not enabled:
+            enabled.append(changed.enable())
+        return result
+
+    monkeypatch.setattr(
+        HyperviewTemplateResponse, "_rendered_result", rendered_then_changed
+    )
+    response = HyperviewTemplateResponse(
+        RequestFactory().get("/"), "screen.xml", using="django"
+    )
+    try:
+        with pytest.raises(TemplateValidationError) as error:
+            response.render()
+    finally:
+        if enabled:
+            changed.disable()
+    assert error.value.code == "schema"
+    assert not response.is_rendered

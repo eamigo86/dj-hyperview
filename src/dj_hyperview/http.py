@@ -12,7 +12,7 @@ from django.template.response import ContentNotRenderedError, TemplateResponse
 from django.utils import http as django_http
 from django.utils.http import parse_header_parameters
 
-from .conf import get_settings
+from .conf import HyperviewSettings, get_settings
 from .engine import _default_engine, _ValidatedTemplate
 from .exceptions import TemplateValidationError
 from .validation import (
@@ -184,11 +184,16 @@ class _HyperviewBody:
         if isinstance(self, TemplateResponse):
             self._is_rendered = True
 
-    def _commit_result(self, result: _ValidatedHxml) -> None:
-        # Every caller passes the result it has just validated, so the extra schemas
-        # were guarded for it a moment ago: only a change of the settings, the limits
-        # or the root mode since then makes it stale.
-        if not _is_current_hxml_result(result, fragment=self._fragment, same_call=True):
+    def _commit_result(
+        self, result: _ValidatedHxml, validated_under: HyperviewSettings
+    ) -> None:
+        # Every caller passes the result it has just validated, with the settings
+        # snapshot it read before it started. The extra schemas were guarded for the
+        # result a moment ago, so only a change of the settings, the limits or the
+        # root mode since then makes it stale.
+        if not _is_current_hxml_result(
+            result, fragment=self._fragment, validated_under=validated_under
+        ):
             result = _validate_hxml_result(result.text, fragment=self._fragment)
         self._commit(result.content)
         self._validated_result = result
@@ -206,7 +211,9 @@ class _HyperviewBody:
             document = content.decode("utf-8")
         except UnicodeDecodeError as error:
             raise TemplateValidationError("malformed_xml", "invalid XML") from error
-        self._commit_result(_validate_hxml_result(document, fragment=self._fragment))
+        settings = get_settings()
+        result = _validate_hxml_result(document, fragment=self._fragment)
+        self._commit_result(result, settings)
 
     def _set_gzip_transport(self, content: bytes) -> bool:
         result = self._validated_result
@@ -494,11 +501,12 @@ class HyperviewTemplateResponse(_HyperviewBody, TemplateResponse):
             ):
                 self.content = self.rendered_content
             else:
+                settings = get_settings()
                 validated = self._rendered_result()
                 if validated is None:
                     self._commit(b"")
                 else:
-                    self._commit_result(validated)
+                    self._commit_result(validated, settings)
             for callback in self._post_render_callbacks:
                 replacement = callback(result)
                 if replacement is not None:

@@ -111,7 +111,9 @@ matching registry/limit identity. A response that commits the result its own
 validation just produced does not guard the extra schemas a second time while the
 settings are unchanged; a result that has waited, such as a body compressed by
 `GZipMiddleware`, is checked against the current registry and limits again. A
-SafeString is not a bypass.
+response is validated against the registry guarded when its validation starts: a
+schema file that changes during that validation is caught by the next validation,
+as a change just after the commit would be. A SafeString is not a bypass.
 
 Explicit plain Django `HttpResponse` objects, raw Django `engine.backend` calls,
 and callbacks returning another Django response remain outside this guarantee.

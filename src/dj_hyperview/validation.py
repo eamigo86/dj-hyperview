@@ -3,7 +3,7 @@
 import re
 from collections import Counter
 from collections.abc import Iterable
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from encodings import normalize_encoding
 from encodings.aliases import aliases as _CODEC_ALIASES
 from typing import Any
@@ -311,10 +311,6 @@ class _ValidatedHxml:
     text: str
     content: bytes
     contract_identity: tuple[Any, ...]
-    # The settings snapshot the validation read. A new snapshot object follows every
-    # change of the settings, so it tells a result committed by the call chain that
-    # validated it from one that has waited. It is not part of the contract.
-    settings: HyperviewSettings = field(compare=False, repr=False)
 
 
 def _validation_contract_identity(
@@ -341,7 +337,7 @@ def _is_current_hxml_result(
     *,
     config: ValidationSettings | None = None,
     fragment: bool = False,
-    same_call: bool = False,
+    validated_under: HyperviewSettings | None = None,
 ) -> bool:
     """Check a private result against dependencies and limits at handoff time.
 
@@ -349,18 +345,20 @@ def _is_current_hxml_result(
         result: Internal validated output, never inferred from a public string.
         config: Explicit limits, or current configured limits.
         fragment: Whether the receiving path requires a bare fragment.
-        same_call: Whether the call chain that checks the result also validated it.
-            The dependency files were guarded an instant ago, so while the settings
-            are the ones it validated under they are not guarded again, and only the
-            limits and the root mode are compared. A result that has waited, as at a
-            transport handoff, must keep the default.
+        validated_under: The settings snapshot that the call chain checking the result
+            read before it validated it. The dependency files were guarded an
+            instant ago, so while this is still the current snapshot, which is a
+            new object after every change of the settings, they are not guarded
+            again, and only the limits and the root mode are compared. It stays out
+            of the result, which a response keeps and may pickle. A result that has
+            waited, as at a transport handoff, must leave it out.
 
     Returns:
         Whether its exact contract is still current.
     """
-    if same_call and config is None:
+    if validated_under is not None and config is None:
         current = get_settings()
-        if result.settings is current:
+        if validated_under is current:
             return result.contract_identity[-2:] == (current.validation, fragment)
     return result.contract_identity == _validation_contract_identity(
         config=config, fragment=fragment
@@ -392,11 +390,10 @@ def _validate_hxml_result(
             "restricted_fragment_root",
             "fragment root must not be doc, navigator, screen, or body",
         )
-    settings = get_settings()
     identity, registry = _get_registry_snapshot()
     _validate_schema_root(root, registry)
     return _ValidatedHxml(
-        document, document.encode("utf-8"), (*identity, resolved, fragment), settings
+        document, document.encode("utf-8"), (*identity, resolved, fragment)
     )
 
 
