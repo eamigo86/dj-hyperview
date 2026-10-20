@@ -5,7 +5,6 @@ from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
-from copy import deepcopy
 from dataclasses import dataclass
 
 from django.template import Engine, Origin, Template, TemplateDoesNotExist
@@ -30,17 +29,27 @@ _active_snapshots: ContextVar[tuple[_ResolverSnapshot, ...]] = ContextVar(
 # The validation policy, then the source, name and origin of a resolution. The
 # revision is not part of it, so a republished template replaces its entry.
 _CompiledKey = tuple[ValidationSettings, str, str, str]
-# What a loader keeps for its compiled templates, which a deep copy starts again.
-_COMPILED_CACHE = ("_compiled", "_compiled_size", "_compiled_lock")
 
 
-def _without_compiled_cache(state: object) -> object:
-    # The state of an object is its dict, or a (dict, slots) pair when it has slots.
-    if isinstance(state, tuple) and len(state) == 2:
-        return _without_compiled_cache(state[0]), state[1]
-    if isinstance(state, dict):
-        return {k: v for k, v in state.items() if k not in _COMPILED_CACHE}
-    return state
+class _CompiledCache:
+    """The compiled templates of a loader, with their size and the lock around them.
+
+    A deep copy starts empty: the lock cannot be copied and the compiled templates
+    belong to the original loader, so the copy compiles its own. The loader needs no
+    copy protocol of its own for it.
+    """
+
+    __slots__ = ("entries", "size", "lock")
+
+    def __init__(self) -> None:
+        self.entries: OrderedDict[_CompiledKey, tuple[ResolvedTemplate, Template]] = (
+            OrderedDict()
+        )
+        self.size = 0
+        self.lock = threading.Lock()
+
+    def __deepcopy__(self, memo: dict[int, object]) -> "_CompiledCache":
+        return _CompiledCache()
 
 
 def _snapshot_for(
@@ -146,48 +155,7 @@ class ResolverLoader(Loader):
         self.validation = (
             get_settings().validation if validation is None else validation
         )
-        self._start_compiled_cache()
-
-    def _start_compiled_cache(self) -> None:
-        self._compiled: OrderedDict[_CompiledKey, tuple[ResolvedTemplate, Template]] = (
-            OrderedDict()
-        )
-        self._compiled_size = 0
-        self._compiled_lock = threading.Lock()
-
-    def __deepcopy__(self, memo: dict[int, object]) -> "ResolverLoader":
-        """Copy the loader with an empty compiled-template cache.
-
-        The lock cannot be copied and the compiled templates belong to the original,
-        so the copy gets a cache and a lock of its own and compiles its templates
-        again. Everything else is copied as the default protocol would copy it: the
-        dict and the slots, or the state of a subclass's own __getstate__, which its
-        __setstate__ then restores. The copy is as independent as a copy of any other
-        Django loader.
-
-        Args:
-            memo: The memo of the running deep copy.
-
-        Returns:
-            An independent loader with an empty compiled-template cache.
-        """
-        duplicate = object.__new__(type(self))
-        # Registered first, as the default protocol does: the engine and the
-        # templates this loader reaches lead back to it.
-        memo[id(self)] = duplicate
-        state = deepcopy(_without_compiled_cache(self.__getstate__()), memo)
-        # Restored as copy restores it. The cache starts last, so a __setstate__
-        # that replaces the dict of the copy cannot leave it without one.
-        if state is not None:
-            if hasattr(duplicate, "__setstate__"):
-                duplicate.__setstate__(state)
-            else:
-                state, slots = state if isinstance(state, tuple) else (state, {})
-                vars(duplicate).update(state or {})
-                for name, value in slots.items():
-                    setattr(duplicate, name, value)
-        duplicate._start_compiled_cache()
-        return duplicate
+        self._compiled = _CompiledCache()
 
     def _resolve(self, name: str) -> ResolvedTemplate:
         snapshot = _snapshot_for(self.resolver)
@@ -272,10 +240,10 @@ class ResolverLoader(Loader):
                 continue
             resolved = origin.resolved
             key = (self.validation, resolved.source, resolved.name, resolved.origin)
-            with self._compiled_lock:
-                entry = self._compiled.get(key)
+            with self._compiled.lock:
+                entry = self._compiled.entries.get(key)
                 if entry is not None:
-                    self._compiled.move_to_end(key)
+                    self._compiled.entries.move_to_end(key)
             if entry is not None and entry[0] == resolved:
                 return entry[1]
             # The loader's own get_contents never reports a missing source: the
@@ -290,23 +258,23 @@ class ResolverLoader(Loader):
         self, key: _CompiledKey, resolved: ResolvedTemplate, template: Template
     ) -> None:
         size = len(resolved.content)
-        with self._compiled_lock:
-            previous = self._compiled.pop(key, None)
+        with self._compiled.lock:
+            previous = self._compiled.entries.pop(key, None)
             if previous is not None:
-                self._compiled_size -= len(previous[0].content)
+                self._compiled.size -= len(previous[0].content)
             if size > self._COMPILED_MAX_CHARS:
                 return
-            self._compiled[key] = (resolved, template)
-            self._compiled_size += size
+            self._compiled.entries[key] = (resolved, template)
+            self._compiled.size += size
             while (
-                len(self._compiled) > self._COMPILED_MAX_ENTRIES
-                or self._compiled_size > self._COMPILED_MAX_CHARS
+                len(self._compiled.entries) > self._COMPILED_MAX_ENTRIES
+                or self._compiled.size > self._COMPILED_MAX_CHARS
             ):
-                _, (evicted, _) = self._compiled.popitem(last=False)
-                self._compiled_size -= len(evicted.content)
+                _, (evicted, _) = self._compiled.entries.popitem(last=False)
+                self._compiled.size -= len(evicted.content)
 
     def reset(self) -> None:
         """Forget the compiled templates, as Django does when a template changes."""
-        with self._compiled_lock:
-            self._compiled.clear()
-            self._compiled_size = 0
+        with self._compiled.lock:
+            self._compiled.entries.clear()
+            self._compiled.size = 0

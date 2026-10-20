@@ -16,7 +16,7 @@ from django.test import TestCase, override_settings
 from dj_hyperview.conf import ValidationSettings
 from dj_hyperview.engine import HyperviewEngine, _default_engine, render_template
 from dj_hyperview.exceptions import TemplateValidationError
-from dj_hyperview.loaders import ResolverLoader
+from dj_hyperview.loaders import ResolverLoader, _CompiledCache
 from dj_hyperview.resolver import TemplateResolver
 from dj_hyperview.sources import ResolvedTemplate
 from dj_hyperview.validation import validate_template_source
@@ -79,8 +79,8 @@ def loader_for(source, validation=None):
 
 def assert_accounted(loader, entries=None):
     """The byte count must match the stored contents, whatever happened before."""
-    stored = [resolved.content for resolved, _ in loader._compiled.values()]
-    assert loader._compiled_size == sum(map(len, stored))
+    stored = [resolved.content for resolved, _ in loader._compiled.entries.values()]
+    assert loader._compiled.size == sum(map(len, stored))
     if entries is not None:
         assert len(stored) == entries
 
@@ -151,7 +151,7 @@ def test_republishing_a_template_keeps_one_entry_and_the_live_byte_count() -> No
         loader.get_template("screen.xml")
 
     assert_accounted(loader, entries=1)
-    assert loader._compiled_size == len(text("x" * 20))
+    assert loader._compiled.size == len(text("x" * 20))
 
 
 def test_a_shrinking_republish_leaves_the_smaller_byte_count() -> None:
@@ -163,7 +163,7 @@ def test_a_shrinking_republish_leaves_the_smaller_byte_count() -> None:
     loader.get_template("screen.xml")
 
     assert_accounted(loader, entries=1)
-    assert loader._compiled_size == len(text("x"))
+    assert loader._compiled.size == len(text("x"))
 
 
 def test_a_republish_that_outgrows_the_budget_drops_the_old_entry(monkeypatch) -> None:
@@ -507,8 +507,8 @@ def test_threads_that_hit_evict_and_replace_keep_the_accounting_exact(
         for future in [pool.submit(work, thread) for thread in range(threads)]:
             future.result(timeout=60)  # raises what the thread raised
 
-    assert len(loader._compiled) <= 3
-    assert loader._compiled_size <= budget
+    assert len(loader._compiled.entries) <= 3
+    assert loader._compiled.size <= budget
     assert_accounted(loader)
 
 
@@ -516,7 +516,7 @@ def test_a_deep_copied_loader_starts_with_an_empty_cache_of_its_own(counts) -> N
     loader = loader_for(Source({"one.xml": text("one"), "two.xml": text("two")}))
     first = loader.get_template("one.xml")
     loader.get_template("two.xml")
-    size = loader._compiled_size
+    size = loader._compiled.size
     assert counts.compiled.call_count == 2
 
     duplicate = copy.deepcopy(loader)
@@ -525,7 +525,7 @@ def test_a_deep_copied_loader_starts_with_an_empty_cache_of_its_own(counts) -> N
     assert duplicate.engine is not loader.engine
     assert duplicate.resolver is not loader.resolver
     assert duplicate._compiled is not loader._compiled
-    assert duplicate._compiled_lock is not loader._compiled_lock
+    assert duplicate._compiled.lock is not loader._compiled.lock
     assert_accounted(duplicate, entries=0)
     # A render through the copy compiles again and leaves the original alone.
     copied = duplicate.get_template("one.xml")
@@ -534,9 +534,27 @@ def test_a_deep_copied_loader_starts_with_an_empty_cache_of_its_own(counts) -> N
     assert copied.origin.loader is duplicate
     assert_accounted(duplicate, entries=1)
     assert_accounted(loader, entries=2)
-    assert loader._compiled_size == size
+    assert loader._compiled.size == size
     assert loader.get_template("one.xml") is first
     assert counts.compiled.call_count == 3
+
+
+def test_the_compile_cache_deep_copies_empty_and_independent(counts) -> None:
+    loader = loader_for(Source({"one.xml": text("one")}))
+    loader.get_template("one.xml")
+    cache = loader._compiled
+    assert cache.size == len(text("one"))
+
+    duplicate = copy.deepcopy(cache)
+
+    assert isinstance(duplicate, _CompiledCache)
+    assert duplicate is not cache
+    assert duplicate.entries is not cache.entries
+    assert duplicate.lock is not cache.lock
+    assert len(duplicate.entries) == 0
+    assert duplicate.size == 0
+    assert len(cache.entries) == 1
+    assert cache.size == len(text("one"))
 
 
 def test_a_deep_copied_loader_stays_paired_with_the_engine_that_owns_it() -> None:
@@ -562,7 +580,7 @@ def test_a_deep_copied_default_engine_has_a_cold_cache_of_its_own() -> None:
         assert isinstance(loader, ResolverLoader)
         assert loader is not original
         assert loader.engine is duplicate.backend.engine
-        assert loader._compiled_lock is not original._compiled_lock
+        assert loader._compiled.lock is not original._compiled.lock
         assert_accounted(loader, entries=0)
         assert duplicate.render("other.xml") == text("hv")
         assert_accounted(loader, entries=1)
@@ -635,9 +653,9 @@ def slotted_loader():
 def assert_an_independent_copy(loader, duplicate):
     """The copy renders with a cache and lock of its own; the original is as it was."""
     first = loader.get_template("one.xml")
-    size = loader._compiled_size
+    size = loader._compiled.size
     assert duplicate is not loader
-    assert duplicate._compiled_lock is not loader._compiled_lock
+    assert duplicate._compiled.lock is not loader._compiled.lock
     assert_accounted(duplicate, entries=0)
 
     template = duplicate.get_template("one.xml")
@@ -646,7 +664,7 @@ def assert_an_independent_copy(loader, duplicate):
     assert template.origin.loader is duplicate
     assert_accounted(duplicate, entries=1)
     assert_accounted(loader, entries=1)
-    assert loader._compiled_size == size
+    assert loader._compiled.size == size
     assert loader.get_template("one.xml") is first
 
 
@@ -712,6 +730,45 @@ def test_a_deep_copy_honours_the_state_methods_of_a_subclass() -> None:
     assert_an_independent_copy(loader, duplicate)
 
 
+def rebuild(cls, tag):
+    loader = cls.__new__(cls, tag=tag)
+    loader.rebuilt = True
+    return loader
+
+
+class ReducedLoader(ResolverLoader):
+    """A subclass that needs an argument to be created and rebuilds its own copies."""
+
+    def __new__(cls, *args, tag):
+        loader = super().__new__(cls)
+        loader.tag = tag
+        return loader
+
+    def __init__(self, engine, resolver, validation, *, tag):
+        super().__init__(engine, resolver, validation)
+
+    def __reduce_ex__(self, protocol):
+        return rebuild, (type(self), self.tag), self.__getstate__()
+
+
+def test_a_deep_copy_honours_the_reduce_method_and_the_new_arguments_of_a_subclass():
+    source = Source({"one.xml": text("one")})
+    loader = ReducedLoader(
+        Engine(), TemplateResolver([source]), ValidationSettings(), tag="kept"
+    )
+    loader.tags = ["state"]
+    warm(loader)
+
+    duplicate = copy.deepcopy(loader)
+
+    assert duplicate.rebuilt is True
+    assert not hasattr(loader, "rebuilt")
+    assert duplicate.tag == "kept"
+    assert duplicate.tags == ["state"]
+    assert duplicate.tags is not loader.tags
+    assert_an_independent_copy(loader, duplicate)
+
+
 class SetUpTestDataCopy(TestCase):
     """Django deep-copies class attributes of setUpTestData for every test."""
 
@@ -725,8 +782,8 @@ class SetUpTestDataCopy(TestCase):
 
     def test_a_compiled_template_can_be_used_in_the_first_test(self) -> None:
         assert self.template.render({"v": 1}) == text("1")
-        assert len(self.template.origin.loader._compiled) == 0
+        assert len(self.template.origin.loader._compiled.entries) == 0
 
     def test_a_compiled_template_can_be_used_in_the_second_test(self) -> None:
         assert self.template.render({"v": 2}) == text("2")
-        assert len(self.template.origin.loader._compiled) == 0
+        assert len(self.template.origin.loader._compiled.entries) == 0
