@@ -92,7 +92,10 @@ and one of 9,807 elements with seven attributes each, 1,000,000 bytes
 elements in 999,894 bytes validate in about 0.8 s. The most expensive document found within the namespace caps, 20,000 elements that each
 rebind a prefix below a path already at the cap, takes about 1.1 s, or 1.2 s with
 `MAX_DEPTH` at its ceiling of 256. A rejected document stops at its first schema error, so rejecting it costs
-about as much as validating the part before that error. Cost grows roughly in
+about as much as validating the part before that error. These figures were measured
+before validation reused its answers for repeated attribute values (see the
+[changelog](changelog.md)); the same documents now validate in the same time or
+less, so read them as upper bounds. Cost grows roughly in
 proportion to the nodes and attributes, and your hardware may be slower, so plan for
 one to two seconds of CPU per large untrusted document at the defaults, and measure
 on yours. `MAX_BYTES`, `MAX_NODES`, and `MAX_DEPTH` remain the global bounds: lower

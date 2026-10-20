@@ -74,6 +74,24 @@ def _xmlschema_module() -> Any:
     return xmlschema
 
 
+def _registry_class(xmlschema: Any) -> Any:
+    """Choose the class that compiles a registry which validates documents.
+
+    Args:
+        xmlschema: Module returned by the dependency seam.
+
+    Returns:
+        The fast subclass when the module is the installed xmlschema and its
+        internals fit it, otherwise the plain XMLSchema11 of that module.
+    """
+    plain = xmlschema.XMLSchema11
+    try:
+        from ._fast_schema import FastXMLSchema11
+    except (ImportError, AttributeError, TypeError, ValueError):
+        return plain
+    return FastXMLSchema11 if plain is FastXMLSchema11.__base__ else plain
+
+
 def _attribute_definition(attribute: Any) -> dict[str, Any]:
     values = sorted(str(value) for value in (attribute.type.enumeration or ()))
     return {"enum": values, "required": attribute.use == "required"}
@@ -215,6 +233,8 @@ def _require_complete_schema(compiled: Any) -> Any:
 
 
 def _compile_schema(path: Path) -> Any:
+    # Plain class on purpose: every caller only reads declarations of the result and
+    # never validates a document with it, so the fast components would add nothing.
     xmlschema = _xmlschema_module()
     try:
         compiled = xmlschema.XMLSchema11(
@@ -387,7 +407,7 @@ def _cached_registry(
     roots = [Path(dependencies.root) for dependencies in state]
     locations = [(_target_namespace(path), _file_uri(path)) for path in roots]
     try:
-        compiled = xmlschema.XMLSchema11(
+        compiled = _registry_class(xmlschema)(
             _generated_overlay(schema_path, extensions)
             if extensions != _EMPTY_EXTENSIONS
             else _file_uri(schema_path),

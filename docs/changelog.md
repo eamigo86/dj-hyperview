@@ -4,7 +4,32 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
-No changes have been recorded since 0.1.0b3.
+### Changed
+
+- Validate rendered documents faster without changing a verdict. The compiled
+  registry that validates every rendered document and fragment is now built with a
+  small `xmlschema.XMLSchema11` subclass that answers three questions once instead
+  of for every element: which attributes of a group are required or carry a value
+  constraint, which type a registered `SCHEMA_EXTENSIONS["BEHAVIORS"]` action
+  selects, and whether an attribute value was already accepted. A dictionary lookup
+  on the `action` attribute replaces the XPath test the package generates for each
+  action; any other alternative test still goes through XPath. The memory of
+  accepted values keeps at most 128 values of at most 256 characters per attribute
+  declaration, and only for attribute types whose result depends on nothing but the
+  value. `ID`, `IDREF`, `IDREFS`, `ENTITY`, `ENTITIES`, `QName` and `NOTATION`
+  types, attributes with a `fixed` or `default` value, and plain `xs:string`,
+  `xs:token` and `xs:normalizedString` are left alone, and a value that fails is
+  never remembered. The accept or reject outcome, the validation code, the message
+  and the line do not change: a differential test compares the registry with a
+  plain `XMLSchema11` registry over a seeded corpus of valid and mutated documents.
+  Measured on Python 3.12 with xmlschema 4.3.2, documents of 1 to 80 KB validate 21
+  to 27 percent faster, and up to 60 percent faster when they use many registered
+  behaviors. A document whose attribute values never repeat was not slower in the
+  worst case measured. The subclass relies on xmlschema internals that are not
+  documented API; if a supported xmlschema release removes or changes them, the
+  package builds the registry with the plain `xmlschema.XMLSchema11` instead, with
+  the same results at the previous speed. Extra schemas that are compiled only to
+  check them for conflicts keep the plain class.
 
 ## 0.1.0b3 — 2026-10-14
 
