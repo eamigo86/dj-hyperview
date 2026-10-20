@@ -13,8 +13,6 @@ from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote, urlparse
 
-from django.core.signals import setting_changed
-from django.dispatch import receiver
 from lxml import etree
 
 from ._schema_duplicates import _guard_duplicate_declarations
@@ -396,6 +394,11 @@ def _registry_state(extra_schemas: Iterable[Path]) -> tuple[_SchemaDependencies,
     return tuple(state)
 
 
+# This cache, the static catalog cache and the active catalog cache are keyed by the
+# guarded dependency fingerprints and the normalized registrations, which is every
+# input they read: none of them reads a Django setting. A change to the HYPERVIEW
+# setting therefore selects another entry and needs no clearing, which keeps
+# override_settings from recompiling the schema in a test suite.
 @lru_cache(maxsize=64)
 def _cached_registry(
     state: tuple[_SchemaDependencies, ...],
@@ -703,17 +706,3 @@ def validate_hyperview_schema(document: str) -> None:
     from .validation import _validate_hxml_result
 
     _validate_hxml_result(document)
-
-
-@receiver(
-    setting_changed,
-    dispatch_uid="dj_hyperview.clear_schema_registry_cache",
-    weak=False,
-)
-def _clear_schema_registry_cache(*, setting: str, **kwargs: Any) -> None:
-    del kwargs
-    if setting == "HYPERVIEW":
-        with _REGISTRY_LOCK:
-            _cached_registry.cache_clear()
-        _cached_static_validation_catalog.cache_clear()
-        _active_catalog.cache_clear()

@@ -154,7 +154,9 @@ def test_private_handoff_rechecks_dependency_changes(tmp_path: Path):
             validation._is_current_hxml_result(result)
 
 
-def test_compiled_registry_is_single_flight_across_threads(monkeypatch):
+def test_compiled_registry_is_single_flight_across_threads(
+    monkeypatch, cold_schema_caches
+):
     from concurrent.futures import ThreadPoolExecutor
     from threading import Barrier
     from time import sleep
@@ -186,7 +188,9 @@ def test_compiled_registry_is_single_flight_across_threads(monkeypatch):
         assert len(calls) == 1
 
 
-def test_schema_compilation_reused_until_setting_change(monkeypatch):
+def test_schema_compilation_reused_until_a_schema_setting_changes(
+    monkeypatch, cold_schema_caches
+):
     from types import SimpleNamespace
 
     from dj_hyperview import schema
@@ -198,6 +202,7 @@ def test_schema_compilation_reused_until_setting_change(monkeypatch):
         calls.append(args)
         return module.XMLSchema11(*args, **kwargs)
 
+    extensions = {"ELEMENT_ATTRIBUTES": {"image": {"variant": {"TYPE": "string"}}}}
     with override_settings(HYPERVIEW={}):
         monkeypatch.setattr(
             schema, "_xmlschema_module", lambda: SimpleNamespace(XMLSchema11=compiler)
@@ -205,7 +210,13 @@ def test_schema_compilation_reused_until_setting_change(monkeypatch):
         validation.validate_hxml(VALID)
         validation.validate_hxml(VALID)
         assert len(calls) == 1
+        # The registry depends on the schema settings alone, so a limit keeps it.
         with override_settings(HYPERVIEW={"VALIDATION": {"MAX_NODES": 50}}):
+            validation.validate_hxml(VALID)
+            assert len(calls) == 1
+        with override_settings(HYPERVIEW={"SCHEMA_EXTENSIONS": extensions}):
+            validation.validate_hxml(VALID)
+            assert len(calls) == 2
             validation.validate_hxml(VALID)
             assert len(calls) == 2
 

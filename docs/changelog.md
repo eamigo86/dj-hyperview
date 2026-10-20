@@ -94,6 +94,26 @@ This page records user-visible release changes, including unpublished attempts.
   `validate_draft_source()` took 2.4 ms instead of 4.9 ms for a navigation fragment
   of 1 KB, 23.9 instead of 42.2 for a list of 40 rows (9 KB), 10.0 instead of 16.3
   for a settings screen (12 KB) and 33.2 instead of 55.3 for a dashboard (25 KB).
+- Keep the compiled schema when a test changes the `HYPERVIEW` setting. A change to
+  the setting used to empty the compiled registry and both catalogs, although they
+  are keyed by the guarded schema files and the normalized `SCHEMA_EXTENSIONS`,
+  which is everything they read. A test that entered `override_settings(HYPERVIEW=...)`
+  therefore compiled the schema again on its first validation, about 110 ms with an
+  extra schema, and once more when it left the override, however small the change.
+  The caches now keep their entries: the same value reuses the compiled registry, a
+  different `EXTRA_SCHEMAS` or `SCHEMA_EXTENSIONS` value selects its own, an extra
+  schema file that changed on disk is still guarded on every call and compiled again
+  when its fingerprint differs, and a limit under `VALIDATION` is read from the
+  current settings as before. Entering and leaving an override with the same value
+  and validating once on each side took 216 ms and takes 15 ms, which is the rebuild
+  of the settings snapshot and its system check. The base suite of this package ran in
+  57 s and runs in 43 s, and its Admin profile in 22 s and 6 s. Production does
+  not change: nothing there sets `HYPERVIEW` at run time. Each cache keeps at most 64
+  entries and a compiled registry takes about 1.3 MB, so a suite that validates
+  against many different extra schemas holds up to 64 of them, which raised the
+  peak memory of this package's own suite from 176 MB to 301 MB. A test that counts
+  compilations must start from an empty cache, which the package's own tests do with
+  a fixture.
 
 ## 0.1.0b3 — 2026-10-14
 

@@ -29,6 +29,15 @@ class HyperviewResolutionTests(SimpleTestCase):
         self.assertIn("<view", resolved.content)
 ```
 
+`override_settings(HYPERVIEW=...)` does not recompile the Hyperview schema. The
+compiled registry is kept for each `EXTRA_SCHEMAS` and `SCHEMA_EXTENSIONS` value,
+so only the first test that uses a value compiles it, which takes about 100 ms with
+a small extra schema, and a test that enters the same value again, or changes only
+another key such as `VALIDATION` or `SOURCES`, starts with it ready. A different
+value still gets its own registry, and an extra schema file that changed on disk is
+checked again on every validation. The package keeps at most 64 compiled registries
+per process, about 1.3 MB each.
+
 Add companion tests for empty content, misses, unsafe names, include/extends,
 escaping, and the response media type. When database or cache profiles are
 enabled, cover commit and rollback separately; use SQLite and LocMemCache unless

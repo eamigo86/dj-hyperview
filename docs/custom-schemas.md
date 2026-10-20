@@ -325,8 +325,11 @@ Admin source checks reject those attributes without evaluating dynamic text.
 
 The registry snapshot is detached and immutable. Its identity includes the
 internal correction revision, normalized registrations and all configured dependency fingerprints.
-References are checked before cache reuse, and Django's `setting_changed`
-signal clears the active-schema and catalog caches together.
+References are checked before cache reuse. The compiled registry and the catalogs
+are cached by that identity, so a change to the `HYPERVIEW` setting does not clear
+them: another `EXTRA_SCHEMAS` or `SCHEMA_EXTENSIONS` value selects another entry,
+and the same value reuses the compiled one, as does a change to any other key.
+Each cache keeps at most 64 entries.
 
 ### Catalog format 2
 

@@ -499,7 +499,7 @@ def test_merged_failure_is_not_added_to_a_failing_file(tmp_path: Path) -> None:
 
 
 def test_valid_extra_schemas_are_compiled_once_for_check_and_requests(
-    tmp_path: Path,
+    tmp_path: Path, cold_schema_caches: None
 ) -> None:
     """The check warms the registry the first request would otherwise compile."""
     from dj_hyperview import validate_hyperview_schema
@@ -518,7 +518,9 @@ def test_valid_extra_schemas_are_compiled_once_for_check_and_requests(
 
 
 @override_settings(HYPERVIEW={})
-def test_check_without_extra_schemas_compiles_no_registry() -> None:
+def test_check_without_extra_schemas_compiles_no_registry(
+    cold_schema_caches: None,
+) -> None:
     """The default configuration pays nothing for the merged-registry check."""
     from dj_hyperview.schema import _cached_registry
 
@@ -527,7 +529,9 @@ def test_check_without_extra_schemas_compiles_no_registry() -> None:
     assert _cached_registry.cache_info().misses == 0
 
 
-def test_invalid_registrations_skip_the_merged_compile(tmp_path: Path) -> None:
+def test_invalid_registrations_skip_the_merged_compile(
+    tmp_path: Path, cold_schema_caches: None
+) -> None:
     """Registrations that are reported as E021 cannot key a registry."""
     from dj_hyperview.schema import _cached_registry
 
