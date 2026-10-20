@@ -6,8 +6,8 @@ selects, and whether an attribute value is allowed. The subclasses here answer t
 once and keep the answer, without changing a single verdict.
 
 They build on xmlschema internals (the builders and the component classes are not
-documented API), so the importer must treat any failure of this module as "use a
-plain XMLSchema11".
+documented API), so the importer uses them only with an xmlschema release they were
+tested against, and treats any failure of this module as "use a plain XMLSchema11".
 """
 
 from __future__ import annotations
@@ -23,19 +23,14 @@ from xmlschema.validators.builders import XsdBuilders
 from xmlschema.validators.elements import Xsd11Element
 from xmlschema.validators.simple_types import XsdSimpleType
 
-for _owner, _hook in (
-    (XsdAttributeGroup, "iter_required"),
-    (XsdAttributeGroup, "iter_value_constraints"),
-    (Xsd11Attribute, "raw_decode"),
-    (Xsd11Element, "get_alternative_type"),
-):
-    if not hasattr(_owner, _hook):
-        raise ImportError(f"xmlschema {_owner.__name__} has no {_hook}")
-
 # ponytail: a plain cap on the count and the length, with no eviction; an LRU if the
-# memory held for the first values ever matters
+# memory held for the first values ever matters. A value of 64 characters or fewer
+# is kept: one of the 2,900 attribute values of four HyperTodo-like screens is longer,
+# and a limit of 256 was no faster there (under 0.2 percent) but can hold 20.5 MiB per
+# registry against 6.9 MiB (145 attribute declarations accept any string; 128 values
+# of astral characters each).
 MEMO_LIMIT = 128
-MEMO_VALUE_LIMIT = 256
+MEMO_VALUE_LIMIT = 64
 
 _XS = "{http://www.w3.org/2001/XMLSchema}"
 # The result depends on more than the value: an ID is recorded in the context to

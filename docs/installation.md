@@ -30,9 +30,11 @@ Database-backed templates and admin integration remain optional.
 document and fragment uses the same corrected XSD 1.1 registry automatically.
 No schema profile, validation mode, or callback needs to be configured.
 The registry speeds up repeated checks with internals of `xmlschema` that are not
-documented API. If a release in the supported range (`>=4.3,<5`) removes or changes
-them, the package builds the registry with plain `xmlschema.XMLSchema11` instead:
-the verdicts are the same and validation takes longer.
+documented API, so it does so only with an `xmlschema` release this version of the
+package was tested with, the 4.3 series. Any other release in the supported range
+(`>=4.3,<5`), or a release whose internals are missing, gets a registry built with
+plain `xmlschema.XMLSchema11` instead: the verdicts are the same and validation
+takes longer.
 The deprecated `[schema]` installation extra is an empty compatibility alias:
 it does not enable a second validation mode or install an additional package.
 

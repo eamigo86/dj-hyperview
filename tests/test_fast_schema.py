@@ -13,6 +13,7 @@ import copy
 import random
 import sys
 import threading
+import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
@@ -55,6 +56,7 @@ EXTENSIONS = {
     },
 }
 CUSTOM_ACTIONS = ("show-snackbar", "store-token", "notify")
+CUSTOM_ATTRIBUTES = ("message", "tone", "token", "count", "silent", "variant")
 SEEDS = (
     f'<doc xmlns="{HV}"><screen id="main"><styles><style id="title" fontSize="20" '
     f'color="#333333"/></styles><body style="Body"><header><text>Title</text>'
@@ -105,14 +107,45 @@ GENERIC_VALUES = (
     "٣",
 )
 ACTIONS = (*CUSTOM_ACTIONS, "reload", "push", "unknown", "", "Show-Snackbar", " notify")
+EX = "urn:dj-hyperview:test-extra"
+EXTRA_SCHEMA = f"""<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:ex="{EX}" targetNamespace="{EX}" elementFormDefault="qualified"
+    version="1.1">
+  <xs:simpleType name="level"><xs:restriction base="xs:string">
+    <xs:enumeration value="low"/><xs:enumeration value="high"/>
+  </xs:restriction></xs:simpleType>
+  <xs:simpleType name="percent"><xs:restriction base="xs:integer">
+    <xs:minInclusive value="0"/><xs:maxInclusive value="100"/>
+  </xs:restriction></xs:simpleType>
+  <xs:element name="card-list"><xs:complexType><xs:sequence>
+    <xs:element name="card" maxOccurs="unbounded"><xs:complexType>
+      <xs:attribute name="id" type="xs:ID"/>
+      <xs:attribute name="ref" type="xs:IDREF"/>
+      <xs:attribute name="level" type="ex:level"/>
+      <xs:attribute name="percent" type="ex:percent"/>
+      <xs:attribute name="rank" type="xs:integer" fixed="1"/>
+      <xs:attribute name="weight" type="xs:integer" default="5"/>
+      <xs:attribute name="title" type="xs:string" use="required"/>
+    </xs:complexType></xs:element>
+  </xs:sequence></xs:complexType></xs:element>
+</xs:schema>"""
+EXTRA_SEEDS = (
+    f'<ex:card-list xmlns:ex="{EX}"><ex:card id="a" title="A" level="low" '
+    f'percent="10"/><ex:card id="b" ref="a" title="B" level="high" percent="100" '
+    f'rank="1" weight="7"/><ex:card id="c" title="C" percent="0" weight="5"/>'
+    f"</ex:card-list>",
+    f'<ex:card-list xmlns:ex="{EX}"><ex:card title="T" rank="01"/></ex:card-list>',
+    f'<ex:card-list xmlns:ex="{EX}"><ex:card id="x1" ref="x2" title=" " percent="50"'
+    f' weight="-3"/><ex:card id="x2" ref="x1" title="" level="low"/></ex:card-list>',
+)
 
 
-def build(extensions, *, plain):
+def build(extensions, *, plain, state=()):
     """Compile one registry through the package, with or without the fast class."""
     with pytest.MonkeyPatch.context() as patch:
         if plain:
             patch.setattr(schema, "_registry_class", lambda module: module.XMLSchema11)
-        return schema._cached_registry.__wrapped__((), extensions)
+        return schema._cached_registry.__wrapped__(state, extensions)
 
 
 def verdict(root, registry):
@@ -123,17 +156,25 @@ def verdict(root, registry):
     return None
 
 
-def pools(registry):
+def pools(registry, namespaces=(HV,)):
     names, values, tags = set(), set(GENERIC_VALUES), set()
-    for qname, element in registry.maps.elements.items():
-        if not qname.startswith(f"{{{HV}}}"):
-            continue
-        tags.add(qname)
-        declared = {} if element.type.is_simple() else element.type.attributes
-        for name, attribute in declared.items():
+    prefixes = tuple(f"{{{namespace}}}" for namespace in namespaces)
+
+    def collect(attributes):
+        for name, attribute in attributes.items():
             if name:
                 names.add(name)
             values.update(map(str, getattr(attribute.type, "enumeration", None) or ()))
+
+    for element in registry.maps.iter_components(XsdElement):
+        if (element.name or "").startswith(prefixes):
+            tags.add(element.name)
+            collect({} if element.type.is_simple() else element.type.attributes)
+    # The attributes of registered behaviors belong to generated types, which no
+    # element names as its own.
+    for qname, xsd_type in registry.maps.types.items():
+        if qname.startswith(prefixes) and not xsd_type.is_simple():
+            collect(xsd_type.attributes)
     return sorted(names), sorted(values), sorted(tags)
 
 
@@ -178,12 +219,13 @@ def parse(data):
     return etree.fromstring(data, parser=etree.XMLParser(resolve_entities=False))
 
 
-def corpus(seeds, registry, count, *, seed):
-    names, values, tags = pools(registry)
+def corpus(seeds, registry, count, *, seed, namespaces=(HV,), fixtures=True):
+    names, values, tags = pools(registry, namespaces)
     actions = (*ACTIONS, *GENERIC_VALUES)
     rng = random.Random(seed)
     trees = [parse(document) for document in seeds]
-    trees += [parse(path.read_bytes()) for path in sorted(CONTRACT.glob("*.xml"))]
+    if fixtures:
+        trees += [parse(path.read_bytes()) for path in sorted(CONTRACT.glob("*.xml"))]
     documents = [etree.tostring(tree, pretty_print=True) for tree in trees]
     for _ in range(count):
         root = copy.deepcopy(rng.choice(trees))
@@ -200,21 +242,38 @@ def extensions():
 
 
 @pytest.fixture(scope="module")
-def registries(extensions):
+def extra_state(tmp_path_factory):
+    path = tmp_path_factory.mktemp("extra") / "cards.xsd"
+    path.write_text(EXTRA_SCHEMA, encoding="utf-8")
+    return schema._registry_state([path])
+
+
+@pytest.fixture(scope="module")
+def registries(extensions, extra_state):
     return {
         "default": (
             build(_EMPTY_EXTENSIONS, plain=True),
             build(_EMPTY_EXTENSIONS, plain=False),
         ),
         "extended": (build(extensions, plain=True), build(extensions, plain=False)),
+        "extra": (
+            build(_EMPTY_EXTENSIONS, plain=True, state=extra_state),
+            build(_EMPTY_EXTENSIONS, plain=False, state=extra_state),
+        ),
     }
 
 
-@pytest.mark.parametrize("profile", ["default", "extended"])
+@pytest.mark.parametrize("profile", ["default", "extended", "extra"])
 def test_fast_registry_gives_the_verdicts_of_plain_xmlschema(registries, profile):
     plain, fast = registries[profile]
-    seeds = SEEDS + (EXTENDED_SEEDS if profile == "extended" else ())
-    documents = corpus(seeds, plain, 1200, seed=20261019)
+    if profile == "extra":
+        # Only the extra schema's own declarations, which the fast classes also see.
+        documents = corpus(
+            EXTRA_SEEDS, plain, 800, seed=20261019, namespaces=(EX,), fixtures=False
+        )
+    else:
+        seeds = SEEDS + (EXTENDED_SEEDS if profile == "extended" else ())
+        documents = corpus(seeds, plain, 1200, seed=20261019)
 
     expected = [verdict(document, plain) for document in documents]
 
@@ -223,10 +282,27 @@ def test_fast_registry_gives_the_verdicts_of_plain_xmlschema(registries, profile
     assert [verdict(document, fast) for document in documents] == expected
     rejected = {outcome for outcome in expected if outcome is not None}
     assert expected.count(None) >= 40
-    assert len(rejected) >= 25
+    assert len(rejected) >= (15 if profile == "extra" else 25)
     assert {outcome[0] for outcome in rejected} == {"schema"}
+    messages = [outcome[1] for outcome in rejected]
     if profile == "extended":
-        assert any("behavior" in outcome[1] for outcome in rejected)
+        assert any("behavior" in message for message in messages)
+        assert set(CUSTOM_ATTRIBUTES) <= set(pools(plain)[0])
+    if profile == "extra":
+        assert any('attribute "id" on element "card"' in m for m in messages)
+        assert any("required attribute" in message for message in messages)
+        card = next(iter(fast.maps.elements[f"{{{EX}}}card-list"].type.content))
+        memos = {name: a._memo for name, a in card.type.attributes.items()}
+        # The corpus filled the memo of the types that allow one and left the
+        # others (ID, IDREF, a fixed value, a default, a plain string) without.
+        assert {name for name, memo in memos.items() if memo} == {"level", "percent"}
+        assert {name for name, memo in memos.items() if memo is None} == {
+            "id",
+            "ref",
+            "rank",
+            "weight",
+            "title",
+        }
 
 
 def test_documents_of_the_contract_fixtures_are_valid_for_both_registries(registries):
@@ -243,7 +319,7 @@ def _fast_schema():
     return _fast_schema
 
 
-@pytest.mark.parametrize("profile", ["default", "extended"])
+@pytest.mark.parametrize("profile", ["default", "extended", "extra"])
 def test_registries_use_the_fast_components_with_the_locked_xmlschema(
     registries, profile
 ):
@@ -257,13 +333,47 @@ def test_registries_use_the_fast_components_with_the_locked_xmlschema(
     assert isinstance(registry.maps.elements[BEHAVIOR], fast_schema.FastElement)
 
 
-def test_the_registry_the_package_validates_with_is_the_fast_class():
+def test_the_locked_xmlschema_is_a_tested_release():
+    # A new locked release has to pass the differential tests before this changes.
     fast_schema = _fast_schema()
 
-    assert isinstance(
-        schema._compile_registry((), _EMPTY_EXTENSIONS), fast_schema.FastXMLSchema11
-    )
+    assert schema._registry_class(xmlschema) is fast_schema.FastXMLSchema11
     assert fast_schema.FastXMLSchema11.__base__ is xmlschema.XMLSchema11
+
+
+@pytest.mark.parametrize("version", ["4.3.0", "4.3.2", "4.3.99", "4.3.0rc1", "4.3"])
+def test_registry_class_uses_the_fast_class_for_the_tested_minor_release(
+    monkeypatch, version
+):
+    monkeypatch.setattr(xmlschema, "__version__", version)
+
+    assert schema._registry_class(xmlschema) is _fast_schema().FastXMLSchema11
+
+
+@pytest.mark.parametrize(
+    "version", ["4.2.9", "4.4.0", "4.30.0", "4.13.0", "5.0", "5.0.0", "3.3.0", "", "4"]
+)
+def test_registry_class_keeps_plain_xmlschema_for_an_untested_release(
+    monkeypatch, version
+):
+    monkeypatch.setattr(xmlschema, "__version__", version)
+
+    assert schema._registry_class(xmlschema) is xmlschema.XMLSchema11
+
+
+def test_an_untested_release_compiles_the_registry_with_plain_xmlschema(monkeypatch):
+    monkeypatch.setattr(xmlschema, "__version__", "4.4.0")
+
+    registry = schema._cached_registry.__wrapped__((), _EMPTY_EXTENSIONS)
+
+    assert type(registry) is xmlschema.XMLSchema11
+    assert verdict(parse(SEEDS[2].encode()), registry) is None
+
+
+def test_registry_class_keeps_plain_xmlschema_when_the_release_is_unknown(monkeypatch):
+    monkeypatch.delattr(xmlschema, "__version__")
+
+    assert schema._registry_class(xmlschema) is xmlschema.XMLSchema11
 
 
 def test_registry_class_keeps_a_substituted_xmlschema_module_unchanged():
@@ -271,18 +381,23 @@ def test_registry_class_keeps_a_substituted_xmlschema_module_unchanged():
         raise AssertionError
 
     assert schema._registry_class(SimpleNamespace(XMLSchema11=compiler)) is compiler
+    tested = SimpleNamespace(XMLSchema11=compiler, __version__=xmlschema.__version__)
+    assert schema._registry_class(tested) is compiler
 
 
-@pytest.mark.parametrize("breakage", ["missing module", "incompatible builders"])
+@pytest.mark.parametrize(
+    "breakage", ["missing module", "incompatible builders", "unexpected failure"]
+)
 def test_registry_class_falls_back_to_plain_xmlschema(monkeypatch, breakage):
     monkeypatch.delitem(sys.modules, "dj_hyperview._fast_schema", raising=False)
     if breakage == "missing module":
         monkeypatch.setitem(sys.modules, "xmlschema.validators.builders", None)
     else:
+        failure = TypeError if breakage == "incompatible builders" else RuntimeError
 
         class Incompatible:
             def __init__(self, *args, **kwargs):
-                raise TypeError("unsupported builders")
+                raise failure("unsupported builders")
 
         monkeypatch.setattr("xmlschema.validators.builders.XsdBuilders", Incompatible)
 
@@ -301,22 +416,7 @@ def test_registry_class_falls_back_to_plain_xmlschema(monkeypatch, breakage):
     )
 
 
-def test_registry_class_falls_back_when_a_hook_is_missing(monkeypatch):
-    monkeypatch.delitem(sys.modules, "dj_hyperview._fast_schema", raising=False)
-    monkeypatch.delattr(XsdAttributeGroup, "iter_required")
-
-    assert schema._registry_class(xmlschema) is xmlschema.XMLSchema11
-
-
-def test_attribute_groups_precompute_what_the_base_class_iterates(registries):
-    fast_schema = _fast_schema()
-    registry = registries["extended"][1]
-    groups = [
-        component
-        for component in registry.maps.iter_components(fast_schema.FastAttributeGroup)
-    ]
-
-    assert len(groups) > 20
+def assert_groups_precompute_what_the_base_class_iterates(groups):
     for group in groups:
         assert list(group.iter_required()) == list(
             XsdAttributeGroup.iter_required(group)
@@ -325,6 +425,27 @@ def test_attribute_groups_precompute_what_the_base_class_iterates(registries):
             assert list(group.iter_value_constraints(use_defaults)) == list(
                 XsdAttributeGroup.iter_value_constraints(group, use_defaults)
             )
+
+
+def test_attribute_groups_precompute_what_the_base_class_iterates(registries):
+    fast_schema = _fast_schema()
+    registry = registries["extended"][1]
+    groups = list(registry.maps.iter_components(fast_schema.FastAttributeGroup))
+
+    assert len(groups) > 20
+    assert any(list(group.iter_required()) for group in groups)
+    assert_groups_precompute_what_the_base_class_iterates(groups)
+
+
+def test_attribute_groups_precompute_fixed_and_default_values_separately():
+    group = attributes_of(_fast_schema().FastXMLSchema11(SAFETY))
+
+    assert dict(group.iter_value_constraints(True)) == {"fixed": "1", "default": "2"}
+    assert dict(group.iter_value_constraints(False)) == {"fixed": "1"}
+    assert dict(group.iter_value_constraints()) == dict(
+        group.iter_value_constraints(True)
+    )
+    assert_groups_precompute_what_the_base_class_iterates([group])
 
 
 def alternative_declarations(registry):
@@ -375,12 +496,39 @@ def test_alternatives_inherited_from_ancestors_keep_the_xpath_path(registries):
     )
 
 
+def test_attributes_inherited_from_ancestors_reach_the_alternative_tests():
+    registry = _fast_schema().FastXMLSchema11(ALTERNATIVES)
+    declaration = registry.elements["generated"]
+    assert declaration._types_by_action is not None
+
+    for own, inherited in (
+        ({}, {"action": "b"}),
+        ({}, {"action": "c"}),
+        ({}, {"action": "other"}),
+        ({"action": "c"}, {"action": "b"}),
+        ({"action": "d"}, {"action": "b"}),
+        ({"kind": "b"}, {"action": "b"}),
+    ):
+        element = etree.Element("generated", own)
+        selected = declaration.get_alternative_type(element, inherited)
+
+        assert selected is Xsd11Element.get_alternative_type(
+            declaration, element, inherited
+        )
+    # No action of its own: only the inherited one can select the alternative.
+    bare = etree.Element("generated")
+    assert declaration.get_alternative_type(bare, {"action": "b"}).name == "B"
+    assert declaration.get_alternative_type(bare).name == "D"
+
+
 ALTERNATIVES = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version="1.1">
   <xs:complexType name="A">
     <xs:attribute name="action"/><xs:attribute name="kind"/><xs:attribute name="x"/>
   </xs:complexType>
   <xs:complexType name="B">
-    <xs:complexContent><xs:extension base="A"/></xs:complexContent>
+    <xs:complexContent><xs:extension base="A">
+      <xs:attribute name="extra" type="xs:integer"/>
+    </xs:extension></xs:complexContent>
   </xs:complexType>
   <xs:complexType name="C">
     <xs:complexContent><xs:extension base="A"/></xs:complexContent>
@@ -392,6 +540,10 @@ ALTERNATIVES = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version
     <xs:alternative test="@action = 'b'" type="B"/>
     <xs:alternative test="@action = 'c'" type="C"/>
     <xs:alternative test="@action = 'b'" type="C"/>
+    <xs:alternative type="D"/>
+  </xs:element>
+  <xs:element name="empty" type="A">
+    <xs:alternative test="@action = ''" type="B"/>
     <xs:alternative type="D"/>
   </xs:element>
   <xs:element name="unconditional" type="A">
@@ -425,6 +577,7 @@ ALTERNATIVES = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version
     ("name", "indexed"),
     [
         ("generated", True),
+        ("empty", True),
         ("unconditional", True),
         ("other-attribute", False),
         ("mixed", False),
@@ -453,6 +606,22 @@ def test_only_the_generated_alternative_form_is_selected_by_dictionary(name, ind
         assert declaration.get_alternative_type(
             element
         ) is Xsd11Element.get_alternative_type(declaration, element)
+
+
+def test_encoding_selects_the_alternative_type_like_plain_xmlschema():
+    plain = xmlschema.XMLSchema11(ALTERNATIVES)
+    fast = _fast_schema().FastXMLSchema11(ALTERNATIVES)
+
+    for data in ({"@action": "b", "@extra": 7}, {"@action": "c"}, {"@kind": "x"}):
+        expected = ET.tostring(plain.encode(data, path="generated"))
+        assert ET.tostring(fast.encode(data, path="generated")) == expected, data
+    # Only the type selected for action "b" declares the attribute "extra".
+    encoded = fast.encode({"@action": "b", "@extra": 7}, path="generated")
+    assert encoded.get("extra") == "7"
+    for data in ({"@extra": 7}, {"@action": "c", "@extra": 7}):
+        for registry in (plain, fast):
+            with pytest.raises(xmlschema.XMLSchemaValidationError):
+                registry.encode(data, path="generated")
 
 
 SAFETY = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version="1.1">
@@ -591,6 +760,27 @@ def test_values_are_not_memoized_while_patterns_are_pushed(fast):
         number.raw_decode("x", "strict", context)
 
 
+def test_attribute_values_that_are_not_text_are_left_to_xmlschema(fast):
+    # ElementTree trees can carry any object as a value; lxml, which the package
+    # validates, cannot. xmlschema accepts 5, True and b"5" for an integer.
+    plain = xmlschema.XMLSchema11(SAFETY)
+    number = attributes_of(fast)["number"]
+
+    for value, valid in (
+        (5, True),
+        (True, True),
+        (b"5", True),
+        (5.0, False),
+        (None, False),
+    ):
+        root = ET.Element("root")
+        ET.SubElement(root, "item", {"number": value})
+        for _ in range(2):
+            assert plain.is_valid(root) is valid, value
+            assert fast.is_valid(root) is valid, value
+    assert number._memo == set()
+
+
 def test_a_repeated_valid_value_is_served_from_the_memo(fast):
     number = attributes_of(fast)["number"]
     fast.validate(document(number="7"))
@@ -632,6 +822,7 @@ def test_the_memo_holds_at_most_the_documented_bound_per_attribute(fast):
 def test_long_values_are_validated_every_time_and_never_kept(fast):
     number = attributes_of(fast)["number"]
     limit = _fast_schema().MEMO_VALUE_LIMIT
+    assert limit == 64
     kept, long = "1" * limit, "1" * (limit + 1)
 
     for _ in range(2):

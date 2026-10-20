@@ -74,6 +74,12 @@ def _xmlschema_module() -> Any:
     return xmlschema
 
 
+# The xmlschema minor release whose internals the fast registry classes were tested
+# against. A release that a later version of the package has not been tested with
+# compiles plain XMLSchema11 registries, whatever its internals look like.
+_FAST_REGISTRY_RELEASE = ("4", "3")
+
+
 def _registry_class(xmlschema: Any) -> Any:
     """Choose the class that compiles a registry which validates documents.
 
@@ -81,13 +87,17 @@ def _registry_class(xmlschema: Any) -> Any:
         xmlschema: Module returned by the dependency seam.
 
     Returns:
-        The fast subclass when the module is the installed xmlschema and its
-        internals fit it, otherwise the plain XMLSchema11 of that module.
+        The fast subclass when the module is the installed xmlschema of a tested
+        release and the subclass can be defined, otherwise the plain XMLSchema11 of
+        that module.
     """
     plain = xmlschema.XMLSchema11
+    version = str(getattr(xmlschema, "__version__", ""))
+    if tuple(version.split(".")[:2]) != _FAST_REGISTRY_RELEASE:
+        return plain
     try:
         from ._fast_schema import FastXMLSchema11
-    except (ImportError, AttributeError, TypeError, ValueError):
+    except Exception:
         return plain
     return FastXMLSchema11 if plain is FastXMLSchema11.__base__ else plain
 

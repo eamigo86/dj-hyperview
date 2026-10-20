@@ -34,25 +34,33 @@ This page records user-visible release changes, including unpublished attempts.
   small `xmlschema.XMLSchema11` subclass that answers three questions once instead
   of for every element: which attributes of a group are required or carry a value
   constraint, which type a registered `SCHEMA_EXTENSIONS["BEHAVIORS"]` action
-  selects, and whether an attribute value was already accepted. A dictionary lookup
-  on the `action` attribute replaces the XPath test the package generates for each
-  action; any other alternative test still goes through XPath. The memory of
-  accepted values keeps at most 128 values of at most 256 characters per attribute
-  declaration, and only for attribute types whose result depends on nothing but the
-  value. `ID`, `IDREF`, `IDREFS`, `ENTITY`, `ENTITIES`, `QName` and `NOTATION`
-  types, attributes with a `fixed` or `default` value, and plain `xs:string`,
-  `xs:token` and `xs:normalizedString` are left alone, and a value that fails is
-  never remembered. The accept or reject outcome, the validation code, the message
-  and the line do not change: a differential test compares the registry with a
-  plain `XMLSchema11` registry over a seeded corpus of valid and mutated documents.
-  Measured on Python 3.12 with xmlschema 4.3.2, documents of 1 to 80 KB validate 21
-  to 27 percent faster, and up to 60 percent faster when they use many registered
-  behaviors. A document whose attribute values never repeat was not slower in the
-  worst case measured. The subclass relies on xmlschema internals that are not
-  documented API; if a supported xmlschema release removes or changes them, the
-  package builds the registry with the plain `xmlschema.XMLSchema11` instead, with
-  the same results at the previous speed. Extra schemas that are compiled only to
-  check them for conflicts keep the plain class.
+  selects, and whether an attribute value was already accepted. An element looks its
+  type up by the value of `action` in a dictionary only when every alternative that
+  has a test has the form the package generates, `@action = '<name>'`, and no
+  attribute inherited from an ancestor applies; any other test goes through XPath, as
+  before. The memory of accepted values keeps at most 128 values of at most 64
+  characters per attribute declaration, about 7 MiB per registry in the worst case,
+  and only for attribute types whose result depends on nothing but the value;
+  assertion facets are assumed to depend on the value alone. Attributes of type
+  `xs:ID`, `xs:IDREF`, `xs:IDREFS`, `xs:ENTITY`, `xs:ENTITIES`, `xs:QName` or
+  `xs:NOTATION`, or of a type derived from one of them, attributes with a `fixed` or
+  `default` value, and plain `xs:string`, `xs:token` and `xs:normalizedString` are
+  left alone, and a value that fails is never remembered. Hyperview's own `hv:ID` is
+  a restriction of `xs:token`, so its values are remembered. The accept or reject
+  outcome, the validation code, the message and the line do not change: a
+  differential test compares the registry with a plain `XMLSchema11` registry over a
+  seeded corpus of valid and mutated documents, for the Hyperview schema, for
+  registered behaviors and for an extra schema. In a benchmark that renders four
+  HyperTodo-shaped screens through `HyperviewTemplateResponse` on Python 3.12 with
+  xmlschema 4.3.2, a full response took 12 to 38 percent less time than with a plain
+  registry: 12 percent for a navigation fragment of 1 KB, 16 percent for a list of 40
+  rows (73 KB), and 36 and 38 percent for a settings screen (20 KB) and a dashboard
+  (33 KB). Another document can gain more or less. The subclass relies on
+  xmlschema internals that are not documented API, so it is used only with an
+  xmlschema release it was tested with, the 4.3 series. Any other release in the
+  supported range (`>=4.3,<5`), or one whose internals are missing, gets the plain
+  `xmlschema.XMLSchema11` instead, with the same results at the previous speed. Extra
+  schemas that are compiled only to check them for conflicts keep the plain class.
 
 ## 0.1.0b3 — 2026-10-14
 
