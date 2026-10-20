@@ -11,8 +11,10 @@ historical resource set, and the public upstream-inspection helper still points
 to that archive. This active 0.111.0 validation contract is separate.
 
 `compatibility/hyperview.xsd` carries the prior audited margin adaptation over
-the 0.111.0 upstream root. `r3/hyperview.xsd` carries the prior audited native
-corrections over that adaptation. `r3/manifest.json` identifies and hashes this
-new revision; `r3/catalog.json` is generated from that corrected schema.
+the 0.111.0 upstream root. `r4/hyperview.xsd` carries the prior audited native
+corrections over that adaptation, and flat equivalents of the `viewChildren` and
+`nonListViewChildren` groups of `core.xsd` that accept the same children.
+`r4/manifest.json` identifies and hashes this new revision; `r4/catalog.json` is
+generated from that corrected schema and is byte-identical to the `r3` catalog.
 Neither overlay replaces an upstream file. Project registrations are generated
 in memory, and external overrides remain forbidden.

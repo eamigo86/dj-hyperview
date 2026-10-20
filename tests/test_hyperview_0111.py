@@ -130,17 +130,17 @@ def test_no_other_module_hard_codes_the_active_revision():
         path.name
         for path in package.rglob("*.py")
         if path.name != "_schema_revision.py"
-        and any(literal in path.read_text() for literal in ('"0.111.0"', '"r3"'))
+        and any(literal in path.read_text() for literal in ('"0.111.0"', '"r4"'))
     )
     assert offenders == []
 
 
-def test_corrected_r3_catalog_and_manifest_match_the_active_validator():
+def test_corrected_r4_catalog_and_manifest_match_the_active_validator():
     current = SCHEMAS / "0.111.0"
-    revision = current / "r3"
+    revision = current / "r4"
     manifest = json.loads((revision / "manifest.json").read_text())
     assert manifest["upstream_version"] == "0.111.0"
-    assert manifest["schema_profile"] == "compatible-0.111.0-r3"
+    assert manifest["schema_profile"] == "compatible-0.111.0-r4"
     for filename, digest in manifest["sha256"].items():
         assert hashlib.sha256((revision / filename).read_bytes()).hexdigest() == digest
     compiled = _compile_schema(revision / "hyperview.xsd")

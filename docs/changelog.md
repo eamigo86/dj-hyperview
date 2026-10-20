@@ -107,6 +107,42 @@ This page records user-visible release changes, including unpublished attempts.
   KB), with no measurable change for a list of 40 rows (73 KB). The saving grows with
   the number and size of the extra schemas, and there is none without
   `EXTRA_SCHEMAS`.
+- Validate rendered documents faster with a flatter schema. Upstream defines the
+  children of `body`, `header`, `view`, `form`, `select-single` and `select-multiple`
+  (`viewChildren`) and of `item` and `section-title` (`nonListViewChildren`) as a choice
+  inside a group inside a sequence inside another choice, and xmlschema walks every
+  level and tries the alternatives of a choice in order. The bundled revision `r4`
+  replaces both groups with one flat choice of the same elements and the same `##other`
+  wildcard, with the elements that rendered documents contain most often first: `view`,
+  `text`, `behavior`, `image`, `text-field`, `form` and `spinner`. The documents that
+  are accepted do not change: the children, the wildcard and the repetition are the
+  same, and the codes, messages and lines of the errors, the editor catalog and the
+  Admin static catalog are those of `r3`, whose `catalog.json` `r4` keeps byte for byte.
+  A test compares the compiled flat groups with the upstream groups for each of the
+  eight containers (child names, minimum and maximum occurrences, the namespace
+  constraint and `processContents` of the wildcard, the kind of model and its depth),
+  and a differential run over 112,249 documents (the test suites of this package and of
+  HyperTodo, rendered templates, generated content-model cases and seeded mutants) on
+  the default registry and on one with an extra schema found no difference in verdict,
+  code, message or line. They show the equivalence for the cases they cover; they do not
+  prove it for every schema that `EXTRA_SCHEMAS` can load. A project schema that uses
+  `hv:viewChildren` or `hv:nonListViewChildren` in its own types gets the flat group.
+  Measured as `HyperviewTemplateResponse.render()` of a HyperTodo-shaped workload with
+  warm caches and no database, not as the latency of a full HTTP request, a render took
+  16 to 24 percent less than before this change on Python 3.12 and 20 to 28 percent less
+  on Python 3.14 (median of the paired ratios of 8 interleaved runs). On Python 3.12 a
+  navigation fragment (1 KB rendered) took 1.13 ms and takes 0.87, a list of 40 rows (73
+  KB) 25.3 ms and 21.2, a settings screen (20 KB) 5.11 ms and 3.95, and a dashboard (33
+  KB) 10.3 ms and 7.83. About half of the gain comes from the flat shape and the rest
+  from the order, so a document with another mix of elements can gain more or less.
+  Building a registry takes up to about 7 ms longer, once for each registry in a
+  process, because the schema document is 49 lines longer and is checked when it is
+  compiled, and a compiled registry keeps about 26 KiB more.
+- The bundled corrected schema revision is now `r4`, and the `r3` files are no longer
+  shipped, as those of `r2` were not before. A project that kept a copy of the `r3`
+  files, for example as a vendored reference or in a check that pins their hash, should
+  drop it or replace it with the `r4` files; the package never reads such a copy.
+  `HYPERVIEW_SCHEMA_VERSION` and `HYPERVIEW_VALIDATION_CONTRACT` do not change.
 - Check an Admin draft in 39 to 51 percent less time, with the same diagnostics. The
   static check behind **Format and Validate** and the save preflight (`ADMIN.EDITOR`)
   copied the 82 KB schema catalog each time it ran, which is once for the draft, once

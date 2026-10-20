@@ -22,10 +22,10 @@
   "changed_attribute_types": [
     "style.width"
   ],
-  "schema_profile": "compatible-0.111.0-r3",
+  "schema_profile": "compatible-0.111.0-r4",
   "sha256": {
     "catalog.json": "61abf366dc12517bf8121c4a88729bacb44613224e384ab5a5cdd1db66a89100",
-    "hyperview.xsd": "79bb698d3a88143ba3ee46cff00f9fb1b465bbb931a1399034dc81802575b7b2"
+    "hyperview.xsd": "8cd33ddb242894f65f301c9dc90b5aee6332d05ad822a27b1b0a393d5c96e5e7"
   },
   "upstream_version": "0.111.0"
 }

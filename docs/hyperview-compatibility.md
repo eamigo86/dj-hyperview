@@ -6,7 +6,8 @@ mobile app does not change that schema.
 
 | dj-hyperview | Active validation contract | Runtime schema |
 | --- | --- | --- |
-| 0.1.0b3 (current) | Hyperview 0.111.0 | Upstream 0.111.0 XSDs plus package-owned corrections, revision `r3` |
+| Unreleased (current) | Hyperview 0.111.0 | Upstream 0.111.0 XSDs plus package-owned corrections, revision `r4` |
+| 0.1.0b3 | Hyperview 0.111.0 | Upstream 0.111.0 XSDs plus package-owned corrections, revision `r3` |
 | 0.1.0b2 | Hyperview 0.111.0 | Upstream 0.111.0 XSDs plus package-owned corrections, revision `r3` |
 | 0.1.0b1 | Hyperview 0.110.0 | Upstream 0.110.0 XSDs plus package-owned corrections, revision `r2` |
 
@@ -22,15 +23,21 @@ with 0.110.0, upstream adds only an optional boolean `content-insets` attribute
 to its shared scroll attributes, which the scroll-capable elements accept.
 
 Two package-owned layers sit on top of the upstream files and replace none of
-them: a margin adaptation that accepts signed decimal percentages, and the `r3`
+them: a margin adaptation that accepts signed decimal percentages, and the `r4`
 corrections for text, image, accessibility, `date-field` and `style@width`
 attributes. [Corrected schema boundaries](configuration.md#corrected-schema-boundaries)
 lists every addition and states what the corrections do not permit. Project
 elements and behaviors are registered separately with
 [custom schemas](custom-schemas.md).
 
+`r4` also replaces the nested child groups of `body`, `header`, `view`, `form`,
+`select-single`, `select-multiple`, `item` and `section-title` with flat groups
+that accept the same children, the same `##other` wildcard and the same
+repetition, and list the most common elements first so validation reaches them
+sooner. A test compares each flat group with the upstream groups on every run.
+
 The repository records where the files came from. `PROVENANCE.json` holds the
-tarball digest and a SHA-256 for each upstream XSD, and the `r3` manifest holds
+tarball digest and a SHA-256 for each upstream XSD, and the `r4` manifest holds
 the digests of the corrected entry point and catalog. The test suite verifies
 them; the package does not re-check them at runtime.
 

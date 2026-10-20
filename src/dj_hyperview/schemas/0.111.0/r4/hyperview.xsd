@@ -501,6 +501,55 @@
         </xs:attribute>
       </xs:complexType>
     </xs:element>
+    <!-- Flat equivalents of the nested core.xsd groups: the same children, wildcard and
+         repetition, with the most common elements first so the validator reaches them
+         sooner. tests/test_view_children_flattening.py compares them with core.xsd. -->
+    <xs:group name="nonListViewChildren">
+      <xs:sequence>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element ref="hv:view"/>
+          <xs:element ref="hv:text"/>
+          <xs:element ref="hv:behavior"/>
+          <xs:element ref="hv:image"/>
+          <xs:element ref="hv:text-field"/>
+          <xs:element ref="hv:form"/>
+          <xs:element ref="hv:spinner"/>
+          <xs:element ref="hv:date-field"/>
+          <xs:element ref="hv:header"/>
+          <xs:element ref="hv:option"/>
+          <xs:element ref="hv:picker-field"/>
+          <xs:element ref="hv:select-single"/>
+          <xs:element ref="hv:select-multiple"/>
+          <xs:element ref="hv:switch"/>
+          <xs:element ref="hv:web-view"/>
+          <xs:any namespace="##other" processContents="lax"/>
+        </xs:choice>
+      </xs:sequence>
+    </xs:group>
+    <xs:group name="viewChildren">
+      <xs:sequence>
+        <xs:choice minOccurs="0" maxOccurs="unbounded">
+          <xs:element ref="hv:view"/>
+          <xs:element ref="hv:text"/>
+          <xs:element ref="hv:behavior"/>
+          <xs:element ref="hv:image"/>
+          <xs:element ref="hv:text-field"/>
+          <xs:element ref="hv:form"/>
+          <xs:element ref="hv:spinner"/>
+          <xs:element ref="hv:date-field"/>
+          <xs:element ref="hv:header"/>
+          <xs:element ref="hv:option"/>
+          <xs:element ref="hv:picker-field"/>
+          <xs:element ref="hv:select-single"/>
+          <xs:element ref="hv:select-multiple"/>
+          <xs:element ref="hv:switch"/>
+          <xs:element ref="hv:web-view"/>
+          <xs:any namespace="##other" processContents="lax"/>
+          <xs:element ref="hv:list"/>
+          <xs:element ref="hv:section-list"/>
+        </xs:choice>
+      </xs:sequence>
+    </xs:group>
   </xs:override>
   <xs:simpleType name="r2WidthSizing">
     <xs:restriction base="xs:string">
