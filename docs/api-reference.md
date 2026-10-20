@@ -61,7 +61,7 @@ coordinated rollout or rollback. See the [SSE guide](realtime.md).
 | `TemplateSource` | Contract implemented by template sources. |
 | `FileSystemSource` | Read project-owned files from configured roots. |
 | `ResolvedTemplate` | Immutable result returned by a source. |
-| `ResolverLoader` | Connect the resolver to Django's template engine. Naming `"dj_hyperview.loaders.ResolverLoader"` in `TEMPLATES` `OPTIONS["loaders"]` reads the sources and validation limits from `HYPERVIEW`. |
+| `ResolverLoader` | Connect the resolver to Django's template engine. Naming `"dj_hyperview.loaders.ResolverLoader"` in `TEMPLATES` `OPTIONS["loaders"]` reads the sources and validation limits from `HYPERVIEW`. It keeps a bounded in-process cache of compiled templates, described under [template engine behavior](configuration.md#template-engine-behavior). |
 
 A `TemplateSource` requires only `resolve(name)`, which returns a `ResolvedTemplate`
 or `None` for a source-local miss. The resolver checks the result: its `name` must

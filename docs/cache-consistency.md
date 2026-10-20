@@ -41,8 +41,10 @@ HYPERVIEW = {
 ```
 
 The cache stores raw content and source misses, including valid empty content.
-It never stores compiled templates. Namespace, source identity, canonical name,
-revision, and generation keep entries isolated.
+It never stores compiled templates; the loader keeps those in process, as
+[template engine behavior](configuration.md#template-engine-behavior) describes.
+Namespace, source identity, canonical name, revision, and generation keep entries
+isolated.
 
 ## Choose which sources are cached
 

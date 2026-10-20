@@ -126,7 +126,7 @@ and are not reported twice.
 | `SOURCES` | Sequence of mappings | `()` | Ordered source definitions. The first source that resolves a canonical template name wins. An empty sequence resolves no templates. |
 | `SOURCES[].BACKEND` | Dotted import path | Required | Importable source class for one entry. Built-in paths are shown below. |
 | `SOURCES[].OPTIONS` | Mapping | `{}` | Keyword arguments passed to that source class constructor. Supported keys are backend-specific; entries the constructor does not accept, or required arguments it does not receive, produce `dj_hyperview.E024`. |
-| `CACHE` | Mapping | Omitted (disabled) | Enables raw-source and source-miss caching when non-empty, for the sources that opt in (see [cache consistency](cache-consistency.md#choose-which-sources-are-cached)). It does not cache compiled templates. |
+| `CACHE` | Mapping | Omitted (disabled) | Enables raw-source and source-miss caching when non-empty, for the sources that opt in (see [cache consistency](cache-consistency.md#choose-which-sources-are-cached)). It does not cache compiled templates; the loader keeps those in process (see [template engine behavior](#template-engine-behavior)). |
 | `CACHE.ALIAS` | String | `"default"` | Django cache alias with atomic add and coherent reads. `DummyCache` and `FileBasedCache` are unsupported. |
 | `CACHE.NAMESPACE` | Non-empty string | `"dj-hyperview"` | Prefix domain that isolates all Hyperview cache keys. Change it to abandon previously published cache state. |
 | `CACHE.TTL` | Integer greater than or equal to 1 | 300 seconds | Lifetime of successful raw-template and resolved-source entries. Generation keys do not expire. |
@@ -317,6 +317,27 @@ or subclass. It deliberately isolates security-sensitive options such as
 `autoescape` and replaces the backend's loaders, so template lookup still
 follows `HYPERVIEW["SOURCES"]` and never falls through to unrelated Django
 template directories.
+
+The engine's loader keeps the templates it compiled, so a template that resolves
+to the same content is validated and compiled once instead of on every render.
+The resolver still runs on every lookup, so invalidation, cache generations and
+the per-render revision snapshot behave as before. A stored template is reused
+only when the new resolution matches it in every field, content included, so a
+custom source whose `revision` does not follow its content never serves stale
+code. Validation and compile errors are never stored. The memory is bounded for
+each engine to 256 templates and 1 MiB of source, and the least recently used
+template leaves first. A compiled template takes about 5 to 25 times its source
+size, and up to about 100 times for dense markup, so that is about 25 MiB for
+typical templates and 100 MiB at worst. A source over 1 MiB is compiled on every
+render. A setting the compile depends on cannot change under a stored template:
+`HYPERVIEW`, `TEMPLATES` and `DEBUG` rebuild the default engine, which starts
+empty, and a loader that Django builds from `TEMPLATES` keeps the sources and
+limits it read when it was built, as it did before. `ResolverLoader.reset()`
+empties the loader. A subclass that overrides `get_contents()` or
+`get_template_sources()` compiles on every render, because an override may read
+state that the cache cannot see. Compiled templates are shared between threads, as
+in Django's cached loader, so a custom tag must keep no per-render state on its
+nodes; the tags and filters of this package keep none.
 
 The response path does not switch engines when `SOURCES` is empty. An empty
 source list therefore produces a normal missing-template result. To opt out and

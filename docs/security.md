@@ -139,9 +139,11 @@ and a stray one costs at most the rest of its line, so templates with line break
 and a handful of literal `{#` or `{{` never come near it. Every path that compiles
 stored source applies it: publication, the model validator, the Admin check
 (including the targets of literal includes) and the template loader, which runs it
-again before it hands any source to Django. A row that was saved before the limit
-existed, or written with `bulk_create()`, therefore fails when it is served instead
-of occupying a worker. Filesystem templates are developer-owned and no user can
+again before it hands any source to Django. The loader keeps the template it
+compiled while the source resolves to the same content, so an unchanged source is
+checked when it is first compiled, not on every render. A row that was saved
+before the limit existed, or written with `bulk_create()`, therefore fails when it
+is first served instead of occupying a worker. Filesystem templates are developer-owned and no user can
 write them; they pass through the same loader check, and only a deliberately
 pathological file reaches the limit.
 
