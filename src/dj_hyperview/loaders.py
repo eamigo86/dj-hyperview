@@ -5,6 +5,7 @@ from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
+from copy import deepcopy
 from dataclasses import dataclass
 
 from django.template import Engine, Origin, Template, TemplateDoesNotExist
@@ -134,11 +135,38 @@ class ResolverLoader(Loader):
         self.validation = (
             get_settings().validation if validation is None else validation
         )
+        self._start_compiled_cache()
+
+    def _start_compiled_cache(self) -> None:
         self._compiled: OrderedDict[_CompiledKey, tuple[ResolvedTemplate, Template]] = (
             OrderedDict()
         )
         self._compiled_size = 0
         self._compiled_lock = threading.Lock()
+
+    def __deepcopy__(self, memo: dict[int, object]) -> "ResolverLoader":
+        """Copy the loader with an empty compiled-template cache.
+
+        The lock cannot be copied and the compiled templates belong to the original,
+        so the copy gets a cache and a lock of its own and compiles its templates
+        again. Everything else is deep-copied, so the copy is as independent as a
+        copy of any other Django loader.
+
+        Args:
+            memo: The memo of the running deep copy.
+
+        Returns:
+            An independent loader with an empty compiled-template cache.
+        """
+        duplicate = object.__new__(type(self))
+        # Registered first, as the default protocol does: the engine and the
+        # templates this loader reaches lead back to it.
+        memo[id(self)] = duplicate
+        duplicate._start_compiled_cache()
+        for name, value in vars(self).items():
+            if name not in vars(duplicate):
+                setattr(duplicate, name, deepcopy(value, memo))
+        return duplicate
 
     def _resolve(self, name: str) -> ResolvedTemplate:
         snapshot = _snapshot_for(self.resolver)

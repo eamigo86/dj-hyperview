@@ -1,5 +1,6 @@
 """The resolver loader compiles each resolved template once while it is unchanged."""
 
+import copy
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -10,7 +11,7 @@ from unittest.mock import patch
 import pytest
 from django.template import Engine, TemplateDoesNotExist, TemplateSyntaxError
 from django.template.base import Template as DjangoTemplate
-from django.test import override_settings
+from django.test import TestCase, override_settings
 
 from dj_hyperview.conf import ValidationSettings
 from dj_hyperview.engine import HyperviewEngine, _default_engine, render_template
@@ -509,3 +510,99 @@ def test_threads_that_hit_evict_and_replace_keep_the_accounting_exact(
     assert len(loader._compiled) <= 3
     assert loader._compiled_size <= budget
     assert_accounted(loader)
+
+
+def test_a_deep_copied_loader_starts_with_an_empty_cache_of_its_own(counts) -> None:
+    loader = loader_for(Source({"one.xml": text("one"), "two.xml": text("two")}))
+    first = loader.get_template("one.xml")
+    loader.get_template("two.xml")
+    size = loader._compiled_size
+    assert counts.compiled.call_count == 2
+
+    duplicate = copy.deepcopy(loader)
+
+    assert duplicate is not loader
+    assert duplicate.engine is not loader.engine
+    assert duplicate.resolver is not loader.resolver
+    assert duplicate._compiled is not loader._compiled
+    assert duplicate._compiled_lock is not loader._compiled_lock
+    assert_accounted(duplicate, entries=0)
+    # A render through the copy compiles again and leaves the original alone.
+    copied = duplicate.get_template("one.xml")
+    assert counts.compiled.call_count == 3
+    assert copied is not first
+    assert copied.origin.loader is duplicate
+    assert_accounted(duplicate, entries=1)
+    assert_accounted(loader, entries=2)
+    assert loader._compiled_size == size
+    assert loader.get_template("one.xml") is first
+    assert counts.compiled.call_count == 3
+
+
+def test_a_deep_copied_loader_stays_paired_with_the_engine_that_owns_it() -> None:
+    engine = engine_for(Source({"screen.xml": text("one")}))
+    loader = engine.backend.engine.template_loaders[0]
+
+    duplicate = copy.deepcopy(loader)
+
+    assert duplicate is not loader
+    assert duplicate.engine is not loader.engine
+    assert duplicate.engine.template_loaders == [duplicate]
+
+
+def test_a_deep_copied_default_engine_has_a_cold_cache_of_its_own() -> None:
+    with override_settings(HYPERVIEW={"SOURCES": STUB_SOURCES}):
+        engine = _default_engine()
+        original = engine.backend.engine.template_loaders[0]
+        assert engine.render("screen.xml") == text("hv")
+
+        duplicate = copy.deepcopy(engine)
+
+        loader = duplicate.backend.engine.template_loaders[0]
+        assert isinstance(loader, ResolverLoader)
+        assert loader is not original
+        assert loader.engine is duplicate.backend.engine
+        assert loader._compiled_lock is not original._compiled_lock
+        assert_accounted(loader, entries=0)
+        assert duplicate.render("other.xml") == text("hv")
+        assert_accounted(loader, entries=1)
+        assert_accounted(original, entries=1)
+        assert engine.render("screen.xml") == text("hv")
+        assert original.get_template("screen.xml").origin.loader is original
+
+
+def test_a_deep_copied_compiled_template_renders_through_its_own_loader() -> None:
+    with override_settings(HYPERVIEW={"SOURCES": STUB_SOURCES}):
+        template = _default_engine().get_template("screen.xml")
+        original = template.origin.loader
+        assert_accounted(original, entries=1)
+
+        duplicate = copy.deepcopy(template)
+
+        loader = duplicate.origin.loader
+        assert duplicate is not template
+        assert loader is not original
+        assert loader is duplicate.template.engine.template_loaders[0]
+        assert duplicate.render() == template.render() == text("hv")
+        assert_accounted(loader, entries=0)
+        assert_accounted(original, entries=1)
+
+
+class SetUpTestDataCopy(TestCase):
+    """Django deep-copies class attributes of setUpTestData for every test."""
+
+    databases = set()
+
+    @classmethod
+    def setUpTestData(cls) -> None:
+        cls.template = engine_for(Source({"screen.xml": text("{{ v }}")})).get_template(
+            "screen.xml"
+        )
+
+    def test_a_compiled_template_can_be_used_in_the_first_test(self) -> None:
+        assert self.template.render({"v": 1}) == text("1")
+        assert len(self.template.origin.loader._compiled) == 0
+
+    def test_a_compiled_template_can_be_used_in_the_second_test(self) -> None:
+        assert self.template.render({"v": 2}) == text("2")
+        assert len(self.template.origin.loader._compiled) == 0

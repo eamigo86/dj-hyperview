@@ -41,10 +41,9 @@ This page records user-visible release changes, including unpublished attempts.
   the new `ResolverLoader.reset()` empties the cache, as Django's loader contract
   expects. Compiled templates are now shared between threads, as in Django's cached
   loader, so a custom template tag must keep no per-render state on its nodes; the
-  tags and filters of the package keep none. The loader holds a lock for its cache,
-  so a `ResolverLoader`, and a `HyperviewEngine` once it has built its loader, can
-  no longer be copied with `copy.deepcopy()`; pickling them already failed in
-  0.1.0b3.
+  tags and filters of the package keep none. A deep copy of a `ResolverLoader`, of
+  a `HyperviewEngine` or of a compiled template starts with an empty cache of its
+  own and compiles its templates again.
 - Validate rendered documents faster. The compiled registry that validates every
   rendered document and fragment is now built with a small `xmlschema.XMLSchema11`
   subclass that answers three questions once instead of for every element: which
