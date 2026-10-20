@@ -341,8 +341,8 @@ def test_the_locked_xmlschema_is_a_tested_release():
     assert fast_schema.FastXMLSchema11.__base__ is xmlschema.XMLSchema11
 
 
-@pytest.mark.parametrize("version", ["4.3.0", "4.3.2", "4.3.99", "4.3.0rc1", "4.3"])
-def test_registry_class_uses_the_fast_class_for_the_tested_minor_release(
+@pytest.mark.parametrize("version", ["4.3.2", "4.3.9", "4.3.99", "4.3.2.post1"])
+def test_registry_class_uses_the_fast_class_from_the_tested_release_on(
     monkeypatch, version
 ):
     monkeypatch.setattr(xmlschema, "__version__", version)
@@ -351,7 +351,28 @@ def test_registry_class_uses_the_fast_class_for_the_tested_minor_release(
 
 
 @pytest.mark.parametrize(
-    "version", ["4.2.9", "4.4.0", "4.30.0", "4.13.0", "5.0", "5.0.0", "3.3.0", "", "4"]
+    "version",
+    [
+        # Releases of the 4.3 series before the tested one, and its candidates.
+        "4.3.0",
+        "4.3.1",
+        "4.3.0rc1",
+        "4.3.2rc1",
+        # Parts that are missing or not numbers.
+        "4.3",
+        "4.3.x",
+        "4",
+        "",
+        # Other series.
+        "4.2.9",
+        "4.4.0",
+        "4.4.0.dev0",
+        "4.30.0",
+        "4.13.0",
+        "5.0",
+        "5.0.0",
+        "3.3.0",
+    ],
 )
 def test_registry_class_keeps_plain_xmlschema_for_an_untested_release(
     monkeypatch, version

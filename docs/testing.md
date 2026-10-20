@@ -35,8 +35,11 @@ so only the first test that uses a value compiles it, which takes about 100 ms w
 a small extra schema, and a test that enters the same value again, or changes only
 another key such as `VALIDATION` or `SOURCES`, starts with it ready. A different
 value still gets its own registry, and an extra schema file that changed on disk is
-checked again on every validation. The package keeps at most 64 compiled registries
-per process, about 1.3 MB each.
+guarded again on every validation and compiled again when its size or modification
+time differs. A test that rewrites the same schema file with the same size within
+one timestamp tick therefore keeps the registry compiled from the earlier content:
+change the size of the file between the two writes. The package keeps at most 64
+compiled registries per process, about 1.3 MB each.
 
 Add companion tests for empty content, misses, unsafe names, include/extends,
 escaping, and the response media type. When database or cache profiles are

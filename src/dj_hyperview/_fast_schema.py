@@ -24,11 +24,9 @@ from xmlschema.validators.elements import Xsd11Element
 from xmlschema.validators.simple_types import XsdSimpleType
 
 # ponytail: a plain cap on the count and the length, with no eviction; an LRU if the
-# memory held for the first values ever matters. A value of 64 characters or fewer
-# is kept: one of the 2,900 attribute values of four HyperTodo-like screens is longer,
-# and a limit of 256 was no faster there (under 0.2 percent) but can hold 20.5 MiB per
-# registry against 6.9 MiB (145 attribute declarations accept any string; 128 values
-# of astral characters each).
+# memory held for the first values ever matters. The caps bound what a document can
+# leave behind: MEMO_LIMIT values of at most MEMO_VALUE_LIMIT characters for each
+# attribute declaration.
 MEMO_LIMIT = 128
 MEMO_VALUE_LIMIT = 64
 

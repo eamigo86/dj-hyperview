@@ -4,14 +4,24 @@ from collections.abc import Iterator
 
 import pytest
 
+from tests.response_documents import EXTRA_XSD
+
+
+@pytest.fixture
+def extra_schema(tmp_path):
+    """Write the extra schema of the response tests and return its path."""
+    path = tmp_path / "extra.xsd"
+    path.write_text(EXTRA_XSD, encoding="utf-8")
+    return path
+
 
 @pytest.fixture
 def cold_schema_caches() -> Iterator[None]:
     """Start with no compiled registry or catalog and leave none behind.
 
-    The compiled results outlive ``override_settings``, because their keys hold every
-    input, so a test that counts compilations needs an empty cache, and a test that
-    compiles through a patched seam must not leave that result for the next test.
+    Compiled results outlive ``override_settings``, so a test that counts compilations
+    needs an empty cache, and a test that compiles through a patched seam must not
+    leave that result for the next test.
     """
     from dj_hyperview.schema import (
         _active_catalog,

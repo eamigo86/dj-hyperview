@@ -1,9 +1,8 @@
 """Compiled registries and catalogs outlive a change of the HYPERVIEW setting.
 
-Their cache keys already hold everything they depend on, the guarded schema files
-and the normalized extensions, so a test suite that enters ``override_settings`` with
-the same value must not compile the schema again, and one that changes the schema
-settings must still get the registry of the new settings.
+A test suite that enters ``override_settings`` with the same value must not compile
+the schema again, and one that changes the schema settings must still get the
+registry of the new settings.
 """
 
 from pathlib import Path

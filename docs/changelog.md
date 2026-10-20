@@ -6,30 +6,45 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Changed
 
+- Render a response in 23 to 52 percent less time than 0.1.0b3. The next three
+  entries (compiled templates, a faster validation registry and one extra-schema
+  check per response) add up as follows for a full `HyperviewTemplateResponse`
+  render of a HyperTodo-shaped workload with one extra schema, measured against
+  0.1.0b3 in 8 interleaved runs and reported as the median of the medians of the
+  runs. On Python 3.12 a navigation fragment (1 KB rendered) took 1.79 ms and takes 1.11, a list of
+  40 rows (73 KB rendered) 32.5 ms and 24.9, a settings screen (20 KB rendered) 10.3
+  ms and 4.95, and a dashboard (33 KB rendered) 19.2 ms and 10.1, which is 24 to 52
+  percent less. On Python 3.14 the same screens took 1.99, 38.2, 11.2 and 21.4 ms and
+  take 1.28, 29.3, 5.79 and 12.2, which is 23 to 48 percent less. Another workload
+  can gain more or less.
 - Compile each template once while it is unchanged. The template loader now keeps
   the Django templates it compiled and reuses one when the resolver returns the same
   template again, so a repeated render no longer validates the source and runs
   Django's compiler for every template it touches. Measured on Python 3.12 with a
   HyperTodo-shaped workload, a full response render takes 8 to 30 percent less: 1.58
-  to 1.27 ms for a navigation fragment of 1 KB, 7.4 to 5.2 ms for a settings screen,
-  12.8 to 10.7 ms for a dashboard of 25 KB of source and 27.6 to 25.3 ms for a list
-  of 40 rows, where rendering dominates. The resolver still runs on every render, so
-  invalidation, cache generations and the per-render revision snapshot behave as
-  before. A stored template is reused only when the new resolution matches it in
-  every field, including the source text, so a custom source whose `revision` does
-  not follow its content never serves stale code, and the template keeps the origin
-  it would have been compiled with. The source validation policy is part of the key,
-  and `HYPERVIEW`, `TEMPLATES` and `DEBUG` changes rebuild the default engine, which
-  starts with an empty cache. Validation and compile errors are not stored. The
-  memory is bounded for each engine at 256 templates and 524,288 characters of
-  source, with the least recently used template leaving first, and a template that
-  is published again replaces its previous version instead of adding to it; the
-  configuration guide estimates the memory a compiled template takes. A subclass
-  of `ResolverLoader` that overrides `get_contents()` or `get_template_sources()`
-  still compiles on every render, and the new `ResolverLoader.reset()` empties the
-  cache, as Django's loader contract expects. Compiled templates are now shared
-  between threads, as in Django's cached loader, so a custom template tag must keep
-  no per-render state on its nodes; the tags and filters of the package keep none.
+  to 1.27 ms for a navigation fragment (1 KB rendered), 7.4 to 5.2 ms for a settings
+  screen (20 KB), 12.8 to 10.7 ms for a dashboard (33 KB) and 27.6 to 25.3 ms for a
+  list of 40 rows (73 KB), where rendering dominates. The resolver still runs on
+  every render, so invalidation, cache generations and the per-render revision
+  snapshot behave as before. A stored template is reused only when the new
+  resolution matches it in every field, including the source text, so a custom
+  source whose `revision` does not follow its content never serves stale code, and
+  the template keeps the origin it would have been compiled with. The source
+  validation policy is part of the key, and `HYPERVIEW`, `TEMPLATES` and `DEBUG`
+  changes rebuild the default engine, which starts with an empty cache. Validation
+  and compile errors are not stored. The memory is bounded for each engine at 256
+  templates and 524,288 characters of source, with the least recently used template
+  leaving first, and a template that is published again replaces its previous
+  version instead of adding to it; the configuration guide estimates the memory a
+  compiled template takes. A subclass of `ResolverLoader` that overrides
+  `get_contents()` or `get_template_sources()` still compiles on every render, and
+  the new `ResolverLoader.reset()` empties the cache, as Django's loader contract
+  expects. Compiled templates are now shared between threads, as in Django's cached
+  loader, so a custom template tag must keep no per-render state on its nodes; the
+  tags and filters of the package keep none. The loader holds a lock for its cache,
+  so a `ResolverLoader`, and a `HyperviewEngine` once it has built its loader, can
+  no longer be copied with `copy.deepcopy()`; pickling them already failed in
+  0.1.0b3.
 - Validate rendered documents faster without changing a verdict. The compiled
   registry that validates every rendered document and fragment is now built with a
   small `xmlschema.XMLSchema11` subclass that answers three questions once instead
@@ -54,14 +69,15 @@ This page records user-visible release changes, including unpublished attempts.
   registered behaviors and for an extra schema. In a benchmark that renders four
   HyperTodo-shaped screens through `HyperviewTemplateResponse` on Python 3.12 with
   xmlschema 4.3.2, a full response took 12 to 38 percent less time than with a plain
-  registry: 12 percent for a navigation fragment of 1 KB, 16 percent for a list of 40
-  rows (73 KB), and 36 and 38 percent for a settings screen (20 KB) and a dashboard
-  (33 KB). Another document can gain more or less. The subclass relies on
-  xmlschema internals that are not documented API, so it is used only with an
-  xmlschema release it was tested with, the 4.3 series. Any other release in the
-  supported range (`>=4.3,<5`), or one whose internals are missing, gets the plain
-  `xmlschema.XMLSchema11` instead, with the same results at the previous speed. Extra
-  schemas that are compiled only to check them for conflicts keep the plain class.
+  registry: 12 percent for a navigation fragment (1 KB rendered), 16 percent for a
+  list of 40 rows (73 KB), and 36 and 38 percent for a settings screen (20 KB) and a
+  dashboard (33 KB). Another document can gain more or less. The subclass relies on
+  xmlschema internals that are not documented API. It was tested with xmlschema
+  4.3.2 and is used only with that release and the later releases of the 4.3 series.
+  Any other release in the supported range (`>=4.3,<5`), such as 4.3.0 or 4.3.1, or
+  one whose internals are missing, gets the plain `xmlschema.XMLSchema11` instead,
+  with the same verdicts at the previous speed. Extra schemas that are compiled only
+  to check them for conflicts keep the plain class.
 - Check the extra schemas once for each response instead of twice. A response
   guards every `EXTRA_SCHEMAS` file when it validates, which parses each file and
   its includes again, and it guarded them a second time when it committed the
@@ -72,14 +88,18 @@ This page records user-visible release changes, including unpublished attempts.
   response was rendered meets the current registry and limits, and so does a
   result whose settings changed before it was committed, and either one is
   validated again when the contract differs. Validation itself is unchanged and
-  still guards the extra schemas every time, so a schema file rewritten with the
-  same size and modification time is still caught by the next validation. On
-  Python 3.12 with one 5 KB extra schema, a full response took 0.1 to 0.3 ms less:
-  1.30 to 1.14 ms for a navigation fragment of 1 KB, 5.4 to 5.2 ms for a settings
-  screen of 20 KB and 10.8 to 10.5 ms for a dashboard of 33 KB, with no measurable
-  change for a list of 40 rows (73 KB). The saving grows with the number and size
-  of the extra schemas, and there is none without `EXTRA_SCHEMAS`.
-- Check an Admin draft in about half the time, with the same diagnostics. The
+  still guards the extra schemas every time: a schema file that was rewritten so that
+  it is unsafe, with a DOCTYPE, an `xs:override`, a reference outside its directory
+  or malformed XML, is rejected by the next validation. A rewrite that leaves the
+  file safe and keeps its size and modification time is not compiled again, because
+  the compiled registry is selected by path, size and modification time, as in
+  0.1.0b3. On Python 3.12 with one extra schema file of 5 KB, a full response took
+  0.1 to 0.3 ms less: 1.30 to 1.14 ms for a navigation fragment (1 KB rendered), 5.4
+  to 5.2 ms for a settings screen (20 KB) and 10.8 to 10.5 ms for a dashboard (33
+  KB), with no measurable change for a list of 40 rows (73 KB). The saving grows with
+  the number and size of the extra schemas, and there is none without
+  `EXTRA_SCHEMAS`.
+- Check an Admin draft in 39 to 51 percent less time, with the same diagnostics. The
   static check behind **Format and Validate** and the save preflight (`ADMIN.EDITOR`)
   copied the 82 KB schema catalog each time it ran, which is once for the draft, once
   for each include it expands and once for the composed result, and it asked the
@@ -92,19 +112,19 @@ This page records user-visible release changes, including unpublished attempts.
   diagnostics do not change, and a differential test pins them for drafts that
   repeat invalid values on several elements. On Python 3.12 with xmlschema 4.3.2,
   `validate_draft_source()` took 2.4 ms instead of 4.9 ms for a navigation fragment
-  of 1 KB, 23.9 instead of 42.2 for a list of 40 rows (9 KB), 10.0 instead of 16.3
-  for a settings screen (12 KB) and 33.2 instead of 55.3 for a dashboard (25 KB).
+  (2 KB of source), 23.9 instead of 42.2 for a list of 40 rows (9 KB), 10.0 instead
+  of 16.3 for a settings screen (12 KB) and 33.2 instead of 55.3 for a dashboard
+  (25 KB).
 - Keep the compiled schema when a test changes the `HYPERVIEW` setting. A change to
-  the setting used to empty the compiled registry and both catalogs, although they
-  are keyed by the guarded schema files and the normalized `SCHEMA_EXTENSIONS`,
-  which is everything they read. A test that entered `override_settings(HYPERVIEW=...)`
-  therefore compiled the schema again on its first validation, about 110 ms with an
-  extra schema, and once more when it left the override, however small the change.
-  The caches now keep their entries: the same value reuses the compiled registry, a
-  different `EXTRA_SCHEMAS` or `SCHEMA_EXTENSIONS` value selects its own, an extra
-  schema file that changed on disk is still guarded on every call and compiled again
-  when its fingerprint differs, and a limit under `VALIDATION` is read from the
-  current settings as before. Entering and leaving an override with the same value
+  the setting used to empty the compiled registry and both catalogs. A test that
+  entered `override_settings(HYPERVIEW=...)` therefore compiled the schema again on
+  its first validation, about 110 ms with an extra schema, and once more when it left
+  the override, however small the change. The caches now keep their entries: the same
+  value reuses the compiled registry, a different `EXTRA_SCHEMAS` or
+  `SCHEMA_EXTENSIONS` value selects its own, an extra schema file that changed on
+  disk is still guarded on every call and compiled again when its size or
+  modification time differs, and a limit under `VALIDATION` is read from the current
+  settings as before. Entering and leaving an override with the same value
   and validating once on each side took 216 ms and takes 15 ms, which is the rebuild
   of the settings snapshot and its system check. The base suite of this package ran in
   57 s and runs in 43 s, and its Admin profile in 22 s and 6 s. Production does

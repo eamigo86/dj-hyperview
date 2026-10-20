@@ -24,39 +24,9 @@ from dj_hyperview.http import (
     HyperviewResponse,
     HyperviewTemplateResponse,
 )
+from tests.response_documents import DOCUMENT, FRAGMENT, STRICT_XSD, TEMPLATES
 
-HV = "https://hyperview.org/hyperview"
-APP = "https://example.test/serialization"
-XS = "http://www.w3.org/2001/XMLSchema"
 SECRET = "credential-that-must-not-be-cached"
-EXTRA_XSD = (
-    f'<xs:schema xmlns:xs="{XS}" targetNamespace="{APP}" '
-    'elementFormDefault="qualified"><xs:element name="chip"/></xs:schema>'
-)
-STRICT_XSD = (
-    f'<xs:schema xmlns:xs="{XS}" targetNamespace="{APP}" '
-    'elementFormDefault="qualified"><xs:element name="chip"><xs:complexType>'
-    '<xs:attribute name="required-id" use="required"/></xs:complexType>'
-    "</xs:element></xs:schema>"
-)
-# Long enough for GZipMiddleware, which leaves a body under 200 bytes alone.
-DOCUMENT = (
-    f'<view xmlns="{HV}" xmlns:app="{APP}"><app:chip>{"ready " * 100}</app:chip></view>'
-)
-FRAGMENT = f'<text xmlns="{HV}">{"ready " * 100}</text>'
-TEMPLATES = [
-    {
-        "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "OPTIONS": {
-            "loaders": [
-                (
-                    "django.template.loaders.locmem.Loader",
-                    {"screen.xml": DOCUMENT, "fragment.xml": FRAGMENT},
-                )
-            ]
-        },
-    }
-]
 CACHES = {
     "default": {
         "BACKEND": "django.core.cache.backends.locmem.LocMemCache",
@@ -98,13 +68,6 @@ documents = pytest.mark.parametrize(
     [KINDS["response"], KINDS["template_response"]],
     ids=["response", "template_response"],
 )
-
-
-@pytest.fixture
-def extra_schema(tmp_path):
-    path = tmp_path / "extra.xsd"
-    path.write_text(EXTRA_XSD, encoding="utf-8")
-    return path
 
 
 @pytest.fixture
