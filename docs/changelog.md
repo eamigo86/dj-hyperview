@@ -143,7 +143,11 @@ This page records user-visible release changes, including unpublished attempts.
 - The bundled corrected schema revision is now `r4`, and the `r3` files are no longer
   shipped, as those of `r2` were not before. A project that kept a copy of the `r3`
   files, for example as a vendored reference or in a check that pins their hash, should
-  drop it or replace it with the `r4` files; the package never reads such a copy.
+  drop it or replace it with the `r4` files. The package never loads an external copy
+  of the `r3` files by itself. It reads one only if a file listed in `EXTRA_SCHEMAS`
+  is that copy or imports or includes it, and then rejects it with
+  `forbidden_schema_reference` (`dj_hyperview.E012`), because those files contain
+  `xs:override`, as it did before. Such a project should drop that entry or import.
   `HYPERVIEW_SCHEMA_VERSION` and `HYPERVIEW_VALIDATION_CONTRACT` do not change.
 - Check an Admin draft in 39 to 51 percent less time, with the same diagnostics. The
   static check behind **Format and Validate** and the save preflight (`ADMIN.EDITOR`)
