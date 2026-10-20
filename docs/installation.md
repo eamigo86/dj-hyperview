@@ -30,13 +30,14 @@ Database-backed templates and admin integration remain optional.
 document and fragment uses the same corrected XSD 1.1 registry automatically.
 No schema profile, validation mode, or callback needs to be configured.
 The registry speeds up repeated checks with internals of `xmlschema` that are not
-documented API. This version of the package was tested with `xmlschema` 4.3.2, and
-it uses them only with that release and the later releases of the 4.3 series. Any
-other release in the supported range (`>=4.3,<5`), such as 4.3.0 or 4.3.1, or a
-release whose internals are missing, gets a registry built with plain
-`xmlschema.XMLSchema11` instead: it validates as before and takes longer. The faster
-registry remembers an accepted attribute value only for a type whose check depends
-on the value alone; a type with an XSD 1.1 assertion facet is always checked in
+documented API. The fast registry is enabled only when the installed
+`xmlschema.__version__` is exactly `4.3.2`, the release verified by the differential
+tests. Every other supported release (`>=4.3,<5`), including later 4.3 patches,
+uses plain `xmlschema.XMLSchema11`: validation still runs in full, but takes longer.
+Adding another release to the allowlist requires explicit validation of that exact
+release first.
+The faster registry remembers an accepted attribute value only for a type whose
+check depends on the value alone; a type with an XSD 1.1 assertion facet is always checked in
 full. Differential tests and reasoning, not a proof for every schema, support that
 it gives the verdicts of the plain class.
 The deprecated `[schema]` installation extra is an empty compatibility alias:

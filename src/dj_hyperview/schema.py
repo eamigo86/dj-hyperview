@@ -73,20 +73,14 @@ def _xmlschema_module() -> Any:
     return xmlschema
 
 
-# The xmlschema releases whose internals the fast registry classes were tested
-# against: 4.3.2, the locked one, up to but excluding the next minor release. Any
-# other release, and a version that does not read as three numbers, compiles plain
-# XMLSchema11 registries whatever its internals look like.
-_FAST_REGISTRY_FIRST = (4, 3, 2)
-_FAST_REGISTRY_END = (4, 4, 0)
+# Only releases verified against the private xmlschema APIs may use the fast
+# registry. A later patch, pre-release or altered version string gets the plain
+# XMLSchema11 path until that exact release passes the differential tests.
+_FAST_REGISTRY_RELEASES = frozenset({"4.3.2"})
 
 
-def _tested_release(version: str) -> bool:
-    try:
-        release = tuple(int(part) for part in version.split(".")[:3])
-    except ValueError:
-        return False
-    return _FAST_REGISTRY_FIRST <= release < _FAST_REGISTRY_END
+def _tested_release(version: object) -> bool:
+    return type(version) is str and version in _FAST_REGISTRY_RELEASES
 
 
 def _registry_class(xmlschema: Any) -> Any:
@@ -101,7 +95,7 @@ def _registry_class(xmlschema: Any) -> Any:
         that module.
     """
     plain = xmlschema.XMLSchema11
-    if not _tested_release(str(getattr(xmlschema, "__version__", ""))):
+    if not _tested_release(getattr(xmlschema, "__version__", None)):
         return plain
     try:
         from ._fast_schema import FastXMLSchema11

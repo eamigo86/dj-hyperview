@@ -80,12 +80,12 @@ This page records user-visible release changes, including unpublished attempts.
   registry: 12 percent for a navigation fragment (1 KB rendered), 16 percent for a
   list of 40 rows (73 KB), and 36 and 38 percent for a settings screen (20 KB) and a
   dashboard (33 KB). Another document can gain more or less. The subclass relies on
-  xmlschema internals that are not documented API. It was tested with xmlschema
-  4.3.2 and is used only with that release and the later releases of the 4.3 series.
-  Any other release in the supported range (`>=4.3,<5`), such as 4.3.0 or 4.3.1, or
-  one whose internals are missing, gets the plain `xmlschema.XMLSchema11` instead,
-  which validates as 0.1.0b3 did, at the previous speed. Extra schemas that are
-  compiled only to check them for conflicts keep the plain class.
+  xmlschema internals that are not documented API. It is enabled only for the
+  exact verified version string `4.3.2`; even a later 4.3 patch, pre-release or
+  modified version string gets plain `xmlschema.XMLSchema11`, which still performs
+  full validation at the previous speed. Another release must pass explicit
+  validation before the allowlist can expand. Extra schemas compiled only to
+  check for conflicts keep the plain class.
 - Check the extra schemas once for each response instead of twice. A response
   guards every `EXTRA_SCHEMAS` file when it validates, which parses each file and
   its includes again, and it guarded them a second time when it committed the

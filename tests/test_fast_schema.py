@@ -354,29 +354,41 @@ def test_the_locked_xmlschema_is_a_tested_release():
     assert fast_schema.FastXMLSchema11.__base__ is xmlschema.XMLSchema11
 
 
-@pytest.mark.parametrize("version", ["4.3.2", "4.3.9", "4.3.99", "4.3.2.post1"])
-def test_registry_class_uses_the_fast_class_from_the_tested_release_on(
-    monkeypatch, version
-):
-    monkeypatch.setattr(xmlschema, "__version__", version)
+def test_registry_class_uses_the_fast_class_only_for_the_verified_release(monkeypatch):
+    monkeypatch.setattr(xmlschema, "__version__", "4.3.2")
 
     assert schema._registry_class(xmlschema) is _fast_schema().FastXMLSchema11
+
+
+class _VersionLike:
+    def __str__(self):
+        return "4.3.2"
 
 
 @pytest.mark.parametrize(
     "version",
     [
-        # Releases of the 4.3 series before the tested one, and its candidates.
+        # No later patch is verified merely by belonging to the same minor series.
+        "4.3.3",
+        "4.3.9",
+        "4.3.99",
         "4.3.0",
         "4.3.1",
         "4.3.0rc1",
         "4.3.2rc1",
-        # Parts that are missing or not numbers.
+        "4.3.2.post1",
+        "4.3.2.dev1",
+        "4.3.2+local",
+        "4.3.2.suffix",
+        "4.3.2 ",
+        " 4.3.2",
+        "04.3.2",
+        "4.03.2",
+        "4.3.02",
         "4.3",
         "4.3.x",
         "4",
         "",
-        # Other series.
         "4.2.9",
         "4.4.0",
         "4.4.0.dev0",
@@ -385,9 +397,14 @@ def test_registry_class_uses_the_fast_class_from_the_tested_release_on(
         "5.0",
         "5.0.0",
         "3.3.0",
+        None,
+        432,
+        ["4.3.2"],
+        _VersionLike(),
+        type("VersionSubclass", (str,), {})("4.3.2"),
     ],
 )
-def test_registry_class_keeps_plain_xmlschema_for_an_untested_release(
+def test_registry_class_keeps_plain_xmlschema_for_every_unverified_version(
     monkeypatch, version
 ):
     monkeypatch.setattr(xmlschema, "__version__", version)
@@ -395,13 +412,23 @@ def test_registry_class_keeps_plain_xmlschema_for_an_untested_release(
     assert schema._registry_class(xmlschema) is xmlschema.XMLSchema11
 
 
-def test_an_untested_release_compiles_the_registry_with_plain_xmlschema(monkeypatch):
-    monkeypatch.setattr(xmlschema, "__version__", "4.4.0")
+@pytest.mark.parametrize("version", ["4.3.3", "4.3.9", "4.3.99"])
+def test_an_unverified_patch_compiles_and_validates_with_plain_xmlschema(
+    monkeypatch, version
+):
+    monkeypatch.setattr(xmlschema, "__version__", version)
 
     registry = schema._cached_registry.__wrapped__((), _EMPTY_EXTENSIONS)
 
     assert type(registry) is xmlschema.XMLSchema11
     assert verdict(parse(SEEDS[2].encode()), registry) is None
+    invalid = parse(f'<view xmlns="{HV}" bogus="1"/>'.encode())
+    assert verdict(invalid, registry) == (
+        "schema",
+        'attribute "bogus" is not allowed on element "view"',
+        1,
+        None,
+    )
 
 
 def test_registry_class_keeps_plain_xmlschema_when_the_release_is_unknown(monkeypatch):
