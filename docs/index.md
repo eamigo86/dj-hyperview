@@ -23,9 +23,10 @@ schema, route, and application decision.
 
 ## Release maturity
 
-**0.1.0b3** adds reviewed security, validation, Admin and realtime reliability
-corrections. It retains the corrected 0.111.0 contract introduced in 0.1.0b2;
-0.1.0b1 began the beta line. Review the
+**0.1.0b4** reduces repeated template compilation, rendered-document validation
+and Admin draft-check work. It retains the security and reliability corrections
+of 0.1.0b3 and the corrected 0.111.0 contract introduced in 0.1.0b2, now using
+bundled schema revision `r4`; 0.1.0b1 began the beta line. Review the
 [beta compatibility policy](api-reference.md#beta-compatibility-policy),
 [verified scope](testing.md#verified-scope) and [roadmap](roadmap.md) before
 adoption. Entries under *Unreleased* in the [changelog](changelog.md) are not part
@@ -35,7 +36,7 @@ of any release. Beta is not universal production proof.
 
 - Python 3.12 through 3.14.
 - Django 5.2 and 6.1.
-- Hyperview markup contract 0.111.0 in 0.1.0b3 and b2; earlier b1 used 0.110.0. See
+- Hyperview markup contract 0.111.0 in 0.1.0b4, b3 and b2; earlier b1 used 0.110.0. See
   [Hyperview compatibility](hyperview-compatibility.md).
 
 dj-hyperview does not ship application screens, runtime application HXML,

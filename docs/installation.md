@@ -9,7 +9,7 @@ uv add dj-hyperview
 ```
 
 dj-hyperview is tested on Python 3.12, 3.13, and 3.14 with Django 5.2 and 6.1.
-Version 0.1.0b3 requires Python 3.12 or newer without an upper bound. Newer
+Version 0.1.0b4 requires Python 3.12 or newer without an upper bound. Newer
 interpreters are not blocked by package metadata but are not in the CI matrix.
 
 Register the package app:

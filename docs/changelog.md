@@ -4,14 +4,20 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+## 0.1.0b4 — 2026-10-20
+
 ### Changed
 
-- Render a response in 23 to 52 percent less time than 0.1.0b3. The next three
-  entries (compiled templates, a faster validation registry and one extra-schema
-  check per response) add up as follows for a full `HyperviewTemplateResponse`
-  render of a HyperTodo-shaped workload with one extra schema, measured against
-  0.1.0b3 in 8 interleaved runs and reported as the median of the medians of the
-  runs. On Python 3.12 a navigation fragment (1 KB rendered) took 1.79 ms and takes 1.11, a list of
+- Reduce response-render time with the next three changes: compiled templates,
+  a faster validation registry and one extra-schema check per response. An initial
+  combined measurement of those changes, before the flatter `r4` schema described
+  below, took 23 to 52 percent less time than 0.1.0b3 for a full
+  `HyperviewTemplateResponse` render of a HyperTodo-shaped workload with one extra
+  schema. It used 8 interleaved runs and reports the median of the medians of the
+  runs. These are pre-`r4` results, not a final beta4-versus-beta3 benchmark; the
+  later `r4` measurements below are incremental and their percentages must not be
+  added to these. On Python 3.12 a navigation fragment (1 KB rendered) took 1.79 ms
+  before those three changes and 1.11 after them, a list of
   40 rows (73 KB rendered) 32.5 ms and 24.9, a settings screen (20 KB rendered) 10.3
   ms and 4.95, and a dashboard (33 KB rendered) 19.2 ms and 10.1, which is 24 to 52
   percent less. On Python 3.14 the same screens took 1.99, 38.2, 11.2 and 21.4 ms and

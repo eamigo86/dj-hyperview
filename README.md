@@ -52,10 +52,11 @@ workflows, and an avatar travels as a base64 form field, not a multipart upload.
 
 ## Release maturity
 
-This documentation covers **0.1.0b3**, which includes the reviewed security and
-reliability corrections and continues to validate against the corrected Hyperview
-0.111.0 schema introduced in 0.1.0b2. The earlier 0.1.0b1 release used
-Hyperview 0.110.0.
+This documentation covers **0.1.0b4**, which reduces repeated template compilation,
+rendered-document validation and Admin draft-check work. It retains the security
+and reliability corrections of 0.1.0b3 and the corrected Hyperview 0.111.0 contract
+introduced in 0.1.0b2, now with the flatter bundled schema revision `r4`.
+The earlier 0.1.0b1 release used Hyperview 0.110.0.
 Entries under *Unreleased* in the
 [changelog](https://eamigo86.github.io/dj-hyperview/changelog/) describe changes
 that are not part of any release yet. Read the
@@ -70,9 +71,9 @@ guarantee production suitability.
 - **Tested Python:** 3.12, 3.13, or 3.14
 - **Django:** 5.2 or 6.1
 - **lxml:** 6.1.3 or newer, below 7
-- **Hyperview contract (0.1.0b3):** 0.111.0
+- **Hyperview contract (0.1.0b4):** 0.111.0
 
-Version 0.1.0b3 requires Python 3.12 or newer without an upper bound. CI tests
+Version 0.1.0b4 requires Python 3.12 or newer without an upper bound. CI tests
 Python 3.12 through 3.14; newer interpreters are not yet verified.
 
 ## Installation

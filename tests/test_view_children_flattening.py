@@ -64,12 +64,17 @@ def _canonical(particle):
     """Return a tree of the content model: what is matched, how often, in which group.
 
     An element or wildcard is ``("particle", matches, occurs)`` and a group is
-    ``(model, occurs, children)``. Only rewrites that keep the accepted language apply:
+    ``(model, occurs, children)``. For the bundled groups under test, normalize:
 
     - a sequence keeps its children in order, a choice sorts them (a set);
     - a group at 1..1 around a single particle is that particle;
     - a choice at 1..1 in a choice, or at 0..unbounded in a choice at 0..unbounded,
       gives its alternatives to the outer choice.
+
+    This is not a general XSD normalizer: flattening a required choice between
+    an element and an empty choice can lose the nullable alternative. The current
+    outer 0..unbounded choices already accept empty content (epsilon), making that
+    alternative redundant; no guard escape is demonstrated for these groups.
     """
     occurs = _occurs(particle)
     if not hasattr(particle, "model"):
