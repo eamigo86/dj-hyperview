@@ -185,7 +185,10 @@ class _HyperviewBody:
             self._is_rendered = True
 
     def _commit_result(self, result: _ValidatedHxml) -> None:
-        if not _is_current_hxml_result(result, fragment=self._fragment):
+        # Every caller passes the result it has just validated, so the extra schemas
+        # were guarded for it a moment ago: only a change of the settings, the limits
+        # or the root mode since then makes it stale.
+        if not _is_current_hxml_result(result, fragment=self._fragment, same_call=True):
             result = _validate_hxml_result(result.text, fragment=self._fragment)
         self._commit(result.content)
         self._validated_result = result
@@ -226,6 +229,7 @@ class _HyperviewBody:
             raise TemplateValidationError(
                 "http_encoding", "gzip must preserve the validated representation"
             )
+        # The result has waited for the middleware, so it gets the full check.
         if not _is_current_hxml_result(result, fragment=self._fragment):
             result = _validate_hxml_result(result.text, fragment=self._fragment)
         self._validated_result = result

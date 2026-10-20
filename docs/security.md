@@ -107,7 +107,11 @@ Django's deferred rendering and validate their generated representation before
 exposure. The integrated engine/response pipeline parses and checks XSD once;
 independent public render and response calls may each validate their input.
 Only a private immutable handoff reuses exact already-validated bytes and the
-matching registry/limit identity. A SafeString is not a bypass.
+matching registry/limit identity. A response that commits the result its own
+validation just produced does not guard the extra schemas a second time while the
+settings are unchanged; a result that has waited, such as a body compressed by
+`GZipMiddleware`, is checked against the current registry and limits again. A
+SafeString is not a bypass.
 
 Explicit plain Django `HttpResponse` objects, raw Django `engine.backend` calls,
 and callbacks returning another Django response remain outside this guarantee.

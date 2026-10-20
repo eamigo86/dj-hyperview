@@ -62,6 +62,23 @@ This page records user-visible release changes, including unpublished attempts.
   supported range (`>=4.3,<5`), or one whose internals are missing, gets the plain
   `xmlschema.XMLSchema11` instead, with the same results at the previous speed. Extra
   schemas that are compiled only to check them for conflicts keep the plain class.
+- Check the extra schemas once for each response instead of twice. A response
+  guards every `EXTRA_SCHEMAS` file when it validates, which parses each file and
+  its includes again, and it guarded them a second time when it committed the
+  validated result. A response now commits the result its own validation just
+  produced after comparing only the settings snapshot, the limits and the root mode
+  that result was validated under, so the guard runs once. A result that has waited
+  is still checked completely: the body that `GZipMiddleware` compresses after the
+  response was rendered meets the current registry and limits, and so does a
+  result whose settings changed before it was committed, and either one is
+  validated again when the contract differs. Validation itself is unchanged and
+  still guards the extra schemas every time, so a schema file rewritten with the
+  same size and modification time is still caught by the next validation. On
+  Python 3.12 with one 5 KB extra schema, a full response took 0.1 to 0.3 ms less:
+  1.30 to 1.14 ms for a navigation fragment of 1 KB, 5.4 to 5.2 ms for a settings
+  screen of 20 KB and 10.8 to 10.5 ms for a dashboard of 33 KB, with no measurable
+  change for a list of 40 rows (73 KB). The saving grows with the number and size
+  of the extra schemas, and there is none without `EXTRA_SCHEMAS`.
 
 ## 0.1.0b3 — 2026-10-14
 

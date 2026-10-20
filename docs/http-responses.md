@@ -201,6 +201,8 @@ Django briefly reads the compressed body before setting its encoding header;
 final iteration and serialization require `Content-Encoding: gzip`. HEAD can
 then suppress transport without losing the validated representation. This does
 not add another XML parse or XSD pass unless the validation contract has changed.
+The contract is checked again at this handoff, including the extra schema files,
+because the body has waited for the middleware.
 
 Only `gzip` (or no encoding, or `identity`) is supported. Any other
 `Content-Encoding`, such as `br` or `zstd`, raises `TemplateValidationError`
