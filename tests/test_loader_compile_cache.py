@@ -9,7 +9,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from django.template import Engine, TemplateDoesNotExist, TemplateSyntaxError
+from django.template import Context, Engine, TemplateDoesNotExist, TemplateSyntaxError
 from django.template.base import Template as DjangoTemplate
 from django.test import TestCase, override_settings
 
@@ -586,6 +586,130 @@ def test_a_deep_copied_compiled_template_renders_through_its_own_loader() -> Non
         assert duplicate.render() == template.render() == text("hv")
         assert_accounted(loader, entries=0)
         assert_accounted(original, entries=1)
+
+
+class SlotBase(ResolverLoader):
+    """An intermediate subclass that keeps a setting in a slot."""
+
+    __slots__ = ("inherited",)
+
+
+class SlotLoader(SlotBase):
+    """A subclass that keeps settings in slots: its own, a private and inherited."""
+
+    __slots__ = ("label", "__private", "unset")
+
+    def get_template(self, template_name, skip=None):
+        # A real subclass reads its settings while it loads: a lost slot fails here.
+        _ = (self.label, self.__private, self.inherited)
+        return super().get_template(template_name, skip)
+
+
+class StatefulLoader(ResolverLoader):
+    """A subclass that chooses what its state holds and how it is restored."""
+
+    def __getstate__(self):
+        state = dict(super().__getstate__())
+        del state["scratch"]  # transient: not part of the state
+        state["saved"] = ["by-getstate"]
+        return state
+
+    def __setstate__(self, state):
+        self.__dict__ = {**state, "restored": True}
+
+
+def warm(loader):
+    loader.get_template("one.xml")
+    return loader
+
+
+def slotted_loader():
+    source = Source({"one.xml": text("one"), "two.xml": text("two")})
+    loader = SlotLoader(Engine(), TemplateResolver([source]), ValidationSettings())
+    loader.label = ["own"]
+    loader._SlotLoader__private = ["private"]
+    loader.inherited = ["inherited"]
+    return warm(loader)
+
+
+def assert_an_independent_copy(loader, duplicate):
+    """The copy renders with a cache and lock of its own; the original is as it was."""
+    first = loader.get_template("one.xml")
+    size = loader._compiled_size
+    assert duplicate is not loader
+    assert duplicate._compiled_lock is not loader._compiled_lock
+    assert_accounted(duplicate, entries=0)
+
+    template = duplicate.get_template("one.xml")
+
+    assert template.render(Context()) == text("one")
+    assert template.origin.loader is duplicate
+    assert_accounted(duplicate, entries=1)
+    assert_accounted(loader, entries=1)
+    assert loader._compiled_size == size
+    assert loader.get_template("one.xml") is first
+
+
+@pytest.mark.parametrize(
+    "slot",
+    ["label", "_SlotLoader__private", "inherited"],
+    ids=["own", "private", "inherited"],
+)
+def test_a_deep_copy_keeps_the_slots_of_a_subclass_as_deep_copies(slot) -> None:
+    loader = slotted_loader()
+    value = getattr(loader, slot)
+
+    duplicate = copy.deepcopy(loader)
+
+    assert getattr(duplicate, slot) == value
+    assert getattr(duplicate, slot) is not value
+    getattr(duplicate, slot).append("changed")
+    assert getattr(loader, slot) == value
+    assert len(value) == 1
+    assert_an_independent_copy(loader, duplicate)
+
+
+def test_a_slot_left_unset_stays_unset_in_the_copy() -> None:
+    loader = slotted_loader()
+    assert not hasattr(loader, "unset")
+
+    duplicate = copy.deepcopy(loader)
+
+    assert not hasattr(duplicate, "unset")
+    assert_an_independent_copy(loader, duplicate)
+
+
+def test_a_deep_copy_keeps_the_slots_and_the_dict_of_a_subclass() -> None:
+    loader = slotted_loader()
+    loader.extra = ["in the dict"]
+
+    duplicate = copy.deepcopy(loader)
+
+    assert duplicate.extra == ["in the dict"]
+    assert duplicate.extra is not loader.extra
+    assert duplicate.resolver is not loader.resolver
+    assert duplicate.engine is not loader.engine
+    assert_an_independent_copy(loader, duplicate)
+
+
+def test_a_deep_copy_honours_the_state_methods_of_a_subclass() -> None:
+    source = Source({"one.xml": text("one")})
+    loader = StatefulLoader(Engine(), TemplateResolver([source]), ValidationSettings())
+    loader.scratch = ["transient"]
+    loader.tags = ["kept"]
+    warm(loader)
+
+    duplicate = copy.deepcopy(loader)
+
+    assert not hasattr(duplicate, "scratch")
+    assert duplicate.saved == ["by-getstate"]
+    assert duplicate.restored is True
+    assert duplicate.tags == ["kept"]
+    assert duplicate.tags is not loader.tags
+    assert loader.scratch == ["transient"]
+    assert not hasattr(loader, "saved")
+    assert not hasattr(loader, "restored")
+    assert_an_independent_copy(loader, duplicate)
 
 
 class SetUpTestDataCopy(TestCase):

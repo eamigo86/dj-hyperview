@@ -30,6 +30,17 @@ _active_snapshots: ContextVar[tuple[_ResolverSnapshot, ...]] = ContextVar(
 # The validation policy, then the source, name and origin of a resolution. The
 # revision is not part of it, so a republished template replaces its entry.
 _CompiledKey = tuple[ValidationSettings, str, str, str]
+# What a loader keeps for its compiled templates, which a deep copy starts again.
+_COMPILED_CACHE = ("_compiled", "_compiled_size", "_compiled_lock")
+
+
+def _without_compiled_cache(state: object) -> object:
+    # The state of an object is its dict, or a (dict, slots) pair when it has slots.
+    if isinstance(state, tuple) and len(state) == 2:
+        return _without_compiled_cache(state[0]), state[1]
+    if isinstance(state, dict):
+        return {k: v for k, v in state.items() if k not in _COMPILED_CACHE}
+    return state
 
 
 def _snapshot_for(
@@ -149,8 +160,10 @@ class ResolverLoader(Loader):
 
         The lock cannot be copied and the compiled templates belong to the original,
         so the copy gets a cache and a lock of its own and compiles its templates
-        again. Everything else is deep-copied, so the copy is as independent as a
-        copy of any other Django loader.
+        again. Everything else is copied as the default protocol would copy it: the
+        dict and the slots, or the state of a subclass's own __getstate__, which its
+        __setstate__ then restores. The copy is as independent as a copy of any other
+        Django loader.
 
         Args:
             memo: The memo of the running deep copy.
@@ -162,10 +175,18 @@ class ResolverLoader(Loader):
         # Registered first, as the default protocol does: the engine and the
         # templates this loader reaches lead back to it.
         memo[id(self)] = duplicate
+        state = deepcopy(_without_compiled_cache(self.__getstate__()), memo)
+        # Restored as copy restores it. The cache starts last, so a __setstate__
+        # that replaces the dict of the copy cannot leave it without one.
+        if state is not None:
+            if hasattr(duplicate, "__setstate__"):
+                duplicate.__setstate__(state)
+            else:
+                state, slots = state if isinstance(state, tuple) else (state, {})
+                vars(duplicate).update(state or {})
+                for name, value in slots.items():
+                    setattr(duplicate, name, value)
         duplicate._start_compiled_cache()
-        for name, value in vars(self).items():
-            if name not in vars(duplicate):
-                setattr(duplicate, name, deepcopy(value, memo))
         return duplicate
 
     def _resolve(self, name: str) -> ResolvedTemplate:
