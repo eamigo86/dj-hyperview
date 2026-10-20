@@ -45,30 +45,39 @@ This page records user-visible release changes, including unpublished attempts.
   so a `ResolverLoader`, and a `HyperviewEngine` once it has built its loader, can
   no longer be copied with `copy.deepcopy()`; pickling them already failed in
   0.1.0b3.
-- Validate rendered documents faster without changing a verdict. The compiled
-  registry that validates every rendered document and fragment is now built with a
-  small `xmlschema.XMLSchema11` subclass that answers three questions once instead
-  of for every element: which attributes of a group are required or carry a value
-  constraint, which type a registered `SCHEMA_EXTENSIONS["BEHAVIORS"]` action
-  selects, and whether an attribute value was already accepted. An element looks its
-  type up by the value of `action` in a dictionary only when every alternative that
-  has a test has the form the package generates, `@action = '<name>'`, and no
-  attribute inherited from an ancestor applies; any other test goes through XPath, as
-  before. The memory of accepted values keeps at most 128 values of at most 64
+- Validate rendered documents faster. The compiled registry that validates every
+  rendered document and fragment is now built with a small `xmlschema.XMLSchema11`
+  subclass that answers three questions once instead of for every element: which
+  attributes of a group are required or carry a value constraint, which type a
+  registered `SCHEMA_EXTENSIONS["BEHAVIORS"]` action selects, and whether an
+  attribute value was already accepted. An element looks its type up by the value of
+  `action` in a dictionary only when every alternative that has a test has the form
+  the package generates, `@action = '<name>'`, and no attribute inherited from an
+  ancestor applies; any other test goes through XPath, as before. The memory of
+  accepted values keeps at most 128 values of at most 64
   characters per attribute declaration, about 7 MiB per registry in the worst case,
-  and only for attribute types whose result depends on nothing but the value;
-  assertion facets are assumed to depend on the value alone. Attributes of type
-  `xs:ID`, `xs:IDREF`, `xs:IDREFS`, `xs:ENTITY`, `xs:ENTITIES`, `xs:QName` or
-  `xs:NOTATION`, or of a type derived from one of them, attributes with a `fixed` or
-  `default` value, and plain `xs:string`, `xs:token` and `xs:normalizedString` are
-  left alone, and a value that fails is never remembered. Hyperview's own `hv:ID` is
-  a restriction of `xs:token`, so its values are remembered. The accept or reject
-  outcome, the validation code, the message and the line do not change: a
-  differential test compares the registry with a plain `XMLSchema11` registry over a
-  seeded corpus of valid and mutated documents, for the Hyperview schema, for
-  registered behaviors and for an extra schema. In a benchmark that renders four
-  HyperTodo-shaped screens through `HyperviewTemplateResponse` on Python 3.12 with
-  xmlschema 4.3.2, a full response took 12 to 38 percent less time than with a plain
+  and only for attribute types whose result depends on nothing but the value. A type
+  with an XSD 1.1 assertion facet is never remembered, because an XPath assertion can
+  read more than the value, as `current-dateTime()` does: a type that declares an
+  assertion, inherits one from a base type, or is a list whose item type, or a union
+  with a member type, has one is checked in full every time. None of the simple types
+  of the bundled Hyperview schemas has an assertion facet, so this rule does not
+  reduce the speedup below for them. Attributes of type `xs:ID`, `xs:IDREF`,
+  `xs:IDREFS`, `xs:ENTITY`, `xs:ENTITIES`, `xs:QName` or `xs:NOTATION`, or of a type
+  derived from one of them, attributes with a `fixed` or `default` value, and plain
+  `xs:string`, `xs:token` and `xs:normalizedString` are left alone, and a value that
+  fails is never remembered. Hyperview's own `hv:ID` is a restriction of `xs:token`,
+  so its values are remembered. The accept or reject
+  outcome, the validation code, the message and the line are meant to stay those of a
+  plain `XMLSchema11` registry. A differential test compares the two over a seeded
+  corpus of valid and mutated documents, for the Hyperview schema, for registered
+  behaviors and for an extra schema that includes a type with an assertion facet, and
+  further tests move a controlled clock past the cutoff of a time-dependent
+  assertion. Those tests and the reasoning above show the equivalence for the cases
+  they cover; they do not prove it for every schema that `EXTRA_SCHEMAS` can load.
+  In a benchmark that renders four HyperTodo-shaped screens through
+  `HyperviewTemplateResponse` on Python 3.12 with xmlschema 4.3.2, a full response
+  took 12 to 38 percent less time than with a plain
   registry: 12 percent for a navigation fragment (1 KB rendered), 16 percent for a
   list of 40 rows (73 KB), and 36 and 38 percent for a settings screen (20 KB) and a
   dashboard (33 KB). Another document can gain more or less. The subclass relies on
@@ -76,8 +85,8 @@ This page records user-visible release changes, including unpublished attempts.
   4.3.2 and is used only with that release and the later releases of the 4.3 series.
   Any other release in the supported range (`>=4.3,<5`), such as 4.3.0 or 4.3.1, or
   one whose internals are missing, gets the plain `xmlschema.XMLSchema11` instead,
-  with the same verdicts at the previous speed. Extra schemas that are compiled only
-  to check them for conflicts keep the plain class.
+  which validates as 0.1.0b3 did, at the previous speed. Extra schemas that are
+  compiled only to check them for conflicts keep the plain class.
 - Check the extra schemas once for each response instead of twice. A response
   guards every `EXTRA_SCHEMAS` file when it validates, which parses each file and
   its includes again, and it guarded them a second time when it committed the

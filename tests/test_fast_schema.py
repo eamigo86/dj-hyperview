@@ -15,12 +15,14 @@ import sys
 import threading
 import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
+from datetime import datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
 import xmlschema
 from django.test import override_settings
+from elementpath import xpath_context
 from lxml import etree
 from xmlschema.validators.attributes import XsdAttributeGroup
 from xmlschema.validators.elements import Xsd11Element, XsdAlternative, XsdElement
@@ -30,6 +32,7 @@ from dj_hyperview import schema
 from dj_hyperview._schema_extensions import _EMPTY_EXTENSIONS
 from dj_hyperview.conf import get_settings
 from dj_hyperview.exceptions import TemplateValidationError
+from dj_hyperview.validation import validate_hxml
 
 HV = "https://hyperview.org/hyperview"
 VIEW = f"{{{HV}}}view"
@@ -117,12 +120,16 @@ EXTRA_SCHEMA = f"""<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
   <xs:simpleType name="percent"><xs:restriction base="xs:integer">
     <xs:minInclusive value="0"/><xs:maxInclusive value="100"/>
   </xs:restriction></xs:simpleType>
+  <xs:simpleType name="even"><xs:restriction base="xs:integer">
+    <xs:assertion test="$value mod 2 = 0"/>
+  </xs:restriction></xs:simpleType>
   <xs:element name="card-list"><xs:complexType><xs:sequence>
     <xs:element name="card" maxOccurs="unbounded"><xs:complexType>
       <xs:attribute name="id" type="xs:ID"/>
       <xs:attribute name="ref" type="xs:IDREF"/>
       <xs:attribute name="level" type="ex:level"/>
       <xs:attribute name="percent" type="ex:percent"/>
+      <xs:attribute name="even" type="ex:even"/>
       <xs:attribute name="rank" type="xs:integer" fixed="1"/>
       <xs:attribute name="weight" type="xs:integer" default="5"/>
       <xs:attribute name="title" type="xs:string" use="required"/>
@@ -294,15 +301,21 @@ def test_fast_registry_gives_the_verdicts_of_plain_xmlschema(registries, profile
         card = next(iter(fast.maps.elements[f"{{{EX}}}card-list"].type.content))
         memos = {name: a._memo for name, a in card.type.attributes.items()}
         # The corpus filled the memo of the types that allow one and left the
-        # others (ID, IDREF, a fixed value, a default, a plain string) without.
+        # others (ID, IDREF, an assertion, a fixed value, a default, a plain
+        # string) without.
         assert {name for name, memo in memos.items() if memo} == {"level", "percent"}
         assert {name for name, memo in memos.items() if memo is None} == {
             "id",
             "ref",
+            "even",
             "rank",
             "weight",
             "title",
         }
+        assert any(
+            'attribute "even" on element "card" has a value not allowed' in message
+            for message in messages
+        )
 
 
 def test_documents_of_the_contract_fixtures_are_valid_for_both_registries(registries):
@@ -894,3 +907,209 @@ def test_concurrent_validation_never_changes_a_verdict(fast):
     # Racing writers may each pass the bound check once before the first insert.
     assert len(number._memo) <= _fast_schema().MEMO_LIMIT + 8
     assert number._memo <= {value for value in values if expected[value]}
+
+
+ASSERTED = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version="1.1">
+  <xs:simpleType name="positive"><xs:restriction base="xs:integer">
+    <xs:assertion test="$value gt 0"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="window"><xs:restriction base="xs:integer">
+    <xs:assertion test="$value gt 0"/><xs:assertion test="$value lt 9"/>
+  </xs:restriction></xs:simpleType>
+  <xs:simpleType name="bounded"><xs:restriction base="positive">
+    <xs:maxInclusive value="9"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="positives"><xs:list itemType="positive"/></xs:simpleType>
+  <xs:simpleType name="someItems"><xs:restriction base="positives">
+    <xs:minLength value="1"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="positiveOrFlag">
+    <xs:union memberTypes="xs:boolean positive"/>
+  </xs:simpleType>
+  <xs:simpleType name="pair"><xs:restriction>
+    <xs:simpleType><xs:list itemType="xs:integer"/></xs:simpleType>
+    <xs:assertion test="count($value) = 2"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="notThree"><xs:restriction>
+    <xs:simpleType><xs:union memberTypes="xs:integer xs:boolean"/></xs:simpleType>
+    <xs:assertion test="string($value) ne '3'"/></xs:restriction></xs:simpleType>
+  <xs:simpleType name="positiveItems"><xs:list>
+    <xs:simpleType><xs:restriction base="xs:integer">
+      <xs:assertion test="$value gt 0"/></xs:restriction></xs:simpleType>
+  </xs:list></xs:simpleType>
+  <xs:simpleType name="positiveMember"><xs:union memberTypes="xs:boolean">
+    <xs:simpleType><xs:restriction base="xs:integer">
+      <xs:assertion test="$value gt 0"/></xs:restriction></xs:simpleType>
+  </xs:union></xs:simpleType>
+  <xs:simpleType name="small"><xs:restriction base="xs:integer">
+    <xs:minInclusive value="0"/><xs:maxInclusive value="9"/>
+  </xs:restriction></xs:simpleType>
+  <xs:simpleType name="smalls"><xs:list itemType="small"/></xs:simpleType>
+  <xs:simpleType name="smallOrFlag">
+    <xs:union memberTypes="xs:boolean small"/>
+  </xs:simpleType>
+  <xs:element name="root"><xs:complexType><xs:sequence>
+    <xs:element name="item" minOccurs="0" maxOccurs="unbounded">
+      <xs:complexType>
+        <xs:attribute name="positive" type="positive"/>
+        <xs:attribute name="window" type="window"/>
+        <xs:attribute name="bounded" type="bounded"/>
+        <xs:attribute name="positives" type="positives"/>
+        <xs:attribute name="someItems" type="someItems"/>
+        <xs:attribute name="positiveOrFlag" type="positiveOrFlag"/>
+        <xs:attribute name="pair" type="pair"/>
+        <xs:attribute name="notThree" type="notThree"/>
+        <xs:attribute name="positiveItems" type="positiveItems"/>
+        <xs:attribute name="positiveMember" type="positiveMember"/>
+        <xs:attribute name="small" type="small"/>
+        <xs:attribute name="smalls" type="smalls"/>
+        <xs:attribute name="smallOrFlag" type="smallOrFlag"/>
+      </xs:complexType>
+    </xs:element>
+  </xs:sequence></xs:complexType></xs:element>
+</xs:schema>"""
+ASSERTED_NAMES = {
+    "positive",
+    "window",
+    "bounded",
+    "positives",
+    "someItems",
+    "positiveOrFlag",
+    "pair",
+    "notThree",
+    "positiveItems",
+    "positiveMember",
+}
+ASSERTION_FREE_NAMES = {"small", "smalls", "smallOrFlag"}
+ASSERTED_VALUES = {
+    "positive": ["5", "-5", "0", "x"],
+    "window": ["5", "9", "0", "10"],
+    "bounded": ["5", "9", "10", "-1"],
+    "positives": ["1 2", "1 -2", "0", ""],
+    "someItems": ["1", "", "1 0", "2 3"],
+    "positiveOrFlag": ["true", "5", "-5", "x"],
+    "pair": ["1 2", "1", "1 2 3", ""],
+    "notThree": ["2", "3", "true", "x"],
+    "positiveItems": ["4 5", "4 -5", "0"],
+    "positiveMember": ["true", "7", "-7"],
+    "small": ["0", "9", "10", "-1"],
+    "smalls": ["1 2", "1 10", ""],
+    "smallOrFlag": ["true", "9", "10"],
+}
+
+
+@pytest.fixture
+def fast_asserted():
+    return _fast_schema().FastXMLSchema11(ASSERTED)
+
+
+def test_a_type_with_an_assertion_anywhere_in_its_chain_is_never_memoized(
+    fast_asserted,
+):
+    attributes = attributes_of(fast_asserted)
+
+    assert {name for name, a in attributes.items() if a._memo is None} == ASSERTED_NAMES
+    # The sibling types without an assertion keep their memo.
+    assert {name for name, a in attributes.items() if a._memo == set()} == (
+        ASSERTION_FREE_NAMES
+    )
+
+
+def test_values_of_types_with_assertions_agree_with_plain_xmlschema(fast_asserted):
+    plain = xmlschema.XMLSchema11(ASSERTED)
+    assert set(ASSERTED_VALUES) == ASSERTED_NAMES | ASSERTION_FREE_NAMES
+
+    for _ in range(2):
+        for name, candidates in ASSERTED_VALUES.items():
+            for value in candidates:
+                xml = document(**{name: value})
+                assert fast_asserted.is_valid(xml) == plain.is_valid(xml), (name, value)
+    # The types without an assertion still remember what they accepted.
+    assert attributes_of(fast_asserted)["small"]._memo == {"0", "9"}
+
+
+EXPIRY = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
+    xmlns:t="urn:expiry" targetNamespace="urn:expiry"
+    elementFormDefault="qualified" version="1.1">
+  <xs:simpleType name="futureTime"><xs:restriction base="xs:dateTime">
+    <xs:assertion test="$value gt current-dateTime()"/>
+  </xs:restriction></xs:simpleType>
+  <xs:simpleType name="laterTime"><xs:restriction base="t:futureTime">
+    <xs:maxInclusive value="9999-12-31T00:00:00"/>
+  </xs:restriction></xs:simpleType>
+  <xs:simpleType name="futureTimes"><xs:list itemType="t:futureTime"/></xs:simpleType>
+  <xs:simpleType name="futureOrFlag">
+    <xs:union memberTypes="xs:boolean t:futureTime"/>
+  </xs:simpleType>
+  <xs:element name="item"><xs:complexType>
+    <xs:attribute name="expires-at" type="t:futureTime"/>
+    <xs:attribute name="inherited" type="t:laterTime"/>
+    <xs:attribute name="items" type="t:futureTimes"/>
+    <xs:attribute name="member" type="t:futureOrFlag"/>
+  </xs:complexType></xs:element>
+</xs:schema>"""
+START = datetime(2026, 10, 20, 12, 0, 0)
+CUTOFF = START + timedelta(seconds=10)
+
+
+@pytest.fixture
+def clock(monkeypatch):
+    """Control the clock that elementpath reads for current-dateTime()."""
+    now = [START]
+    frozen = SimpleNamespace(now=lambda tz=None: now[0])
+    monkeypatch.setattr(xpath_context, "datetime", SimpleNamespace(datetime=frozen))
+    return now
+
+
+@pytest.fixture(scope="module")
+def expiry(tmp_path_factory):
+    path = tmp_path_factory.mktemp("expiry") / "expiry.xsd"
+    path.write_text(EXPIRY, encoding="utf-8")
+    state = schema._registry_state([path])
+    return (
+        path,
+        build(_EMPTY_EXTENSIONS, plain=True, state=state),
+        build(_EMPTY_EXTENSIONS, plain=False, state=state),
+    )
+
+
+@pytest.mark.parametrize("name", ["expires-at", "inherited", "items", "member"])
+def test_a_time_dependent_assertion_is_evaluated_on_every_validation(
+    expiry, clock, name
+):
+    path, plain, fast = expiry
+    stamp = CUTOFF.isoformat()
+    value = f"{stamp} {stamp}" if name == "items" else stamp
+    source = (
+        f'<view xmlns="{HV}" xmlns:t="urn:expiry"><t:item {name}="{value}"/></view>'
+    )
+    # Accepted before the cutoff, rejected from it on, accepted again when the
+    # clock goes back; the second check of every pair runs with a filled memo.
+    seconds = (0, 0, 5, 10, 10, 11, 11, 3600, 3, 3)
+    expected = [None, None, None, "schema", "schema", "schema", "schema"]
+    expected += ["schema", None, None]
+
+    def outcomes(check):
+        found = []
+        for second in seconds:
+            clock[0] = START + timedelta(seconds=second)
+            try:
+                check()
+            except TemplateValidationError as error:
+                found.append(error.code)
+            else:
+                found.append(None)
+        return found
+
+    def through(registry):
+        return outcomes(lambda: schema._validate_schema_root(parse(source), registry))
+
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [path]}):
+        assert isinstance(
+            schema._get_registry_snapshot()[1], _fast_schema().FastXMLSchema11
+        )
+        package = outcomes(lambda: validate_hxml(source))
+
+    assert {"plain": through(plain), "fast": through(fast), "package": package} == {
+        "plain": expected,
+        "fast": expected,
+        "package": expected,
+    }
+    item = fast.maps.elements["{urn:expiry}item"]
+    assert item.type.attributes[name]._memo is None

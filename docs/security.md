@@ -101,6 +101,13 @@ one to two seconds of CPU per large untrusted document at the defaults, and meas
 on yours. `MAX_BYTES`, `MAX_NODES`, and `MAX_DEPTH` remain the global bounds: lower
 them for untrusted input.
 
+Validation reuses its answer for a repeated attribute value only when the type's
+check depends on the value alone. A type with an XSD 1.1 assertion facet, declared,
+inherited, or reached through a list item type or a union member, is checked in full
+every time, for example when the assertion reads the current time. Differential tests
+and reasoning support that the verdicts match those of a plain `XMLSchema11`
+registry; they do not prove it for every schema loaded from `EXTRA_SCHEMAS`.
+
 Eager Hyperview responses and public body mutations validate before committing a
 replacement; invalid mutations preserve the previous body. Lazy responses retain
 Django's deferred rendering and validate their generated representation before

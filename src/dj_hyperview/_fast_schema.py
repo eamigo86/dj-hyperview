@@ -3,7 +3,8 @@
 Validating one rendered document asks every element instance the same questions
 again: which attributes are required, which carry a default, which type a behavior
 selects, and whether an attribute value is allowed. The subclasses here answer them
-once and keep the answer, without changing a single verdict.
+once and keep the answer. A value is only remembered for a type whose check depends on
+the value alone; the verdicts of the others are never reused.
 
 They build on xmlschema internals (the builders and the component classes are not
 documented API), so the importer uses them only with an xmlschema release they were
@@ -18,6 +19,7 @@ from functools import cached_property
 from typing import Any
 
 from xmlschema import XMLSchema11
+from xmlschema.names import XSD_ASSERTION
 from xmlschema.validators.attributes import Xsd11Attribute, XsdAttributeGroup
 from xmlschema.validators.builders import XsdBuilders
 from xmlschema.validators.elements import Xsd11Element
@@ -33,7 +35,8 @@ MEMO_VALUE_LIMIT = 64
 _XS = "{http://www.w3.org/2001/XMLSchema}"
 # The result depends on more than the value: an ID is recorded in the context to
 # catch duplicates, an IDREF or an ENTITY refers to what the context holds, and a
-# QName or a NOTATION resolves its prefix through the namespace context.
+# QName or a NOTATION resolves its prefix through the namespace context. An
+# assertion facet is the same kind of case and is detected by its facet.
 _CONTEXTUAL = frozenset(
     _XS + name
     for name in ("ID", "IDREF", "IDREFS", "ENTITY", "ENTITIES", "QName", "NOTATION")
@@ -44,16 +47,15 @@ _NO_GAIN = frozenset(_XS + name for name in ("string", "token", "normalizedStrin
 _ACTION_TEST = re.compile(r"@action = '([^'\"]*)'\Z")
 
 
-def _derived_names(xsd_type: Any) -> set[str | None]:
-    """Collect the names of a simple type and of every type it is built from.
+def _derived_types(xsd_type: Any) -> Iterator[Any]:
+    """Iterate a simple type and every type it is built from.
 
     Args:
         xsd_type: Simple type of an attribute declaration.
 
-    Returns:
-        The names along its bases, list item types and union members.
+    Yields:
+        The type, then its bases, list item types and union members, once each.
     """
-    names: set[str | None] = set()
     seen: set[int] = set()
     pending = [xsd_type]
     while pending:
@@ -61,11 +63,10 @@ def _derived_names(xsd_type: Any) -> set[str | None]:
         if current is None or id(current) in seen:
             continue
         seen.add(id(current))
-        names.add(current.name)
+        yield current
         pending.append(getattr(current, "base_type", None))
         pending.append(getattr(current, "item_type", None))
         pending.extend(getattr(current, "member_types", None) or ())
-    return names
 
 
 class FastAttributeGroup(XsdAttributeGroup):
@@ -117,15 +118,21 @@ class FastAttribute(Xsd11Attribute):
             not a function of the value alone.
         """
         xsd_type = self.type
-        reusable = (
-            self.fixed is None
-            and self.default is None
-            and isinstance(xsd_type, XsdSimpleType)
-            and xsd_type.name not in _NO_GAIN
-            and not _derived_names(xsd_type) & _CONTEXTUAL
-        )
-        # Assertion facets are taken to be functions of the value alone.
-        return set() if reusable else None
+        if (
+            self.fixed is not None
+            or self.default is not None
+            or not isinstance(xsd_type, XsdSimpleType)
+            or xsd_type.name in _NO_GAIN
+        ):
+            return None
+        # An XPath assertion can read more than the value (current-dateTime()), so a
+        # type with one anywhere in its chain is checked again every time.
+        if any(
+            derived.name in _CONTEXTUAL or XSD_ASSERTION in derived.facets
+            for derived in _derived_types(xsd_type)
+        ):
+            return None
+        return set()
 
     def raw_decode(self, obj: Any, validation: str, context: Any) -> Any:
         """Validate a value, skipping the work for one that was accepted before.
