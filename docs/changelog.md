@@ -79,6 +79,21 @@ This page records user-visible release changes, including unpublished attempts.
   screen of 20 KB and 10.8 to 10.5 ms for a dashboard of 33 KB, with no measurable
   change for a list of 40 rows (73 KB). The saving grows with the number and size
   of the extra schemas, and there is none without `EXTRA_SCHEMAS`.
+- Check an Admin draft in about half the time, with the same diagnostics. The
+  static check behind **Format and Validate** and the save preflight (`ADMIN.EDITOR`)
+  copied the 82 KB schema catalog each time it ran, which is once for the draft, once
+  for each include it expands and once for the composed result, and it asked the
+  attribute type whether each value was valid by building a validation context for
+  every attribute. It now reads the shared catalog, which is made of read-only
+  mappings and tuples so no check can change what the next one reads, and it asks a
+  type about a value once for each check, because the answer depends on the type and
+  the value alone; nothing is remembered between checks, and a value that carries a
+  template token is still not asked. The codes, messages, lines and order of the
+  diagnostics do not change, and a differential test pins them for drafts that
+  repeat invalid values on several elements. On Python 3.12 with xmlschema 4.3.2,
+  `validate_draft_source()` took 2.4 ms instead of 4.9 ms for a navigation fragment
+  of 1 KB, 23.9 instead of 42.2 for a list of 40 rows (9 KB), 10.0 instead of 16.3
+  for a settings screen (12 KB) and 33.2 instead of 55.3 for a dashboard (25 KB).
 
 ## 0.1.0b3 — 2026-10-14
 

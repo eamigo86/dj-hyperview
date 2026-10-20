@@ -683,6 +683,9 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
     compiled = _get_compiled_registry()
     known_namespaces = {item["namespace"] for item in elements.values()}
     diagnostics: list[dict[str, Any]] = []
+    # Whether a type accepts a value depends on nothing else, and a draft repeats
+    # its values; the answers live for this one check only.
+    validity: dict[tuple[Any, str], bool] = {}
     incomplete_line = scan.first_structure_line
     if scan.verbatim_line is not None:
         incomplete_line = min(incomplete_line or scan.verbatim_line, scan.verbatim_line)
@@ -762,8 +765,10 @@ def _static_schema_diagnostics(name: str, content: str) -> list[dict[str, Any]]:
             value = element.attrib[raw_name]
             invalid_value = False
             if value_marker not in value and structure_marker not in value:
-                declared_attribute = selected_type.attributes[attribute_key]
-                invalid_value = not declared_attribute.type.is_valid(value)
+                attribute_type = selected_type.attributes[attribute_key].type
+                if (attribute_type, value) not in validity:
+                    validity[attribute_type, value] = attribute_type.is_valid(value)
+                invalid_value = not validity[attribute_type, value]
             if invalid_value:
                 diagnostics.append(
                     _diagnostic(

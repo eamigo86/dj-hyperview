@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path, PurePosixPath
 from threading import RLock
+from types import MappingProxyType
 from typing import Any
 from urllib.parse import unquote, urlparse
 
@@ -471,28 +472,39 @@ def get_hyperview_catalog() -> dict[str, Any]:
     )
 
 
+def _read_only(value: Any) -> Any:
+    """Freeze nested dictionaries and lists so a shared result cannot be edited."""
+    if isinstance(value, dict):
+        return MappingProxyType({key: _read_only(item) for key, item in value.items()})
+    if isinstance(value, list):
+        return tuple(_read_only(item) for item in value)
+    return value
+
+
 @lru_cache(maxsize=64)
 def _cached_static_validation_catalog(
     state: tuple[_SchemaDependencies, ...],
     extensions: _SchemaExtensions = _EMPTY_EXTENSIONS,
-) -> dict[str, Any]:
-    """Compile namespace-preserving schema metadata for one registry state."""
+) -> Mapping[str, Any]:
+    """Compile read-only, namespace-preserving metadata for one registry state."""
     compiled = _compile_registry(state, extensions)
     catalog = _static_validation_catalog(compiled)
     catalog["catalog_format"] = 2
     catalog["behavior_variants"] = _behavior_variants(
         compiled, extensions, catalog["elements"]["behavior"]
     )
-    return catalog
+    return _read_only(catalog)
 
 
-def _get_static_validation_catalog() -> dict[str, Any]:
-    """Return detached schema metadata for context-free Admin validation."""
+def _get_static_validation_catalog() -> Mapping[str, Any]:
+    """Return the shared, read-only metadata for context-free Admin validation.
+
+    Every level is a mapping view or a tuple, so no caller can edit what the next
+    one reads and none pays for a copy. Callers that need to edit must copy it.
+    """
     config = get_settings()
-    return deepcopy(
-        _cached_static_validation_catalog(
-            _registry_state(config.extra_schemas), config.schema_extensions
-        )
+    return _cached_static_validation_catalog(
+        _registry_state(config.extra_schemas), config.schema_extensions
     )
 
 
