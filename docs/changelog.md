@@ -129,12 +129,14 @@ This page records user-visible release changes, including unpublished attempts.
   `hv:viewChildren` or `hv:nonListViewChildren` in its own types gets the flat group.
   Measured as `HyperviewTemplateResponse.render()` of a HyperTodo-shaped workload with
   warm caches and no database, not as the latency of a full HTTP request, a render took
-  16 to 24 percent less than before this change on Python 3.12 and 20 to 28 percent less
-  on Python 3.14 (median of the paired ratios of 8 interleaved runs). On Python 3.12 a
+  about 14 to 25 percent less than before this change on Python 3.12 and 15 to 30 percent
+  less on Python 3.14 (medians of the paired ratios of interleaved runs, over two
+  independent measurements). In one of those runs, on Python 3.12, a
   navigation fragment (1 KB rendered) took 1.13 ms and takes 0.87, a list of 40 rows (73
   KB) 25.3 ms and 21.2, a settings screen (20 KB) 5.11 ms and 3.95, and a dashboard (33
-  KB) 10.3 ms and 7.83. About half of the gain comes from the flat shape and the rest
-  from the order, so a document with another mix of elements can gain more or less.
+  KB) 10.3 ms and 7.83. Between a third and a half of the gain comes from the flat shape
+  and the rest from the order, so a document with another mix of elements can gain more
+  or less.
   Building a registry takes up to about 7 ms longer, once for each registry in a
   process, because the schema document is 49 lines longer and is checked when it is
   compiled, and a compiled registry keeps about 26 KiB more.
