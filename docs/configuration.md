@@ -324,20 +324,23 @@ The resolver still runs on every lookup, so invalidation, cache generations and
 the per-render revision snapshot behave as before. A stored template is reused
 only when the new resolution matches it in every field, content included, so a
 custom source whose `revision` does not follow its content never serves stale
-code. Validation and compile errors are never stored. The memory is bounded for
-each engine to 256 templates and 1 MiB of source, and the least recently used
-template leaves first. A compiled template takes about 5 to 25 times its source
-size, and up to about 100 times for dense markup, so that is about 25 MiB for
-typical templates and 100 MiB at worst. A source over 1 MiB is compiled on every
-render. A setting the compile depends on cannot change under a stored template:
-`HYPERVIEW`, `TEMPLATES` and `DEBUG` rebuild the default engine, which starts
-empty, and a loader that Django builds from `TEMPLATES` keeps the sources and
-limits it read when it was built, as it did before. `ResolverLoader.reset()`
-empties the loader. A subclass that overrides `get_contents()` or
-`get_template_sources()` compiles on every render, because an override may read
-state that the cache cannot see. Compiled templates are shared between threads, as
-in Django's cached loader, so a custom tag must keep no per-render state on its
-nodes; the tags and filters of this package keep none.
+code. Validation and compile errors are never stored. A template keeps one entry
+per source, name and origin, so a template that is published again replaces its
+previous version instead of adding to it. The memory is bounded for each engine
+to 256 templates and 524,288 characters (512 Ki) of source, and the least
+recently used template leaves first. A compiled template takes about 5 to 25
+bytes of memory per character of its source, and up to about 100 for dense
+markup, so that is about 12 MiB for typical templates and 50 MiB at worst. A
+source over 524,288 characters is compiled on every render. The settings a
+compile depends on are read when the engine is built: `HYPERVIEW`, `TEMPLATES`
+and `DEBUG` rebuild the default engine, which starts empty, and a loader that
+Django builds from `TEMPLATES` keeps the sources and limits it read when it was
+built, as it did before. `ResolverLoader.reset()` empties the loader. A subclass
+that overrides `get_contents()` or `get_template_sources()` compiles on every
+render, because an override may read state that the cache cannot see. Compiled
+templates are shared between threads, as in Django's cached loader, so a custom
+tag must keep no per-render state on its nodes; the tags and filters of this
+package keep none.
 
 The response path does not switch engines when `SOURCES` is empty. An empty
 source list therefore produces a normal missing-template result. To opt out and

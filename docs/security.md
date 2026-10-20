@@ -143,9 +143,9 @@ again before it hands any source to Django. The loader keeps the template it
 compiled while the source resolves to the same content, so an unchanged source is
 checked when it is first compiled, not on every render. A row that was saved
 before the limit existed, or written with `bulk_create()`, therefore fails when it
-is first served instead of occupying a worker. Filesystem templates are developer-owned and no user can
-write them; they pass through the same loader check, and only a deliberately
-pathological file reaches the limit.
+is first served instead of occupying a worker. Filesystem templates are
+developer-owned and no user can write them; they pass through the same loader
+check, and only a deliberately pathological file reaches the limit.
 
 Configured extra schemas may use local includes, imports, and redefines within
 their own directory. Remote schema references and traversal outside that root

@@ -26,8 +26,9 @@ class _ResolverSnapshot:
 _active_snapshots: ContextVar[tuple[_ResolverSnapshot, ...]] = ContextVar(
     "dj_hyperview_template_snapshots", default=()
 )
-# The validation policy, then the source, name, origin and revision of a resolution.
-_CompiledKey = tuple[ValidationSettings, str, str, str, str]
+# The validation policy, then the source, name and origin of a resolution. The
+# revision is not part of it, so a republished template replaces its entry.
+_CompiledKey = tuple[ValidationSettings, str, str, str]
 
 
 def _snapshot_for(
@@ -98,15 +99,15 @@ class ResolverLoader(Loader):
     The loader keeps the templates it compiled, so a template that resolves to the
     same content is validated and compiled once. The resolver still runs on every
     lookup, and a template is reused only while its whole resolution is unchanged.
-    The memory is bounded by an entry count and by the total source size, and the
-    least recently used template leaves first. A compiled template takes about 5 to
-    25 times its source size, and up to about 100 times for dense markup, so 1 MiB
-    of source stays under about 25 MiB for typical templates and about 100 MiB at
-    worst. An app of 40 templates and 150 KB of source fits about seven times over.
+    A template keeps one entry per source, name and origin, which a changed
+    resolution replaces. The memory is bounded by an entry count and by the total
+    number of characters of source, and the least recently used template leaves
+    first. The memory a compiled template takes is estimated under "Template engine
+    behavior" in the configuration guide.
     """
 
     _COMPILED_MAX_ENTRIES = 256
-    _COMPILED_MAX_BYTES = 1 << 20
+    _COMPILED_MAX_CHARS = 512 * 1024
 
     def __init__(
         self,
@@ -221,13 +222,7 @@ class ResolverLoader(Loader):
                 tried.append((origin, "Skipped to avoid recursion"))
                 continue
             resolved = origin.resolved
-            key = (
-                self.validation,
-                resolved.source,
-                resolved.name,
-                resolved.origin,
-                resolved.revision,
-            )
+            key = (self.validation, resolved.source, resolved.name, resolved.origin)
             with self._compiled_lock:
                 entry = self._compiled.get(key)
                 if entry is not None:
@@ -250,13 +245,13 @@ class ResolverLoader(Loader):
             previous = self._compiled.pop(key, None)
             if previous is not None:
                 self._compiled_size -= len(previous[0].content)
-            if size > self._COMPILED_MAX_BYTES:
+            if size > self._COMPILED_MAX_CHARS:
                 return
             self._compiled[key] = (resolved, template)
             self._compiled_size += size
             while (
                 len(self._compiled) > self._COMPILED_MAX_ENTRIES
-                or self._compiled_size > self._COMPILED_MAX_BYTES
+                or self._compiled_size > self._COMPILED_MAX_CHARS
             ):
                 _, (evicted, _) = self._compiled.popitem(last=False)
                 self._compiled_size -= len(evicted.content)

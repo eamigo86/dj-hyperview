@@ -10,7 +10,7 @@ This page records user-visible release changes, including unpublished attempts.
   the Django templates it compiled and reuses one when the resolver returns the same
   template again, so a repeated render no longer validates the source and runs
   Django's compiler for every template it touches. Measured on Python 3.12 with a
-  HyperTodo-shaped workload, a full response render takes 8 to 29 percent less: 1.58
+  HyperTodo-shaped workload, a full response render takes 8 to 30 percent less: 1.58
   to 1.27 ms for a navigation fragment of 1 KB, 7.4 to 5.2 ms for a settings screen,
   12.8 to 10.7 ms for a dashboard of 25 KB of source and 27.6 to 25.3 ms for a list
   of 40 rows, where rendering dominates. The resolver still runs on every render, so
@@ -21,9 +21,10 @@ This page records user-visible release changes, including unpublished attempts.
   it would have been compiled with. The source validation policy is part of the key,
   and `HYPERVIEW`, `TEMPLATES` and `DEBUG` changes rebuild the default engine, which
   starts with an empty cache. Validation and compile errors are not stored. The
-  memory is bounded for each engine at 256 templates and 1 MiB of source, with the
-  least recently used template leaving first; a compiled template takes about 5 to
-  25 times its source size, and up to about 100 times for dense markup. A subclass
+  memory is bounded for each engine at 256 templates and 524,288 characters of
+  source, with the least recently used template leaving first, and a template that
+  is published again replaces its previous version instead of adding to it; the
+  configuration guide estimates the memory a compiled template takes. A subclass
   of `ResolverLoader` that overrides `get_contents()` or `get_template_sources()`
   still compiles on every render, and the new `ResolverLoader.reset()` empties the
   cache, as Django's loader contract expects. Compiled templates are now shared

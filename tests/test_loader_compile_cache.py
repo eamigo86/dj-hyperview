@@ -1,5 +1,6 @@
 """The resolver loader compiles each resolved template once while it is unchanged."""
 
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from threading import Barrier
@@ -75,6 +76,14 @@ def loader_for(source, validation=None):
     )
 
 
+def assert_accounted(loader, entries=None):
+    """The byte count must match the stored contents, whatever happened before."""
+    stored = [resolved.content for resolved, _ in loader._compiled.values()]
+    assert loader._compiled_size == sum(map(len, stored))
+    if entries is not None:
+        assert len(stored) == entries
+
+
 @pytest.fixture
 def counts():
     """Count the Django compiles and the loader's source validations."""
@@ -131,6 +140,43 @@ def test_a_new_revision_is_compiled_again(counts) -> None:
     assert counts.validated.call_count == 3
 
 
+def test_republishing_a_template_keeps_one_entry_and_the_live_byte_count() -> None:
+    """A superseded revision must not stay in memory until the LRU evicts it."""
+    source = Source({"screen.xml": text("")})
+    loader = loader_for(source)
+
+    for n in range(1, 21):  # every revision is longer than the one it replaces
+        source.templates["screen.xml"] = text("x" * n)
+        loader.get_template("screen.xml")
+
+    assert_accounted(loader, entries=1)
+    assert loader._compiled_size == len(text("x" * 20))
+
+
+def test_a_shrinking_republish_leaves_the_smaller_byte_count() -> None:
+    source = Source({"screen.xml": text("x" * 50)})
+    loader = loader_for(source)
+    loader.get_template("screen.xml")
+
+    source.templates["screen.xml"] = text("x")
+    loader.get_template("screen.xml")
+
+    assert_accounted(loader, entries=1)
+    assert loader._compiled_size == len(text("x"))
+
+
+def test_a_republish_that_outgrows_the_budget_drops_the_old_entry(monkeypatch) -> None:
+    monkeypatch.setattr(ResolverLoader, "_COMPILED_MAX_CHARS", 3 * len(text("a")))
+    source = Source({"screen.xml": text("a")})
+    loader = loader_for(source)
+    loader.get_template("screen.xml")
+
+    source.templates["screen.xml"] = text("x" * 1000)
+    loader.get_template("screen.xml")
+
+    assert_accounted(loader, entries=0)
+
+
 def test_changed_content_under_the_same_revision_is_never_served_stale(
     counts,
 ) -> None:
@@ -153,6 +199,7 @@ def test_changed_content_under_the_same_revision_is_never_served_stale(
 def test_another_source_or_origin_is_a_different_entry(counts, field) -> None:
     source = Source({"screen.xml": text("one")}, identity="first", prefix="first")
     engine = engine_for(source)
+    loader = engine.backend.engine.template_loaders[0]
     assert engine.get_template("screen.xml").origin.name == "first:screen.xml"
 
     setattr(source, field, "second")
@@ -161,6 +208,11 @@ def test_another_source_or_origin_is_a_different_entry(counts, field) -> None:
     assert counts.compiled.call_count == 2
     assert template.origin.name == f"{source.prefix}:screen.xml"
     assert template.origin.resolved.source == source.identity
+    for value in ("first", "second"):  # each keeps its entry, so switching is a hit
+        setattr(source, field, value)
+        engine.get_template("screen.xml")
+    assert counts.compiled.call_count == 2
+    assert_accounted(loader, entries=2)
 
 
 def test_a_field_outside_the_key_that_differs_is_a_miss_with_the_fresh_origin(
@@ -197,7 +249,7 @@ def test_the_entry_count_is_bounded_and_the_oldest_use_leaves_first(
 
 def test_the_total_source_size_is_bounded(counts, monkeypatch) -> None:
     size = len(text("a"))
-    monkeypatch.setattr(ResolverLoader, "_COMPILED_MAX_BYTES", 2 * size)
+    monkeypatch.setattr(ResolverLoader, "_COMPILED_MAX_CHARS", 2 * size)
     engine = engine_for(Source({f"{n}.xml": text(n) for n in "abc"}))
 
     for name in ("a", "b", "a", "c"):
@@ -209,23 +261,10 @@ def test_the_total_source_size_is_bounded(counts, monkeypatch) -> None:
     assert counts.compiled.call_count == 4
 
 
-def test_a_source_larger_than_the_whole_budget_is_never_cached(
+def test_a_source_larger_than_the_whole_budget_is_never_cached_and_evicts_nothing(
     counts, monkeypatch
 ) -> None:
-    monkeypatch.setattr(ResolverLoader, "_COMPILED_MAX_BYTES", 3 * len(text("a")))
-    engine = engine_for(Source({"a.xml": text("a"), "big.xml": text("x" * 1000)}))
-    engine.render("a.xml")
-
-    engine.render("big.xml")
-    engine.render("big.xml")
-
-    assert counts.compiled.call_count == 3
-    engine.render("a.xml")  # the oversized source did not push it out
-    assert counts.compiled.call_count == 3
-
-
-def test_a_source_that_cannot_fit_does_not_evict_what_fits(counts, monkeypatch) -> None:
-    monkeypatch.setattr(ResolverLoader, "_COMPILED_MAX_BYTES", 2 * len(text("a")))
+    monkeypatch.setattr(ResolverLoader, "_COMPILED_MAX_CHARS", 2 * len(text("a")))
     engine = engine_for(
         Source({"a.xml": text("a"), "b.xml": text("b"), "big.xml": text("x" * 1000)})
     )
@@ -233,10 +272,12 @@ def test_a_source_that_cannot_fit_does_not_evict_what_fits(counts, monkeypatch) 
     engine.render("b.xml")
 
     engine.render("big.xml")
+    engine.render("big.xml")
+    assert counts.compiled.call_count == 4  # big is compiled on every render
 
-    engine.render("a.xml")
+    engine.render("a.xml")  # and it did not push out what fits
     engine.render("b.xml")
-    assert counts.compiled.call_count == 3
+    assert counts.compiled.call_count == 4
 
 
 def test_a_stricter_validation_policy_is_enforced_on_the_next_render() -> None:
@@ -269,20 +310,13 @@ def test_lowering_a_validation_limit_is_enforced_on_the_next_render() -> None:
         assert render_template("screen.xml") == text("hv")
 
 
-@pytest.mark.parametrize(
-    "change",
-    [
-        {"HYPERVIEW": {"SOURCES": STUB_SOURCES, "VALIDATION": {"MAX_DEPTH": 8}}},
-        {"TEMPLATES": []},
-        {"DEBUG": True},
-    ],
-)
-def test_the_settings_a_compile_depends_on_rebuild_the_default_engine(change) -> None:
+def test_a_templates_change_rebuilds_the_default_engine_and_its_cache() -> None:
+    """HYPERVIEW and DEBUG changes are covered by the tests above and test_engine."""
     with override_settings(HYPERVIEW={"SOURCES": STUB_SOURCES}):
         before = _default_engine().backend.engine.template_loaders[0]
         before.get_template("screen.xml")
 
-        with override_settings(**change):
+        with override_settings(TEMPLATES=[]):
             after = _default_engine().backend.engine.template_loaders[0]
 
         assert after is not before
@@ -365,26 +399,31 @@ def test_validation_errors_are_not_cached(counts) -> None:
     assert counts.compiled.call_count == 0
 
 
-def test_a_loader_that_overrides_a_step_compiles_every_time(counts) -> None:
+@pytest.mark.parametrize("step", ["get_contents", "get_template_sources"])
+def test_a_loader_that_overrides_a_step_compiles_every_time(counts, step) -> None:
     """An override may read ambient state, so its result is not shared."""
 
     class Subclass(ResolverLoader):
-        def get_contents(self, origin):
-            return super().get_contents(origin)
+        pass
 
+    def override(self, *args):
+        return getattr(super(Subclass, self), step)(*args)
+
+    setattr(Subclass, step, override)
     source = Source({"screen.xml": text("one")})
-    resolver = TemplateResolver([source])
-    subclass = Subclass(Engine(), resolver, ValidationSettings())
+    subclass = Subclass(Engine(), TemplateResolver([source]), ValidationSettings())
     patched = loader_for(source)
 
     assert subclass.get_template("screen.xml") is not subclass.get_template(
         "screen.xml"
     )
-    with patch.object(patched, "get_contents", wraps=patched.get_contents):
+    with patch.object(patched, step, wraps=getattr(patched, step)):
         assert patched.get_template("screen.xml") is not patched.get_template(
             "screen.xml"
         )
     assert counts.compiled.call_count == 4
+    assert_accounted(subclass, entries=0)
+    assert_accounted(patched, entries=0)
 
 
 def test_reset_forgets_the_compiled_templates() -> None:
@@ -429,3 +468,44 @@ def test_concurrent_renders_share_compiled_templates_safely(counts) -> None:
     for rendered, thread, i in results:
         assert rendered == text(f"{i % 3}:&lt;{thread}-{i}&gt;")
     assert 3 <= counts.compiled.call_count <= 3 * threads
+
+
+@pytest.fixture
+def fast_thread_switching():
+    """Make the interpreter switch threads often, so an unguarded race shows up."""
+    previous = sys.getswitchinterval()
+    sys.setswitchinterval(1e-6)
+    try:
+        yield
+    finally:
+        sys.setswitchinterval(previous)
+
+
+def test_threads_that_hit_evict_and_replace_keep_the_accounting_exact(
+    fast_thread_switching, monkeypatch
+) -> None:
+    budget = 3 * len(text("")) + 150
+    monkeypatch.setattr(ResolverLoader, "_COMPILED_MAX_ENTRIES", 3)
+    monkeypatch.setattr(ResolverLoader, "_COMPILED_MAX_CHARS", budget)
+    # Sizes differ, so both the entry cap and the character budget evict.
+    names = [f"screen{n}.xml" for n in range(8)]
+    source = Source({name: text("x" * 10 * (n + 1)) for n, name in enumerate(names)})
+    loader = loader_for(source)
+    threads = 8
+    barrier = Barrier(threads)
+
+    def work(thread):
+        barrier.wait(timeout=10)
+        for i in range(150):
+            n = (thread * 3 + i * 5) % len(names)
+            if i % 25 == 0:  # republish, so a hit races a replacement
+                source.templates[names[n]] = text("x" * (10 * (n + 1) + i % 7))
+            loader.get_template(names[n])
+
+    with ThreadPoolExecutor(threads) as pool:
+        for future in [pool.submit(work, thread) for thread in range(threads)]:
+            future.result(timeout=60)  # raises what the thread raised
+
+    assert len(loader._compiled) <= 3
+    assert loader._compiled_size <= budget
+    assert_accounted(loader)
