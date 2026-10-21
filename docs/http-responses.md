@@ -153,6 +153,50 @@ def home(request: HttpRequest) -> HttpResponse:
 
 A separate URL for each representation avoids the problem altogether.
 
+## Cache public responses with Django
+
+Use Django's [`cache_page`](https://docs.djangoproject.com/en/6.1/topics/cache/#the-per-view-cache)
+only for a **public, token-free screen** whose bytes are safe to share across
+callers. This example returns one static HXML screen to Hyperview clients and
+plain text to other clients; neither branch reads a user, session, cookie or
+tenant. The outer cache decorator sees the `Vary` header set by the inner
+[`vary_on_headers`](https://docs.djangoproject.com/en/6.1/topics/cache/#using-vary-headers)
+decorator *before* it captures the rendered response:
+
+```python
+from django.http import HttpRequest, HttpResponse
+from django.views.decorators.cache import cache_page
+from django.views.decorators.vary import vary_on_headers
+
+from dj_hyperview import HyperviewTemplateResponse, detect_hyperview_request
+
+
+@cache_page(30, key_prefix="public-hyperview-home")
+@vary_on_headers("Accept", "X-Hyperview-Version")
+def public_home(request: HttpRequest) -> HttpResponse:
+    if detect_hyperview_request(request):
+        return HyperviewTemplateResponse(request, "screens/public-home.xml")
+    return HttpResponse("Public home", content_type="text/plain")
+```
+
+The template must contain only public content. Django renders a lazy
+`HyperviewTemplateResponse` before storing it; a cache hit reuses those
+validated bytes rather than rendering again. `HyperviewMiddleware` does **not**
+add `Vary` for you. If a representation depends on another request header,
+include that header in `Vary` before cache capture; a separate URL per
+representation is simpler when possible.
+
+Do **not** apply this pattern to authenticated, user-, session-, tenant-,
+locale- or version-specific screens, or to CSRF/token-bearing forms, unless you
+have designed and tested complete isolation of every variant. In particular,
+`cache_page` does not automatically partition by authentication or cookies, and
+adding `Vary: Cookie` alone is not a substitute for a security review. Never
+cache the SSE endpoint. Set a short TTL appropriate to data freshness and plan
+explicit HTTP-cache invalidation when public content changes; an SSE
+invalidation hint does not purge an HTTP response cache. This is separate from
+dj-hyperview's source cache and compiled-template cache: clearing those does
+not clear `cache_page`, and expiring `cache_page` does not clear them.
+
 ## Lazy rendering and HEAD requests
 
 Template responses remain unrendered until `render()`. Invalid output raises
