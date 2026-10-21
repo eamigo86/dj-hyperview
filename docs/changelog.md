@@ -4,6 +4,15 @@ This page records user-visible release changes, including unpublished attempts.
 
 ## Unreleased
 
+### Changed
+
+- Exercise real minimum and latest-supported `xmlschema` installs in separate CI
+  jobs, alongside the existing locked Python/Django compatibility matrix.
+- Document Django response caching for public, token-free screens, with a tested
+  `cache_page` example and explicit representation and invalidation boundaries.
+- Clarify the original upstream XSD byte identity versus the package's distinct
+  corrected `r4` schema; correct the pre-`r4` render range to 23–52 percent.
+
 ## 0.1.0b4 — 2026-10-20
 
 ### Changed
@@ -19,7 +28,7 @@ This page records user-visible release changes, including unpublished attempts.
   added to these. On Python 3.12 a navigation fragment (1 KB rendered) took 1.79 ms
   before those three changes and 1.11 after them, a list of
   40 rows (73 KB rendered) 32.5 ms and 24.9, a settings screen (20 KB rendered) 10.3
-  ms and 4.95, and a dashboard (33 KB rendered) 19.2 ms and 10.1, which is 24 to 52
+  ms and 4.95, and a dashboard (33 KB rendered) 19.2 ms and 10.1, which is 23 to 52
   percent less. On Python 3.14 the same screens took 1.99, 38.2, 11.2 and 21.4 ms and
   take 1.28, 29.3, 5.79 and 12.2, which is 23 to 48 percent less. Another workload
   can gain more or less.
