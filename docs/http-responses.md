@@ -189,13 +189,14 @@ representation is simpler when possible.
 Do **not** apply this pattern to authenticated, user-, session-, tenant-,
 locale- or version-specific screens, or to CSRF/token-bearing forms, unless you
 have designed and tested complete isolation of every variant. In particular,
-`cache_page` does not automatically partition by authentication or cookies, and
-adding `Vary: Cookie` alone is not a substitute for a security review. Never
-cache the SSE endpoint. Set a short TTL appropriate to data freshness and plan
-explicit HTTP-cache invalidation when public content changes; an SSE
-invalidation hint does not purge an HTTP response cache. This is separate from
-dj-hyperview's source cache and compiled-template cache: clearing those does
-not clear `cache_page`, and expiring `cache_page` does not clear them.
+`cache_page` is not a per-user cache: do not assume authentication, session
+or cookie state is fully isolated. Adding `Vary: Cookie` alone is not a
+substitute for a security review. Never cache the SSE endpoint. Set a short TTL
+appropriate to data freshness and plan explicit HTTP-cache invalidation when
+public content changes; an SSE invalidation hint does not purge an HTTP
+response cache. HTTP response caching is separate from dj-hyperview's source
+and compiled-template caches: clearing those does not clear `cache_page`, and
+expiring `cache_page` does not clear them.
 
 ## Lazy rendering and HEAD requests
 

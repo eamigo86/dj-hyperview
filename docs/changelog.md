@@ -10,8 +10,7 @@ This page records user-visible release changes, including unpublished attempts.
   jobs, alongside the existing locked Python/Django compatibility matrix.
 - Document Django response caching for public, token-free screens, with a tested
   `cache_page` example and explicit representation and invalidation boundaries.
-- Clarify the original upstream XSD byte identity versus the package's distinct
-  corrected `r4` schema; correct the pre-`r4` render range to 23–52 percent.
+- Correct the pre-`r4` render range to 23–52 percent.
 
 ## 0.1.0b4 — 2026-10-20
 
