@@ -98,6 +98,43 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
           verbose: true
 
+  xmlschema-compatibility:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        xmlschema: ["4.3.0", "latest"]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7
+        with:
+          version: "0.12.22"
+      - name: Install supported xmlschema boundary outside the lock
+        env:
+          XMLSCHEMA_TARGET: ${{ matrix.xmlschema }}
+        run: |
+          python="$RUNNER_TEMP/xmlschema-compat/bin/python"
+          uv venv "$RUNNER_TEMP/xmlschema-compat" --python 3.12
+          uv pip install --python "$python" -e . pytest pytest-django packaging
+          if [ "$XMLSCHEMA_TARGET" = "latest" ]; then
+            uv pip install --python "$python" --upgrade 'xmlschema>=4.3,<5'
+          else
+            uv pip install --python "$python" 'xmlschema==4.3.0'
+          fi
+          "$python" -c 'import xmlschema; print("xmlschema:", xmlschema.__version__)'
+      - name: Validate public schema behavior on the installed release
+        env:
+          DJHV_XMLSCHEMA_COMPAT_VERSION: ${{ matrix.xmlschema }}
+        run: >-
+          "$RUNNER_TEMP/xmlschema-compat/bin/python" -m pytest -q
+          tests/test_xmlschema_compatibility.py tests/test_schema_validation.py
+
   redis:
     if: ${{ toJSON(inputs.redis) != 'false' }}
     needs: quality
@@ -142,7 +179,7 @@ jobs:
           verbose: true
 
   artifacts:
-    needs: [quality, compatibility]
+    needs: [quality, compatibility, xmlschema-compatibility]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:

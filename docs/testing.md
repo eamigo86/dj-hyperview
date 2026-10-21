@@ -64,6 +64,7 @@ CI; dependency ranges alone are not a test result.
 | --- | --- | --- |
 | Python | `3.12`, `3.13`, `3.14` | Six Python/Django compatibility cells, with deprecations treated as errors. |
 | Django | `5.2.17`, `6.1.1` | The base suite and separate optional database/Admin profile in each cell. |
+| xmlschema | `4.3.0`, latest stable `<5` | Two separate Python 3.12 jobs install real releases outside `uv.lock` and run public XSD validation tests. The minimum uses plain `XMLSchema11`; only the locked `4.3.2` uses the optimized registry. |
 | Database engines | `django.db.backends.sqlite3` | Isolated in-memory default/replica databases, alias routing, commit/rollback and publication controls. |
 | Editor JavaScript | `24` | Node tests for the package's editor and documentation JavaScript, not a native app runner. |
 | Redis client | `8.1.0` | The scoped real-Redis transport profile, which installs the locked `redis` group, plus deterministic failure/lifecycle controls. `7.4.1` is the declared floor of the `[realtime]` extra and is not run against a live service. |
@@ -110,6 +111,14 @@ independently. The runner compares exact counters in the fresh `coverage.xml`,
 not rounded percentages, and rejects missing or invalid reports. It also keeps
 the combined 95% threshold. Use this runner rather than a plain `pytest` command
 when checking the complete coverage contract.
+
+The xmlschema boundary jobs use a fresh `uv venv` and `uv pip install`, rather than
+`uv run --locked`, to exercise the declared minimum and the newest stable
+release allowed by `>=4.3,<5` at CI execution time. They run
+`tests/test_xmlschema_compatibility.py` and `tests/test_schema_validation.py`
+against the installed release; the six locked Python/Django cells retain the
+full suite, differential optimized-registry tests and coverage thresholds. A
+green boundary job is not a full suite or coverage result at that version.
 
 The local default profile requires no Redis service or network. Live Redis
 acceptance requires `--redis` and an explicit service URL. CI also runs the Redis

@@ -331,3 +331,19 @@ def test_ci_still_runs_the_quality_and_packaging_gates() -> None:
     commands = "\n".join(step.get("run", "") for step in _steps(_workflow("ci.yml")))
 
     assert [gate for gate in CI_GATES if gate not in commands] == []
+
+
+def test_xmlschema_boundary_job_uses_real_installs_and_gates_artifacts() -> None:
+    jobs = _workflow("ci.yml")["jobs"]
+    job = jobs["xmlschema-compatibility"]
+    versions = job["strategy"]["matrix"]["xmlschema"]
+    commands = "\n".join(step.get("run", "") for step in job["steps"])
+
+    assert versions == ["4.3.0", "latest"]
+    assert "uv venv" in commands
+    assert "uv pip install" in commands
+    assert "xmlschema==4.3.0" in commands
+    assert "xmlschema>=4.3,<5" in commands
+    assert "tests/test_xmlschema_compatibility.py" in commands
+    assert "tests/test_schema_validation.py" in commands
+    assert "xmlschema-compatibility" in _needs(jobs["artifacts"])
