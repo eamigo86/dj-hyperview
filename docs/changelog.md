@@ -6,6 +6,9 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Changed
 
+- Document that the original Hyperview 0.113.0 XSDs match the 0.111.0/0.112.0
+  files while the native client now requires React Navigation 7; the active
+  corrected `r4` validation contract and package version remain unchanged.
 - Exercise real minimum and latest-supported `xmlschema` installs in separate CI
   jobs, alongside the existing locked Python/Django compatibility matrix.
 - Document Django response caching for public, token-free screens, with a tested

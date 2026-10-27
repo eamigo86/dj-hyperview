@@ -41,6 +41,17 @@ tarball digest and a SHA-256 for each upstream XSD, and the `r4` manifest holds
 the digests of the corrected entry point and catalog. The test suite verifies
 them; the package does not re-check them at runtime.
 
+## Hyperview 0.113.0 client
+
+The four original XSDs published with `hyperview@0.113.0` are byte-identical
+to the upstream 0.111.0 and 0.112.0 files. No new schema asset, corrected `r4`
+revision, or dj-hyperview version is needed for that client release. This
+comparison covers the XML contract only: Hyperview 0.113.0 requires React
+Navigation 7 in the mobile host, and its option component now exposes the
+existing `selected` attribute as an accessibility state. Client navigation and
+native behavior need their own tests and device acceptance; server-side schema
+validation cannot prove either.
+
 ## History: 0.110.0
 
 The upstream 0.110.0 XSDs remain in the package unchanged, together with the
@@ -55,8 +66,8 @@ written against 0.110.0 and is described in
 
 - The package never runs the Hyperview client, so schema acceptance does not prove
   that a native component, behavior or route exists in your app.
-- The repository records provenance for Hyperview 0.110.0 and 0.111.0 only. It
-  makes no statement about later Hyperview releases; compare their XSDs with the
-  shipped files before relying on them.
+- The repository records bundled provenance for Hyperview 0.110.0 and 0.111.0
+  only. The 0.113.0 comparison above does not bundle new files or establish a
+  blanket compatibility range for future releases.
 - The reference mobile matrix in [Mobile Getting Started](mobile-getting-started.md)
   is a tested example, not a compatibility range.
