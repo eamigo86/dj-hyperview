@@ -41,16 +41,26 @@ tarball digest and a SHA-256 for each upstream XSD, and the `r4` manifest holds
 the digests of the corrected entry point and catalog. The test suite verifies
 them; the package does not re-check them at runtime.
 
-## Hyperview 0.113.0 client
+## Hyperview 0.113.0 and 0.114.0 clients
 
-The four original XSDs published with `hyperview@0.113.0` are byte-identical
-to the upstream 0.111.0 and 0.112.0 files. No new schema asset, corrected `r4`
-revision, or dj-hyperview version is needed for that client release. This
-comparison covers the XML contract only: Hyperview 0.113.0 requires React
-Navigation 7 in the mobile host, and its option component now exposes the
-existing `selected` attribute as an accessibility state. Client navigation and
-native behavior need their own tests and device acceptance; server-side schema
-validation cannot prove either.
+The four original XSDs published with `hyperview@0.113.0` and `hyperview@0.114.0`
+are byte-identical to the upstream 0.111.0 and 0.112.0 files. No new schema asset,
+corrected `r4` revision, or dj-hyperview version is needed for either client
+release. The 0.114.0 source changes touch no request header, fragment handling or
+content type that dj-hyperview relies on. This comparison covers the XML contract
+only:
+
+- Hyperview 0.113.0 requires React Navigation 7 in the mobile host, and its option
+  component now exposes the existing `selected` attribute as an accessibility
+  state.
+- Hyperview 0.114.0 adds `@react-navigation/native-stack` as a peer dependency and
+  renders stacks with it on iOS (Android and web keep the JavaScript stack). It also
+  changes how `close`, `back` and `navigate` behave from routes that are not
+  focused, refreshes render-time behaviors of `hyper-ref` elements, and fires a
+  navigator's `load` behaviors once per element.
+
+Client navigation and native behavior need their own tests and device acceptance;
+server-side schema validation cannot prove either.
 
 ## History: 0.110.0
 
