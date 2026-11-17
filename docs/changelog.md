@@ -6,8 +6,8 @@ This page records user-visible release changes, including unpublished attempts.
 
 ### Changed
 
-- Document that the original Hyperview 0.113.0 and 0.114.0 XSDs match the
-  0.111.0/0.112.0 files while the native client now requires React Navigation 7
+- Document that the original Hyperview 0.113.0, 0.114.0 and 0.115.0 XSDs match
+  the 0.111.0/0.112.0 files while the native client now requires React Navigation 7
   and, from 0.114.0, `@react-navigation/native-stack` for iOS stacks; the active
   corrected `r4` validation contract and package version remain unchanged.
 - Exercise real minimum and latest-supported `xmlschema` installs in separate CI
