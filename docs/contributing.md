@@ -33,30 +33,59 @@ shortfall. Tests belong in the same work unit as the behavior they protect.
 
 ## Python contract
 
-Public modules, classes, functions, and methods use complete Google-style
-docstrings. Include `Args`, `Returns`, and `Raises` only when they apply. Parameter
-and return type hints are mandatory; do not repeat types in
-docstrings. Do not place backticks inside Python docstrings.
+Three rules cover every Python docstring.
+
+A. **Complete Google style for everything public.** Every public module, class,
+function and method has a complete Google-style docstring with exact, non-empty
+sections. Public means:
+
+- an importable module;
+- a name without a leading underscore, or a name listed in `__all__`;
+- a class member that is not private.
+
+`Args:` also documents `*args` and `**kwargs`. Include `Args:`, `Returns:`,
+`Yields:` and `Raises:` only when they apply.
+
+B. **Types live in the signature.** Parameters and return values carry type hints.
+`Args:`, `Returns:`/`Yields:` and `Raises:` describe behavior and do not repeat the
+types.
+
+C. **Plain text.** No docstring contains backticks, including the docstrings of
+private, nested and dunder functions.
 
 Tools enforce only part of that contract.
 
 - `ruff check` (D1) rejects a public module, class, function or method without a
-  docstring. Ruff treats a name or a module that starts with an underscore as
-  private and skips it.
-- `ruff check` (D417, Google convention) rejects a parameter missing from an `Args`
-  section. It checks only a docstring that already has an `Args` section, so it
-  never asks for one.
+  docstring, dunder methods included (D105). Ruff treats a name or a module that
+  starts with an underscore as private and skips it, and it does not read `__all__`,
+  so it never asks for the module docstring of an underscore module or for the
+  docstring of an underscore name that `__all__` exports. The test below covers
+  exported names.
+- `ruff check` (D417, Google convention) rejects a parameter, `*args` and
+  `**kwargs` included, missing from an `Args` section, and so catches an empty
+  `Args` section on a function that has parameters. It checks only a docstring that
+  already has an `Args` section, so it never asks for one.
 - `ruff check` (ANN) rejects a function in `src/`, public or private, whose
   parameters, `*args`, `**kwargs` or return are not annotated. `Any` is allowed,
   because ANN401 is ignored.
-- `tests/test_public_api_quality.py` rejects backticks in docstrings and requires a
-  docstring on every exported name and on every public member it inherits, including
-  those defined in underscore modules.
+- `tests/test_public_api_quality.py` rejects backticks in the docstring of every
+  module, class and function under `src/dj_hyperview`, nested and private ones
+  included, and requires a docstring on every exported name and on every public
+  member it inherits, including those defined in underscore modules.
 
-Tests, tools and generated migrations are exempt from the docstring rules, and tests
-and tools from the annotation rules. Everything else is convention that review
-checks by hand: the `Returns` and `Raises` sections, an `Args` section where
-parameters call for one, and the quality of every description.
+No tool checks these, so review checks them by hand:
+
+- `Yields:` on a generator, `Returns:` and `Raises:` completeness, and an `Args:`
+  section where parameters call for one;
+- exact section headings, and sections that are empty or misspelled;
+- types repeated inside a docstring;
+- the module docstring of an underscore module;
+- the quality of every description.
+
+Tests and tools are exempt from the docstring and annotation rules, and generated
+migrations from the docstring rules, as the Ruff configuration in `pyproject.toml`
+exempts them. Rule C still applies to every docstring in `tests/` and `tools/`
+that exists, although no tool checks it there.
 
 ## Documentation contract
 
