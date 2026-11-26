@@ -1,20 +1,24 @@
 """Public immutable events for committed database template mutations."""
 
+from collections.abc import Iterator
 from dataclasses import FrozenInstanceError
+from typing import Never
 from unittest.mock import patch
 
 import pytest
 from django.db import transaction
-from django.db.models import F, Value
+from django.db.models import F, Model, Value
 from django.db.models.functions import Concat
 from django.test import override_settings
 
+from dj_hyperview.signals import TemplateInvalidation
 from tests.test_database_signals import dual_signal_model as dual_signal_model
 
 pytestmark = pytest.mark.django_db(transaction=True, databases=("default", "replica"))
 
 
 def test_event_is_public_and_snapshots_mutable_names() -> None:
+    """The invalidation event is public and snapshots mutable names."""
     import dj_hyperview
     from dj_hyperview.signals import TemplateInvalidation, template_invalidated
 
@@ -33,6 +37,7 @@ def test_event_is_public_and_snapshots_mutable_names() -> None:
 
 
 def test_event_reuses_canonical_name_validation() -> None:
+    """The invalidation event reuses the canonical template name validation."""
     from dj_hyperview.exceptions import InvalidTemplateName
     from dj_hyperview.signals import TemplateInvalidation
 
@@ -42,6 +47,11 @@ def test_event_reuses_canonical_name_validation() -> None:
 
 @pytest.mark.parametrize("names", ["screen.xml", b"screen.xml"])
 def test_event_does_not_treat_one_name_as_a_collection(names: object) -> None:
+    """The invalidation event does not treat one name as a collection.
+
+    Args:
+        names: A single name given instead of a collection.
+    """
     from dj_hyperview.signals import TemplateInvalidation
 
     with pytest.raises(TypeError):
@@ -50,6 +60,11 @@ def test_event_does_not_treat_one_name_as_a_collection(names: object) -> None:
 
 @pytest.mark.parametrize("using", [None, [], ""])
 def test_event_requires_an_immutable_database_alias(using: object) -> None:
+    """The invalidation event requires an immutable database alias.
+
+    Args:
+        using: Value given as the database alias.
+    """
     from dj_hyperview.signals import TemplateInvalidation
 
     with pytest.raises(ValueError):
@@ -57,12 +72,17 @@ def test_event_requires_an_immutable_database_alias(using: object) -> None:
 
 
 @pytest.fixture
-def received():
+def received() -> Iterator[list[tuple[object, TemplateInvalidation, bool]]]:
+    """Collect every invalidation event that the signal delivers.
+
+    Yields:
+        The list that receives each sender, event and autocommit state.
+    """
     from dj_hyperview.signals import template_invalidated
 
     events = []
 
-    def receive(sender, event, **kwargs):
+    def receive(sender: object, event: TemplateInvalidation, **kwargs: object) -> None:
         events.append((sender, event, transaction.get_autocommit(using=event.using)))
 
     template_invalidated.connect(receive, weak=False)
@@ -99,8 +119,20 @@ def received():
     INSTALLED_APPS=["dj_hyperview", "dj_hyperview.contrib.database"],
 )
 def test_supported_mutations_emit_after_commit_without_cache(
-    dual_signal_model, received, operation, names
-):
+    dual_signal_model: type[Model],
+    received: list[tuple[object, TemplateInvalidation, bool]],
+    operation: str,
+    names: set[str],
+) -> None:
+    """Every supported mutation emits the event after commit without a cache.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+        received: Events that the signal delivered, with the sender and the autocommit
+            state.
+        operation: Mutation that the test performs.
+        names: Names that the event must carry.
+    """
     from dj_hyperview.contrib.database.services import (
         delete_template,
         publish_template,
@@ -162,7 +194,17 @@ def test_supported_mutations_emit_after_commit_without_cache(
     assert committed is True
 
 
-def test_alias_and_names_remain_bound_to_the_mutation(dual_signal_model, received):
+def test_alias_and_names_remain_bound_to_the_mutation(
+    dual_signal_model: type[Model],
+    received: list[tuple[object, TemplateInvalidation, bool]],
+) -> None:
+    """The alias and the names of the event stay bound to the mutation.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+        received: Events that the signal delivered, with the sender and the autocommit
+            state.
+    """
     with transaction.atomic(using="default"):
         with transaction.atomic(using="replica"):
             template = dual_signal_model.objects.using("replica").create(
@@ -180,8 +222,16 @@ def test_alias_and_names_remain_bound_to_the_mutation(dual_signal_model, receive
 
 
 def test_rollback_and_irrelevant_or_empty_mutations_emit_nothing(
-    dual_signal_model, received
-):
+    dual_signal_model: type[Model],
+    received: list[tuple[object, TemplateInvalidation, bool]],
+) -> None:
+    """Rolled-back, irrelevant and empty mutations emit no event.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+        received: Events that the signal delivered, with the sender and the autocommit
+            state.
+    """
     model = dual_signal_model
     template = model.objects.create(name="old.xml", content="<view />")
     received.clear()
@@ -204,25 +254,35 @@ def test_rollback_and_irrelevant_or_empty_mutations_emit_nothing(
 
 @pytest.mark.parametrize("cache_fails", [False, True])
 def test_same_callback_emits_after_cache_and_preserves_cache_exception(
-    dual_signal_model, received, cache_fails
-):
+    dual_signal_model: type[Model],
+    received: list[tuple[object, TemplateInvalidation, bool]],
+    cache_fails: bool,
+) -> None:
+    """One commit callback emits after the cache and keeps a cache failure.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+        received: Events that the signal delivered, with the sender and the autocommit
+            state.
+        cache_fails: Whether the cache invalidation raises.
+    """
     from dj_hyperview.exceptions import SourceUnavailable
     from dj_hyperview.signals import template_invalidated
 
     failure = SourceUnavailable("cache:test", "controlled failure")
     order = []
 
-    def cache(*names):
+    def cache(*names: str) -> None:
         assert names == ("new.xml",)
         order.append("cache")
         if cache_fails:
             raise failure
 
-    def broken_receiver(**kwargs):
+    def broken_receiver(**kwargs: object) -> Never:
         order.append("broken receiver")
         raise RuntimeError("controlled receiver failure")
 
-    def later_receiver(**kwargs):
+    def later_receiver(**kwargs: object) -> None:
         order.append("later receiver")
 
     template_invalidated.connect(broken_receiver, weak=False)
@@ -239,7 +299,7 @@ def test_same_callback_emits_after_cache_and_preserves_cache_exception(
             ) as register,
         ):
 
-            def mutate():
+            def mutate() -> None:
                 with transaction.atomic():
                     dual_signal_model.objects.create(name="new.xml", content="<view />")
                     assert order == []

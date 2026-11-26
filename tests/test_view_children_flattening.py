@@ -7,6 +7,8 @@ as canonical trees. A tree keeps the order and the grouping of a sequence, which
 list of leaves does not: (A|B)* and A* B* have the same leaves.
 """
 
+from typing import Any
+
 import pytest
 import xmlschema
 from django.test import override_settings
@@ -30,21 +32,31 @@ ONCE, STAR = (1, 1), (0, None)
 
 
 @pytest.fixture(scope="module")
-def active():
+def active() -> Any:
+    """Return the compiled registry of the active schema.
+
+    Returns:
+        The shared compiled schema registry.
+    """
     with override_settings(HYPERVIEW={}):
         return _get_compiled_registry()
 
 
 @pytest.fixture(scope="module")
-def upstream():
+def upstream() -> Any:
+    """Return the compiled upstream schema chain.
+
+    Returns:
+        The compiled schema of the upstream chain.
+    """
     return _compile_schema(UPSTREAM_CHAIN)
 
 
-def _occurs(particle):
+def _occurs(particle: Any) -> tuple[int, int | None]:
     return particle.min_occurs, particle.max_occurs  # maxOccurs unbounded is None
 
 
-def _matches(particle):
+def _matches(particle: Any) -> str | tuple[Any, ...]:
     if particle.name:
         return particle.name
     return (
@@ -56,11 +68,11 @@ def _matches(particle):
     )
 
 
-def _splices(child, outer):
+def _splices(child: tuple[Any, ...], outer: tuple[int, int | None]) -> bool:
     return child[0] == "choice" and (child[1] == ONCE or child[1] == outer == STAR)
 
 
-def _canonical(particle):
+def _canonical(particle: Any) -> tuple[Any, ...]:
     """Return a tree of the content model: what is matched, how often, in which group.
 
     An element or wildcard is ("particle", matches, occurs) and a group is
@@ -92,15 +104,22 @@ def _canonical(particle):
     return particle.model, occurs, tuple(children)
 
 
-def _depth(particle):
+def _depth(particle: Any) -> int:
     nested = (_depth(child) for child in particle if hasattr(child, "model"))
     return 1 + max(nested, default=0)
 
 
 @pytest.mark.parametrize("name", CONTAINERS)
 def test_flat_groups_keep_the_content_model_of_the_upstream_groups(
-    name, active, upstream
-):
+    name: str, active: Any, upstream: Any
+) -> None:
+    """The flat groups keep the content model of the upstream groups.
+
+    Args:
+        name: Name of the container element.
+        active: Compiled registry of the active schema.
+        upstream: Compiled upstream schema chain.
+    """
     flat = active.maps.elements[f"{{{HV}}}{name}"].type.content
     nested = upstream.maps.elements[f"{{{HV}}}{name}"].type.content
     assert _canonical(flat) == _canonical(nested)
@@ -108,7 +127,7 @@ def test_flat_groups_keep_the_content_model_of_the_upstream_groups(
     assert _depth(flat) <= _depth(nested)
 
 
-def _star(*members):
+def _star(*members: str) -> str:
     """A choice at 0..unbounded; a member is an element name or a nested group."""
     refs = "".join(
         member if member.startswith("<") else f'<xs:element ref="{member}"/>'
@@ -117,7 +136,7 @@ def _star(*members):
     return f'<xs:choice minOccurs="0" maxOccurs="unbounded">{refs}</xs:choice>'
 
 
-def _model(content):
+def _model(content: str) -> Any:
     schema = (
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">'
         '<xs:element name="a"/><xs:element name="b"/><xs:element name="r">'
@@ -137,5 +156,14 @@ def _model(content):
         (_star("a"), _star("a", "b"), False),  # B dropped
     ],
 )
-def test_the_canonical_tree_keeps_what_a_list_of_leaves_loses(left, right, same):
+def test_the_canonical_tree_keeps_what_a_list_of_leaves_loses(
+    left: str, right: str, same: bool
+) -> None:
+    """The canonical tree keeps the order and grouping that a list of leaves loses.
+
+    Args:
+        left: Content model of the left schema.
+        right: Content model of the right schema.
+        same: Whether the canonical trees are equal.
+    """
     assert (_canonical(_model(left)) == _canonical(_model(right))) is same

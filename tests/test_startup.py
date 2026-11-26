@@ -1,3 +1,5 @@
+"""Startup behavior of the package: system checks and import cost."""
+
 import os
 import subprocess
 import sys
@@ -12,6 +14,7 @@ SOURCE_ROOT = Path(__file__).resolve().parents[1] / "src"
 
 @override_settings(HYPERVIEW="invalid")
 def test_app_config_registers_hyperview_checks() -> None:
+    """The app config registers the Hyperview system checks."""
     errors = run_checks(tags=["dj_hyperview"])
 
     assert [error.id for error in errors] == ["dj_hyperview.E001"]
@@ -19,6 +22,7 @@ def test_app_config_registers_hyperview_checks() -> None:
 
 @override_settings(HYPERVIEW={})
 def test_registered_check_reports_minimal_empty_resolver() -> None:
+    """The registered check reports the minimal empty resolver."""
     messages = run_checks(tags=["dj_hyperview"])
 
     assert [message.id for message in messages] == ["dj_hyperview.W005"]

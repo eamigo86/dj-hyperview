@@ -44,21 +44,37 @@ LEGAL = [
 
 
 def render(source: str, **context: str) -> str:
-    """Render one in-memory template through the validated Hyperview engine."""
+    """Render one in-memory template through the validated Hyperview engine.
+
+    Args:
+        source: Template source to render.
+        **context: Context values given to the template.
+
+    Returns:
+        The HXML that the engine rendered.
+    """
     resolver = TemplateResolver([TemplateSource(content=source)])
     return HyperviewEngine(resolver).render("screen.xml", context)
 
 
 @pytest.mark.parametrize("value", LEGAL)
 def test_validator_accepts_text_that_xml_can_represent(value: str) -> None:
-    """Tabs, line breaks, non-BMP characters and C1 controls are legal XML."""
+    """Tabs, line breaks, non-BMP characters and C1 controls are legal XML.
+
+    Args:
+        value: Text made only of legal XML characters.
+    """
     validate_xml_text(value)
     validate_hxml(f"<text {NAMESPACE}>{value}</text>")
 
 
 @pytest.mark.parametrize("character", ILLEGAL)
 def test_validator_rejects_each_illegal_character_class(character: str) -> None:
-    """Controls, lone surrogates and the two noncharacters raise a stable code."""
+    """Controls, lone surrogates and the two noncharacters raise a stable code.
+
+    Args:
+        character: Character that XML cannot represent.
+    """
     with pytest.raises(ValidationError) as captured:
         validate_xml_text(f"Buy{character}milk")
 
@@ -146,7 +162,11 @@ def test_hv_attr_round_trips_attribute_whitespace_through_a_real_parse() -> None
 def test_final_validation_names_illegal_characters_without_echoing_content(
     character: str,
 ) -> None:
-    """A rejected document explains the cause but never repeats its content."""
+    """A rejected document explains the cause but never repeats its content.
+
+    Args:
+        character: Character that XML cannot represent.
+    """
     document = f"<text {NAMESPACE}>Buy{character}milk</text>"
 
     with pytest.raises(TemplateValidationError) as captured:

@@ -104,7 +104,12 @@ def test_schema_error_explains_an_incomplete_parent() -> None:
     ],
 )
 def test_schema_error_explains_invalid_attributes(style: str, message: str) -> None:
-    """Attribute failures name the field and element without echoing its value."""
+    """Attribute failures name the field and element without echoing its value.
+
+    Args:
+        style: Style element markup with the invalid attribute.
+        message: Message that the schema error must contain.
+    """
     document = "\n".join(
         (
             f'<doc xmlns="{HV}">',
@@ -134,6 +139,9 @@ def test_validation_builds_one_error_however_many_violations_there_are(
     xmlschema's default mode builds an error for every violation in the tree before it
     reports the first. An undeclared attribute costs time proportional to the number
     of attributes on its element, so rejecting 300 such elements took seconds.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
     """
     import xmlschema
 
@@ -214,7 +222,11 @@ def test_fragment_root_contract_precedes_schema_validation() -> None:
 
 
 def test_extra_schema_participates_in_document_validation(tmp_path: Path) -> None:
-    """A configured custom namespace is validated when Hyperview allows it."""
+    """A configured custom namespace is validated when Hyperview allows it.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+    """
     schema = tmp_path / "app.xsd"
     schema.write_text(
         """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
@@ -242,7 +254,11 @@ targetNamespace="https://example.test/app" elementFormDefault="qualified">
 def test_compiled_registry_refreshes_when_extra_schema_changes(
     tmp_path: Path,
 ) -> None:
-    """A file fingerprint change cannot reuse a stale compiled schema registry."""
+    """A file fingerprint change cannot reuse a stale compiled schema registry.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+    """
     schema = tmp_path / "app.xsd"
     opening = (
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" '

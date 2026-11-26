@@ -126,6 +126,14 @@ def test_conflicting_context_is_rejected_before_any_registry_consumer(
     reverse: bool,
     operation: str,
 ) -> None:
+    """Conflicting schema context is rejected before any registry consumer runs.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        context: Schema context setting that differs between the two files.
+        reverse: Whether the two files are loaded in the reverse order.
+        operation: Registry consumer that is run: runtime, static or catalog.
+    """
     paths = []
     for index, text in enumerate(_context_pair(context)):
         path = tmp_path / f"root{index}.xsd"
@@ -148,6 +156,13 @@ def test_equivalent_explicit_and_implicit_forms_remain_accepted(
     explicit_form: bool,
     reverse: bool,
 ) -> None:
+    """Equivalent explicit and implicit forms of a schema setting stay accepted.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        explicit_form: Whether the setting is written explicitly in one file.
+        reverse: Whether the two files are loaded in the reverse order.
+    """
     forms = ' form="unqualified"' if explicit_form else ""
     body = (
         '<xs:element name="thing"><xs:complexType><xs:sequence>'
@@ -262,6 +277,13 @@ def test_equivalent_context_is_not_rejected(
     context: str,
     reverse: bool,
 ) -> None:
+    """Equivalent schema context in two files is not rejected.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        context: Schema context setting that differs between the two files.
+        reverse: Whether the two files are loaded in the reverse order.
+    """
     paths = [tmp_path / "first.xsd", tmp_path / "second.xsd"]
     for path, text in zip(paths, _equivalent_pair(context), strict=True):
         path.write_text(text)

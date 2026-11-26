@@ -16,7 +16,8 @@ from dj_hyperview.validation import validate_hxml
 HV = "https://hyperview.org/hyperview"
 
 
-def test_installed_release_is_the_selected_compatibility_boundary():
+def test_installed_release_is_the_selected_compatibility_boundary() -> None:
+    """The installed xmlschema release is the selected compatibility boundary."""
     target = os.environ.get("DJHV_XMLSCHEMA_COMPAT_VERSION")
     actual = importlib.metadata.version("xmlschema")
 
@@ -32,7 +33,8 @@ def test_installed_release_is_the_selected_compatibility_boundary():
         assert target is None, "CI must select an explicit compatibility boundary"
 
 
-def test_public_validator_keeps_real_xsd_11_verdicts():
+def test_public_validator_keeps_real_xsd_11_verdicts() -> None:
+    """The public validator keeps the real XSD 1.1 verdicts."""
     valid = f'<doc xmlns="{HV}"><screen><body /></screen></doc>'
     assert validate_hxml(valid) == valid
     with pytest.raises(TemplateValidationError) as error:

@@ -51,7 +51,11 @@ def test_archived_catalog_is_deterministic() -> None:
 
 
 def test_custom_catalog_merges_local_namespaced_elements(tmp_path: Path) -> None:
-    """Project schemas extend completions without replacing official declarations."""
+    """Project schemas extend completions without replacing official declarations.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+    """
     schema = tmp_path / "components.xsd"
     schema.write_text(
         """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
@@ -94,7 +98,12 @@ targetNamespace="https://example.test/app" elementFormDefault="qualified">
 def test_custom_catalog_rejects_unsafe_schema_references(
     tmp_path: Path, location: str
 ) -> None:
-    """Custom schemas cannot fetch remotely or escape their local directory."""
+    """Custom schemas cannot fetch remotely or escape their local directory.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        location: Unsafe schema location written into the custom schema.
+    """
     schema = tmp_path / "components.xsd"
     schema.write_text(
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema">'

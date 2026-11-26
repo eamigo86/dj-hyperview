@@ -83,6 +83,11 @@ class _CachedSource:
 
 @pytest.fixture(autouse=True)
 def configured_cache() -> Iterator[None]:
+    """Run the test with an empty in-memory screens cache and reset sources.
+
+    Yields:
+        Nothing, while the in-memory cache settings are active.
+    """
     with override_settings(CACHES=LOCMEM_CACHES):
         caches["screens"].clear()
         for state in (_STATE, _SECOND_STATE):
@@ -103,6 +108,7 @@ def _config(backend: str, namespace: str) -> dict[str, object]:
 
 
 def test_from_settings_honors_forwarded_false_for_content() -> None:
+    """A resolver built from settings honors a forwarded False marker for content."""
     config = _config(f"{__name__}._ForwardingSource", "proxy-forward-content")
     with override_settings(HYPERVIEW=config):
         assert TemplateResolver.from_settings().resolve("screen.xml").content == "first"
@@ -115,6 +121,7 @@ def test_from_settings_honors_forwarded_false_for_content() -> None:
 
 
 def test_from_settings_honors_forwarded_false_for_negative_miss() -> None:
+    """A resolver built from settings honors a forwarded False marker for a miss."""
     config = _config(f"{__name__}._ForwardingSource", "proxy-forward-miss")
     _STATE.content = None
     with override_settings(HYPERVIEW=config):
@@ -129,6 +136,7 @@ def test_from_settings_honors_forwarded_false_for_negative_miss() -> None:
 
 
 def test_from_settings_honors_getattribute_false() -> None:
+    """A resolver built from settings honors a False marker from a proxy."""
     config = _config(f"{__name__}._GetattributeSource", "proxy-getattribute")
     with override_settings(HYPERVIEW=config):
         assert TemplateResolver.from_settings().resolve("screen.xml").content == "first"
@@ -145,6 +153,12 @@ def test_from_settings_honors_getattribute_false() -> None:
 def test_dynamic_non_bool_marker_fails_closed(
     marker: object, initial: str | None
 ) -> None:
+    """A dynamic marker that is not a bool fails closed.
+
+    Args:
+        marker: Value that the dynamic cacheable attribute returns.
+        initial: Content that the source returns first, or None for a miss.
+    """
     _STATE.cacheable = marker
     _STATE.content = initial
     config = _config(
@@ -169,6 +183,7 @@ def test_dynamic_non_bool_marker_fails_closed(
 
 
 def test_dynamic_exact_true_marker_caches_and_is_read_once_per_identity() -> None:
+    """A dynamic exact True marker enables caching and is read once per identity."""
     _STATE.cacheable = True
     config = _config(f"{__name__}._GetattributeSource", "proxy-exact-true")
     with override_settings(HYPERVIEW=config):
@@ -181,6 +196,7 @@ def test_dynamic_exact_true_marker_caches_and_is_read_once_per_identity() -> Non
 
 
 def test_dynamic_marker_error_fails_closed_without_hiding_content() -> None:
+    """A dynamic marker error fails closed without hiding the content."""
     _STATE.marker_error = "SENSITIVE-PROXY-MARKER"
     config = _config(f"{__name__}._GetattributeSource", "proxy-marker-error")
     with override_settings(HYPERVIEW=config):
@@ -194,6 +210,7 @@ def test_dynamic_marker_error_fails_closed_without_hiding_content() -> None:
 
 
 def test_dynamic_marker_error_preserves_source_failure_without_leaking() -> None:
+    """A dynamic marker error keeps the source failure and leaks no marker detail."""
     failure = SourceUnavailable("origin", "actual source failure")
     _STATE.marker_error = "SENSITIVE-PROXY-MARKER"
     _STATE.failure = failure
@@ -214,6 +231,7 @@ def test_dynamic_marker_error_preserves_source_failure_without_leaking() -> None
 
 
 def test_dynamic_attribute_error_is_an_absent_attribute_and_not_cached() -> None:
+    """A dynamic attribute error means the marker is absent, so nothing is cached."""
     config = _config(f"{__name__}._AbsentDynamicSource", "proxy-absent")
     with override_settings(HYPERVIEW=config):
         assert TemplateResolver.from_settings().resolve("screen.xml").content == "first"
@@ -226,6 +244,7 @@ def test_dynamic_attribute_error_is_an_absent_attribute_and_not_cached() -> None
 
 
 def test_dynamic_marker_failure_does_not_disable_another_source_cache() -> None:
+    """A dynamic marker failure does not disable the cache of another source."""
     _STATE.marker_error = "SENSITIVE-PROXY-MARKER"
     _STATE.content = None
     _SECOND_STATE.content = "winner"

@@ -84,6 +84,11 @@ def _coverage_uploads() -> list[dict]:
 def test_workflow_reads_only_by_default_and_never_cancels_a_branch_run(
     path: Path,
 ) -> None:
+    """A workflow reads only by default and never cancels a branch run.
+
+    Args:
+        path: Workflow file under test.
+    """
     workflow = _load(path)
 
     assert workflow["permissions"] == {"contents": "read"}
@@ -97,6 +102,11 @@ def test_workflow_reads_only_by_default_and_never_cancels_a_branch_run(
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
 def test_checkouts_do_not_leave_the_token_in_the_git_config(path: Path) -> None:
+    """Checkouts do not leave the token in the Git configuration.
+
+    Args:
+        path: Workflow file under test.
+    """
     checkouts = [
         step
         for step in _steps(_load(path))
@@ -109,6 +119,11 @@ def test_checkouts_do_not_leave_the_token_in_the_git_config(path: Path) -> None:
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
 def test_every_external_action_is_pinned_to_a_full_commit(path: Path) -> None:
+    """Every external action is pinned to a full commit.
+
+    Args:
+        path: Workflow file under test.
+    """
     workflow = _load(path)
     uses = [step["uses"] for step in _steps(workflow) if "uses" in step]
     uses += [job["uses"] for job in workflow["jobs"].values() if "uses" in job]
@@ -119,6 +134,7 @@ def test_every_external_action_is_pinned_to_a_full_commit(path: Path) -> None:
 
 
 def test_only_the_publishing_jobs_hold_a_write_scope() -> None:
+    """Only the publishing jobs hold a write scope."""
     granted = {}
     for path in WORKFLOWS:
         for name, job in _load(path)["jobs"].items():
@@ -140,10 +156,12 @@ def test_a_called_workflow_does_not_share_its_callers_concurrency_group() -> Non
 
 
 def test_release_starts_only_from_a_version_tag() -> None:
+    """A release starts only from a version tag."""
     assert _workflow("release.yml")["on"] == {"push": {"tags": ["v*.*.*"]}}
 
 
 def test_nothing_is_published_before_the_tag_matches_the_project_version() -> None:
+    """Nothing is published before the tag matches the project version."""
     jobs = _workflow("release.yml")["jobs"]
     gate = " ".join(step.get("run", "") for step in jobs["metadata"]["steps"])
 
@@ -175,6 +193,7 @@ def test_every_publishing_job_waits_for_the_tagged_commit_to_be_on_main() -> Non
 
 
 def test_publication_follows_the_staged_build_in_order() -> None:
+    """Publication follows the staged build in order."""
     jobs = _workflow("release.yml")["jobs"]
     publish_inputs = [step.get("with", {}) for step in jobs["pypi"]["steps"]]
 
@@ -186,6 +205,7 @@ def test_publication_follows_the_staged_build_in_order() -> None:
 
 
 def test_release_calls_ci_with_inputs_and_secrets_it_declares() -> None:
+    """The release calls CI with inputs and secrets that CI declares."""
     call = _workflow("release.yml")["jobs"]["ci"]
     declared = _workflow("ci.yml")["on"]["workflow_call"]
 
@@ -216,6 +236,7 @@ def test_the_release_run_uploads_no_coverage() -> None:
 
 
 def test_release_runs_the_live_redis_acceptance() -> None:
+    """The release runs the live Redis acceptance."""
     call = _workflow("release.yml")["jobs"]["ci"]
     default = _workflow("ci.yml")["on"]["workflow_call"]["inputs"]["redis"]["default"]
 
@@ -223,6 +244,8 @@ def test_release_runs_the_live_redis_acceptance() -> None:
 
 
 def test_release_downloads_only_artifacts_that_an_earlier_job_uploads() -> None:
+    """The release downloads only artifacts that an earlier job uploads."""
+
     def names(action: str, *workflows: str) -> set[str]:
         return {
             step["with"]["name"]
@@ -240,6 +263,11 @@ def test_release_downloads_only_artifacts_that_an_earlier_job_uploads() -> None:
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda path: path.name)
 def test_no_step_can_fail_without_failing_the_run(path: Path) -> None:
+    """No step can fail without failing the run.
+
+    Args:
+        path: Workflow file under test.
+    """
     jobs = _load(path)["jobs"].values()
     swallowed = [
         unit.get("name") or unit.get("run") or unit.get("uses")
@@ -271,6 +299,12 @@ def test_no_step_can_fail_without_failing_the_run(path: Path) -> None:
 def test_the_swallowed_failure_pattern_matches_the_ways_to_write_it(
     command: str, swallowed: bool
 ) -> None:
+    """The swallowed-failure pattern matches the ways to write it.
+
+    Args:
+        command: Shell command under test.
+        swallowed: Whether the command swallows a failure.
+    """
     assert bool(SWALLOWED_FAILURE.search(command)) is swallowed
 
 
@@ -278,12 +312,18 @@ def test_the_swallowed_failure_pattern_matches_the_ways_to_write_it(
 def test_no_workflow_triggers_on_an_event_that_runs_with_privileges(
     path: Path,
 ) -> None:
+    """No workflow triggers on an event that runs with privileges.
+
+    Args:
+        path: Workflow file under test.
+    """
     triggers = str(_load(path)["on"])
 
     assert [event for event in PRIVILEGED_EVENTS if event in triggers] == []
 
 
 def test_publishing_to_pypi_and_pages_waits_for_their_deployment_environment() -> None:
+    """Publishing to PyPI and Pages waits for their deployment environment."""
     jobs = _workflow("release.yml")["jobs"]
 
     def environment(name: str) -> str | None:
@@ -324,16 +364,23 @@ def _marks_prerelease(tag: str) -> bool:
     ],
 )
 def test_release_is_marked_prerelease_exactly_when_the_version_is(tag: str) -> None:
+    """The release is marked as a prerelease exactly when the version is.
+
+    Args:
+        tag: Release tag under test.
+    """
     assert _marks_prerelease(tag) == Version(tag.removeprefix("v")).is_prerelease
 
 
 def test_ci_still_runs_the_quality_and_packaging_gates() -> None:
+    """CI still runs the quality and packaging gates."""
     commands = "\n".join(step.get("run", "") for step in _steps(_workflow("ci.yml")))
 
     assert [gate for gate in CI_GATES if gate not in commands] == []
 
 
 def test_xmlschema_boundary_job_uses_real_installs_and_gates_artifacts() -> None:
+    """The xmlschema boundary job uses real installs and gates its artifacts."""
     jobs = _workflow("ci.yml")["jobs"]
     job = jobs["xmlschema-compatibility"]
     versions = job["strategy"]["matrix"]["xmlschema"]

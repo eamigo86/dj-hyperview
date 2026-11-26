@@ -33,7 +33,8 @@ def test_corrected_schema_preserves_existing_margin_values() -> None:
                 validate_hyperview_schema(f'<style xmlns="{HV}" {margin}="{value}"/>')
 
 
-def test_corrected_schema_accepts_audited_percentage_margins():
+def test_corrected_schema_accepts_audited_percentage_margins() -> None:
+    """The corrected schema accepts the audited percentage margins."""
     for value in ("50%", "-12.5%", "+0.5%", ".5%", "-.25%", "100.0%"):
         for margin in MARGINS:
             validate_hyperview_schema(f'<style xmlns="{HV}" {margin}="{value}"/>')
@@ -73,7 +74,8 @@ def test_compatibility_does_not_broaden_unrelated_style_attributes() -> None:
             validate_hyperview_schema(f'<style xmlns="{HV}" {attribute}="{value}"/>')
 
 
-def test_automatic_catalog_does_not_mutate_upstream_inspection_helpers():
+def test_automatic_catalog_does_not_mutate_upstream_inspection_helpers() -> None:
+    """Building the automatic catalog leaves the upstream helpers unchanged."""
     upstream_path = get_hyperview_schema_path()
     upstream_catalog = build_hyperview_catalog()
     catalog = get_hyperview_catalog()
@@ -94,7 +96,8 @@ def test_active_catalog_stays_detached() -> None:
         assert get_hyperview_catalog()["catalog_format"] == 2
 
 
-def test_active_catalog_reuses_compiled_registry_for_unchanged_settings():
+def test_active_catalog_reuses_compiled_registry_for_unchanged_settings() -> None:
+    """The active catalog reuses the compiled registry for unchanged settings."""
     from dj_hyperview.schema import _cached_registry
 
     get_hyperview_catalog()

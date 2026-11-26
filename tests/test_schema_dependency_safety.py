@@ -19,7 +19,14 @@ HV = "https://hyperview.org/hyperview"
 
 
 def schema_text(body: str) -> str:
-    """Wrap one controlled dependency fixture in a namespaced schema."""
+    """Wrap one controlled dependency fixture in a namespaced schema.
+
+    Args:
+        body: Declarations placed inside the schema element.
+
+    Returns:
+        A namespaced schema document that holds the body.
+    """
     return (
         f'<xs:schema xmlns:xs="{XS}" xmlns:app="{APP}" '
         f'targetNamespace="{APP}" elementFormDefault="qualified">{body}</xs:schema>'
@@ -27,7 +34,14 @@ def schema_text(body: str) -> str:
 
 
 def write_graph(tmp_path: Path) -> tuple[Path, Path]:
-    """Create a three-level graph so leaf-only changes must invalidate both caches."""
+    """Create a three-level graph so leaf-only changes must invalidate both caches.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+
+    Returns:
+        The paths of the root schema and of the leaf schema.
+    """
     root, middle, leaf = [
         tmp_path / name for name in ("root.xsd", "middle.xsd", "leaf.xsd")
     ]
@@ -42,7 +56,11 @@ def write_graph(tmp_path: Path) -> tuple[Path, Path]:
 
 
 def test_leaf_changes_refresh_both_catalog_and_validation(tmp_path: Path) -> None:
-    """The completion catalog cannot lag behind a transitive validation change."""
+    """The completion catalog cannot lag behind a transitive validation change.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     root, leaf = write_graph(tmp_path)
     document = f'<view xmlns="{HV}" xmlns:app="{APP}"><app:thing/></view>'
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
@@ -75,7 +93,12 @@ def test_leaf_changes_refresh_both_catalog_and_validation(tmp_path: Path) -> Non
 def test_arbitrary_extra_schema_overrides_are_rejected(
     tmp_path: Path, location: str | None
 ) -> None:
-    """The trusted bundled override is never permission for consumer overrides."""
+    """The trusted bundled override is never permission for consumer overrides.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        location: Schema location written into the reference under test.
+    """
     root = tmp_path / "root.xsd"
     attribute = "" if location is None else f' schemaLocation="{location}"'
     root.write_text(schema_text(f"<xs:override{attribute}/>"), encoding="utf-8")
@@ -90,7 +113,13 @@ def test_arbitrary_extra_schema_overrides_are_rejected(
 def test_mutated_dependencies_are_guarded_before_cache_hits(
     tmp_path: Path, consumer: str, replacement: str
 ) -> None:
-    """Settings and root fingerprints staying unchanged cannot bypass safety."""
+    """Settings and root fingerprints staying unchanged cannot bypass safety.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        consumer: Public schema consumer that is checked.
+        replacement: Kind of replacement written over the safe dependency.
+    """
     root, leaf = write_graph(tmp_path)
     document = f'<view xmlns="{HV}"/>'
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [root]}):
@@ -112,7 +141,11 @@ def test_mutated_dependencies_are_guarded_before_cache_hits(
 
 
 def test_dependency_cycles_are_visited_once(tmp_path: Path) -> None:
-    """A local include cycle has a finite deterministic dependency identity."""
+    """A local include cycle has a finite deterministic dependency identity.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     root, leaf = write_graph(tmp_path)
     leaf.write_text(
         schema_text('<xs:include schemaLocation="root.xsd"/>'), encoding="utf-8"
@@ -121,7 +154,11 @@ def test_dependency_cycles_are_visited_once(tmp_path: Path) -> None:
 
 
 def test_symlink_loop_has_a_redacted_typed_error(tmp_path: Path) -> None:
-    """Filesystem loops do not leak RuntimeError or platform-dependent paths."""
+    """Filesystem loops do not leak RuntimeError or platform-dependent paths.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     root = tmp_path / "loop.xsd"
     root.symlink_to(root)
     with pytest.raises(TemplateValidationError) as error:
@@ -131,7 +168,11 @@ def test_symlink_loop_has_a_redacted_typed_error(tmp_path: Path) -> None:
 
 
 def test_dependency_graph_has_a_finite_file_budget(tmp_path: Path) -> None:
-    """Broad local include graphs stop at a documented fixed file limit."""
+    """Broad local include graphs stop at a documented fixed file limit.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     for index in range(257):
         reference = (
             f'<xs:include schemaLocation="{index + 1}.xsd"/>' if index < 256 else ""
@@ -146,7 +187,12 @@ def test_dependency_graph_has_a_finite_file_budget(tmp_path: Path) -> None:
 def test_safety_is_rechecked_when_leaf_fingerprint_is_unchanged(
     tmp_path: Path, consumer: str
 ) -> None:
-    """A same-size same-mtime edit cannot reuse a cache hit to skip the guard."""
+    """A same-size same-mtime edit cannot reuse a cache hit to skip the guard.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        consumer: Public schema consumer that is checked.
+    """
     root, leaf = write_graph(tmp_path)
     padded = leaf.read_text(encoding="utf-8") + " " * 512
     leaf.write_text(padded, encoding="utf-8")
@@ -174,7 +220,12 @@ def test_safety_is_rechecked_when_leaf_fingerprint_is_unchanged(
 def test_symlink_dependency_escape_is_rechecked_after_a_cache_hit(
     tmp_path: Path, consumer: str
 ) -> None:
-    """Replacing a previously safe dependency with an escaping link fails closed."""
+    """Replacing a previously safe dependency with an escaping link fails closed.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        consumer: Public schema consumer that is checked.
+    """
     directory = tmp_path / "schema"
     directory.mkdir()
     root, leaf = write_graph(directory)
@@ -195,7 +246,11 @@ def test_symlink_dependency_escape_is_rechecked_after_a_cache_hit(
 
 
 def test_valid_dependency_cycle_compiles_and_catalogs(tmp_path: Path) -> None:
-    """Cycle prevention does not prohibit XSD-supported local include cycles."""
+    """Cycle prevention does not prohibit XSD-supported local include cycles.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     root, leaf = write_graph(tmp_path)
     leaf.write_text(
         schema_text(
@@ -211,7 +266,11 @@ def test_valid_dependency_cycle_compiles_and_catalogs(tmp_path: Path) -> None:
 def test_encoded_traversal_cannot_hide_behind_a_literal_local_decoy(
     tmp_path: Path,
 ) -> None:
-    """URL-decoding by the XSD compiler cannot escape the Path-based guard."""
+    """URL-decoding by the XSD compiler cannot escape the Path-based guard.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     safe = tmp_path / "safe"
     safe.mkdir()
     root = safe / "root.xsd"
@@ -235,7 +294,12 @@ def test_encoded_traversal_cannot_hide_behind_a_literal_local_decoy(
 def test_xml_base_does_not_redirect_dependency_resolution(
     tmp_path: Path, on_include: bool
 ) -> None:
-    """The supported compiler and guard agree on XML base attribute behavior."""
+    """The supported compiler and guard agree on XML base attribute behavior.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        on_include: Whether xml:base sits on the include element instead of the schema.
+    """
     import xmlschema
 
     safe = tmp_path / "safe"
@@ -259,7 +323,11 @@ def test_xml_base_does_not_redirect_dependency_resolution(
 def test_configured_root_boundary_is_preserved_for_entrypoint_symlinks(
     tmp_path: Path,
 ) -> None:
-    """A root symlink cannot authorize dependencies outside its configured root."""
+    """A root symlink cannot authorize dependencies outside its configured root.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     configured = tmp_path / "configured"
     configured.mkdir()
     target = tmp_path / "target"
@@ -279,7 +347,14 @@ def test_configured_root_boundary_is_preserved_for_entrypoint_symlinks(
 
 
 def hidden_reference_schema(reference: str = "override") -> str:
-    """Build a DTD entity that would expand into an unguarded schema reference."""
+    """Build a DTD entity that would expand into an unguarded schema reference.
+
+    Args:
+        reference: Kind of schema reference that the entity hides.
+
+    Returns:
+        A schema whose DTD entity expands into the reference.
+    """
     return (
         f'<!DOCTYPE xs:schema [<!ENTITY hidden \'<xs:{reference} xmlns:xs="{XS}" '
         'schemaLocation="../outside.xsd"/>\'>]>' + schema_text("&hidden;")
@@ -290,7 +365,12 @@ def hidden_reference_schema(reference: str = "override") -> str:
 def test_dtd_entities_cannot_hide_schema_references(
     tmp_path: Path, reference: str
 ) -> None:
-    """A disabled entity resolver must not hide markup from the dependency guard."""
+    """A disabled entity resolver must not hide markup from the dependency guard.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        reference: Kind of schema reference that the entity hides.
+    """
     root = tmp_path / "root.xsd"
     root.write_text(hidden_reference_schema(reference), encoding="utf-8")
     with pytest.raises(TemplateValidationError) as error:
@@ -302,7 +382,12 @@ def test_dtd_entities_cannot_hide_schema_references(
 def test_public_schema_consumers_reject_initial_entity_references(
     tmp_path: Path, consumer: str
 ) -> None:
-    """A hidden external declaration cannot enter either public registry API."""
+    """A hidden external declaration cannot enter either public registry API.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        consumer: Public schema consumer that is checked.
+    """
     safe = tmp_path / "safe"
     safe.mkdir()
     root = safe / "root.xsd"
@@ -324,7 +409,13 @@ def test_public_schema_consumers_reject_initial_entity_references(
 def test_entity_guards_precede_cached_public_schema_results(
     tmp_path: Path, consumer: str, target: str
 ) -> None:
-    """A root or dependency edit is guarded even when its cache fingerprint matches."""
+    """A root or dependency edit is guarded even when its cache fingerprint matches.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        consumer: Public schema consumer that is checked.
+        target: Which schema is edited: the root or the leaf.
+    """
     root, leaf = write_graph(tmp_path)
     mutated = root if target == "root" else leaf
     padded = mutated.read_text(encoding="utf-8") + " " * 512
@@ -353,7 +444,12 @@ def test_entity_guards_precede_cached_public_schema_results(
 def test_compilers_forbid_entities_independently_of_reference_guard(
     tmp_path: Path, registry: bool
 ) -> None:
-    """Compiler-level entity defusing is independent defense against parser drift."""
+    """Compiler-level entity defusing is independent defense against parser drift.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        registry: Whether the registry compiler is used instead of the plain one.
+    """
     from dj_hyperview.schema import (
         _compile_registry,
         _compile_schema,
@@ -379,7 +475,11 @@ def test_compilers_forbid_entities_independently_of_reference_guard(
 def test_doctype_without_entities_is_forbidden_but_comment_text_is_inert(
     tmp_path: Path,
 ) -> None:
-    """The declaration rule is structural, not a substring ban on documentation."""
+    """The declaration rule is structural, not a substring ban on documentation.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     root = tmp_path / "root.xsd"
     root.write_text("<!DOCTYPE xs:schema>" + schema_text(""), encoding="utf-8")
     with pytest.raises(TemplateValidationError) as error:
@@ -395,7 +495,12 @@ def test_doctype_without_entities_is_forbidden_but_comment_text_is_inert(
 def test_normalized_reference_cannot_hide_behind_a_literal_local_decoy(
     tmp_path: Path, location: str
 ) -> None:
-    """Whitespace and backslash normalization cannot change the inspected file."""
+    """Whitespace and backslash normalization cannot change the inspected file.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        location: Schema location written into the reference under test.
+    """
     safe = tmp_path / "safe"
     safe.mkdir()
     root = safe / "root.xsd"
@@ -419,7 +524,13 @@ def test_normalized_reference_cannot_hide_behind_a_literal_local_decoy(
 def test_compilation_warnings_cannot_silently_omit_schema_dependencies(
     tmp_path: Path, registry: bool, nested: bool
 ) -> None:
-    """Both compiler paths reject incomplete root and transitive schema results."""
+    """Both compiler paths reject incomplete root and transitive schema results.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        registry: Whether the registry compiler is used instead of the plain one.
+        nested: Whether the unresolved reference sits in a nested include.
+    """
     from dj_hyperview.schema import (
         _compile_registry,
         _compile_schema,
@@ -448,7 +559,11 @@ def test_compilation_warnings_cannot_silently_omit_schema_dependencies(
 def test_parent_segments_cannot_hide_behind_a_physically_safe_symlink(
     tmp_path: Path,
 ) -> None:
-    """The compiler folds dots lexically, so the guard must not resolve them."""
+    """The compiler folds dots lexically, so the guard must not resolve them.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     base = tmp_path / "base"
     (base / "sub" / "deep").mkdir(parents=True)
     (base / "link").symlink_to(base / "sub" / "deep", target_is_directory=True)
@@ -475,7 +590,11 @@ def test_parent_segments_cannot_hide_behind_a_physically_safe_symlink(
 def test_parent_segments_are_rejected_even_when_they_stay_inside_the_root(
     tmp_path: Path,
 ) -> None:
-    """A reference never needs dot-dot segments, so none is accepted."""
+    """A reference never needs dot-dot segments, so none is accepted.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     (tmp_path / "nested").mkdir()
     (tmp_path / "leaf.xsd").write_text(schema_text(""), encoding="utf-8")
     root = tmp_path / "root.xsd"
@@ -492,7 +611,12 @@ def test_parent_segments_are_rejected_even_when_they_stay_inside_the_root(
 def test_dotted_names_that_are_not_parent_segments_stay_valid(
     tmp_path: Path, location: str
 ) -> None:
-    """Only a complete dot-dot path segment is a parent reference."""
+    """Only a complete dot-dot path segment is a parent reference.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        location: Schema location written into the reference under test.
+    """
     leaf = tmp_path / location
     leaf.parent.mkdir(parents=True, exist_ok=True)
     leaf.write_text(schema_text(""), encoding="utf-8")
@@ -507,7 +631,12 @@ def test_dotted_names_that_are_not_parent_segments_stay_valid(
 def test_extra_schema_roots_with_percent_escapes_are_loaded_literally(
     tmp_path: Path, name: str
 ) -> None:
-    """Directory names that look percent-encoded are names, not encoded paths."""
+    """Directory names that look percent-encoded are names, not encoded paths.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        name: Directory name that looks percent-encoded.
+    """
     directory = tmp_path / name
     directory.mkdir()
     root, _leaf = write_graph(directory)
@@ -521,7 +650,14 @@ def test_extra_schema_roots_with_percent_escapes_are_loaded_literally(
 def test_bundled_registry_compiles_under_a_percent_escaped_package_root(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, registered: bool
 ) -> None:
-    """The generated overlay and the plain entry point both use literal paths."""
+    """The generated overlay and the plain entry point both use literal paths.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        monkeypatch: Patches the code under test for this test.
+        registered: Whether the registry overlay is compiled instead of the plain entry
+            point.
+    """
     import shutil
 
     from lxml import etree
@@ -543,7 +679,13 @@ def test_bundled_registry_compiles_under_a_percent_escaped_package_root(
 
 
 def link_or_skip(link: Path, target: Path, *, directory: bool = False) -> None:
-    """Create a symlink, or skip the test on a platform that cannot."""
+    """Create a symlink, or skip the test on a platform that cannot.
+
+    Args:
+        link: Path of the symbolic link to create.
+        target: Path that the link points to.
+        directory: Whether the link target is a directory.
+    """
     try:
         link.symlink_to(target, target_is_directory=directory)
     except (OSError, NotImplementedError):
@@ -551,7 +693,14 @@ def link_or_skip(link: Path, target: Path, *, directory: bool = False) -> None:
 
 
 def compiled_elements(root: Path) -> set[str]:
-    """Return the element names the XSD compiler itself loads from a root file."""
+    """Return the element names the XSD compiler itself loads from a root file.
+
+    Args:
+        root: Entry point schema that the compiler loads.
+
+    Returns:
+        The element names that the compiler loaded.
+    """
     compiled = xmlschema.XMLSchema11(root, allow="local", use_fallback=False)
     return {name.rsplit("}", 1)[-1] for name in compiled.elements}
 
@@ -564,6 +713,10 @@ def test_stripped_control_characters_cannot_hide_a_parent_segment(
 
     A directory literally named like that holds a decoy for the guard, while the
     compiler reads the file one level above it.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        reference: Character reference that the compiler strips from the location.
     """
     character = {"&#9;": "\t", "&#13;": "\r"}[reference]
     safe = tmp_path / "safe"
@@ -602,7 +755,12 @@ def test_stripped_control_characters_cannot_hide_a_parent_segment(
     ],
 )
 def test_references_must_be_printable(tmp_path: Path, location: str) -> None:
-    """Control, invisible and reordering characters never belong in a plain path."""
+    """Control, invisible and reordering characters never belong in a plain path.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        location: Schema location written into the reference under test.
+    """
     root = tmp_path / "root.xsd"
     root.write_text(
         schema_text(f'<xs:include schemaLocation="{location}"/>'), encoding="utf-8"
@@ -616,7 +774,12 @@ def test_references_must_be_printable(tmp_path: Path, location: str) -> None:
 def test_unparsable_references_are_forbidden_not_crashes(
     tmp_path: Path, location: str
 ) -> None:
-    """A location urlparse cannot split used to escape as a bare ValueError."""
+    """A location urlparse cannot split used to escape as a bare ValueError.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        location: Schema location written into the reference under test.
+    """
     root = tmp_path / "root.xsd"
     root.write_text(
         schema_text(f'<xs:include schemaLocation="{location}"/>'), encoding="utf-8"
@@ -635,6 +798,10 @@ def test_an_inline_schema_string_is_a_forbidden_reference(
 
     Any inline schema declares a namespace, so the ":" rule rejects it, and it is
     reported as a forbidden reference instead of an invalid schema.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        keyword: Schema reference keyword that holds the inline schema string.
     """
     inline = f'<xs:schema xmlns:xs="{XS}"><xs:element name="inline"/></xs:schema>'
     root = tmp_path / "root.xsd"
@@ -660,6 +827,9 @@ def test_symlinked_includer_cannot_escape_through_its_lexical_directory(
     base/a/link.xsd (a link to base/b/real.xsd) reads base/a/out/evil.xsd, which
     base/a/out (a link to a directory outside the root) turns into a foreign file.
     The guard must inspect that file, not the decoy base/b/out/evil.xsd.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
     """
     outside = tmp_path / "outside"
     outside.mkdir()
@@ -695,7 +865,11 @@ def test_symlinked_includer_cannot_escape_through_its_lexical_directory(
 def test_symlinked_includer_may_include_files_beside_the_link(
     tmp_path: Path,
 ) -> None:
-    """A link inside the root keeps working when its dependencies sit beside it."""
+    """A link inside the root keeps working when its dependencies sit beside it.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     base = tmp_path / "base"
     (base / "a").mkdir(parents=True)
     (base / "b").mkdir()
@@ -739,6 +913,11 @@ def test_url_syntax_cannot_name_a_different_file_than_the_inspected_one(
     xmlschema drops an empty query or fragment and folds a first segment like "1:."
     into a drive, so these locations name the symlink called loaded for the compiler,
     while the guard would join the literal text onto a benign decoy beside the root.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        location: Schema location written into the reference under test.
+        loaded: Name of the file that the compiler really loads.
     """
     outside = tmp_path / "outside.xsd"
     outside.write_text(schema_text('<xs:element name="outside"/>'), encoding="utf-8")
@@ -773,6 +952,9 @@ def test_two_aliases_of_one_file_are_each_inspected(tmp_path: Path) -> None:
     out/evil.xsd. The compiler reads base/a/out/evil.xsd, a decoy directory, for the
     first link and base/b/out/evil.xsd, a link to a directory outside the root, for
     the second. Visiting the target once would inspect only the decoy.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
     """
     outside = tmp_path / "outside"
     outside.mkdir()

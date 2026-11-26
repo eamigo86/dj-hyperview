@@ -1,6 +1,9 @@
+"""Hardening limits and declaration guards of the HXML and template validators."""
+
 import math
 import random
 import time
+from collections.abc import Callable
 
 import pytest
 from django.template import Template
@@ -32,14 +35,20 @@ MALFORMED_TEMPLATES = [
 ]
 
 
-def assert_malformed(action):
+def assert_malformed(action: Callable[[], object]) -> None:
+    """Run the action and check that it raises the malformed XML error.
+
+    Args:
+        action: Callable that must raise the malformed XML error.
+    """
     with pytest.raises(TemplateValidationError) as error:
         action()
     assert error.value.code == "malformed_xml"
     assert error.value.message == "invalid XML"
 
 
-def test_public_engine_render_rejects_malformed_hxml():
+def test_public_engine_render_rejects_malformed_hxml() -> None:
+    """The public engine render rejects malformed HXML."""
     engine = HyperviewEngine(
         TemplateResolver(
             [TemplateSource(content="<view xmlns='https://hyperview.org/hyperview'>")]
@@ -51,7 +60,12 @@ def test_public_engine_render_rejects_malformed_hxml():
 
 @pytest.mark.parametrize("using", ["django"])
 @override_settings(TEMPLATES=MALFORMED_TEMPLATES, HYPERVIEW={})
-def test_template_response_validates_django_fallbacks(using):
+def test_template_response_validates_django_fallbacks(using: str) -> None:
+    """A template response validates the output of the Django backend.
+
+    Args:
+        using: Name of the template backend that renders the screen.
+    """
     response = HyperviewTemplateResponse(
         RequestFactory().get("/screen"), "screen.xml", using=using
     )
@@ -61,7 +75,8 @@ def test_template_response_validates_django_fallbacks(using):
     assert response.is_rendered is False
 
 
-def test_isolated_unicode_surrogate_is_a_typed_failure():
+def test_isolated_unicode_surrogate_is_a_typed_failure() -> None:
+    """An isolated Unicode surrogate fails with a typed error."""
     with pytest.raises(TemplateValidationError) as error:
         validate_hxml("\ud800")
 
@@ -79,7 +94,12 @@ def test_isolated_unicode_surrogate_is_a_typed_failure():
         "<text xmlns='https://hyperview.org/hyperview'><![CDATA[<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]]></text>",
     ],
 )
-def test_declaration_text_is_allowed_in_xml_comments_and_cdata(document):
+def test_declaration_text_is_allowed_in_xml_comments_and_cdata(document: str) -> None:
+    """Declaration text is allowed inside XML comments and CDATA sections.
+
+    Args:
+        document: Document that carries declaration text in a safe place.
+    """
     assert validate_hxml(document) == document
 
 
@@ -91,7 +111,12 @@ def test_declaration_text_is_allowed_in_xml_comments_and_cdata(document):
         '{% comment "reason" %}<!DOCTYPE view>{% endcomment %}',
     ],
 )
-def test_declaration_text_is_allowed_in_django_comments(comment):
+def test_declaration_text_is_allowed_in_django_comments(comment: str) -> None:
+    """Declaration text is allowed inside Django comments.
+
+    Args:
+        comment: Django comment that wraps declaration text.
+    """
     engine = HyperviewEngine(
         TemplateResolver(
             [
@@ -157,11 +182,19 @@ def test_csrf_tag_can_precede_an_xml_declaration_on_its_own_line() -> None:
         "{% comment %}{% include 'ignored' %}<!DOCTYPE view>{% endcomment %}",
     ],
 )
-def test_source_guard_defers_malformed_django_comments_to_compilation(source):
+def test_source_guard_defers_malformed_django_comments_to_compilation(
+    source: str,
+) -> None:
+    """The source guard leaves malformed Django comments to the compilation.
+
+    Args:
+        source: Template source whose Django comment is malformed.
+    """
     assert validate_template_source(source) == source
 
 
-def test_active_and_post_render_constructed_declarations_remain_forbidden():
+def test_active_and_post_render_constructed_declarations_remain_forbidden() -> None:
+    """Active and post-render declarations stay forbidden."""
     with pytest.raises(TemplateValidationError) as source_error:
         validate_template_source(
             "<!DOCTYPE view><view xmlns='https://hyperview.org/hyperview' />"
@@ -191,10 +224,25 @@ HYPERVIEW_XMLNS = "xmlns='https://hyperview.org/hyperview'"
 
 
 def prefixed_namespaces(count: int, *, start: int = 0) -> str:
+    """Declare the given number of prefixed namespaces.
+
+    Args:
+        count: Number of declarations or attributes in the document.
+        start: Number of the first prefix.
+
+    Returns:
+        The declarations, separated by spaces.
+    """
     return " ".join(f"xmlns:p{i}='urn:p{i}'" for i in range(start, start + count))
 
 
 def assert_element_limit(document: str, fragment: str) -> None:
+    """Check that the document is rejected for too many attributes on one element.
+
+    Args:
+        document: Document that carries declaration text in a safe place.
+        fragment: Text that the error message must contain.
+    """
     with pytest.raises(TemplateValidationError) as error:
         validate_hxml(document)
     assert error.value.code == "max_attributes"
@@ -204,7 +252,11 @@ def assert_element_limit(document: str, fragment: str) -> None:
 
 
 def forbid_schema_validation(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Fail the test if a document reaches the XSD walk, whatever its cost."""
+    """Fail the test if a document reaches the XSD walk, whatever its cost.
+
+    Args:
+        monkeypatch: Patches the parser or the compilation for this test.
+    """
 
     def forbidden_schema_walk(*args: object, **kwargs: object) -> None:
         raise AssertionError("schema validation must not run")
@@ -217,7 +269,11 @@ def forbid_schema_validation(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_attribute_flood_is_rejected_before_schema_validation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A per-element cap bounds the attribute work without timing assertions."""
+    """A per-element cap bounds the attribute work without timing assertions.
+
+    Args:
+        monkeypatch: Patches the parser or the compilation for this test.
+    """
     forbid_schema_validation(monkeypatch)
     attributes = " ".join(f"a{i}='1'" for i in range(200))
 
@@ -232,6 +288,10 @@ def test_attribute_cap_counts_one_element_and_stops_just_over_its_limit(
 
     The attributes are undeclared, so an element within the cap reaches the schema
     walk and fails there, which proves it passed the guard.
+
+    Args:
+        count: Number of declarations or attributes in the document.
+        code: Validation error code that is expected.
     """
     attributes = " ".join(f"a{i}='1'" for i in range(count))
     spread = "".join(f"<text id='t{i}' style='s{i}'>{i}</text>" for i in range(300))
@@ -297,7 +357,16 @@ def test_comments_and_processing_instructions_pass_the_element_caps() -> None:
 
 
 def watch_maps(base: type, kind: str, accessed: set[tuple[str, str]]) -> type:
-    """Subclass an lxml node class so reads of attrib and nsmap are recorded."""
+    """Subclass an lxml node class so reads of attrib and nsmap are recorded.
+
+    Args:
+        base: lxml node class to subclass.
+        kind: Kind of node that the subclass watches.
+        accessed: Set that records which node properties were read.
+
+    Returns:
+        The subclass that records the reads.
+    """
 
     def recorded(name: str) -> property:
         inherited = getattr(base, name)
@@ -320,6 +389,9 @@ def test_element_caps_inspect_only_the_attributes_of_elements(
     A processing instruction builds attrib by running a regular expression over
     its data, which is quadratic on long whitespace runs. nsmap walks every
     ancestor, so reading it per element costs depth times declarations.
+
+    Args:
+        monkeypatch: Patches the parser or the compilation for this test.
     """
     accessed: set[tuple[str, str]] = set()
     parser_factory = validation_module._parser
@@ -402,6 +474,14 @@ def rebinding_path(declarations: int, *, distinct: int = 8, leaves: int = 1) -> 
 
     The root also binds the default namespace. Rebinding keeps at most the distinct
     count of bindings in scope, so only the declarations along the path grow.
+
+    Args:
+        declarations: Number of namespace declarations along the path.
+        distinct: Number of distinct prefixes that the path rebinds.
+        leaves: Number of leaf elements at the bottom of the path.
+
+    Returns:
+        The markup of the nested views and their leaves.
     """
     opening: list[str] = []
     remaining = declarations
@@ -423,6 +503,9 @@ def test_rebinding_prefixes_along_a_deep_path_is_rejected_before_schema_validati
     Never more than 8 bindings are in scope, so the distinct cap passes, yet
     xmlschema reads every declaration on the ancestor path of each of the 3,000
     leaves. Only the cap on the declarations along one path stops this chain.
+
+    Args:
+        monkeypatch: Patches the parser or the compilation for this test.
     """
     forbid_schema_validation(monkeypatch)
     document = rebinding_path(400, leaves=3_000)
@@ -441,6 +524,7 @@ def test_namespace_declaration_cap_allows_its_exact_limit() -> None:
 
 
 def test_namespace_declaration_cap_rejects_one_declaration_over_its_limit() -> None:
+    """The namespace declaration cap rejects one declaration over its limit."""
     assert_element_limit(rebinding_path(33), "32 namespace declarations")
 
 
@@ -462,7 +546,14 @@ def test_sibling_fragments_that_declare_namespaces_do_not_accumulate() -> None:
 
 
 def random_namespace_document(rng: random.Random) -> str:
-    """Build a small tree that declares, rebinds and undeclares random prefixes."""
+    """Build a small tree that declares, rebinds and undeclares random prefixes.
+
+    Args:
+        rng: Seeded random generator that picks the declarations.
+
+    Returns:
+        The markup of a random tree of namespace declarations.
+    """
 
     def element(depth: int) -> str:
         names = rng.sample(["", "a", "b", "c", "d"], rng.randint(0, 3))
@@ -483,7 +574,11 @@ def random_namespace_document(rng: random.Random) -> str:
 def test_namespace_cap_matches_the_widest_nsmap_lxml_reports(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Counting by scope reproduces nsmap, including rebinding and undeclaring."""
+    """Counting by scope reproduces nsmap, including rebinding and undeclaring.
+
+    Args:
+        monkeypatch: Patches the parser or the compilation for this test.
+    """
     rng = random.Random(20261013)
     for _ in range(150):
         document = random_namespace_document(rng)
@@ -514,6 +609,7 @@ def _unclosed_openers_at_the_budget() -> int:
 
 
 def test_template_source_may_cost_djangos_lexer_the_whole_budget_and_no_more() -> None:
+    """Template source may cost the lexer the whole budget and no more."""
     count = _unclosed_openers_at_the_budget()
 
     assert validate_template_source("{" * count) == "{" * count
@@ -534,11 +630,16 @@ def test_template_source_may_cost_djangos_lexer_the_whole_budget_and_no_more() -
     ids=["variables", "blocks", "comments", "braces"],
 )
 def test_pathological_source_is_rejected_without_being_lexed_by_django(
-    build, monkeypatch: pytest.MonkeyPatch
+    build: Callable[[], str], monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Django's lexer took 10 s for 40,000 unclosed openers on one line."""
+    """Django's lexer took 10 s for 40,000 unclosed openers on one line.
 
-    def forbidden(self) -> None:
+    Args:
+        build: Builds the template source under test.
+        monkeypatch: Patches the parser or the compilation for this test.
+    """
+
+    def forbidden(self: Template) -> None:
         raise AssertionError("Django compiled the source")
 
     monkeypatch.setattr(Template, "compile_nodelist", forbidden)
@@ -551,6 +652,7 @@ def test_pathological_source_is_rejected_without_being_lexed_by_django(
 
 
 def test_budget_does_not_grow_with_max_bytes() -> None:
+    """The unclosed opener budget does not grow with the byte limit."""
     source = "{" * (_unclosed_openers_at_the_budget() + 1)
 
     with pytest.raises(TemplateValidationError) as captured:
@@ -573,7 +675,14 @@ def test_budget_does_not_grow_with_max_bytes() -> None:
     ],
     ids=["one-long-line", "a-stray-opener-on-each-short-line", "unclosed-but-cheap"],
 )
-def test_large_templates_of_ordinary_tokens_are_not_limited(build) -> None:
+def test_large_templates_of_ordinary_tokens_are_not_limited(
+    build: Callable[[], str],
+) -> None:
+    """Large templates of ordinary tokens are not limited.
+
+    Args:
+        build: Builds the template source under test.
+    """
     source = build()
 
     assert validate_template_source(source) == source

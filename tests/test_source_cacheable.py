@@ -1,6 +1,6 @@
 """The public cacheable attribute is the only way a source opts in to caching."""
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
@@ -28,6 +28,14 @@ _TENANT: ContextVar[str] = ContextVar("tenant")
 
 @contextmanager
 def as_tenant(name: str) -> Iterator[None]:
+    """Run the block as the named tenant.
+
+    Args:
+        name: Name of the tenant that the sources read.
+
+    Yields:
+        Nothing, while the tenant is set.
+    """
     token = _TENANT.set(name)
     try:
         yield
@@ -39,11 +47,21 @@ class TenantSource:
     """Resolves content from ambient request state, as a multi-tenant source can."""
 
     def resolve(self, name: str) -> ResolvedTemplate:
+        """Resolve content that embeds the current tenant.
+
+        Args:
+            name: Name of the template to resolve, or of the tenant to run as.
+
+        Returns:
+            A template whose content names the current tenant.
+        """
         content = f"<view>{_TENANT.get()}</view>"
         return ResolvedTemplate(name, content, "tenant", "tenant", "1")
 
 
 class OptedInTenantSource(TenantSource):
+    """Tenant source that opts in to caching."""
+
     cacheable = True
 
 
@@ -71,10 +89,20 @@ class OverridingFileSource(FileSystemSource):
     """A filesystem subclass whose resolve can read anything, such as a tenant."""
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Delegate to the built-in filesystem resolution.
+
+        Args:
+            name: Name of the template to resolve, or of the tenant to run as.
+
+        Returns:
+            The template that the filesystem source finds, or None.
+        """
         return super().resolve(name)
 
 
 class OptedInFileSource(OverridingFileSource):
+    """Overriding filesystem source that opts in to caching."""
+
     cacheable = True
 
 
@@ -82,31 +110,57 @@ class OverridingDatabaseSource(DatabaseSource):
     """A database subclass whose resolve can read anything, such as a tenant."""
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Delegate to the built-in database resolution.
+
+        Args:
+            name: Name of the template to resolve, or of the tenant to run as.
+
+        Returns:
+            The template that the database source finds, or None.
+        """
         return super().resolve(name)
 
 
 class OptedInDatabaseSource(OverridingDatabaseSource):
+    """Overriding database source that opts in to caching."""
+
     cacheable = True
 
 
 class AssigningFileSource(OverridingFileSource):
-    """The instance-attribute form of the declaration, set in the constructor."""
+    """The instance-attribute form of the declaration, set in the constructor.
+
+    Args:
+        declared: Value assigned to the cacheable attribute of the instance.
+    """
 
     def __init__(self, *, declared: bool) -> None:
+        """Build a source without template directories that declares caching."""
         super().__init__(template_dirs=())
         self.cacheable = declared
 
 
 class AssigningDatabaseSource(DatabaseSource):
-    """The instance-attribute form on a source that keeps the built-in resolve."""
+    """The instance-attribute form on a source that keeps the built-in resolve.
+
+    Args:
+        using: Database alias that the source reads, or None for the default.
+        declared: Value assigned to the cacheable attribute of the instance.
+    """
 
     def __init__(self, *, using: str | None, declared: bool) -> None:
+        """Build a database source that declares caching."""
         super().__init__(using=using)
         self.cacheable = declared
 
 
 @pytest.fixture(autouse=True)
 def configured_cache() -> Iterator[None]:
+    """Run the test with an empty in-memory screens cache.
+
+    Yields:
+        Nothing, while the in-memory cache settings are active.
+    """
     with override_settings(CACHES=LOCMEM_CACHES):
         caches["screens"].clear()
         yield
@@ -157,6 +211,7 @@ def test_undeclared_source_never_touches_the_cache_backend() -> None:
 
 
 def test_builtin_sources_declare_their_cacheability() -> None:
+    """The built-in sources declare their cacheability."""
     assert FileSystemSource(template_dirs=()).cacheable is True
     assert DatabaseSource(using="default").cacheable is True
     assert DatabaseSource(using=None).cacheable is False
@@ -164,10 +219,12 @@ def test_builtin_sources_declare_their_cacheability() -> None:
 
 
 def test_database_subclass_class_attribute_overrides_the_derived_value() -> None:
+    """A class attribute on a database subclass overrides the derived value."""
     assert WithdrawnDatabaseSource(using="default").cacheable is False
 
 
 def test_subclass_that_keeps_the_builtin_resolve_keeps_the_default() -> None:
+    """A subclass that keeps the built-in resolve keeps the default."""
     assert PlainFileSource(template_dirs=()).cacheable is True
     assert PlainDatabaseSource(using="default").cacheable is True
     assert PlainDatabaseSource().cacheable is False
@@ -180,6 +237,7 @@ def test_subclass_that_overrides_resolve_must_opt_in_to_caching() -> None:
 
 
 def test_subclass_that_overrides_resolve_opts_in_with_a_class_attribute() -> None:
+    """A subclass that overrides resolve opts in with a class attribute."""
     assert OptedInFileSource(template_dirs=()).cacheable is True
     assert OptedInDatabaseSource(using="default").cacheable is True
 
@@ -188,7 +246,11 @@ def test_subclass_that_overrides_resolve_opts_in_with_a_class_attribute() -> Non
 def test_builtin_source_subclass_can_assign_the_instance_attribute(
     declared: bool,
 ) -> None:
-    """The documented instance-attribute form works on the built-in sources."""
+    """The documented instance-attribute form works on the built-in sources.
+
+    Args:
+        declared: Value given to the cacheable attribute.
+    """
     assert AssigningFileSource(declared=declared).cacheable is declared
     routed = AssigningDatabaseSource(using="default", declared=declared)
     unrouted = AssigningDatabaseSource(using=None, declared=declared)
@@ -196,6 +258,7 @@ def test_builtin_source_subclass_can_assign_the_instance_attribute(
 
 
 def test_assigning_the_attribute_overrides_the_default_on_any_instance() -> None:
+    """Assigning the attribute overrides the default on any instance."""
     source = DatabaseSource(using="default")
     source.cacheable = False
     assert source.cacheable is False
@@ -217,8 +280,14 @@ BUILTIN_SOURCES = pytest.mark.parametrize(
 
 
 @BUILTIN_SOURCES
-def test_deleting_the_assigned_attribute_restores_the_derived_default(make) -> None:
-    """The attribute behaves like a plain class attribute that an instance shadows."""
+def test_deleting_the_assigned_attribute_restores_the_derived_default(
+    make: Callable[[], FileSystemSource | DatabaseSource],
+) -> None:
+    """The attribute behaves like a plain class attribute that an instance shadows.
+
+    Args:
+        make: Factory that builds a built-in source with default arguments.
+    """
     source = make()
     source.cacheable = False
     assert source.cacheable is False
@@ -230,8 +299,14 @@ def test_deleting_the_assigned_attribute_restores_the_derived_default(make) -> N
 
 
 @BUILTIN_SOURCES
-def test_patch_object_can_override_and_restore_the_attribute(make) -> None:
-    """Test doubles patch the attribute on an instance, as they did on a class one."""
+def test_patch_object_can_override_and_restore_the_attribute(
+    make: Callable[[], FileSystemSource | DatabaseSource],
+) -> None:
+    """Test doubles patch the attribute on an instance, as they did on a class one.
+
+    Args:
+        make: Factory that builds a built-in source with default arguments.
+    """
     source = make()
 
     with patch.object(source, "cacheable", False):
@@ -244,6 +319,11 @@ def test_patch_object_can_override_and_restore_the_attribute(make) -> None:
 def test_filesystem_source_is_still_cached_without_extra_configuration(
     tmp_path: Path,
 ) -> None:
+    """The filesystem source is still cached without extra configuration.
+
+    Args:
+        tmp_path: Temporary directory that holds the template files.
+    """
     (tmp_path / "screen.xml").write_text("<view>first</view>", encoding="utf-8")
     config = _config(FILESYSTEM, "filesystem-cached", TEMPLATE_DIRS=[tmp_path])
     with override_settings(HYPERVIEW=config):
@@ -255,6 +335,11 @@ def test_filesystem_source_is_still_cached_without_extra_configuration(
 def test_filesystem_subclass_can_withdraw_the_inherited_declaration(
     tmp_path: Path,
 ) -> None:
+    """A filesystem subclass can withdraw the inherited declaration.
+
+    Args:
+        tmp_path: Temporary directory that holds the template files.
+    """
     (tmp_path / "screen.xml").write_text("<view>first</view>", encoding="utf-8")
     config = _config(
         f"{__name__}.TenantFileSource", "filesystem-subclass", TEMPLATE_DIRS=[tmp_path]
@@ -272,6 +357,13 @@ def test_filesystem_subclass_can_withdraw_the_inherited_declaration(
 def test_filesystem_subclass_that_overrides_resolve_is_cached_only_after_it_opts_in(
     tmp_path: Path, backend: str, second_read: str
 ) -> None:
+    """A filesystem subclass that overrides resolve is cached only after it opts in.
+
+    Args:
+        tmp_path: Temporary directory that holds the template files.
+        backend: Name of the source class that the resolver uses.
+        second_read: Content that the source returns on the second read.
+    """
     (tmp_path / "screen.xml").write_text("<view>first</view>", encoding="utf-8")
     config = _config(
         f"{__name__}.{backend}", f"filesystem-{backend}", TEMPLATE_DIRS=[tmp_path]

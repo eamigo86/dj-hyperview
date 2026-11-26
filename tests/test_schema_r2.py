@@ -30,7 +30,12 @@ R2 = "compatible-0.110.0-r2"
         '<style id="margin" margin="-12.5%"/>',
     ],
 )
-def test_r2_accepts_only_audited_native_additions(markup):
+def test_r2_accepts_only_audited_native_additions(markup: str) -> None:
+    """R2 accepts only the audited native additions.
+
+    Args:
+        markup: Markup that uses one audited native addition.
+    """
     with override_settings(HYPERVIEW={}):
         validate_hyperview_schema(markup.replace(" ", f' xmlns="{HV}" ', 1))
 
@@ -49,7 +54,12 @@ def test_r2_accepts_only_audited_native_additions(markup):
         "<doc><styles/><screen><body/></screen></doc>",
     ],
 )
-def test_r2_preserves_unrelated_rejections(markup):
+def test_r2_preserves_unrelated_rejections(markup: str) -> None:
+    """R2 keeps rejecting unrelated invalid markup.
+
+    Args:
+        markup: Invalid markup that must still be rejected.
+    """
     from lxml import etree
 
     node = etree.fromstring(markup)
@@ -62,7 +72,12 @@ def test_r2_preserves_unrelated_rejections(markup):
 @pytest.mark.parametrize(
     "value", ["0", "84", "12.5", "0.5", "0%", "12.5%", ".5%", "150%"]
 )
-def test_r2_canonical_width_values(value):
+def test_r2_canonical_width_values(value: str) -> None:
+    """R2 accepts the canonical width values.
+
+    Args:
+        value: Width value under test.
+    """
     with override_settings(HYPERVIEW={}):
         validate_hyperview_schema(f'<style xmlns="{HV}" width="{value}"/>')
 
@@ -86,13 +101,19 @@ def test_r2_canonical_width_values(value):
         "12.",
     ],
 )
-def test_r2_rejects_noncanonical_width(value):
+def test_r2_rejects_noncanonical_width(value: str) -> None:
+    """R2 rejects non-canonical width values.
+
+    Args:
+        value: Width value under test.
+    """
     with override_settings(HYPERVIEW={}):
         with pytest.raises(TemplateValidationError, match=r"\[schema\]"):
             validate_hyperview_schema(f'<style xmlns="{HV}" width="{value}"/>')
 
 
-def test_corrected_registry_keeps_legacy_resources_unchanged():
+def test_corrected_registry_keeps_legacy_resources_unchanged() -> None:
+    """The corrected registry leaves the legacy resources unchanged."""
     from lxml import etree
 
     from dj_hyperview.schema import _compile_schema, get_hyperview_schema_path
@@ -104,7 +125,8 @@ def test_corrected_registry_keeps_legacy_resources_unchanged():
     )
 
 
-def test_r2_catalog_preserves_qualified_attributes_and_is_detached():
+def test_r2_catalog_preserves_qualified_attributes_and_is_detached() -> None:
+    """The R2 catalog keeps qualified attributes and stays detached from callers."""
     with override_settings(HYPERVIEW={}):
         catalog = get_hyperview_catalog()
         assert catalog["catalog_format"] == 2

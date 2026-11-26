@@ -1,5 +1,6 @@
 """Linear declaration scanning and the UTF-8 wire contract."""
 
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
@@ -21,7 +22,16 @@ class TrackedDocument(str):
     searched_characters = 0
 
     def find(self, sub: str, start: int = 0, end: int | None = None) -> int:
-        """Count characters examined up to the first match or search boundary."""
+        """Count characters examined up to the first match or search boundary.
+
+        Args:
+            sub: Substring to look for.
+            start: Index where the search starts.
+            end: Index where the search stops, or None for the end of the text.
+
+        Returns:
+            Index of the first match, or minus one when there is none.
+        """
         limit = len(self) if end is None else end
         found = super().find(sub, start, limit)
         self.searched_characters += (
@@ -34,9 +44,19 @@ class TrackedDocument(str):
 @pytest.mark.parametrize("opening", ["{%", "{#", "{% other ", "{% comment "])
 @pytest.mark.parametrize("count", [1_000, 2_000])
 def test_declaration_search_work_is_linear_for_unclosed_delimiters(
-    validator, opening: str, count: int, monkeypatch: pytest.MonkeyPatch
+    validator: Callable[[str], str],
+    opening: str,
+    count: int,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An inert XML declaration must not trigger repeated suffix searches."""
+    """An inert XML declaration must not trigger repeated suffix searches.
+
+    Args:
+        validator: Public validator that scans the document.
+        opening: Unclosed Django delimiter that opens the document body.
+        count: How many times the delimiter is repeated.
+        monkeypatch: Patches the validation limits and the scanner for this test.
+    """
     # The cost of the unclosed openers has its own limit, which is not under test.
     monkeypatch.setattr(validation_module, "_MAX_UNCLOSED_COST", 10**12)
     document = TrackedDocument(
@@ -68,7 +88,11 @@ def test_inline_comment_search_work_is_linear_across_a_later_line() -> None:
     ],
 )
 def test_unclosed_block_comment_at_end_is_deferred_to_compilation(source: str) -> None:
-    """The source guard does not replace Django's missing-endcomment error."""
+    """The source guard does not replace Django's missing-endcomment error.
+
+    Args:
+        source: Template source whose block comment is never closed.
+    """
     assert validate_template_source(source) == source
 
 
@@ -83,7 +107,11 @@ def test_unclosed_block_comment_at_end_is_deferred_to_compilation(source: str) -
     ],
 )
 def test_scanner_rechecks_after_consuming_each_ignored_block(prefix: str) -> None:
-    """Cached closing positions cannot hide an active later declaration."""
+    """Cached closing positions cannot hide an active later declaration.
+
+    Args:
+        prefix: Ignored Django blocks that come before the declaration.
+    """
     with pytest.raises(TemplateValidationError) as captured:
         validate_template_source(
             f"{prefix}<!DOCTYPE view><text xmlns='https://hyperview.org/hyperview' />"
@@ -92,8 +120,14 @@ def test_scanner_rechecks_after_consuming_each_ignored_block(prefix: str) -> Non
     assert captured.value.code == "forbidden_declaration"
 
 
-def test_public_engine_scans_autoescaped_context_as_xml_only(monkeypatch) -> None:
-    """Literal Django delimiters in rendered data have no template semantics."""
+def test_public_engine_scans_autoescaped_context_as_xml_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Literal Django delimiters in rendered data have no template semantics.
+
+    Args:
+        monkeypatch: Patches the validation limits and the scanner for this test.
+    """
     scan = validation_module._contains_forbidden_declaration
     documents = []
 
@@ -137,7 +171,11 @@ def test_public_engine_scans_autoescaped_context_as_xml_only(monkeypatch) -> Non
 def test_rendered_django_comment_text_cannot_hide_active_xml_declarations(
     document: str,
 ) -> None:
-    """Only XML comment syntax may hide a declaration after rendering."""
+    """Only XML comment syntax may hide a declaration after rendering.
+
+    Args:
+        document: Document whose Django comment text is rendered data.
+    """
     assert validate_template_source(document) == document
 
     with pytest.raises(TemplateValidationError) as captured:
@@ -149,9 +187,14 @@ def test_rendered_django_comment_text_cannot_hide_active_xml_declarations(
 @pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
 @pytest.mark.parametrize("encoding", ["ISO-8859-1", "UTF-16", "unknown-codec"])
 def test_initial_bom_does_not_hide_non_utf8_declarations(
-    validator, encoding: str
+    validator: Callable[[str], str], encoding: str
 ) -> None:
-    """The declaration must agree with UTF-8 even when a BOM precedes it."""
+    """The declaration must agree with UTF-8 even when a BOM precedes it.
+
+    Args:
+        validator: Public validator that scans the document.
+        encoding: Encoding name written in the XML declaration.
+    """
     document = f'\ufeff<?xml version="1.0" encoding="{encoding}"?><text xmlns=\'https://hyperview.org/hyperview\'>café</text>'
 
     with pytest.raises(TemplateValidationError) as captured:
@@ -162,7 +205,11 @@ def test_initial_bom_does_not_hide_non_utf8_declarations(
 
 @pytest.mark.parametrize("encoding", ["UTF-8", "utf8"])
 def test_utf8_bom_is_preserved_through_validation_and_http(encoding: str) -> None:
-    """Accept compatible encoding aliases without rewriting valid content."""
+    """Accept compatible encoding aliases without rewriting valid content.
+
+    Args:
+        encoding: Encoding name written in the XML declaration.
+    """
     document = f'\ufeff<?xml version="1.0" encoding="{encoding}"?><text xmlns=\'https://hyperview.org/hyperview\'>café</text>'
 
     assert validate_template_source(document) == document
@@ -184,7 +231,11 @@ def test_public_engine_rejects_bom_hidden_incompatible_encoding() -> None:
 def test_bom_template_with_a_load_tag_keeps_the_bom_and_drops_later_whitespace(
     tmp_path: Path,
 ) -> None:
-    """Whitespace emitted after an initial BOM cannot precede the declaration."""
+    """Whitespace emitted after an initial BOM cannot precede the declaration.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+    """
     (tmp_path / "screen.xml").write_text(
         "\ufeff{% load dj_hyperview %}\n"
         '<?xml version="1.0" encoding="UTF-8"?>'

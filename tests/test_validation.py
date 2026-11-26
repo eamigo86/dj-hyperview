@@ -1,9 +1,12 @@
+"""HXML validation, template source scanning and the engine validation contract."""
+
 import codecs
 import encodings
 import encodings.aliases
 import pkgutil
 import random
 import uuid
+from collections.abc import Callable
 
 import pytest
 from django.template import Context, Engine, Template, TemplateSyntaxError
@@ -28,20 +31,33 @@ from dj_hyperview.validation import (
 from .stubs import TemplateSource
 
 
-def assert_validation_error(code, action):
+def assert_validation_error(
+    code: str, action: Callable[[], object]
+) -> TemplateValidationError:
+    """Run the action and check that it raises the expected validation error.
+
+    Args:
+        code: Validation error code that is expected.
+        action: Callable that triggers the validation error.
+
+    Returns:
+        The validation error that the action raised.
+    """
     with pytest.raises(TemplateValidationError) as error:
         action()
     assert error.value.code == code
     return error.value
 
 
-def test_validate_hxml_accepts_a_well_formed_document():
+def test_validate_hxml_accepts_a_well_formed_document() -> None:
+    """The HXML validator accepts a well-formed document."""
     document = "<view xmlns='https://hyperview.org/hyperview'><text>Ready</text></view>"
 
     assert validate_hxml(document) == document
 
 
-def test_validate_hxml_rejects_malformed_xml_with_a_stable_error():
+def test_validate_hxml_rejects_malformed_xml_with_a_stable_error() -> None:
+    """The HXML validator rejects malformed XML with a stable error."""
     error = assert_validation_error("malformed_xml", lambda: validate_hxml("<view>"))
 
     assert str(error) == "HXML validation failed [malformed_xml]: invalid XML"
@@ -52,7 +68,16 @@ class TrackedDocument(str):
 
     startswith_calls = 0
 
-    def startswith(self, *args, **kwargs):
+    def startswith(self, *args: object, **kwargs: object) -> bool:
+        """Count the call, then delegate to the string method.
+
+        Args:
+            *args: Positional arguments passed to str.startswith.
+            **kwargs: Keyword arguments passed to str.startswith.
+
+        Returns:
+            Whether the document starts with the given prefix.
+        """
         self.startswith_calls += 1
         return super().startswith(*args, **kwargs)
 
@@ -73,6 +98,9 @@ def test_declaration_scan_visits_only_candidate_positions(
 
     Only a few positions can start anything the scan acts on. It used to test every
     character there: about 1 MB took 215 ms rendered and 373 ms as template source.
+
+    Args:
+        template_source: Whether the scan treats the document as template source.
     """
     document = TrackedDocument(
         "<!-- <!DOCTYPE -->" + "<text>content {{ value }}</text>" * 20_000
@@ -89,6 +117,12 @@ def reference_contains_forbidden_declaration(document: str) -> bool:
     """The XML scanner as it was before it jumped between candidates.
 
     The oracle of the differential tests below. It tests one index at a time.
+
+    Args:
+        document: Document under test.
+
+    Returns:
+        Whether the document holds a forbidden declaration.
     """
     if "<!DOCTYPE" not in document and "<!ENTITY" not in document:
         return False
@@ -152,7 +186,14 @@ SCAN_TOKENS = [
 
 
 def random_scan_document(rng: random.Random) -> str:
-    """Join delimiters, declarations and plain runs in an order no author would."""
+    """Join delimiters, declarations and plain runs in an order no author would.
+
+    Args:
+        rng: Seeded random generator that picks the pieces.
+
+    Returns:
+        The joined pieces of a document.
+    """
     parts = []
     for _ in range(rng.randint(1, 16)):
         if rng.random() < 0.2:
@@ -215,7 +256,11 @@ def test_template_source_scan_matches_the_text_django_renders() -> None:
 def test_template_source_scan_rejects_a_declaration_django_renders(
     source: str,
 ) -> None:
-    """A verbatim body is literal text, so a comment tag inside it hides nothing."""
+    """A verbatim body is literal text, so a comment tag inside it hides nothing.
+
+    Args:
+        source: Template source under test.
+    """
     assert_validation_error(
         "forbidden_declaration", lambda: validate_template_source(source)
     )
@@ -233,14 +278,22 @@ def test_template_source_scan_rejects_a_declaration_django_renders(
 def test_template_source_scan_accepts_a_declaration_django_never_renders(
     source: str,
 ) -> None:
-    """Only a tag named exactly endcomment ends a comment, as in Django."""
+    """Only a tag named exactly endcomment ends a comment, as in Django.
+
+    Args:
+        source: Template source under test.
+    """
     assert validate_template_source(source) == source
     assert "<!DOCTYPE" not in Template(source, engine=Engine()).render(Context())
 
 
 @pytest.mark.parametrize("max_depth", [256])
-def test_libxml_depth_ceiling_uses_the_public_max_depth_code(max_depth) -> None:
-    """Parser-level depth rejection is reported as the configured limit."""
+def test_libxml_depth_ceiling_uses_the_public_max_depth_code(max_depth: int) -> None:
+    """Parser-level depth rejection is reported as the configured limit.
+
+    Args:
+        max_depth: Configured maximum nesting depth.
+    """
     document = "<view>" * 257 + "</view>" * 257
 
     assert_validation_error(
@@ -279,6 +332,15 @@ def test_parser_errors_map_to_max_depth_only_for_libxml2_depth_limits(
     libxml_code: int,
     public_code: str,
 ) -> None:
+    """Parser errors map to max_depth only for libxml2 depth limits.
+
+    Args:
+        monkeypatch: Patches the parser or the codec lookup for this test.
+        message: Message of the XML syntax error that the parser raises.
+        libxml_code: libxml2 error code that the patched parser raises.
+        public_code: Public error code that the validator reports.
+    """
+
     def reject(*args: object, **kwargs: object) -> None:
         del args, kwargs
         raise validation_module.etree.XMLSyntaxError(message, libxml_code, 0, 0)
@@ -296,16 +358,28 @@ def test_parser_errors_map_to_max_depth_only_for_libxml2_depth_limits(
         "<view><depth></view></depth>",
     ],
 )
-def test_syntax_errors_that_merely_mention_depth_are_malformed_xml(document) -> None:
-    """libxml2 echoes names into messages, so a tag or attribute can say "depth"."""
+def test_syntax_errors_that_merely_mention_depth_are_malformed_xml(
+    document: str,
+) -> None:
+    """libxml2 echoes names into messages, so a tag or attribute can say "depth".
+
+    Args:
+        document: Document under test.
+    """
     error = assert_validation_error("malformed_xml", lambda: validate_hxml(document))
 
     assert error.message == "invalid XML"
 
 
 @pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
-def test_non_utf8_xml_declarations_are_rejected(validator) -> None:
-    """The XML declaration cannot contradict the UTF-8 HTTP contract."""
+def test_non_utf8_xml_declarations_are_rejected(
+    validator: Callable[[str], str],
+) -> None:
+    """The XML declaration cannot contradict the UTF-8 HTTP contract.
+
+    Args:
+        validator: Public validator under test.
+    """
     document = '<?xml version="1.0" encoding="ISO-8859-1"?><view>café</view>'
 
     error = assert_validation_error("invalid_encoding", lambda: validator(document))
@@ -324,9 +398,14 @@ def test_non_utf8_xml_declarations_are_rejected(validator) -> None:
     ],
 )
 def test_encoding_names_that_cannot_be_looked_up_are_invalid_encoding(
-    validator, encoding: str
+    validator: Callable[[str], str], encoding: str
 ) -> None:
-    """A NUL or a lone surrogate is no name character; lookup raises ValueError."""
+    """A NUL or a lone surrogate is no name character; lookup raises ValueError.
+
+    Args:
+        validator: Public validator under test.
+        encoding: Encoding name written in the XML declaration.
+    """
     document = (
         f'<?xml version="1.0" encoding="{encoding}"?>'
         "<view xmlns='https://hyperview.org/hyperview' />"
@@ -361,9 +440,14 @@ def test_encoding_names_that_cannot_be_looked_up_are_invalid_encoding(
 )
 @pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
 def test_malformed_or_oversized_encoding_names_are_rejected_by_their_shape(
-    validator, encoding: str
+    validator: Callable[[str], str], encoding: str
 ) -> None:
-    """A name that XML does not allow, or that no codec name reaches, is rejected."""
+    """A name that XML does not allow, or that no codec name reaches, is rejected.
+
+    Args:
+        validator: Public validator under test.
+        encoding: Encoding name written in the XML declaration.
+    """
     document = (
         f'<?xml version="1.0" encoding="{encoding}"?>'
         "<view xmlns='https://hyperview.org/hyperview' />"
@@ -376,12 +460,17 @@ def test_malformed_or_oversized_encoding_names_are_rejected_by_their_shape(
 
 
 @pytest.mark.parametrize("validator", [validate_template_source, validate_hxml])
-def test_distinct_encoding_names_never_grow_the_codec_cache(validator) -> None:
+def test_distinct_encoding_names_never_grow_the_codec_cache(
+    validator: Callable[[str], str],
+) -> None:
     """Python keeps every name it looks up for the life of the process.
 
     A declaration chooses its encoding name, so even a well-formed name that no
     codec has must not be looked up: 5,000 of them used to add 5,000 entries to a
     cache that is never emptied.
+
+    Args:
+        validator: Public validator under test.
     """
     before = len(encodings._cache)
     unique = uuid.uuid4().hex
@@ -414,6 +503,12 @@ def test_distinct_encoding_names_never_grow_the_codec_cache(validator) -> None:
 def test_utf8_spellings_are_decided_without_a_codec_lookup(
     monkeypatch: pytest.MonkeyPatch, encoding: str
 ) -> None:
+    """UTF-8 spellings are decided without a codec lookup.
+
+    Args:
+        monkeypatch: Patches the parser or the codec lookup for this test.
+        encoding: Encoding name written in the XML declaration.
+    """
     looked_up: list[str] = []
     real_lookup = codecs.lookup
 
@@ -471,11 +566,21 @@ def test_utf8_decision_matches_what_the_codec_registry_decides() -> None:
     "name", ["latin-1", "iso-8859-1", "us-ascii", "ascii", "utf-16", "utf-8-sig"]
 )
 def test_other_encodings_are_not_utf8(name: str) -> None:
+    """Other encodings are not treated as UTF-8.
+
+    Args:
+        name: Encoding name under test.
+    """
     assert validation_module._is_utf8_encoding_name(name) is False
 
 
 @pytest.mark.parametrize("encoding", ["UTF-8", "utf-8", "utf8", "UTF_8", "U8"])
 def test_every_spelling_of_utf8_is_still_accepted(encoding: str) -> None:
+    """Every spelling of UTF-8 is still accepted.
+
+    Args:
+        encoding: Encoding name written in the XML declaration.
+    """
     document = (
         f'<?xml version="1.0" encoding="{encoding}"?>'
         "<view xmlns='https://hyperview.org/hyperview' />"
@@ -516,7 +621,12 @@ NOT_XML_WHITESPACE = [*ILLEGAL_SPACES, *LEGAL_NON_SPACES]
 def test_render_normalizer_strips_xml_whitespace_after_an_optional_bom(
     bom: str, whitespace: str
 ) -> None:
-    """Only the four XML whitespace characters may precede the document."""
+    """Only the four XML whitespace characters may precede the document.
+
+    Args:
+        bom: Byte order mark placed first, or an empty string.
+        whitespace: Whitespace written after the byte order mark.
+    """
     assert _rendered_hxml_text(f"{bom}{whitespace}<view />") == f"{bom}<view />"
 
 
@@ -524,7 +634,11 @@ def test_render_normalizer_strips_xml_whitespace_after_an_optional_bom(
 def test_render_normalizer_keeps_characters_that_are_not_xml_whitespace(
     character: str,
 ) -> None:
-    """str.lstrip would drop these silently, including illegal control characters."""
+    """str.lstrip would drop these silently, including illegal control characters.
+
+    Args:
+        character: Character placed before the root element.
+    """
     document = f"{character}<view />"
 
     assert _rendered_hxml_text(document) == document
@@ -540,7 +654,12 @@ def test_render_normalizer_keeps_characters_that_are_not_xml_whitespace(
 def test_leading_unicode_whitespace_is_rejected_not_stripped(
     character: str, message: str
 ) -> None:
-    """The public normalizer and the engine report what precedes the root."""
+    """The public normalizer and the engine report what precedes the root.
+
+    Args:
+        character: Character placed before the root element.
+        message: Message that both the normalizer and the engine report.
+    """
     document = f"{character}<view xmlns='https://hyperview.org/hyperview' />"
     engine = HyperviewEngine(TemplateResolver([TemplateSource(content=document)]))
 
@@ -566,8 +685,16 @@ def test_leading_unicode_whitespace_is_rejected_not_stripped(
         ("<view>\x01\xe9</view>", ValidationSettings(max_bytes=14), "max_bytes"),
     ],
 )
-def test_guard_codes_take_precedence_over_illegal_characters(document, config, code):
-    """A control character must not mask a failure that protects the parser."""
+def test_guard_codes_take_precedence_over_illegal_characters(
+    document: str, config: ValidationSettings, code: str
+) -> None:
+    """A control character must not mask a failure that protects the parser.
+
+    Args:
+        document: Document under test.
+        config: Validation settings applied to the document.
+        code: Validation error code that is expected.
+    """
     assert_validation_error(code, lambda: validate_hxml(document, config=config))
 
 
@@ -580,9 +707,15 @@ def test_guard_codes_take_precedence_over_illegal_characters(document, config, c
     ],
 )
 def test_a_lone_surrogate_is_reported_before_size_and_declarations(
-    validator, document, config
-):
-    """The guard encodes first, and a lone surrogate cannot be encoded."""
+    validator: Callable[[str], str], document: str, config: ValidationSettings
+) -> None:
+    """The guard encodes first, and a lone surrogate cannot be encoded.
+
+    Args:
+        validator: Public validator under test.
+        document: Document under test.
+        config: Validation settings applied to the document.
+    """
     error = assert_validation_error(
         "malformed_xml", lambda: validator(document, config=config)
     )
@@ -590,7 +723,7 @@ def test_a_lone_surrogate_is_reported_before_size_and_declarations(
     assert error.message == ILLEGAL_MESSAGE
 
 
-def test_a_non_utf8_declaration_is_reported_before_a_lone_surrogate():
+def test_a_non_utf8_declaration_is_reported_before_a_lone_surrogate() -> None:
     """The declaration is read from the text, before anything is encoded."""
     document = '<?xml version="1.0" encoding="ISO-8859-1"?>\U0000d800<view />'
 
@@ -607,7 +740,14 @@ def test_a_non_utf8_declaration_is_reported_before_a_lone_surrogate():
         "<view>&b;</view>",
     ],
 )
-def test_validate_hxml_denies_dtd_external_and_expanding_entities(document):
+def test_validate_hxml_denies_dtd_external_and_expanding_entities(
+    document: str,
+) -> None:
+    """The HXML validator denies DTDs, external entities and expanding entities.
+
+    Args:
+        document: Document under test.
+    """
     error = assert_validation_error(
         "forbidden_declaration", lambda: validate_hxml(document)
     )
@@ -627,7 +767,16 @@ def test_validate_hxml_denies_dtd_external_and_expanding_entities(document):
         ("<view><text /><text /></view>", ValidationSettings(max_nodes=2), "max_nodes"),
     ],
 )
-def test_validate_hxml_enforces_configured_limits(document, config, code):
+def test_validate_hxml_enforces_configured_limits(
+    document: str, config: ValidationSettings, code: str
+) -> None:
+    """The HXML validator enforces the configured limits.
+
+    Args:
+        document: Document under test.
+        config: Validation settings applied to the document.
+        code: Validation error code that is expected.
+    """
     assert_validation_error(code, lambda: validate_hxml(document, config=config))
 
 
@@ -642,7 +791,13 @@ def test_validate_hxml_enforces_configured_limits(document, config, code):
 def test_comments_and_processing_instructions_count_toward_the_limits(
     body: str, limit: str, needed: int
 ) -> None:
-    """MAX_NODES and MAX_DEPTH bound every node, not only elements: the safer bound."""
+    """MAX_NODES and MAX_DEPTH bound every node, not only elements: the safer bound.
+
+    Args:
+        body: Markup placed inside the root element.
+        limit: Name of the validation limit that the test lowers.
+        needed: Value of the limit that the document needs.
+    """
     document = f"<view xmlns='https://hyperview.org/hyperview'>{body}</view>"
 
     exact = ValidationSettings(**{limit: needed})
@@ -664,7 +819,8 @@ def test_comments_and_processing_instructions_outside_the_root_are_not_counted()
     assert validate_hxml(document, config=ValidationSettings(max_nodes=1)) == document
 
 
-def test_engine_safe_render_escapes_context_and_validates_output():
+def test_engine_safe_render_escapes_context_and_validates_output() -> None:
+    """The engine escapes context values and validates the rendered output."""
     engine = HyperviewEngine(
         TemplateResolver(
             [
@@ -702,8 +858,19 @@ def test_engine_safe_render_escapes_context_and_validates_output():
     ],
 )
 def test_engine_rejects_unsafe_source_or_rendered_output(
-    content, config, context, code
-):
+    content: str,
+    config: ValidationSettings,
+    context: dict[str, object] | None,
+    code: str,
+) -> None:
+    """The engine rejects unsafe source and unsafe rendered output.
+
+    Args:
+        content: Template source that the engine renders.
+        config: Validation settings applied to the document.
+        context: Context passed to the render, or None.
+        code: Validation error code that is expected.
+    """
     engine = HyperviewEngine(
         TemplateResolver([TemplateSource(content=content)]), validation=config
     )
@@ -711,7 +878,8 @@ def test_engine_rejects_unsafe_source_or_rendered_output(
     assert_validation_error(code, lambda: engine.render_hxml("screen.xml", context))
 
 
-def test_engine_cannot_request_retired_publish_only_mode():
+def test_engine_cannot_request_retired_publish_only_mode() -> None:
+    """The engine cannot request the retired publish-only mode."""
     with pytest.raises(TypeError):
         ValidationSettings(mode="publish")
 
@@ -726,7 +894,8 @@ def test_engine_cannot_request_retired_publish_only_mode():
         ]
     }
 )
-def test_public_render_and_response_reject_malformed_post_render_output():
+def test_public_render_and_response_reject_malformed_post_render_output() -> None:
+    """Public render and response reject malformed post-render output."""
     direct_error = assert_validation_error(
         "malformed_xml",
         lambda: render_template("screen.xml", {"value": "<broken>"}),
@@ -743,7 +912,8 @@ def test_public_render_and_response_reject_malformed_post_render_output():
     assert response_error.message == "invalid XML"
 
 
-def test_validation_contract_is_exported_from_package_root():
+def test_validation_contract_is_exported_from_package_root() -> None:
+    """The validation contract is exported from the package root."""
     import dj_hyperview
 
     assert dj_hyperview.TemplateValidationError is TemplateValidationError

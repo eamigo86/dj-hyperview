@@ -2,6 +2,8 @@
 
 from copy import deepcopy
 from dataclasses import FrozenInstanceError
+from pathlib import Path
+from typing import Any
 
 import pytest
 from django.test import override_settings
@@ -30,7 +32,15 @@ EXTENSIONS = {
 }
 
 
-def configured(extensions=EXTENSIONS):
+def configured(extensions: dict[str, Any] = EXTENSIONS) -> override_settings:
+    """Return a settings override that registers the given schema extensions.
+
+    Args:
+        extensions: Schema extension settings to register.
+
+    Returns:
+        A settings override whose HYPERVIEW setting holds the extensions.
+    """
     return override_settings(HYPERVIEW={"SCHEMA_EXTENSIONS": extensions})
 
 
@@ -44,7 +54,12 @@ def configured(extensions=EXTENSIONS):
         'perview.org/hyperview-alert" a:message="Other"',
     ],
 )
-def test_registered_behavior_attributes_are_action_specific(attributes):
+def test_registered_behavior_attributes_are_action_specific(attributes: str) -> None:
+    """Registered behavior attributes are valid only on their own action.
+
+    Args:
+        attributes: Attributes written on the behavior element.
+    """
     with configured():
         validate_hyperview_schema(f'<view xmlns="{HV}"><behavior {attributes}/></view>')
 
@@ -65,13 +80,19 @@ def test_registered_behavior_attributes_are_action_specific(attributes):
         'i:type="xs:anyType" action="unknown" message="Hi"/>',
     ],
 )
-def test_registrations_do_not_create_a_wildcard(markup):
+def test_registrations_do_not_create_a_wildcard(markup: str) -> None:
+    """Registering behavior attributes does not make other attributes valid.
+
+    Args:
+        markup: Markup that is validated under the registration.
+    """
     with configured():
         with pytest.raises(TemplateValidationError, match=r"\[schema\]"):
             validate_hyperview_schema(markup.replace(" ", f' xmlns="{HV}" ', 1))
 
 
-def test_per_element_registration_and_contextual_catalog():
+def test_per_element_registration_and_contextual_catalog() -> None:
+    """A per-element registration reaches validation and the contextual catalog."""
     with configured():
         validate_hyperview_schema(
             f'<image xmlns="{HV}" style="x" source="/x" variant="face"/>'
@@ -97,7 +118,14 @@ def test_per_element_registration_and_contextual_catalog():
     "type_name,good,bad",
     [("boolean", "true", "yes"), ("integer", "-2", "1.5"), ("decimal", "1.5", "NaN")],
 )
-def test_registration_primitive_types(type_name, good, bad):
+def test_registration_primitive_types(type_name: str, good: str, bad: str) -> None:
+    """Registered attributes accept their primitive type and reject other values.
+
+    Args:
+        type_name: Primitive type name given to the registered attribute.
+        good: Value of that type, which is accepted.
+        bad: Value that the type rejects.
+    """
     ext = {"BEHAVIORS": {"custom": {"ATTRIBUTES": {"value": {"TYPE": type_name}}}}}
     with configured(ext):
         validate_hyperview_schema(
@@ -158,7 +186,12 @@ def test_registration_primitive_types(type_name, good, bad):
         },
     ],
 )
-def test_invalid_registration_is_a_clear_configuration_error(value):
+def test_invalid_registration_is_a_clear_configuration_error(value: object) -> None:
+    """An invalid registration is reported as a clear configuration error.
+
+    Args:
+        value: Invalid registration setting under test.
+    """
     with configured(value):
         assert any(
             item.id == "dj_hyperview.E021" for item in check_hyperview_settings()
@@ -167,14 +200,16 @@ def test_invalid_registration_is_a_clear_configuration_error(value):
             get_settings()
 
 
-def test_nonempty_registration_uses_automatic_registry():
+def test_nonempty_registration_uses_automatic_registry() -> None:
+    """A non-empty registration selects the automatic registry."""
     with override_settings(HYPERVIEW={"SCHEMA_EXTENSIONS": EXTENSIONS}):
         assert not any(
             item.id == "dj_hyperview.E021" for item in check_hyperview_settings()
         )
 
 
-def test_normalized_registry_is_immutable_and_settings_changes_recompile():
+def test_normalized_registry_is_immutable_and_settings_changes_recompile() -> None:
+    """The normalized registry is immutable and a settings change recompiles it."""
     with configured(deepcopy(EXTENSIONS)):
         normalized = get_settings().schema_extensions
         with pytest.raises((FrozenInstanceError, AttributeError)):
@@ -188,7 +223,12 @@ def test_normalized_registry_is_immutable_and_settings_changes_recompile():
         validate_hyperview_schema(f'<behavior xmlns="{HV}" action="store-token"/>')
 
 
-def test_r2_custom_catalog_before_any_document_validation(tmp_path):
+def test_r2_custom_catalog_before_any_document_validation(tmp_path: Path) -> None:
+    """The R2 custom catalog is available before any document is validated.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     from dj_hyperview.schema import _get_static_validation_catalog
 
     schema = tmp_path / "app.xsd"
@@ -214,7 +254,8 @@ def test_r2_custom_catalog_before_any_document_validation(tmp_path):
         ]
 
 
-def test_doc_extension_preserves_existing_namespaced_wildcard():
+def test_doc_extension_preserves_existing_namespaced_wildcard() -> None:
+    """A doc extension keeps an existing namespaced wildcard."""
     with configured({"ELEMENT_ATTRIBUTES": {"doc": {"app-label": {"TYPE": "string"}}}}):
         validate_hyperview_schema(
             f'<doc xmlns="{HV}" app-label="label"><screen><body/></screen></doc>'
@@ -237,13 +278,23 @@ def test_doc_extension_preserves_existing_namespaced_wildcard():
         {"TYPE": "string", "ENUM": ["\ud800"]},
     ],
 )
-def test_invalid_descriptor_values_fail_closed(value):
+def test_invalid_descriptor_values_fail_closed(value: object) -> None:
+    """Invalid descriptor values fail closed.
+
+    Args:
+        value: Invalid attribute descriptor under test.
+    """
     with configured({"ELEMENT_ATTRIBUTES": {"image": {"variant": value}}}):
         with pytest.raises(HyperviewConfigurationError, match="E021"):
             get_settings()
 
 
-def test_r2_catalog_dependency_identity_and_guards(tmp_path):
+def test_r2_catalog_dependency_identity_and_guards(tmp_path: Path) -> None:
+    """The R2 catalog keeps its dependency identity and its guards.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     from tests.test_schema_dependency_safety import APP, schema_text, write_graph
 
     root, leaf = write_graph(tmp_path)
@@ -276,7 +327,8 @@ def test_r2_catalog_dependency_identity_and_guards(tmp_path):
                 operation()
 
 
-def test_registered_xsi_type_cannot_override_a_different_action():
+def test_registered_xsi_type_cannot_override_a_different_action() -> None:
+    """A registered xsi type cannot override a different action."""
     with configured():
         document = (
             f'<behavior xmlns="{HV}" xmlns:hv="{HV}" '
@@ -287,7 +339,8 @@ def test_registered_xsi_type_cannot_override_a_different_action():
             validate_hyperview_schema(document)
 
 
-def test_static_catalog_and_type_hook_select_exact_behavior_contract():
+def test_static_catalog_and_type_hook_select_exact_behavior_contract() -> None:
+    """The static catalog and the type hook select the exact behavior contract."""
     from lxml import etree
 
     from dj_hyperview.schema import (
@@ -312,7 +365,8 @@ def test_static_catalog_and_type_hook_select_exact_behavior_contract():
         ]
 
 
-def test_raw_settings_mutations_cannot_change_the_snapshot():
+def test_raw_settings_mutations_cannot_change_the_snapshot() -> None:
+    """Mutating the raw settings cannot change the registered snapshot."""
     raw = deepcopy(EXTENSIONS)
     with configured(raw):
         before = get_settings().schema_extensions
@@ -328,7 +382,14 @@ def test_raw_settings_mutations_cannot_change_the_snapshot():
         )
 
 
-def test_duplicate_extra_elements_with_different_children_are_rejected(tmp_path):
+def test_duplicate_extra_elements_with_different_children_are_rejected(
+    tmp_path: Path,
+) -> None:
+    """Duplicate extra elements with different children are rejected.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     paths = []
     for child in ("first", "second"):
         path = tmp_path / f"{child}.xsd"
@@ -349,7 +410,15 @@ def test_duplicate_extra_elements_with_different_children_are_rejected(tmp_path)
 
 
 @pytest.mark.parametrize("operation", ["catalog", "validation", "static"])
-def test_duplicate_extra_attribute_types_fail_in_every_consumer(tmp_path, operation):
+def test_duplicate_extra_attribute_types_fail_in_every_consumer(
+    tmp_path: Path, operation: str
+) -> None:
+    """Duplicate extra attribute types fail in every schema consumer.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+        operation: Schema consumer that is run: catalog, validation or static.
+    """
     from dj_hyperview.schema import _get_static_validation_catalog
 
     paths = []
@@ -376,13 +445,16 @@ def test_duplicate_extra_attribute_types_fail_in_every_consumer(tmp_path, operat
 
 
 def test_extra_schema_that_starts_conflicting_after_startup_is_a_validation_error(
-    tmp_path,
-):
+    tmp_path: Path,
+) -> None:
     """Only a file edited after the settings snapshot reaches validation as a conflict.
 
     Configuration time rejects a conflict with HyperviewConfigurationError, and the
     snapshot is not taken again, so an edit made while the process runs surfaces
     from the operation that notices it as TemplateValidationError.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
     """
     paths = []
     for name in ("first", "second"):
@@ -414,7 +486,14 @@ def test_extra_schema_that_starts_conflicting_after_startup_is_a_validation_erro
     assert validation.value.code == "duplicate_schema_declaration"
 
 
-def test_extra_alternative_without_default_preserves_its_declared_fallback(tmp_path):
+def test_extra_alternative_without_default_preserves_its_declared_fallback(
+    tmp_path: Path,
+) -> None:
+    """An extra alternative without a default keeps its declared fallback.
+
+    Args:
+        tmp_path: Temporary directory for the schema files this test writes.
+    """
     from dj_hyperview.schema import _get_static_validation_catalog
 
     path = tmp_path / "alternative.xsd"

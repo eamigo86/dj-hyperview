@@ -15,6 +15,14 @@ APP = "urn:simple-custom-elements"
 
 @pytest.fixture
 def simple_schema(tmp_path: Path) -> Path:
+    """Write a schema with simple elements and return its path.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+
+    Returns:
+        Path of the schema file.
+    """
     schema = tmp_path / "simple.xsd"
     schema.write_text(
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" '
@@ -34,6 +42,12 @@ def test_simple_elements_have_no_attributes_or_child_elements(
     simple_schema: Path,
     consumer: str,
 ) -> None:
+    """Simple elements take no attributes or child elements in any consumer.
+
+    Args:
+        simple_schema: Path of the schema that declares the simple elements.
+        consumer: Schema consumer that is checked.
+    """
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [simple_schema]}):
         if consumer == "admin":
             assert (
@@ -61,6 +75,11 @@ def test_simple_elements_have_no_attributes_or_child_elements(
 def test_simple_element_runtime_values_and_unknown_attributes_stay_strict(
     simple_schema: Path,
 ) -> None:
+    """Simple element values and unknown attributes stay strict at runtime.
+
+    Args:
+        simple_schema: Path of the schema that declares the simple elements.
+    """
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [simple_schema]}):
         validate_hyperview_schema(f'<label xmlns="{APP}">Ready</label>')
         validate_hyperview_schema(f'<count xmlns="{APP}">12</count>')
@@ -77,6 +96,11 @@ def test_simple_element_runtime_values_and_unknown_attributes_stay_strict(
 def test_simple_element_admin_rejects_unknown_attributes(
     simple_schema: Path,
 ) -> None:
+    """The admin rejects unknown attributes on simple elements.
+
+    Args:
+        simple_schema: Path of the schema that declares the simple elements.
+    """
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [simple_schema]}):
         diagnostics = _static_schema_diagnostics(
             "simple.xml", f'<label xmlns="{APP}" unknown="value">Ready</label>'
