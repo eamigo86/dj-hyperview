@@ -19,6 +19,11 @@ ALIASES = ("default", "replica")
 
 
 def integrity_command() -> BaseCommand:
+    """Build the integrity command under test.
+
+    Returns:
+        A new instance of the check_hyperview_templates command.
+    """
     from dj_hyperview.contrib.database.management.commands import (
         check_hyperview_templates,
     )
@@ -28,6 +33,15 @@ def integrity_command() -> BaseCommand:
 
 @pytest.fixture
 def integrity_model(django_db_blocker: Any) -> Iterator[type[Model]]:
+    """Create the template table on every alias for one test.
+
+    Args:
+        django_db_blocker: Allows the fixture to create the tables outside a test
+        transaction.
+
+    Yields:
+        The template model class, with its table present on every alias.
+    """
     from dj_hyperview.contrib.database.models import HyperviewTemplate
 
     with django_db_blocker.unblock():
@@ -47,6 +61,13 @@ def integrity_model(django_db_blocker: Any) -> Iterator[type[Model]]:
 def test_integrity_command_accepts_healthy_rows_and_empty_database(
     integrity_model: type[Model], alias: str, count: int
 ) -> None:
+    """The integrity command accepts healthy rows and an empty database.
+
+    Args:
+        integrity_model: Template model class created on every alias.
+        alias: Database alias the command checks.
+        count: Number of healthy rows created before the check.
+    """
     for index in range(count):
         integrity_model.objects.using(alias).create(
             name=f"screen-{index}.xml", content="<private>secret</private>"
@@ -64,6 +85,12 @@ def test_integrity_command_accepts_healthy_rows_and_empty_database(
 def test_integrity_command_reports_corrupt_duplicate_and_invalid_rows_without_writes(
     integrity_model: type[Model],
 ) -> None:
+    """The integrity command reports corrupt, duplicate and invalid rows without
+    writing.
+
+    Args:
+        integrity_model: Template model class created on every alias.
+    """
     rows = [
         integrity_model(
             pk=10,
@@ -129,6 +156,12 @@ def test_integrity_command_reports_corrupt_duplicate_and_invalid_rows_without_wr
 def test_integrity_command_checks_name_even_when_identity_matches(
     integrity_model: type[Model], name: str
 ) -> None:
+    """The integrity command rejects an invalid name even when its identity matches.
+
+    Args:
+        integrity_model: Template model class created on every alias.
+        name: Template name stored in the row under test.
+    """
     integrity_model._base_manager.bulk_create(
         [
             integrity_model(
@@ -146,6 +179,7 @@ def test_integrity_command_checks_name_even_when_identity_matches(
 
 
 def test_integrity_command_requires_explicit_valid_database_alias() -> None:
+    """The integrity command requires an explicit and valid database alias."""
     with pytest.raises(CommandError, match="--database"):
         call_command(integrity_command())
     with pytest.raises(CommandError, match="database"):
@@ -153,6 +187,7 @@ def test_integrity_command_requires_explicit_valid_database_alias() -> None:
 
 
 def test_integrity_command_registration_and_import_do_not_query_database() -> None:
+    """Registering and importing the integrity command run no SQL."""
     result = run_isolated(
         "tests.settings_database",
         "import django; from unittest.mock import patch; "

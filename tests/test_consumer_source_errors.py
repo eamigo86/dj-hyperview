@@ -31,7 +31,11 @@ def _filesystem_config(
 def test_filesystem_source_document_exposes_safe_resolution_metadata(
     client: Client,
 ) -> None:
-    """A resolved filesystem document retains content and source metadata."""
+    """A resolved filesystem document retains content and source metadata.
+
+    Args:
+        client: Client that requests the consumer source documents.
+    """
     response = client.get("/documents/source/", {"template": "precedence.xml"})
 
     expected = (
@@ -52,7 +56,12 @@ def test_filesystem_source_document_exposes_safe_resolution_metadata(
 def test_unsafe_template_name_returns_redacted_bad_request(
     client: Client, hostile: str
 ) -> None:
-    """Unsafe names are rejected without returning attacker-controlled input."""
+    """Unsafe names are rejected without returning attacker-controlled input.
+
+    Args:
+        client: Client that requests the consumer source documents.
+        hostile: Unsafe template name the request carries.
+    """
     response = client.get("/documents/source/", {"template": hostile})
 
     assert response.status_code == 400
@@ -92,7 +101,15 @@ def test_validation_failures_return_stable_safe_status(
     validation: dict[str, object],
     code: str,
 ) -> None:
-    """Malformed, schema-invalid, and excessive HXML return safe 422 errors."""
+    """Malformed, schema-invalid, and excessive HXML return safe 422 errors.
+
+    Args:
+        client: Client that requests the consumer source documents.
+        tmp_path: Temporary directory that holds the template.
+        content: Template content written to the source.
+        validation: Validation settings that make the content fail.
+        code: Stable error code the response is expected to carry.
+    """
     (tmp_path / "screen.xml").write_text(content, encoding="utf-8")
 
     with override_settings(
@@ -109,7 +126,12 @@ def test_validation_failures_return_stable_safe_status(
 def test_empty_content_is_not_a_miss_and_final_miss_is_404(
     client: Client, tmp_path: Path
 ) -> None:
-    """Empty raw content reaches validation while a real source miss returns 404."""
+    """Empty raw content reaches validation while a real source miss returns 404.
+
+    Args:
+        client: Client that requests the consumer source documents.
+        tmp_path: Temporary directory that holds the empty template.
+    """
     (tmp_path / "empty.xml").write_text("", encoding="utf-8")
 
     with override_settings(
@@ -132,7 +154,11 @@ def test_empty_content_is_not_a_miss_and_final_miss_is_404(
 def test_database_cache_precedence_and_failure_modes_over_http(
     tmp_path: Path,
 ) -> None:
-    """Optional source stacks preserve metadata, cache states, and failure policy."""
+    """Optional source stacks preserve metadata, cache states, and failure policy.
+
+    Args:
+        tmp_path: Temporary directory that holds the consumer SQLite file and templates.
+    """
     root = tmp_path / "templates"
     root.mkdir()
     (root / "screen.xml").write_text(

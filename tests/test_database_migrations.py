@@ -1,4 +1,8 @@
+"""Tests for the database app migrations."""
+
+from collections.abc import Iterator
 from importlib import import_module
+from pathlib import Path
 from types import SimpleNamespace
 
 from dj_hyperview.contrib.database._identity import template_name_identity
@@ -9,7 +13,12 @@ populate_name_identities = import_module(
 ).populate_name_identities
 
 
-def test_database_migration_applies_and_reverses(tmp_path):
+def test_database_migration_applies_and_reverses(tmp_path: Path) -> None:
+    """The database migration applies and reverses cleanly.
+
+    Args:
+        tmp_path: Temporary directory that holds the SQLite file of the probe.
+    """
     database = tmp_path / "database.sqlite3"
     result = run_isolated(
         "tests.settings_database",
@@ -30,7 +39,12 @@ def test_database_migration_applies_and_reverses(tmp_path):
     assert result.stdout.splitlines() == ["True", "False"]
 
 
-def test_migration_matches_current_model_state(tmp_path):
+def test_migration_matches_current_model_state(tmp_path: Path) -> None:
+    """The migration matches the current model state.
+
+    Args:
+        tmp_path: Temporary directory that holds the SQLite file of the probe.
+    """
     result = run_isolated(
         "tests.settings_database",
         "import django; django.setup(); "
@@ -44,7 +58,12 @@ def test_migration_matches_current_model_state(tmp_path):
     assert "No changes detected" in result.stdout
 
 
-def test_name_identity_migration_backfills_case_variants(tmp_path):
+def test_name_identity_migration_backfills_case_variants(tmp_path: Path) -> None:
+    """The name identity migration backfills names that differ only by case.
+
+    Args:
+        tmp_path: Temporary directory that holds the SQLite file of the probe.
+    """
     database = tmp_path / "backfill.sqlite3"
     result = run_isolated(
         "tests.settings_database",
@@ -87,7 +106,7 @@ def test_identity_migration_matches_the_runtime_identity_corpus() -> None:
             assert fields == ("pk", "name")
             return self
 
-        def iterator(self):
+        def iterator(self) -> Iterator[tuple[int, str]]:
             return iter(rows)
 
         def filter(self, *, pk: int) -> "Manager":
@@ -109,7 +128,8 @@ def test_identity_migration_matches_the_runtime_identity_corpus() -> None:
     }
 
 
-def test_package_contains_python_migration_without_runtime_markup():
+def test_package_contains_python_migration_without_runtime_markup() -> None:
+    """The package ships Python migrations and no XML or HXML files."""
     migration = ROOT / "src/dj_hyperview/contrib/database/migrations/0001_initial.py"
 
     assert migration.is_file()

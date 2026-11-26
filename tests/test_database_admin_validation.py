@@ -5,8 +5,10 @@ import importlib
 import json
 import time
 import tracemalloc
+from collections.abc import Callable
+from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any, Never
 
 import pytest
 from django.apps import apps
@@ -23,6 +25,9 @@ from tests.test_validation_hardening import (
     prefixed_namespaces,
     rebinding_path,
 )
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractUser
 
 pytestmark = pytest.mark.skipif(
     not apps.is_installed("django.contrib.admin"),
@@ -55,6 +60,7 @@ def _validate(
 
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_static_validation_uses_collision_safe_dynamic_markers() -> None:
+    """Static validation picks dynamic markers that cannot collide with the source."""
     module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     source = (
         f"{module._DYNAMIC_VALUE} {module._DYNAMIC_STRUCTURE} "
@@ -73,6 +79,7 @@ def test_static_validation_uses_collision_safe_dynamic_markers() -> None:
 
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_enabled_editor_exposes_context_free_validation_control() -> None:
+    """The enabled editor exposes a validation control that needs no context."""
     module, _ = _admin_types()
 
     widget = module.HyperviewTemplateAdminForm().fields["content"].widget
@@ -91,10 +98,15 @@ def test_enabled_editor_exposes_context_free_validation_control() -> None:
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_accepts_compilable_source_without_context_or_schema_render(
-    admin_client,
-    monkeypatch,
+    admin_client: Client,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Source validation must not render variables or invoke the HXML schema."""
+    """Source validation must not render variables or invoke the HXML schema.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        monkeypatch: Makes any schema validation of rendered output fail the test.
+    """
     monkeypatch.setattr(
         "dj_hyperview.engine._validate_hxml_result",
         lambda *args, **kwargs: pytest.fail("Admin rendered template source"),
@@ -119,9 +131,13 @@ def test_validation_accepts_compilable_source_without_context_or_schema_render(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_rejects_static_attribute_missing_from_xsd_catalog(
-    admin_client,
+    admin_client: Client,
 ) -> None:
-    """Static schema lint rejects attributes the selected XSD does not declare."""
+    """Static schema lint rejects attributes the selected XSD does not declare.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+    """
     _, model = _admin_types()
     source = (
         '<styles xmlns="https://hyperview.org/hyperview">\n'
@@ -152,9 +168,14 @@ def test_validation_rejects_static_attribute_missing_from_xsd_catalog(
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize("submit_action", ["_save", "_addanother", "_continue"])
 def test_admin_save_actions_reject_invalid_static_schema_without_javascript(
-    admin_client, submit_action: str
+    admin_client: Client, submit_action: str
 ) -> None:
-    """The server form remains authoritative when browser checks are bypassed."""
+    """The server form remains authoritative when browser checks are bypassed.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        submit_action: Name of the admin submit button that is clicked.
+    """
     _, model = _admin_types()
     add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
     source = (
@@ -203,9 +224,13 @@ def test_admin_save_allows_informational_static_schema_result() -> None:
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_admin_form_skips_draft_validation_when_required_fields_failed(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Field errors remain authoritative and never pass partial values onward."""
+    """Field errors remain authoritative and never pass partial values onward.
+
+    Args:
+        monkeypatch: Makes any draft validation fail the test.
+    """
     module, _ = _admin_types()
 
     def unexpected_validation(name: str, content: str) -> dict[str, Any]:
@@ -222,6 +247,7 @@ def test_admin_form_skips_draft_validation_when_required_fields_failed(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_admin_form_maps_invalid_draft_name_to_name_field() -> None:
+    """The admin form maps an invalid draft name to the name field."""
     module, _ = _admin_types()
     form = module.HyperviewTemplateAdminForm(
         data={"name": "../private.xml", "content": "<view />", "active": True}
@@ -235,8 +261,14 @@ def test_admin_form_maps_invalid_draft_name_to_name_field() -> None:
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_admin_form_fails_closed_when_draft_validation_is_unavailable(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The admin form fails closed, without details, when draft validation is
+    unavailable.
+
+    Args:
+        monkeypatch: Makes draft validation raise a configuration error.
+    """
     module, _ = _admin_types()
     from dj_hyperview.exceptions import HyperviewConfigurationError
 
@@ -285,8 +317,17 @@ def test_admin_form_fails_closed_when_draft_validation_is_unavailable(
     ],
 )
 def test_validation_checks_static_xsd_declarations(
-    admin_client, source: str, code: str, message: str
+    admin_client: Client, source: str, code: str, message: str
 ) -> None:
+    """Validation checks the static declarations against the selected XSD.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        source: Draft that breaks one XSD declaration.
+        code: Diagnostic code the validation is expected to report.
+        message: Diagnostic message the validation is expected to report.
+    """
     result = _validate(admin_client, source)
     diagnostic = result["diagnostics"][0]
 
@@ -311,8 +352,15 @@ def test_validation_checks_static_xsd_declarations(
     ],
 )
 def test_validation_defers_dynamic_xsd_values_until_render(
-    admin_client, value: str
+    admin_client: Client, value: str
 ) -> None:
+    """Validation defers dynamic attribute values to render time.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        value: Dynamic value placed in the scroll-orientation attribute.
+    """
     source = (
         f'<view xmlns="https://hyperview.org/hyperview" scroll-orientation="{value}" />'
     )
@@ -323,7 +371,15 @@ def test_validation_defers_dynamic_xsd_values_until_render(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_keeps_namespaced_attribute_types_distinct(admin_client) -> None:
+def test_validation_keeps_namespaced_attribute_types_distinct(
+    admin_client: Client,
+) -> None:
+    """Validation keeps the types of namespaced attributes apart from unqualified ones.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = (
         '<view xmlns="https://hyperview.org/hyperview" '
         'xmlns:alert="https://hyperview.org/hyperview-alert" '
@@ -335,7 +391,15 @@ def test_validation_keeps_namespaced_attribute_types_distinct(admin_client) -> N
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_accepts_namespaced_attributes_allowed_by_xsd(admin_client) -> None:
+def test_validation_accepts_namespaced_attributes_allowed_by_xsd(
+    admin_client: Client,
+) -> None:
+    """Validation accepts the namespaced attributes that the XSD allows.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = (
         '<doc xmlns="https://hyperview.org/hyperview" '
         'xmlns:app="https://example.test/app" app:tracking="enabled">'
@@ -348,6 +412,7 @@ def test_validation_accepts_namespaced_attributes_allowed_by_xsd(admin_client) -
 
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_static_validation_defers_unclosed_raw_block_analysis() -> None:
+    """Static validation defers the analysis of an unclosed raw block."""
     module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     source = "{% comment %}\n<style kk=1>"
 
@@ -368,7 +433,15 @@ def test_static_validation_defers_unclosed_raw_block_analysis() -> None:
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_lints_static_markup_inside_real_django_source(admin_client) -> None:
+def test_validation_lints_static_markup_inside_real_django_source(
+    admin_client: Client,
+) -> None:
+    """Validation lints the static markup inside real Django template source.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = "\n".join(
         (
             '{% load i18n %}<?xml version="1.0" encoding="UTF-8"?>',
@@ -393,8 +466,14 @@ def test_validation_lints_static_markup_inside_real_django_source(admin_client) 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_does_not_treat_load_as_an_incomplete_schema_gap(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """Validation does not treat a load tag as an incomplete schema check.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     source = "\n".join(
         (
@@ -412,8 +491,14 @@ def test_validation_does_not_treat_load_as_an_incomplete_schema_gap(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_treats_a_dynamic_attribute_value_as_an_unknown_scalar(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """Validation treats a dynamic attribute value as an unknown scalar.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = "\n".join(
         (
             '{% load i18n %}<?xml version="1.0" encoding="UTF-8"?>',
@@ -427,7 +512,15 @@ def test_validation_treats_a_dynamic_attribute_value_as_an_unknown_scalar(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_dynamic_scalar_does_not_hide_an_invalid_attribute_name(admin_client) -> None:
+def test_dynamic_scalar_does_not_hide_an_invalid_attribute_name(
+    admin_client: Client,
+) -> None:
+    """A dynamic scalar value does not hide an invalid attribute name.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = (
         '<style xmlns="https://hyperview.org/hyperview" id="card" '
         'backgroundColor="{{ theme.canvas }}" kk="1" />'
@@ -444,7 +537,15 @@ def test_dynamic_scalar_does_not_hide_an_invalid_attribute_name(admin_client) ->
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_checks_the_position_of_dynamic_scalar_text(admin_client) -> None:
+def test_validation_checks_the_position_of_dynamic_scalar_text(
+    admin_client: Client,
+) -> None:
+    """Validation checks where dynamic scalar text is allowed.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = "\n".join(
         (
             '<screen xmlns="https://hyperview.org/hyperview">',
@@ -480,8 +581,15 @@ def test_validation_checks_the_position_of_dynamic_scalar_text(admin_client) -> 
     ],
 )
 def test_structural_django_markup_is_deferred_without_false_schema_errors(
-    admin_client, dynamic_markup: str
+    admin_client: Client, dynamic_markup: str
 ) -> None:
+    """Structural Django markup is deferred without false schema errors.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        dynamic_markup: Django template markup that the static check cannot resolve.
+    """
     source = (
         '<doc xmlns="https://hyperview.org/hyperview">'
         f"{dynamic_markup}<screen><body /></screen></doc>"
@@ -498,8 +606,14 @@ def test_structural_django_markup_is_deferred_without_false_schema_errors(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_mutually_exclusive_valid_branches_do_not_create_structure_errors(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """Mutually exclusive valid branches do not create structure errors.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = (
         '<doc xmlns="https://hyperview.org/hyperview"><screen>'
         "{% if dark %}<styles />{% else %}<styles />{% endif %}"
@@ -514,7 +628,7 @@ def test_mutually_exclusive_valid_branches_do_not_create_structure_errors(
     ]
 
 
-def _filesystem_admin_config(tmp_path) -> dict[str, Any]:
+def _filesystem_admin_config(tmp_path: Path) -> dict[str, Any]:
     return {
         "ADMIN": {"EDITOR": True},
         "TEMPLATE_DIRS": [tmp_path],
@@ -522,13 +636,13 @@ def _filesystem_admin_config(tmp_path) -> dict[str, Any]:
     }
 
 
-def _count_resolutions(monkeypatch) -> list[str]:
+def _count_resolutions(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     from dj_hyperview.resolver import TemplateResolver
 
     calls: list[str] = []
     original = TemplateResolver.resolve
 
-    def counting(self, name):
+    def counting(self: Any, name: str) -> Any:
         calls.append(name)
         return original(self, name)
 
@@ -538,8 +652,16 @@ def _count_resolutions(monkeypatch) -> list[str]:
 
 @pytest.mark.django_db
 def test_validation_expands_a_literal_include_from_configured_sources(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation expands a literal include from the configured sources.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "label.xml").write_text("<text>{{ label }}</text>", encoding="utf-8")
@@ -557,8 +679,16 @@ def test_validation_expands_a_literal_include_from_configured_sources(
 
 @pytest.mark.django_db
 def test_literal_include_with_dynamic_structure_is_deferred_without_false_errors(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """A literal include with dynamic structure is deferred without false errors.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "panel.xml").write_text(
@@ -585,8 +715,16 @@ def test_literal_include_with_dynamic_structure_is_deferred_without_false_errors
 
 @pytest.mark.django_db
 def test_validation_resolves_a_literal_include_relative_to_the_draft_name(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation resolves a literal include relative to the draft name.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "screens" / "partials"
     partials.mkdir(parents=True)
     (partials / "label.xml").write_text("<text>Label</text>", encoding="utf-8")
@@ -603,7 +741,17 @@ def test_validation_resolves_a_literal_include_relative_to_the_draft_name(
 
 
 @pytest.mark.django_db
-def test_validation_reports_a_missing_literal_include(admin_client, tmp_path) -> None:
+def test_validation_reports_a_missing_literal_include(
+    admin_client: Client, tmp_path: Path
+) -> None:
+    """Validation reports a literal include that does not exist.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     source = '{% include "partials/missing.xml" %}'
 
     with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
@@ -625,8 +773,16 @@ def test_validation_reports_a_missing_literal_include(admin_client, tmp_path) ->
 
 @pytest.mark.django_db
 def test_validation_rejects_an_unsafe_literal_include_without_echoing_it(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation rejects an unsafe literal include without echoing its name.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     source = '{% include "/private/secret.xml" %}'
 
     with override_settings(HYPERVIEW=_filesystem_admin_config(tmp_path)):
@@ -640,8 +796,16 @@ def test_validation_rejects_an_unsafe_literal_include_without_echoing_it(
 
 @pytest.mark.django_db
 def test_validation_reports_schema_errors_in_a_literal_include(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation reports the schema errors of a literal include.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "invalid.xml").write_text(
@@ -667,9 +831,14 @@ def test_validation_reports_schema_errors_in_a_literal_include(
 
 @pytest.mark.django_db
 def test_markers_never_occur_in_the_source_of_a_draft_or_its_includes(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
-    """The draft and the include each hold a number, and the composed source both."""
+    """The draft and the include each hold a number, and the composed source both.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        tmp_path: Temporary directory that holds the files of the test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "marked.xml").write_text(
@@ -690,8 +859,16 @@ def test_markers_never_occur_in_the_source_of_a_draft_or_its_includes(
 
 @pytest.mark.django_db
 def test_validation_reports_django_syntax_in_a_literal_include(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation reports Django syntax errors in a literal include.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "invalid.xml").write_text("{% if ready %}<text />", encoding="utf-8")
@@ -708,8 +885,16 @@ def test_validation_reports_django_syntax_in_a_literal_include(
 
 @pytest.mark.django_db
 def test_validation_does_not_check_an_include_used_inside_an_attribute_value(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation does not expand an include used inside an attribute value.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "bad.xml").write_text(
@@ -726,8 +911,16 @@ def test_validation_does_not_check_an_include_used_inside_an_attribute_value(
 
 @pytest.mark.django_db
 def test_validation_checks_literal_include_content_in_its_parent_position(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation checks the included content in the position of its parent.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "styles.xml").write_text("<styles />", encoding="utf-8")
@@ -752,7 +945,17 @@ def test_validation_checks_literal_include_content_in_its_parent_position(
 
 
 @pytest.mark.django_db
-def test_validation_rejects_literal_include_cycles(admin_client, tmp_path) -> None:
+def test_validation_rejects_literal_include_cycles(
+    admin_client: Client, tmp_path: Path
+) -> None:
+    """Validation rejects cycles between literal includes.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "loop.xml").write_text(
@@ -769,7 +972,17 @@ def test_validation_rejects_literal_include_cycles(admin_client, tmp_path) -> No
 
 
 @pytest.mark.django_db
-def test_validation_limits_literal_include_expansion(admin_client, tmp_path) -> None:
+def test_validation_limits_literal_include_expansion(
+    admin_client: Client, tmp_path: Path
+) -> None:
+    """Validation limits how far literal includes are expanded.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "label.xml").write_text("<text>Label</text>", encoding="utf-8")
@@ -798,8 +1011,17 @@ def test_validation_limits_literal_include_expansion(admin_client, tmp_path) -> 
 
 @pytest.mark.django_db
 def test_include_expansion_stops_at_the_limit_and_keeps_real_errors(
-    admin_client, monkeypatch, tmp_path
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Include expansion stops at the limit and still reports the real errors.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Counts the template resolutions of the draft and its includes.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     partials = tmp_path / "partials"
     partials.mkdir()
@@ -821,8 +1043,16 @@ def test_include_expansion_stops_at_the_limit_and_keeps_real_errors(
 
 @pytest.mark.django_db
 def test_validation_deduplicates_findings_from_a_repeated_literal_include(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation reports the findings of a repeated include only once.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "invalid.xml").write_text(
@@ -840,8 +1070,17 @@ def test_validation_deduplicates_findings_from_a_repeated_literal_include(
 
 @pytest.mark.django_db
 def test_include_expansion_limit_covers_nested_includes_with_one_note_per_template(
-    admin_client, monkeypatch, tmp_path
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """The expansion limit covers nested includes and adds one note per template.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Counts the template resolutions of the draft and its includes.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     partials = tmp_path / "partials"
     partials.mkdir()
@@ -870,12 +1109,21 @@ def test_include_expansion_limit_covers_nested_includes_with_one_note_per_templa
 
 @pytest.mark.django_db
 def test_validation_reports_an_unavailable_literal_include_source_safely(
-    admin_client, monkeypatch, tmp_path
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """Validation reports an unavailable include source without leaking details.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Makes the template resolver fail for every include.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     from dj_hyperview.exceptions import SourceUnavailable
     from dj_hyperview.resolver import TemplateResolver
 
-    def fail_source(self, name):
+    def fail_source(self: Any, name: str) -> Never:
         raise SourceUnavailable("private:source", "private failure")
 
     monkeypatch.setattr(TemplateResolver, "resolve", fail_source)
@@ -891,8 +1139,14 @@ def test_validation_reports_an_unavailable_literal_include_source_safely(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_static_structure_validation_ignores_non_element_top_level_nodes(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """Static structure validation ignores top-level nodes that are not elements.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = (
         '<!-- Documentation only. --><view xmlns="https://hyperview.org/hyperview" />'
     )
@@ -902,7 +1156,15 @@ def test_static_structure_validation_ignores_non_element_top_level_nodes(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_rejects_statically_visible_child_order(admin_client) -> None:
+def test_validation_rejects_statically_visible_child_order(
+    admin_client: Client,
+) -> None:
+    """Validation rejects a child order that is visible in the static markup.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = "\n".join(
         (
             '<doc xmlns="https://hyperview.org/hyperview">',
@@ -954,8 +1216,16 @@ def test_validation_rejects_statically_visible_child_order(admin_client) -> None
     ],
 )
 def test_validation_handles_literal_markers_and_static_xml_errors(
-    admin_client, source: str, code: str
+    admin_client: Client, source: str, code: str
 ) -> None:
+    """Validation handles literal markers and static XML errors.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        source: Draft that holds a literal marker or malformed XML.
+        code: Diagnostic code the validation is expected to report.
+    """
     result = _validate(admin_client, source)
 
     assert result["ok"] is False
@@ -974,8 +1244,15 @@ def test_validation_handles_literal_markers_and_static_xml_errors(
     ],
 )
 def test_validation_informs_when_dynamic_markup_prevents_complete_static_lint(
-    admin_client, content: str
+    admin_client: Client, content: str
 ) -> None:
+    """Validation adds a note when dynamic markup prevents a complete static lint.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        content: Draft whose dynamic markup hides part of the structure.
+    """
     result = _validate(
         admin_client,
         content,
@@ -1000,8 +1277,16 @@ def test_validation_informs_when_dynamic_markup_prevents_complete_static_lint(
 
 @pytest.mark.django_db
 def test_validation_uses_configured_custom_schema_catalog(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """Validation uses the configured custom schema catalog.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     schema = tmp_path / "components.xsd"
     schema.write_text(
         """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"
@@ -1043,12 +1328,19 @@ targetNamespace="https://example.test/app" elementFormDefault="qualified">
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_reports_schema_catalog_failures_safely(
-    admin_client, monkeypatch
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Validation reports schema catalog failures without leaking details.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Makes loading the static schema catalog fail.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     from dj_hyperview.exceptions import TemplateValidationError
 
-    def fail_catalog():
+    def fail_catalog() -> Never:
         raise TemplateValidationError("schema_invalid", "private schema path")
 
     monkeypatch.setattr(module, "_get_static_validation_catalog", fail_catalog)
@@ -1063,8 +1355,14 @@ def test_validation_reports_schema_catalog_failures_safely(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_reports_django_syntax_at_source_line_without_writing(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """Validation reports Django syntax errors at the source line and writes nothing.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     _, model = _admin_types()
 
     response = admin_client.post(
@@ -1101,7 +1399,15 @@ def test_validation_reports_django_syntax_at_source_line_without_writing(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_explains_invalid_arguments_to_a_django_tag(admin_client) -> None:
+def test_validation_explains_invalid_arguments_to_a_django_tag(
+    admin_client: Client,
+) -> None:
+    """Validation explains invalid arguments to a Django tag.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     result = _validate(admin_client, '{% include "partial.xml" banana %}')
 
     assert result["ok"] is False
@@ -1113,6 +1419,7 @@ def test_validation_explains_invalid_arguments_to_a_django_tag(admin_client) -> 
 
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_django_syntax_diagnostic_redacts_unbounded_parser_messages() -> None:
+    """The Django syntax diagnostic redacts parser messages of unbounded length."""
     module = importlib.import_module("dj_hyperview.contrib.database.admin_validation")
     from django.template import TemplateSyntaxError
 
@@ -1123,7 +1430,15 @@ def test_django_syntax_diagnostic_redacts_unbounded_parser_messages() -> None:
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_rejects_an_empty_source_without_writing(admin_client) -> None:
+def test_validation_rejects_an_empty_source_without_writing(
+    admin_client: Client,
+) -> None:
+    """Validation rejects an empty source and writes nothing.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     _, model = _admin_types()
 
     response = admin_client.post(
@@ -1152,8 +1467,17 @@ def test_validation_rejects_an_empty_source_without_writing(admin_client) -> Non
     ],
 )
 def test_validation_returns_safe_source_diagnostics(
-    admin_client, name: str, content: str, code: str
+    admin_client: Client, name: str, content: str, code: str
 ) -> None:
+    """Validation returns safe diagnostics for invalid names and sources.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        name: Draft name posted to the endpoint.
+        content: Draft source posted to the endpoint.
+        code: Diagnostic code the endpoint is expected to return.
+    """
     response = admin_client.post(
         _url(),
         data=json.dumps({"name": name, "content": content}),
@@ -1172,8 +1496,15 @@ def test_validation_returns_safe_source_diagnostics(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_transport_and_permissions_fail_closed(
-    client, admin_client, django_user_model
+    client: Client, admin_client: Client, django_user_model: "type[AbstractUser]"
 ) -> None:
+    """The validation transport and its permissions fail closed.
+
+    Args:
+        client: Client that starts anonymous and is later signed in as other users.
+        admin_client: Client signed in as a superuser.
+        django_user_model: Django user model class used to create staff users.
+    """
     url = _url()
     payload = json.dumps({"name": "screen.xml", "content": "<view />"})
 
@@ -1202,7 +1533,15 @@ def test_validation_transport_and_permissions_fail_closed(
 @override_settings(
     HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": {"MAX_BYTES": 10}}
 )
-def test_validation_transport_enforces_source_size_and_exact_json(admin_client) -> None:
+def test_validation_transport_enforces_source_size_and_exact_json(
+    admin_client: Client,
+) -> None:
+    """The validation transport enforces the source size and an exact JSON body.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     url = _url()
 
     oversized = admin_client.post(
@@ -1228,7 +1567,12 @@ def test_validation_transport_enforces_source_size_and_exact_json(admin_client) 
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_post_requires_csrf(admin_user) -> None:
+def test_validation_post_requires_csrf(admin_user: "AbstractUser") -> None:
+    """A validation POST without a CSRF token is rejected.
+
+    Args:
+        admin_user: Superuser that the test signs in.
+    """
     client = Client(enforce_csrf_checks=True)
     client.force_login(admin_user)
 
@@ -1242,7 +1586,15 @@ def test_validation_post_requires_csrf(admin_user) -> None:
 
 
 @pytest.mark.django_db
-def test_validation_endpoint_is_hidden_when_editor_is_disabled(admin_client) -> None:
+def test_validation_endpoint_is_hidden_when_editor_is_disabled(
+    admin_client: Client,
+) -> None:
+    """The validation endpoint does not exist while the editor is disabled.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     response = admin_client.post(
         _url(),
         data=json.dumps({"name": "screen.xml", "content": "<view />"}),
@@ -1254,7 +1606,15 @@ def test_validation_endpoint_is_hidden_when_editor_is_disabled(admin_client) -> 
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_conditional_structure_is_informational_without_hiding_errors(admin_client):
+def test_conditional_structure_is_informational_without_hiding_errors(
+    admin_client: Client,
+) -> None:
+    """Conditional structure gets a note without hiding real errors.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = (
         '<doc xmlns="https://hyperview.org/hyperview"><screen><body>\n'
         "{% if enabled %}<view><text>Ready</text></view>{% endif %}\n"
@@ -1303,7 +1663,7 @@ def _static_module() -> ModuleType:
     return importlib.import_module("dj_hyperview.contrib.database.admin_validation")
 
 
-def _forbid(monkeypatch, *names: str) -> None:
+def _forbid(monkeypatch: pytest.MonkeyPatch, *names: str) -> None:
     """Fail the test if the static pass reaches the named stage."""
     module = _static_module()
 
@@ -1326,9 +1686,14 @@ def _forbid(monkeypatch, *names: str) -> None:
     ],
 )
 def test_validation_ignores_commented_out_markup_whatever_the_note(
-    admin_client, opening: str
+    admin_client: Client, opening: str
 ) -> None:
-    """Django's comment tag ignores everything after its name, and so must we."""
+    """Django's comment tag ignores everything after its name, and so must we.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        opening: Opening tag of the Django comment block.
+    """
     source = (
         f'<view xmlns="{HV}">{opening}<text bogus="1"/>{{% endcomment %}}'
         "<text>ok</text></view>"
@@ -1342,9 +1707,14 @@ def test_validation_ignores_commented_out_markup_whatever_the_note(
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize("literal", ["{# note\n#}", "{{ value\n}}", "{% load i18n\n%}"])
 def test_validation_treats_a_delimiter_split_over_lines_as_the_text_django_renders(
-    admin_client, literal: str
+    admin_client: Client, literal: str
 ) -> None:
-    """Django's tag expression excludes line breaks, so these are literal text."""
+    """Django's tag expression excludes line breaks, so these are literal text.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        literal: Delimiter that Django renders as plain text because it spans lines.
+    """
     source = f'<view xmlns="{HV}">{literal}<text>ok</text></view>'
 
     with pytest.raises(TemplateValidationError):
@@ -1361,8 +1731,14 @@ def test_validation_treats_a_delimiter_split_over_lines_as_the_text_django_rende
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_accepts_a_split_delimiter_where_text_is_allowed(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """Validation accepts a delimiter split over lines where text is allowed.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = f'<text xmlns="{HV}">{{# note\n#}}</text>'
 
     validate_hyperview_schema(_render(source))
@@ -1372,8 +1748,14 @@ def test_validation_accepts_a_split_delimiter_where_text_is_allowed(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_reports_a_split_delimiter_inside_a_tag_as_malformed_xml(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """Validation reports a delimiter split inside a tag as malformed XML.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = f'<text xmlns="{HV}" {{{{ attributes\n}}}}/>'
 
     with pytest.raises(TemplateValidationError):
@@ -1387,9 +1769,13 @@ def test_validation_reports_a_split_delimiter_inside_a_tag_as_malformed_xml(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_cost_grows_linearly_with_the_number_of_django_tokens(
-    admin_client,
+    admin_client: Client,
 ) -> None:
-    """The context of each token used to be found by lexing the whole draft."""
+    """The context of each token used to be found by lexing the whole draft.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+    """
     body = "\n".join(f"<text>{{{{ v{index} }}}}</text>" for index in range(4000))
     source = f'<view xmlns="{HV}">\n{body}\n</view>'
 
@@ -1413,9 +1799,15 @@ def test_validation_cost_grows_linearly_with_the_number_of_django_tokens(
     ids=["open-braces", "open-declarations", "open-comments", "open-braces-one-line"],
 )
 def test_validation_scans_unterminated_constructs_in_linear_time(
-    admin_client, build, expected: list[str]
+    admin_client: Client, build: Callable[[], str], expected: list[str]
 ) -> None:
-    """Unanchored lazy patterns rescanned the input for every unmatched opener."""
+    """Unanchored lazy patterns rescanned the input for every unmatched opener.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        build: Builds the draft that repeats one unterminated construct.
+        expected: Diagnostic codes the validation is expected to report.
+    """
     source = build()
 
     started = time.perf_counter()
@@ -1438,7 +1830,12 @@ def _marker_name_then_underscores_then_tokens(size: int) -> str:
 def test_static_check_memory_does_not_depend_on_underscores_after_the_marker_name(
     size: int, limit: int
 ) -> None:
-    """The marker used to grow with them, and every Django token carries one."""
+    """The marker used to grow with them, and every Django token carries one.
+
+    Args:
+        size: Size of the generated draft, in repeated units.
+        limit: Largest memory peak the check may reach, in bytes.
+    """
     module = _static_module()
     source = _marker_name_then_underscores_then_tokens(size)
     # Checked first: with the old marker the call below needs 31 MiB at 18 KB, and
@@ -1483,9 +1880,14 @@ def _incomplete(result: dict[str, Any]) -> list[tuple[str, str, int | None]]:
     ids=["tokens", "tokens-and-include"],
 )
 def test_a_masked_document_beyond_four_times_max_bytes_is_not_built(
-    monkeypatch, source: str
+    monkeypatch: pytest.MonkeyPatch, source: str
 ) -> None:
-    """Tokens shorter than their marker would multiply the source about 4.6 times."""
+    """Tokens shorter than their marker would multiply the source about 4.6 times.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        source: Draft whose masked document would exceed the budget.
+    """
     _forbid(monkeypatch, "_blank_xml_declarations")
 
     result = _static_module().validate_draft_source("screens/draft.xml", source)
@@ -1498,6 +1900,7 @@ def test_a_masked_document_beyond_four_times_max_bytes_is_not_built(
     HYPERVIEW={"ADMIN": {"EDITOR": True}, "VALIDATION": {"MAX_BYTES": 10_000}}
 )
 def test_a_masked_document_within_the_bound_is_checked_as_before() -> None:
+    """A masked document within the bound is checked as before."""
     source = f'<view xmlns="{HV}">' + "<text>{{ v }}</text>" * 400 + "</view>"
     assert len(source) < 10_000
 
@@ -1531,6 +1934,13 @@ def test_text_and_comments_add_nothing_to_the_masked_document() -> None:
 def test_the_masked_document_may_be_exactly_four_times_max_bytes_long(
     unit: str, marker: str, tokens: int
 ) -> None:
+    """The masked document may be exactly four times the maximum bytes long.
+
+    Args:
+        unit: Django token repeated to fill the masked document.
+        marker: Marker that the draft must not be able to spell.
+        tokens: Number of tokens repeated.
+    """
     padding = 4 * 10_000 - tokens * (len(unit) + len(marker))
     module = _static_module()
 
@@ -1545,7 +1955,12 @@ def test_the_masked_document_may_be_exactly_four_times_max_bytes_long(
 @pytest.mark.parametrize("wide", ["\u00e9", "\u754c", "\U0001d49c"])
 @pytest.mark.parametrize("count", [100, 400])
 def test_the_masked_document_budget_counts_utf8_bytes(wide: str, count: int) -> None:
-    """Characters of two to four bytes used to count as one, so the text grew."""
+    """Characters of two to four bytes used to count as one, so the text grew.
+
+    Args:
+        wide: Character that takes several UTF-8 bytes.
+        count: Number of times the wide character is repeated.
+    """
     module = _static_module()
     budget = 4 * 10_000
     # {{a}} is five bytes and becomes a marker of 18 bytes and five blanks.
@@ -1597,6 +2012,12 @@ def test_the_worst_draft_for_the_masked_budget_is_reported_as_incomplete() -> No
 def test_a_token_inside_a_name_does_not_leak_a_marker_into_a_message(
     source: str, messages: list[str]
 ) -> None:
+    """A Django token inside a name does not leak a marker into a message.
+
+    Args:
+        source: Draft with a Django token inside an element or attribute name.
+        messages: Diagnostic messages the validation is expected to return.
+    """
     result = _static_module().validate_draft_source("screens/draft.xml", source)
 
     reported = [item["message"] for item in result["diagnostics"]]
@@ -1619,6 +2040,11 @@ def test_a_token_inside_a_name_does_not_leak_a_marker_into_a_message(
 def test_a_draft_holding_the_largest_marker_number_is_reported_as_incomplete(
     source: str,
 ) -> None:
+    """A draft that holds the largest marker number is reported as incomplete.
+
+    Args:
+        source: Draft that already holds the largest marker numbers.
+    """
     result = _static_module().validate_draft_source("screens/draft.xml", source)
 
     assert result["ok"] is True
@@ -1671,7 +2097,13 @@ def _page_with(kind: str, text: str) -> str:
 def test_a_character_reference_cannot_spell_a_marker(
     kind: str, marker: str, spelled: str
 ) -> None:
-    """The parser decodes the reference, so the text is real content, not a tag."""
+    """The parser decodes the reference, so the text is real content, not a tag.
+
+    Args:
+        kind: Kind of marker under test: value, structure or action.
+        marker: Marker that the draft must not be able to spell.
+        spelled: Character references that spell the marker.
+    """
     module = _static_module()
 
     def verdict(text: str) -> tuple[bool, list[tuple[str, str, int | None]]]:
@@ -1687,6 +2119,7 @@ def test_a_character_reference_cannot_spell_a_marker(
 
 
 def test_character_references_are_decoded_once_as_the_parser_does() -> None:
+    """Character references are decoded once, as the parser does."""
     decode = _static_module()._decode_character_references
 
     assert decode("&#68;&#x4a;&#0000072;&#x0056;") == "DJHV"
@@ -1721,6 +2154,12 @@ def test_character_references_are_decoded_once_as_the_parser_does() -> None:
 def test_an_oversized_character_reference_is_left_for_the_parser_to_refuse(
     reference: str, decoded: str | None
 ) -> None:
+    """An oversized character reference is left for the parser to refuse.
+
+    Args:
+        reference: Character reference placed in the draft.
+        decoded: Character the reference decodes to, or None when it is refused.
+    """
     module = _static_module()
 
     assert module._decode_character_references(reference) == (decoded or reference)
@@ -1731,7 +2170,14 @@ def test_an_oversized_character_reference_is_left_for_the_parser_to_refuse(
     assert result["ok"] is False
 
 
-def test_a_scan_decodes_the_references_of_the_source_once(monkeypatch) -> None:
+def test_a_scan_decodes_the_references_of_the_source_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A scan decodes the character references of the source only once.
+
+    Args:
+        monkeypatch: Counts how often the references of the source are decoded.
+    """
     module = _static_module()
     decode = module._decode_character_references
     calls = []
@@ -1749,8 +2195,15 @@ def test_a_scan_decodes_the_references_of_the_source_once(monkeypatch) -> None:
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_rejects_too_many_nodes_before_the_schema_walk(
-    admin_client, monkeypatch
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Validation rejects too many nodes before the schema walk.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Fails the test if the schema walk starts.
+    """
     _forbid(monkeypatch, "_get_compiled_registry", "_get_static_validation_catalog")
 
     result = _validate(admin_client, "<x/>\n" * 80_000)
@@ -1782,9 +2235,16 @@ def test_validation_rejects_too_many_nodes_before_the_schema_walk(
     ],
 )
 def test_validation_applies_the_configured_node_and_depth_limits(
-    admin_client, limits: dict[str, int], size: int, code: str | None
+    admin_client: Client, limits: dict[str, int], size: int, code: str | None
 ) -> None:
-    """MAX_NODES counts the view and its texts; MAX_DEPTH counts nested views."""
+    """MAX_NODES counts the view and its texts; MAX_DEPTH counts nested views.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        limits: Validation limits configured for this case.
+        size: Size of the generated draft, in repeated units.
+        code: Diagnostic code the validation is expected to report, or None.
+    """
     if "MAX_NODES" in limits:
         body = "<text/>" * size
     else:
@@ -1801,7 +2261,15 @@ def test_validation_applies_the_configured_node_and_depth_limits(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_maps_the_parser_depth_ceiling_to_max_depth(admin_client) -> None:
+def test_validation_maps_the_parser_depth_ceiling_to_max_depth(
+    admin_client: Client,
+) -> None:
+    """Validation maps the parser depth ceiling to the max_depth code.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = "<view>" * 300 + "</view>" * 300
 
     result = _validate(admin_client, source)
@@ -1814,8 +2282,16 @@ def test_validation_maps_the_parser_depth_ceiling_to_max_depth(admin_client) -> 
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize("attributes", [129, 200])
 def test_validation_caps_the_attributes_of_one_element_before_the_schema_walk(
-    admin_client, monkeypatch, attributes: int
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, attributes: int
 ) -> None:
+    """Validation caps the attributes of one element before the schema walk.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Patches the code under test for this test.
+        attributes: Number of attributes on the element.
+    """
     _forbid(monkeypatch, "_get_compiled_registry", "_get_static_validation_catalog")
     names = " ".join(f"a{index}='1'" for index in range(attributes))
 
@@ -1831,9 +2307,15 @@ def test_validation_caps_the_attributes_of_one_element_before_the_schema_walk(
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize("elements", [10, 100])
 def test_validation_rejects_a_thousand_undeclared_attributes_before_any_structure_walk(
-    admin_client, monkeypatch, elements: int
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, elements: int
 ) -> None:
-    """Lax iteration took 10 s for 10 such elements and 97 s for 100 of them."""
+    """Lax iteration took 10 s for 10 such elements and 97 s for 100 of them.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        monkeypatch: Fails the test if the structure walk starts.
+        elements: Number of elements in the draft.
+    """
     _forbid(
         monkeypatch,
         "_get_compiled_registry",
@@ -1855,8 +2337,14 @@ def test_validation_rejects_a_thousand_undeclared_attributes_before_any_structur
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_lets_an_element_with_exactly_the_attribute_cap_reach_the_schema(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """An element with exactly the attribute cap still reaches the schema check.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     names = " ".join(f"a{index}='1'" for index in range(128))
 
     result = _validate(admin_client, f"<view {HYPERVIEW_XMLNS} {names} />")
@@ -1880,8 +2368,17 @@ def test_validation_lets_an_element_with_exactly_the_attribute_cap_reach_the_sch
     ],
 )
 def test_validation_caps_namespaces_before_the_schema_walk(
-    admin_client, monkeypatch, source: str, message: str
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, source: str, message: str
 ) -> None:
+    """Validation caps the namespaces before the schema walk.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Patches the code under test for this test.
+        source: Draft that declares too many namespaces.
+        message: Diagnostic message the validation is expected to report.
+    """
     _forbid(monkeypatch, "_get_compiled_registry")
 
     result = _validate(admin_client, source)
@@ -1893,9 +2390,14 @@ def test_validation_caps_namespaces_before_the_schema_walk(
 
 @pytest.mark.django_db
 def test_validation_rejects_a_flood_of_namespace_declarations_on_one_path(
-    admin_client, monkeypatch
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """1,008 declarations on a path took seconds in the schema walk."""
+    """1,008 declarations on a path took seconds in the schema walk.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        monkeypatch: Fails the test if the schema walk starts.
+    """
     _forbid(monkeypatch, "_get_compiled_registry")
 
     with override_settings(
@@ -1911,8 +2413,15 @@ def test_validation_rejects_a_flood_of_namespace_declarations_on_one_path(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_returns_a_bounded_list_with_a_final_omission_note(
-    admin_client, monkeypatch
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Validation returns a bounded list that ends with an omission note.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Fails the test if the structure check runs.
+    """
     _forbid(monkeypatch, "_static_structure_diagnostics")
 
     result = _validate(admin_client, "<x/>\n" * 5000)
@@ -1935,9 +2444,13 @@ def test_validation_returns_a_bounded_list_with_a_final_omission_note(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_stops_listing_after_the_limit_whatever_the_element_count(
-    admin_client,
+    admin_client: Client,
 ) -> None:
-    """850 elements with 128 undeclared attributes gave 108,800 diagnostics."""
+    """850 elements with 128 undeclared attributes gave 108,800 diagnostics.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+    """
     names = " ".join(f"a{index}='1'" for index in range(128))
     source = f'<view xmlns="{HV}">' + f"<text {names}/>\n" * 850 + "</view>"
 
@@ -1949,7 +2462,15 @@ def test_validation_stops_listing_after_the_limit_whatever_the_element_count(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_keeps_errors_ahead_of_notes_when_it_truncates(admin_client) -> None:
+def test_validation_keeps_errors_ahead_of_notes_when_it_truncates(
+    admin_client: Client,
+) -> None:
+    """Validation keeps errors ahead of notes when it truncates the list.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = "<x/>\n" * 60 + "{% if a %}<text/>{% endif %}"
 
     result = _validate(admin_client, source)
@@ -1968,9 +2489,14 @@ def test_validation_keeps_errors_ahead_of_notes_when_it_truncates(admin_client) 
     ["fragment|safe", "fragment | safe", "fragment|default:''|safe|upper"],
 )
 def test_validation_defers_markup_injected_by_a_safe_variable(
-    admin_client, expression: str
+    admin_client: Client, expression: str
 ) -> None:
-    """A variable marked safe may render elements, so its position is not an error."""
+    """A variable marked safe may render elements, so its position is not an error.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        expression: Variable expression that marks its value as safe.
+    """
     source = f'<screen xmlns="{HV}">{{{{ {expression} }}}}<body /></screen>'
 
     result = _validate(admin_client, source)
@@ -1988,8 +2514,15 @@ def test_validation_defers_markup_injected_by_a_safe_variable(
     "expression", ["label", "label|upper", "items|safeseq", "label|default:'safe'"]
 )
 def test_validation_still_rejects_ordinary_text_variables_in_element_only_content(
-    admin_client, expression: str
+    admin_client: Client, expression: str
 ) -> None:
+    """Validation still rejects ordinary text variables where only elements fit.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        expression: Variable expression whose value is ordinary text.
+    """
     source = f'<screen xmlns="{HV}">{{{{ {expression} }}}}<body /></screen>'
 
     result = _validate(admin_client, source)
@@ -2001,8 +2534,14 @@ def test_validation_still_rejects_ordinary_text_variables_in_element_only_conten
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_does_not_defer_a_safe_variable_in_an_attribute_value(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """A safe variable in an attribute value is not deferred.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = f'<view xmlns="{HV}" scroll-orientation="{{{{ direction|safe }}}}" />'
 
     assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
@@ -2011,8 +2550,15 @@ def test_validation_does_not_defer_a_safe_variable_in_an_attribute_value(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_reports_excessive_nesting_instead_of_failing(
-    admin_client, finalized_garbage
+    admin_client: Client, finalized_garbage: None
 ) -> None:
+    """Validation reports excessive nesting instead of failing.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        finalized_garbage: Collects pending garbage before the deep recursion starts.
+    """
     result = _validate(admin_client, NESTED_IF)
 
     assert result == {
@@ -2034,9 +2580,13 @@ def test_validation_reports_excessive_nesting_instead_of_failing(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_reports_nesting_that_rendering_cannot_survive_as_too_deep(
-    admin_client,
+    admin_client: Client,
 ) -> None:
-    """The draft compiles, but rendering recurses three frames for every level."""
+    """The draft compiles, but rendering recurses three frames for every level.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+    """
     from dj_hyperview.contrib.database._template_syntax import _MAX_NESTING
 
     within = f"<view xmlns='{HV}'>" + nested("if", _MAX_NESTING) + "</view>"
@@ -2054,9 +2604,14 @@ def test_validation_reports_nesting_that_rendering_cannot_survive_as_too_deep(
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize("tag", NESTED_BLOCKS)
 def test_validation_reports_deep_nesting_as_too_deep_whatever_the_opening_tag(
-    admin_client, tag: str
+    admin_client: Client, tag: str
 ) -> None:
-    """Filters in the opening tags used to end the request with HTTP 500."""
+    """Filters in the opening tags used to end the request with HTTP 500.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        tag: Opening tag of the Django block that is nested too deeply.
+    """
     source = f"<view xmlns='{HV}'>" + nested(tag, 600) + "</view>"
 
     result = _validate(admin_client, source)
@@ -2070,8 +2625,15 @@ def test_validation_reports_deep_nesting_as_too_deep_whatever_the_opening_tag(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_admin_save_reports_excessive_nesting_on_the_content_field(
-    admin_client, finalized_garbage
+    admin_client: Client, finalized_garbage: None
 ) -> None:
+    """Saving reports excessive nesting on the content field.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        finalized_garbage: Collects pending garbage before the deep recursion starts.
+    """
     _, model = _admin_types()
 
     response = admin_client.post(
@@ -2093,9 +2655,14 @@ def test_admin_save_reports_excessive_nesting_on_the_content_field(
 
 @pytest.mark.django_db
 def test_admin_save_reports_excessive_nesting_without_the_editor(
-    admin_client, finalized_garbage
+    admin_client: Client, finalized_garbage: None
 ) -> None:
-    """The model validator covers the standard textarea, which has no editor checks."""
+    """The model validator covers the standard textarea, which has no editor checks.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        finalized_garbage: Collects pending garbage before the deep recursion starts.
+    """
     _, model = _admin_types()
 
     response = admin_client.post(
@@ -2117,8 +2684,14 @@ def test_admin_save_reports_excessive_nesting_without_the_editor(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_stops_the_structure_check_at_the_diagnostic_limit(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """Validation stops the structure check at the diagnostic limit.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+    """
     source = f'<doc xmlns="{HV}">' + "<screen><body/><body/></screen>\n" * 60 + "</doc>"
 
     result = _validate(admin_client, source)
@@ -2132,9 +2705,17 @@ def test_validation_stops_the_structure_check_at_the_diagnostic_limit(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_validation_reports_recursion_in_the_static_stage_as_too_deep(
-    admin_client, monkeypatch
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    def exhausted(name, content):
+    """Validation reports recursion in the static stage as too deep.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Makes the static stage exhaust the recursion limit.
+    """
+
+    def exhausted(name: str, content: str) -> Never:
         raise RecursionError
 
     monkeypatch.setattr(_static_module(), "_static_schema_diagnostics", exhausted)
@@ -2146,11 +2727,17 @@ def test_validation_reports_recursion_in_the_static_stage_as_too_deep(
 
 @pytest.mark.django_db
 def test_literal_includes_are_not_compiled_by_djangos_template_class(
-    admin_client, monkeypatch, tmp_path
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Template uses Django's lexer, which is quadratic: 40,000 openers took 15 s."""
+    """Template uses Django's lexer, which is quadratic: 40,000 openers took 15 s.
 
-    def forbidden(self) -> None:
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        monkeypatch: Fails the test if Django compiles an include.
+        tmp_path: Temporary directory that holds the files of the test.
+    """
+
+    def forbidden(self: Any) -> None:
         raise AssertionError("an include target was compiled by Template")
 
     monkeypatch.setattr("django.template.base.Template.compile_nodelist", forbidden)
@@ -2169,7 +2756,7 @@ def test_literal_includes_are_not_compiled_by_djangos_template_class(
     assert [item["code"] for item in unclosed["diagnostics"]] == ["max_unclosed"]
 
 
-def _bounded_includes_config(tmp_path, max_bytes: int) -> dict[str, Any]:
+def _bounded_includes_config(tmp_path: Path, max_bytes: int) -> dict[str, Any]:
     return {
         **_filesystem_admin_config(tmp_path),
         "VALIDATION": {"MAX_BYTES": max_bytes},
@@ -2178,9 +2765,15 @@ def _bounded_includes_config(tmp_path, max_bytes: int) -> dict[str, Any]:
 
 @pytest.mark.django_db
 def test_include_expansion_stops_when_the_composed_source_exceeds_max_bytes(
-    admin_client, monkeypatch, tmp_path
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """64 includes of a 990 KB template used 3.3 GB; the composed size is bounded."""
+    """64 includes of a 990 KB template used 3.3 GB; the composed size is bounded.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        monkeypatch: Counts the template resolutions of the draft and its includes.
+        tmp_path: Temporary directory that holds the files of the test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "big.xml").write_text(f"<text>{'x' * 400}</text>", encoding="utf-8")
@@ -2199,8 +2792,17 @@ def test_include_expansion_stops_when_the_composed_source_exceeds_max_bytes(
 
 @pytest.mark.django_db
 def test_include_size_limit_covers_nested_includes_with_one_note(
-    admin_client, monkeypatch, tmp_path
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
+    """The include size limit covers nested includes and adds one note.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        monkeypatch: Counts the template resolutions of the draft and its includes.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "leaf.xml").write_text(f"<text>{'x' * 400}</text>", encoding="utf-8")
@@ -2227,8 +2829,16 @@ def test_include_size_limit_covers_nested_includes_with_one_note(
 
 @pytest.mark.django_db
 def test_include_syntax_error_is_reported_for_the_target_and_expansion_goes_on(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """An include syntax error is reported for its target and expansion continues.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "bad.xml").write_text("{% if ready %}<text />", encoding="utf-8")
@@ -2249,8 +2859,16 @@ def test_include_syntax_error_is_reported_for_the_target_and_expansion_goes_on(
 
 @pytest.mark.django_db
 def test_include_nested_too_deeply_is_reported_for_the_target_and_expansion_goes_on(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
+    """An include nested too deeply is reported for its target and expansion continues.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        tmp_path: Temporary directory that holds the template files and schemas of the
+        test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "deep.xml").write_text(nested("if-filter", 101), encoding="utf-8")
@@ -2272,9 +2890,14 @@ def test_include_nested_too_deeply_is_reported_for_the_target_and_expansion_goes
 
 @pytest.mark.django_db
 def test_include_expansion_validates_the_source_of_each_resolved_target(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
-    """The include is checked against the same limits as the draft, before compiling."""
+    """The include is checked against the same limits as the draft, before compiling.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        tmp_path: Temporary directory that holds the files of the test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "big.xml").write_text(f"<text>{'x' * 1500}</text>", encoding="utf-8")
@@ -2291,9 +2914,15 @@ def test_include_expansion_validates_the_source_of_each_resolved_target(
 
 @pytest.mark.django_db
 def test_include_size_limit_counts_bytes_not_characters(
-    admin_client, monkeypatch, tmp_path
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Counting characters would let multi-byte text reach 4 x MAX_BYTES."""
+    """Counting characters would let multi-byte text reach 4 x MAX_BYTES.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        monkeypatch: Counts the template resolutions of the draft and its includes.
+        tmp_path: Temporary directory that holds the files of the test.
+    """
     partials = tmp_path / "partials"
     partials.mkdir()
     (partials / "wide.xml").write_text(f"<text>{'é' * 400}</text>", encoding="utf-8")
@@ -2324,9 +2953,14 @@ NAMESPACE_BOUNDARY_PASSES = [
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize("source", NAMESPACE_BOUNDARY_PASSES)
 def test_validation_accepts_namespaces_exactly_at_the_runtime_caps(
-    admin_client, source: str
+    admin_client: Client, source: str
 ) -> None:
-    """The synthetic root adds a declaration and a prefix that the document lacks."""
+    """The synthetic root adds a declaration and a prefix that the document lacks.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        source: Draft that sits exactly at the namespace caps.
+    """
     assert _validate(admin_client, source) == {"ok": True, "diagnostics": []}
     assert validate_hxml(source) == source
 
@@ -2347,8 +2981,16 @@ def test_validation_accepts_namespaces_exactly_at_the_runtime_caps(
     ],
 )
 def test_validation_rejects_namespaces_one_over_the_runtime_caps(
-    admin_client, source: str, message: str
+    admin_client: Client, source: str, message: str
 ) -> None:
+    """Validation rejects a draft that is one namespace over the runtime caps.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        source: Draft that is one namespace over the cap.
+        message: Diagnostic message the validation is expected to report.
+    """
     result = _validate(admin_client, source)
 
     assert [(item["code"], item["message"]) for item in result["diagnostics"]] == [
@@ -2358,8 +3000,14 @@ def test_validation_rejects_namespaces_one_over_the_runtime_caps(
 
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
-def test_validation_counts_namespaces_per_top_level_element(admin_client) -> None:
-    """Sibling top-level elements, as includes make them, do not add up."""
+def test_validation_counts_namespaces_per_top_level_element(
+    admin_client: Client,
+) -> None:
+    """Sibling top-level elements, as includes make them, do not add up.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+    """
     sibling = f"<view {HYPERVIEW_XMLNS} {prefixed_namespaces(7)}><text>ok</text></view>"
 
     assert _validate(admin_client, sibling * 3) == {"ok": True, "diagnostics": []}
@@ -2377,9 +3025,14 @@ def test_validation_counts_namespaces_per_top_level_element(admin_client) -> Non
     ids=["required-child", "split-tag"],
 )
 def test_validation_defers_markup_that_a_verbatim_body_supplies(
-    admin_client, source: str
+    admin_client: Client, source: str
 ) -> None:
-    """A verbatim body is not analyzed, so what it may supply gets the note."""
+    """A verbatim body is not analyzed, so what it may supply gets the note.
+
+    Args:
+        admin_client: Client signed in as a superuser that validates drafts.
+        source: Draft whose verbatim body may supply markup.
+    """
     result = _validate(admin_client, source)
 
     assert result["ok"] is True
@@ -2392,13 +3045,18 @@ def test_validation_defers_markup_that_a_verbatim_body_supplies(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_the_static_pass_stops_collecting_element_findings_past_its_limit(
-    monkeypatch,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The static pass stops collecting element findings past its limit.
+
+    Args:
+        monkeypatch: Counts the diagnostics the static pass builds.
+    """
     module = _static_module()
     created: list[str] = []
     original = module._diagnostic
 
-    def counting(code, *args, **kwargs):
+    def counting(code: str, *args: object, **kwargs: object) -> Any:
         created.append(code)
         return original(code, *args, **kwargs)
 
@@ -2413,6 +3071,11 @@ def test_the_static_pass_stops_collecting_element_findings_past_its_limit(
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 @pytest.mark.parametrize("limit", [1, 3, 10, 100])
 def test_the_structure_check_stops_at_the_limit_it_is_given(limit: int) -> None:
+    """The structure check stops at the limit it is given.
+
+    Args:
+        limit: Maximum number of diagnostics the check may return.
+    """
     from lxml import etree
 
     module = _static_module()
@@ -2434,8 +3097,16 @@ def test_the_structure_check_stops_at_the_limit_it_is_given(limit: int) -> None:
     ids=["parser-ceiling", "configured-limit"],
 )
 def test_validation_words_the_depth_limit_like_rendering(
-    admin_client, depth: int, limit: int
+    admin_client: Client, depth: int, limit: int
 ) -> None:
+    """Validation words the depth limit as rendering does.
+
+    Args:
+        admin_client: Client signed in as a superuser that posts drafts to the
+        validation endpoint.
+        depth: Nesting depth of the draft.
+        limit: Depth limit the message is expected to name.
+    """
     source = "<view>" * depth + "</view>" * depth
 
     with override_settings(

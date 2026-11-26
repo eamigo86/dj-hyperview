@@ -30,7 +30,11 @@ def test_capability_settings_are_explicit_and_separate() -> None:
 def test_database_source_precedes_filesystem_and_migration_reverses(
     tmp_path: Path,
 ) -> None:
-    """The optional model resolves active rows and falls through inactive rows."""
+    """The optional model resolves active rows and falls through inactive rows.
+
+    Args:
+        tmp_path: Temporary directory that holds the consumer SQLite file.
+    """
     result = run_consumer(
         "tests.consumer_project.settings_database",
         r"""
@@ -81,7 +85,11 @@ print(json.dumps({
 def test_locmem_cache_preserves_hit_miss_empty_and_public_invalidation(
     tmp_path: Path,
 ) -> None:
-    """Opt-in LocMem caching distinguishes all raw source outcomes."""
+    """Opt-in LocMem caching distinguishes all raw source outcomes.
+
+    Args:
+        tmp_path: Temporary directory that holds the template files of the consumer.
+    """
     (tmp_path / "screen.xml").write_text("<view>old</view>", encoding="utf-8")
     (tmp_path / "empty.xml").write_text("", encoding="utf-8")
     result = run_consumer(

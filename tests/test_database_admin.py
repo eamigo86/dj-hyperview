@@ -2,9 +2,11 @@
 
 import importlib
 import logging
+from collections.abc import Callable
 from importlib.resources import files
+from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import pytest
 from django.apps import apps
@@ -16,6 +18,9 @@ from django.urls import reverse
 
 from dj_hyperview import HYPERVIEW_SCHEMA_VERSION
 from tests.test_database_app import run_isolated
+
+if TYPE_CHECKING:
+    from django.contrib.auth.models import AbstractUser
 
 pytestmark = pytest.mark.skipif(
     not apps.is_installed("django.contrib.admin"),
@@ -32,6 +37,7 @@ def _admin_types() -> tuple[ModuleType, type[Any]]:
 
 @pytest.mark.django_db
 def test_default_site_registers_useful_standard_admin_once() -> None:
+    """The default admin site registers the template admin once with useful options."""
     module, model = _admin_types()
 
     assert admin.site.is_registered(model) is True
@@ -51,6 +57,7 @@ def test_default_site_registers_useful_standard_admin_once() -> None:
 
 @pytest.mark.django_db
 def test_admin_form_saves_valid_template() -> None:
+    """The admin form saves a valid template and ignores a posted revision."""
     module, model = _admin_types()
     form = module.HyperviewTemplateAdminForm(
         data={
@@ -121,9 +128,15 @@ def test_admin_editor_stretches_across_django_admin_flex_layout() -> None:
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_schema_catalog_admin_endpoint_requires_authentication_and_permission(
-    client, admin_client, django_user_model
+    client: Client, admin_client: Client, django_user_model: "type[AbstractUser]"
 ) -> None:
-    """Completion metadata is available only through the protected model admin."""
+    """Completion metadata is available only through the protected model admin.
+
+    Args:
+        client: Client that starts anonymous and is later signed in as a staff user.
+        admin_client: Client signed in as a superuser.
+        django_user_model: Django user model class used to create staff users.
+    """
     url = reverse("admin:dj_hyperview_database_hyperviewtemplate_hxml_catalog")
 
     anonymous = client.get(url)
@@ -145,9 +158,14 @@ def test_schema_catalog_admin_endpoint_requires_authentication_and_permission(
 @pytest.mark.django_db
 @pytest.mark.parametrize("hyperview", [{}, {"ADMIN": {"EDITOR": False}}])
 def test_schema_catalog_admin_endpoint_is_not_found_when_the_editor_is_disabled(
-    admin_client, hyperview
+    admin_client: Client, hyperview: dict[str, object]
 ) -> None:
-    """The validation endpoint hides itself without the editor; so must the catalog."""
+    """The validation endpoint hides itself without the editor; so must the catalog.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        hyperview: Value of the HYPERVIEW setting for this case.
+    """
     url = reverse("admin:dj_hyperview_database_hyperviewtemplate_hxml_catalog")
 
     with override_settings(HYPERVIEW=hyperview):
@@ -172,12 +190,18 @@ def _conflicting_extra_schemas(tmp_path: Any) -> list[Any]:
 
 
 @pytest.mark.django_db
-def test_admin_degrades_when_the_extra_schemas_conflict(admin_client, tmp_path) -> None:
+def test_admin_degrades_when_the_extra_schemas_conflict(
+    admin_client: Client, tmp_path: Path
+) -> None:
     """An unusable configuration denies edits but never crashes the Admin.
 
     The change page of an existing template renders read-only without the editor,
     adding is denied like any other mutation, and the editor endpoints answer with
     the same JSON error as the validation endpoint instead of a server error.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        tmp_path: Temporary directory that holds the conflicting schema files.
     """
     _, model = _admin_types()
     template = model.objects.create(name="screens/home.xml", content="<view />")
@@ -209,12 +233,18 @@ def test_admin_degrades_when_the_extra_schemas_conflict(admin_client, tmp_path) 
 @pytest.mark.django_db
 @pytest.mark.parametrize("page", ["changelist", "add", "change"])
 def test_unusable_settings_are_one_warning_without_a_traceback(
-    admin_client, tmp_path, caplog, page
+    admin_client: Client, tmp_path: Path, caplog: pytest.LogCaptureFixture, page: str
 ) -> None:
     """A configuration fault is not a failing callback; the callback never ran.
 
     Each page used to log an ERROR with a traceback saying that ADMIN.PERMISSION
     failed, which sent operators to a callback that was never called.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        tmp_path: Temporary directory that holds the conflicting schema files.
+        caplog: Captures the log records emitted by this test.
+        page: Admin page under test: changelist, add or change.
     """
     module, model = _admin_types()
     template = model.objects.create(name="screens/home.xml", content="<view />")
@@ -243,8 +273,14 @@ def test_unusable_settings_are_one_warning_without_a_traceback(
 
 @pytest.mark.django_db
 def test_a_failing_permission_callback_is_still_an_error_with_its_traceback(
-    admin_client, caplog
+    admin_client: Client, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """A failing permission callback is still logged as an error with its traceback.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        caplog: Captures the log records emitted by this test.
+    """
     module, _ = _admin_types()
     prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
 
@@ -261,9 +297,14 @@ def test_a_failing_permission_callback_is_still_an_error_with_its_traceback(
 
 @pytest.mark.django_db
 def test_admin_writes_are_denied_and_change_nothing_when_the_schemas_conflict(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
-    """Saving or deleting is refused before any form runs, not just hidden."""
+    """Saving or deleting is refused before any form runs, not just hidden.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        tmp_path: Temporary directory that holds the conflicting schema files.
+    """
     _, model = _admin_types()
     template = model.objects.create(name="screens/home.xml", content="<view />")
     prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
@@ -292,8 +333,14 @@ def test_admin_writes_are_denied_and_change_nothing_when_the_schemas_conflict(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"ADMIN": {"EDITOR": True}})
 def test_catalog_endpoint_hides_the_cause_when_a_schema_changes_after_startup(
-    admin_client, monkeypatch
+    admin_client: Client, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """The catalog endpoint hides the cause when a schema breaks after startup.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        monkeypatch: Patches the code under test for this test.
+    """
     from dj_hyperview.exceptions import TemplateValidationError
 
     module, _ = _admin_types()
@@ -313,12 +360,15 @@ def test_catalog_endpoint_hides_the_cause_when_a_schema_changes_after_startup(
 
 @pytest.mark.django_db
 def test_admin_form_uses_a_textarea_and_fails_closed_when_settings_are_unusable(
-    tmp_path,
+    tmp_path: Path,
 ) -> None:
     """The form builds and validates without the settings; it never validates a draft.
 
     A blank content keeps the model field validator, which does read the settings
     and fails loudly for a stored template, out of this test.
+
+    Args:
+        tmp_path: Temporary directory that holds the conflicting schema files.
     """
     module, _ = _admin_types()
     configured = {
@@ -338,6 +388,7 @@ def test_admin_form_uses_a_textarea_and_fails_closed_when_settings_are_unusable(
 
 
 def test_database_contrib_without_admin_never_imports_admin_module() -> None:
+    """The database app without the admin never imports the admin module."""
     result = run_isolated(
         "tests.settings_database",
         "import django,sys; django.setup(); "
@@ -373,6 +424,15 @@ def test_database_contrib_without_admin_never_imports_admin_module() -> None:
 def test_admin_form_reports_existing_field_validation(
     name: str, content: str, field: str, code: str
 ) -> None:
+    """The admin form reports the existing field validation errors without echoing the
+    input.
+
+    Args:
+        name: Template name posted to the form.
+        content: Template source posted to the form.
+        field: Form field that is expected to report the error.
+        code: Error code the field is expected to report.
+    """
     module, model = _admin_types()
     form = module.HyperviewTemplateAdminForm(
         data={"name": name, "content": content, "active": True, "revision": 1}
@@ -388,6 +448,7 @@ def test_admin_form_reports_existing_field_validation(
 @pytest.mark.django_db
 @override_settings(HYPERVIEW={"VALIDATION": {"MAX_BYTES": 10}})
 def test_admin_form_uses_configured_source_limit() -> None:
+    """The admin form applies the configured source size limit."""
     module, model = _admin_types()
     form = module.HyperviewTemplateAdminForm(
         data={
@@ -406,6 +467,7 @@ def test_admin_form_uses_configured_source_limit() -> None:
 
 @pytest.mark.django_db
 def test_admin_form_reports_duplicate_name_on_name_field() -> None:
+    """The admin form reports a duplicate name on the name field."""
     module, model = _admin_types()
     model.objects.create(name="screen.xml", content="<view />")
     form = module.HyperviewTemplateAdminForm(
@@ -454,6 +516,7 @@ def test_delete_list_filter_keeps_a_parent_whose_children_cross_the_limit() -> N
 
 
 def test_delete_list_filter_counts_hidden_descendants_in_the_remainder() -> None:
+    """The delete list filter counts hidden descendants in the remaining objects."""
     rendered = _truncated(["a", ["b", "c"], "d"], 2)
 
     assert rendered == (
@@ -463,13 +526,19 @@ def test_delete_list_filter_counts_hidden_descendants_in_the_remainder() -> None
 
 
 def test_delete_list_filter_renders_nested_items_without_a_limit() -> None:
+    """The delete list filter renders nested items when there is no limit."""
     assert _truncated(["a", ["b"]], None) == (
         "\t<li>a\n\t<ul>\n\t\t<li>b</li>\n\t</ul>\n\t</li>"
     )
 
 
 @pytest.mark.django_db
-def test_admin_client_requires_authentication(client) -> None:
+def test_admin_client_requires_authentication(client: Client) -> None:
+    """An anonymous client is redirected to the admin login.
+
+    Args:
+        client: Client that is not signed in until the test logs a user in.
+    """
     _, model = _admin_types()
     url = reverse("admin:dj_hyperview_database_hyperviewtemplate_changelist")
 
@@ -481,7 +550,12 @@ def test_admin_client_requires_authentication(client) -> None:
 
 
 @pytest.mark.django_db
-def test_admin_mutation_requires_csrf(admin_user) -> None:
+def test_admin_mutation_requires_csrf(admin_user: "AbstractUser") -> None:
+    """An admin mutation without a CSRF token is rejected.
+
+    Args:
+        admin_user: Superuser that the test signs in.
+    """
     _, model = _admin_types()
     client = Client(enforce_csrf_checks=True)
     client.force_login(admin_user)
@@ -503,9 +577,13 @@ def test_admin_mutation_requires_csrf(admin_user) -> None:
 
 @pytest.mark.django_db
 def test_admin_mutations_default_to_superusers_even_with_model_permissions(
-    django_user_model,
+    django_user_model: "type[AbstractUser]",
 ) -> None:
-    """Django model permissions cannot bypass the secure package default."""
+    """Django model permissions cannot bypass the secure package default.
+
+    Args:
+        django_user_model: Django user model class used to create staff users.
+    """
     from django.contrib.auth.models import Permission
 
     module, model = _admin_types()
@@ -537,9 +615,14 @@ def test_admin_mutations_default_to_superusers_even_with_model_permissions(
     ],
 )
 def test_admin_permission_callback_authorizes_all_template_mutations(
-    django_user_model, permission
+    django_user_model: "type[AbstractUser]", permission: Callable[..., object] | str
 ) -> None:
-    """Callable and dotted policies become the mutation permission boundary."""
+    """Callable and dotted policies become the mutation permission boundary.
+
+    Args:
+        django_user_model: Django user model class used to create staff users.
+        permission: Permission policy of the admin, as a callable or a dotted path.
+    """
     _, model = _admin_types()
     editor = django_user_model.objects.create_user(
         username="template-editor", password="secret", is_staff=True
@@ -558,8 +641,14 @@ def test_admin_permission_callback_authorizes_all_template_mutations(
     "permission",
     [lambda request: "yes", lambda request: 1 / 0],
 )
-def test_admin_permission_callback_fails_closed(permission) -> None:
-    """Callback errors and non-boolean results never grant mutation access."""
+def test_admin_permission_callback_fails_closed(
+    permission: Callable[..., object],
+) -> None:
+    """Callback errors and non-boolean results never grant mutation access.
+
+    Args:
+        permission: Permission callback that returns a non-boolean or raises.
+    """
     _, model = _admin_types()
     request = RequestFactory().get("/admin/")
     request.user = type("User", (), {"is_superuser": False})()
@@ -573,8 +662,13 @@ def test_admin_permission_callback_fails_closed(permission) -> None:
 
 @pytest.mark.django_db
 def test_superuser_can_complete_admin_crud_through_publication_services(
-    admin_client,
+    admin_client: Client,
 ) -> None:
+    """A superuser creates, edits and deletes a template through the admin.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     _, model = _admin_types()
     changelist = reverse("admin:dj_hyperview_database_hyperviewtemplate_changelist")
     add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
@@ -632,8 +726,15 @@ def test_superuser_can_complete_admin_crud_through_publication_services(
 @pytest.mark.django_db
 @pytest.mark.parametrize(("name", "content"), [("../unsafe.xml", "<view />")])
 def test_admin_add_rejects_invalid_fields_without_writing(
-    admin_client, name: str, content: str
+    admin_client: Client, name: str, content: str
 ) -> None:
+    """The admin add view rejects invalid fields and writes nothing.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        name: Template name posted to the add form.
+        content: Template source posted to the add form.
+    """
     _, model = _admin_types()
     add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
 
@@ -650,7 +751,12 @@ def test_admin_add_rejects_invalid_fields_without_writing(
 
 
 @pytest.mark.django_db
-def test_changelist_escapes_hostile_name(admin_client) -> None:
+def test_changelist_escapes_hostile_name(admin_client: Client) -> None:
+    """The changelist escapes a hostile template name.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     _, model = _admin_types()
     model.objects.create(name="screens/<script>.xml", content="<view />")
     url = reverse("admin:dj_hyperview_database_hyperviewtemplate_changelist")
@@ -664,9 +770,15 @@ def test_changelist_escapes_hostile_name(admin_client) -> None:
 @pytest.mark.django_db
 @pytest.mark.parametrize("editor", [False, True])
 def test_view_only_staff_can_open_template_without_edit_controls(
-    client, django_user_model, editor: bool
+    client: Client, django_user_model: "type[AbstractUser]", editor: bool
 ) -> None:
-    """Read-only forms omit the content field even when the Ace editor is enabled."""
+    """Read-only forms omit the content field even when the Ace editor is enabled.
+
+    Args:
+        client: Client that is signed in as a view-only staff user.
+        django_user_model: Django user model class used to create staff users.
+        editor: Whether the Ace editor is enabled.
+    """
     from django.contrib.auth.models import Permission
 
     _, model = _admin_types()
@@ -709,7 +821,11 @@ def test_view_only_staff_can_open_template_without_edit_controls(
 @pytest.mark.django_db
 @pytest.mark.parametrize("content", ["\n<view />\n", "  <view />  ", "<view />\n\n"])
 def test_admin_form_keeps_content_byte_exact(content: str) -> None:
-    """The form does not strip stored sources, as Django's CharField would."""
+    """The form does not strip stored sources, as Django's CharField would.
+
+    Args:
+        content: Template source the form receives.
+    """
     module, _ = _admin_types()
     form = module.HyperviewTemplateAdminForm(
         data={"name": "screen.xml", "content": content, "active": True}
@@ -720,7 +836,12 @@ def test_admin_form_keeps_content_byte_exact(content: str) -> None:
 
 
 @pytest.mark.django_db
-def test_admin_save_round_trips_surrounding_whitespace(admin_client) -> None:
+def test_admin_save_round_trips_surrounding_whitespace(admin_client: Client) -> None:
+    """Saving through the admin keeps the surrounding whitespace of the source.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     _, model = _admin_types()
     add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
     source = "<view>\n  <text>a</text>\n</view>\n"
@@ -759,7 +880,11 @@ def _counting_permission(calls: list[object], result: object = True) -> Any:
 
 @pytest.mark.parametrize("result", [True, False, ZeroDivisionError()])
 def test_admin_permission_is_evaluated_once_per_request(result: object) -> None:
-    """Every permission check of one request shares a single callback result."""
+    """Every permission check of one request shares a single callback result.
+
+    Args:
+        result: Value the permission callback returns or the exception it raises.
+    """
     _, model = _admin_types()
     registered = admin.site.get_model_admin(model)
     calls: list[object] = []
@@ -798,7 +923,13 @@ def test_admin_permission_is_evaluated_once_per_request(result: object) -> None:
 def test_admin_form_without_stripping_keeps_whitespace_only_content_valid_off_editor(
     editor: bool, content: str, errors: list[str]
 ) -> None:
-    """Only the editor's source check rejects content that is nothing but blanks."""
+    """Only the editor's source check rejects content that is nothing but blanks.
+
+    Args:
+        editor: Whether the Ace editor is enabled.
+        content: Template source that is empty or blank.
+        errors: Error messages the content field is expected to report.
+    """
     module, _ = _admin_types()
 
     with override_settings(HYPERVIEW={"ADMIN": {"EDITOR": editor}}):
@@ -844,7 +975,14 @@ def test_admin_queryset_is_left_alone_when_the_request_has_no_resolved_url() -> 
 
 
 @pytest.mark.django_db
-def test_admin_pages_evaluate_the_permission_callback_once(admin_client) -> None:
+def test_admin_pages_evaluate_the_permission_callback_once(
+    admin_client: Client,
+) -> None:
+    """Each admin page evaluates the permission callback once.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     _, model = _admin_types()
     template = model.objects.create(name="screen.xml", content="<view />")
     prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
@@ -864,7 +1002,12 @@ def test_admin_pages_evaluate_the_permission_callback_once(admin_client) -> None
 
 
 @pytest.mark.django_db
-def test_changelist_defers_the_template_bodies(admin_client) -> None:
+def test_changelist_defers_the_template_bodies(admin_client: Client) -> None:
+    """The changelist defers the template bodies and the change page loads them.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     _, model = _admin_types()
     template = model.objects.create(name="screen.xml", content="<view>body</view>")
     prefix = "admin:dj_hyperview_database_hyperviewtemplate_"
@@ -887,7 +1030,14 @@ def test_changelist_defers_the_template_bodies(admin_client) -> None:
 
 
 @pytest.mark.django_db
-def test_bulk_delete_action_works_on_the_deferred_changelist(admin_client) -> None:
+def test_bulk_delete_action_works_on_the_deferred_changelist(
+    admin_client: Client,
+) -> None:
+    """The bulk delete action works on the changelist that defers the bodies.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     _, model = _admin_types()
     template = model.objects.create(name="screen.xml", content="<view />")
     changelist = reverse("admin:dj_hyperview_database_hyperviewtemplate_changelist")
@@ -910,9 +1060,13 @@ def test_bulk_delete_action_works_on_the_deferred_changelist(admin_client) -> No
     ROOT_URLCONF="tests.urls_admin_custom", HYPERVIEW={"ADMIN": {"EDITOR": True}}
 )
 def test_editor_urls_follow_the_admin_site_the_model_is_registered_on(
-    admin_client,
+    admin_client: Client,
 ) -> None:
-    """A non-default AdminSite gets its own validate and catalog endpoints."""
+    """A non-default AdminSite gets its own validate and catalog endpoints.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     prefix = "dj_hyperview_database_hyperviewtemplate_"
     catalog = reverse("custom:" + prefix + "hxml_catalog")
     validate = reverse("custom:" + prefix + "hxml_validate")

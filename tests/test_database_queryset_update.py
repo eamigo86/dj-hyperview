@@ -73,6 +73,14 @@ class _SplitReadWriteRouter:
 
 @pytest.fixture
 def queryset_model(transactional_db: None) -> Iterator[type[Model]]:
+    """Create the template table on the default database for one test.
+
+    Args:
+        transactional_db: Database access that lets the test create the table.
+
+    Yields:
+        The template model class, with its table created.
+    """
     from dj_hyperview.contrib.database.models import HyperviewTemplate
 
     with connection.schema_editor() as editor:
@@ -84,6 +92,15 @@ def queryset_model(transactional_db: None) -> Iterator[type[Model]]:
 
 @pytest.fixture
 def dual_queryset_model(django_db_blocker: Any) -> Iterator[type[Model]]:
+    """Create the template table on every alias for one test.
+
+    Args:
+        django_db_blocker: Allows the fixture to create the tables outside a test
+        transaction.
+
+    Yields:
+        The template model class, with its table created on every alias.
+    """
     from dj_hyperview.contrib.database.models import HyperviewTemplate
 
     with django_db_blocker.unblock():
@@ -100,6 +117,12 @@ def dual_queryset_model(django_db_blocker: Any) -> Iterator[type[Model]]:
 def test_content_update_schedules_names_and_preserves_result(
     queryset_model: type[Model],
 ) -> None:
+    """A content update schedules the invalidated names and returns the native row
+    count.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     queryset_model.objects.create(name="first.xml", content="<first />")
     queryset_model.objects.create(name="second.xml", content="<second />")
 
@@ -121,7 +144,11 @@ def test_content_update_schedules_names_and_preserves_result(
 def test_update_chunks_primary_keys_to_the_backend_parameter_limit(
     queryset_model: type[Model],
 ) -> None:
-    """Update batches reserve placeholders for assigned values."""
+    """Update batches reserve placeholders for assigned values.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     queryset_model.objects.bulk_create(
         [
             queryset_model(name=f"screen-{index}.xml", content="<view />")
@@ -156,7 +183,11 @@ def test_update_chunks_primary_keys_to_the_backend_parameter_limit(
 def test_rename_identity_backfill_respects_backend_parameter_limit(
     queryset_model: type[Model],
 ) -> None:
-    """Identity backfill accounts for CASE and primary-key placeholders."""
+    """Identity backfill accounts for CASE and primary-key placeholders.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     queryset_model.objects.bulk_create(
         [
             queryset_model(name=f"screen-{index}.xml", content="<view />")
@@ -198,6 +229,11 @@ def test_rename_identity_backfill_respects_backend_parameter_limit(
 def test_content_update_makes_cached_result_observe_committed_content(
     queryset_model: type[Model],
 ) -> None:
+    """A content update makes a cached resolution observe the committed content.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     caches["screens"].clear()
     with (
         patch("dj_hyperview.checks.apps.is_installed", return_value=True),
@@ -221,7 +257,11 @@ def test_content_update_makes_cached_result_observe_committed_content(
 def test_bulk_create_rejects_noncanonical_names_before_database_access(
     queryset_model: type[Model],
 ) -> None:
-    """Bulk insertion cannot create new inert or unsafe template rows."""
+    """Bulk insertion cannot create new inert or unsafe template rows.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     with CaptureQueriesContext(connection) as queries:
         with pytest.raises(InvalidTemplateName, match="Invalid template name"):
             queryset_model.objects.bulk_create(
@@ -236,7 +276,12 @@ def test_bulk_create_rejects_noncanonical_names_before_database_access(
 def test_bulk_upsert_is_rejected_before_consuming_objects_or_database_access(
     queryset_model: type[Model], unique_fields: list[str] | None
 ) -> None:
-    """Unsupported upserts must have no iterable, SQL, or cache side effects."""
+    """Unsupported upserts must have no iterable, SQL, or cache side effects.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+        unique_fields: Conflict target fields passed to the bulk create, or None.
+    """
     consumed: list[bool] = []
 
     def objects() -> Iterator[Model]:
@@ -265,7 +310,11 @@ def test_bulk_upsert_is_rejected_before_consuming_objects_or_database_access(
 def test_bulk_insert_with_ignored_conflict_preserves_the_existing_row(
     queryset_model: type[Model],
 ) -> None:
-    """Imports may ignore duplicate names without silently publishing updates."""
+    """Imports may ignore duplicate names without silently publishing updates.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     existing = queryset_model.objects.create(name="screen.xml", content="<old />")
 
     with patch(
@@ -286,6 +335,11 @@ def test_bulk_insert_with_ignored_conflict_preserves_the_existing_row(
 
 
 def test_rename_schedules_old_and_actual_new_names(queryset_model: type[Model]) -> None:
+    """A rename schedules the old name and the new name that is actually stored.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     first = queryset_model.objects.create(name="first.xml", content="<first />")
     second = queryset_model.objects.create(name="second.xml", content="<second />")
 
@@ -313,7 +367,11 @@ def test_rename_schedules_old_and_actual_new_names(queryset_model: type[Model]) 
 def test_literal_rename_updates_name_and_identity_in_one_statement(
     queryset_model: type[Model],
 ) -> None:
-    """A constant rename needs no read-back or CASE identity update."""
+    """A constant rename needs no read-back or CASE identity update.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     template = queryset_model.objects.create(name="old.xml", content="<view />")
 
     with (
@@ -346,6 +404,11 @@ def test_literal_rename_updates_name_and_identity_in_one_statement(
 def test_filtered_zero_and_noop_updates_preserve_queryset_semantics(
     queryset_model: type[Model],
 ) -> None:
+    """Filtered, zero-row and no-op updates keep the native queryset semantics.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     queryset_model.objects.create(name="first.xml", content="<first />")
     queryset_model.objects.create(name="second.xml", content="<second />")
 
@@ -368,7 +431,11 @@ def test_filtered_zero_and_noop_updates_preserve_queryset_semantics(
 def test_queryset_updates_can_disable_and_repair_invalid_legacy_names(
     queryset_model: type[Model],
 ) -> None:
-    """Old invalid names are skipped while replacement names stay strict."""
+    """Old invalid names are skipped while replacement names stay strict.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     queryset_model._base_manager.bulk_create(
         [queryset_model(name=r"bad\name.xml", content="<view />")]
     )
@@ -392,6 +459,14 @@ def test_queryset_updates_can_disable_and_repair_invalid_legacy_names(
 def test_updates_follow_outer_commit_rollback_and_savepoint(
     queryset_model: type[Model],
 ) -> None:
+    """Updates follow the outer commit, rollback and savepoint.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+
+    Raises:
+        RuntimeError: Raised on purpose inside the transaction to force a rollback.
+    """
     template = queryset_model.objects.create(name="screen.xml", content="<old />")
 
     with patch(
@@ -421,6 +496,11 @@ def test_updates_follow_outer_commit_rollback_and_savepoint(
 def test_invalid_literal_and_expression_names_roll_back_without_scheduling(
     queryset_model: type[Model],
 ) -> None:
+    """Invalid literal and expression names roll back without scheduling anything.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     template = queryset_model.objects.create(name="safe.xml", content="<view />")
 
     with patch(
@@ -440,6 +520,11 @@ def test_invalid_literal_and_expression_names_roll_back_without_scheduling(
 def test_failed_sql_and_primary_key_updates_have_no_partial_effect(
     queryset_model: type[Model],
 ) -> None:
+    """A failed SQL update or primary key update leaves no partial effect.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     queryset_model.objects.create(name="first.xml", content="<first />")
     queryset_model.objects.create(name="second.xml", content="<second />")
 
@@ -467,6 +552,12 @@ def test_failed_sql_and_primary_key_updates_have_no_partial_effect(
 def test_queryset_update_requests_row_lock_and_does_not_emit_model_signals(
     queryset_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A queryset update locks the rows and emits no model signals.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+        monkeypatch: Records the database that the row lock is requested on.
+    """
     template = queryset_model.objects.create(name="screen.xml", content="<old />")
     selected: list[str] = []
     original = HyperviewTemplateQuerySet.select_for_update
@@ -499,6 +590,11 @@ def test_queryset_update_requests_row_lock_and_does_not_emit_model_signals(
 def test_update_uses_the_selected_database_alias(
     dual_queryset_model: type[Model],
 ) -> None:
+    """An update runs on the selected database alias.
+
+    Args:
+        dual_queryset_model: Template model class whose table exists on every alias.
+    """
     default = dual_queryset_model.objects.using("default").create(
         name="default.xml", content="<default />"
     )
@@ -530,6 +626,11 @@ def test_update_uses_the_selected_database_alias(
 def test_implicit_update_resolves_write_router_before_snapshot(
     dual_queryset_model: type[Model],
 ) -> None:
+    """An update without an alias asks the write router before it takes the snapshot.
+
+    Args:
+        dual_queryset_model: Template model class whose table exists on every alias.
+    """
     default = dual_queryset_model.objects.using("default").create(
         name="default.xml", content="<default />"
     )
@@ -559,7 +660,11 @@ def test_implicit_update_resolves_write_router_before_snapshot(
 def test_implicit_delete_resolves_write_router_before_snapshot(
     dual_queryset_model: type[Model],
 ) -> None:
-    """Implicit deletes use the write database for snapshot and mutation."""
+    """Implicit deletes use the write database for snapshot and mutation.
+
+    Args:
+        dual_queryset_model: Template model class whose table exists on every alias.
+    """
     default = dual_queryset_model.objects.using("default").create(
         name="default.xml", content="<default />"
     )
@@ -583,6 +688,12 @@ def test_implicit_delete_resolves_write_router_before_snapshot(
 def test_update_mutates_only_primary_keys_captured_by_the_locked_snapshot(
     queryset_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """An update changes only the primary keys that the locked snapshot captured.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+        monkeypatch: Inserts a row between the snapshot and the update.
+    """
     original = queryset_model.objects.create(name="original.xml", content="<old />")
     execute_update = database_querysets._execute_update
     inserted = False
@@ -615,6 +726,11 @@ def test_update_mutates_only_primary_keys_captured_by_the_locked_snapshot(
 def test_update_preserves_aliases_used_by_expressions(
     queryset_model: type[Model],
 ) -> None:
+    """An update keeps the aliases that its expressions use.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     template = queryset_model.objects.create(name="screen.xml", content="<old />")
 
     with patch(
@@ -634,6 +750,11 @@ def test_update_preserves_aliases_used_by_expressions(
 def test_union_update_preserves_native_rejection_without_writing(
     queryset_model: type[Model],
 ) -> None:
+    """Updating a union keeps the native rejection and writes nothing.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     first = queryset_model.objects.create(name="first.xml", content="<first />")
     second = queryset_model.objects.create(name="second.xml", content="<second />")
     combined = (
@@ -669,6 +790,13 @@ def test_update_preserves_native_shape_preconditions_before_queries(
     build_queryset: Callable[[type[Model]], QuerySet],
     message: str,
 ) -> None:
+    """An update keeps the native queryset shape checks and runs them before any query.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+        build_queryset: Builds the queryset whose shape the update rejects.
+        message: Native Django error message the update is expected to raise.
+    """
     queryset_model.objects.create(name="screen.xml", content="<old />")
 
     with (
@@ -689,6 +817,11 @@ def test_update_preserves_native_shape_preconditions_before_queries(
 def test_update_preserves_annotation_ordering_and_rejects_aggregate_ordering(
     queryset_model: type[Model],
 ) -> None:
+    """An update keeps annotation ordering and rejects aggregate ordering.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     template = queryset_model.objects.create(name="screen.xml", content="<old />")
 
     with patch(
@@ -735,6 +868,13 @@ def test_invalid_update_values_fail_before_database_queries(
     changes: dict[str, Any],
     error_type: type[Exception],
 ) -> None:
+    """Invalid update values fail before any database query.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+        changes: Field changes passed to the update.
+        error_type: Exception class the update is expected to raise.
+    """
     template = queryset_model.objects.create(name="screen.xml", content="<old />")
 
     with (
@@ -754,6 +894,12 @@ def test_invalid_update_values_fail_before_database_queries(
 def test_distinct_fields_update_matches_supported_django_version(
     queryset_model: type[Model],
 ) -> None:
+    """Updating with distinct fields matches the behavior of the supported Django
+    version.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     template = queryset_model.objects.create(name="screen.xml", content="<old />")
 
     with patch(
@@ -779,6 +925,11 @@ def test_distinct_fields_update_matches_supported_django_version(
 def test_controlled_update_resolves_expression_only_as_native_update_does(
     queryset_model: type[Model],
 ) -> None:
+    """The controlled update resolves expressions exactly as often as the native update.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     native = queryset_model.objects.create(name="native.xml", content="<old />")
     controlled = queryset_model.objects.create(name="controlled.xml", content="<old />")
     native_events: list[str] = []
@@ -810,6 +961,11 @@ def test_controlled_update_resolves_expression_only_as_native_update_does(
 def test_none_update_matches_native_resolution_and_query_boundary(
     queryset_model: type[Model],
 ) -> None:
+    """Updating an empty queryset matches the native resolution and query boundary.
+
+    Args:
+        queryset_model: Template model class whose table exists on the default database.
+    """
     native_events: list[str] = []
     controlled_events: list[str] = []
 

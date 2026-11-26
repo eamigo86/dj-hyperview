@@ -34,7 +34,13 @@ HTTP_SETTINGS = {
 def test_header_and_accept_mark_hyperview_request_downstream(
     client: Client, headers: dict[str, str], version: str
 ) -> None:
-    """Verified Hyperview signals expose an equivalent downstream marker."""
+    """Verified Hyperview signals expose an equivalent downstream marker.
+
+    Args:
+        client: Client that requests the consumer form document.
+        headers: Request headers the client sends.
+        version: Hyperview version the downstream marker is expected to report.
+    """
     response = client.get("/documents/form/", headers=headers)
 
     assert response.status_code == 200
@@ -50,7 +56,12 @@ def test_header_and_accept_mark_hyperview_request_downstream(
 def test_absent_or_unacceptable_signals_do_not_mark_request(
     client: Client, headers: dict[str, str]
 ) -> None:
-    """Generic and explicitly rejected media types leave the marker false."""
+    """Generic and explicitly rejected media types leave the marker false.
+
+    Args:
+        client: Client that requests the consumer form document.
+        headers: Request headers the client sends.
+    """
     response = client.get("/documents/form/", headers=headers)
 
     assert response.status_code == 200
@@ -61,7 +72,11 @@ def test_absent_or_unacceptable_signals_do_not_mark_request(
 @pytest.mark.parametrize("token", [None, "invalid-token"])
 @override_settings(**HTTP_SETTINGS)
 def test_form_post_without_valid_csrf_token_is_rejected(token: str | None) -> None:
-    """Django rejects missing and invalid package-mode CSRF tokens."""
+    """Django rejects missing and invalid package-mode CSRF tokens.
+
+    Args:
+        token: CSRF token posted with the form, or None to omit it.
+    """
     client = Client(enforce_csrf_checks=True)
     client.get(
         "/documents/form/",

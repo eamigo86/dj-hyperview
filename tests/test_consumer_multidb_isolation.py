@@ -23,7 +23,11 @@ def _run_multidb(tmp_path: Path, source: str) -> subprocess.CompletedProcess[str
 def test_selected_aliases_isolate_sources_services_admin_and_transactions(
     tmp_path: Path,
 ) -> None:
-    """Reads, writes, cache entries, and commits remain alias-correct."""
+    """Reads, writes, cache entries, and commits remain alias-correct.
+
+    Args:
+        tmp_path: Temporary directory that holds the SQLite files of the probe.
+    """
     result = _run_multidb(
         tmp_path,
         r"""
@@ -209,7 +213,11 @@ print(json.dumps({
 
 
 def test_alias_and_backend_failures_are_closed_and_redacted(tmp_path: Path) -> None:
-    """Unavailable aliases and databases expose only stable public errors."""
+    """Unavailable aliases and databases expose only stable public errors.
+
+    Args:
+        tmp_path: Temporary directory that holds the SQLite files of the probe.
+    """
     result = _run_multidb(
         tmp_path,
         r"""
@@ -258,7 +266,11 @@ print(json.dumps(outcomes))
 def test_multidatabase_consumer_starts_without_external_imports_or_io(
     tmp_path: Path,
 ) -> None:
-    """A clean process loads public URLs while hostile integrations stay blocked."""
+    """A clean process loads public URLs while hostile integrations stay blocked.
+
+    Args:
+        tmp_path: Temporary directory that holds the SQLite files of the probe.
+    """
     result = _run_multidb(
         tmp_path,
         r"""

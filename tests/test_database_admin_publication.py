@@ -2,6 +2,7 @@
 
 import importlib
 import json
+from pathlib import Path
 from typing import Any
 from unittest.mock import call, patch
 
@@ -11,7 +12,7 @@ from django.conf import settings
 from django.contrib import admin
 from django.core.management import call_command
 from django.db import DEFAULT_DB_ALIAS, connections
-from django.test import override_settings
+from django.test import Client, override_settings
 from django.urls import reverse
 from django.utils import translation
 
@@ -55,8 +56,12 @@ def _form(
     return data
 
 
-def test_loaddata_preserves_recoverable_legacy_name(tmp_path) -> None:
-    """Raw fixture loading accepts legacy names and restores their identity."""
+def test_loaddata_preserves_recoverable_legacy_name(tmp_path: Path) -> None:
+    """Raw fixture loading accepts legacy names and restores their identity.
+
+    Args:
+        tmp_path: Temporary directory that holds the fixture file.
+    """
     legacy_name = "legacy\\name.xml"
     fixture = tmp_path / "legacy-template.json"
     fixture.write_text(
@@ -89,7 +94,14 @@ def test_loaddata_preserves_recoverable_legacy_name(tmp_path) -> None:
     schedule.assert_not_called()
 
 
-def test_admin_create_and_edit_publish_once_with_hidden_revision(admin_client) -> None:
+def test_admin_create_and_edit_publish_once_with_hidden_revision(
+    admin_client: Client,
+) -> None:
+    """Creating and editing in the admin each publish once and carry a hidden revision.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     model = _model()
     add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
     with patch(SCHEDULE) as schedule:
@@ -118,9 +130,13 @@ def test_admin_create_and_edit_publish_once_with_hidden_revision(admin_client) -
 
 
 def test_admin_add_never_overwrites_a_concurrently_created_template(
-    admin_client,
+    admin_client: Client,
 ) -> None:
-    """An Add race preserves the row that won the unique-name race."""
+    """An Add race preserves the row that won the unique-name race.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin")
     model = _model()
     existing = model.objects.create(name="screen.xml", content="<winner />")
@@ -147,7 +163,12 @@ def test_admin_add_never_overwrites_a_concurrently_created_template(
     assert (existing.content, existing.revision) == ("<winner />", 1)
 
 
-def test_admin_stale_edit_is_a_redacted_form_error(admin_client) -> None:
+def test_admin_stale_edit_is_a_redacted_form_error(admin_client: Client) -> None:
+    """A stale admin edit becomes a redacted form error.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     model = _model()
     template = model.objects.create(name="screen.xml", content="<one />")
     _, change, _ = _urls(template)
@@ -171,9 +192,14 @@ def test_admin_stale_edit_is_a_redacted_form_error(admin_client) -> None:
 
 @pytest.mark.parametrize("operation", ["change", "delete"])
 def test_conflict_redirect_preserves_admin_query_context(
-    admin_client, operation: str
+    admin_client: Client, operation: str
 ) -> None:
-    """Conflict redirects retain popup and filtered-changelist state."""
+    """Conflict redirects retain popup and filtered-changelist state.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        operation: Admin operation under test, either change or delete.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin")
     template = _model().objects.create(name="screen.xml", content="<old />")
     _, change, delete = _urls(template)
@@ -193,7 +219,14 @@ def test_conflict_redirect_preserves_admin_query_context(
     assert response.headers["Location"] == url
 
 
-def test_admin_delete_rejects_stale_revision_and_then_deletes(admin_client) -> None:
+def test_admin_delete_rejects_stale_revision_and_then_deletes(
+    admin_client: Client,
+) -> None:
+    """Admin delete rejects a stale revision and then deletes with the current one.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     model = _model()
     template = model.objects.create(name="screen.xml", content="<view />")
     changelist, _, delete = _urls(template)
@@ -218,9 +251,13 @@ def test_admin_delete_rejects_stale_revision_and_then_deletes(admin_client) -> N
 
 
 def test_delete_confirmation_uses_django_translation_and_button_contract(
-    admin_client,
+    admin_client: Client,
 ) -> None:
-    """The override preserves Django's translated prompt and cancel semantics."""
+    """The override preserves Django's translated prompt and cancel semantics.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     template = _model().objects.create(name="screen.xml", content="<view />")
     _, _, delete = _urls(template)
     message = (
@@ -240,8 +277,12 @@ def test_delete_confirmation_uses_django_translation_and_button_contract(
     assert '<a role="button" href="#" class="button cancel-link">' in rendered
 
 
-def test_delete_confirmation_honors_maximum_display_zero(admin_client) -> None:
-    """A zero display limit hides the related-object list like Django does."""
+def test_delete_confirmation_honors_maximum_display_zero(admin_client: Client) -> None:
+    """A zero display limit hides the related-object list like Django does.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     model = _model()
     template = model.objects.create(name="screen.xml", content="<view />")
     _, _, delete = _urls(template)
@@ -256,9 +297,14 @@ def test_delete_confirmation_honors_maximum_display_zero(admin_client) -> None:
 
 
 def test_delete_revision_survives_an_overridden_admin_template(
-    admin_client, tmp_path
+    admin_client: Client, tmp_path: Path
 ) -> None:
-    """The revision field does not depend on Django's rendered input bytes."""
+    """The revision field does not depend on Django's rendered input bytes.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        tmp_path: Temporary directory that holds the overriding admin template.
+    """
     parent = tmp_path / "admin" / "delete_confirmation.html"
     parent.parent.mkdir()
     parent.write_text(
@@ -284,8 +330,12 @@ def test_delete_revision_survives_an_overridden_admin_template(
     assert b'name="expected_revision" value="1"' in confirmation.content
 
 
-def test_admin_can_delete_an_invalid_legacy_name(admin_client) -> None:
-    """Legacy rows remain recoverable through the guarded admin delete flow."""
+def test_admin_can_delete_an_invalid_legacy_name(admin_client: Client) -> None:
+    """Legacy rows remain recoverable through the guarded admin delete flow.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     model = _model()
     model._base_manager.bulk_create([model(name=r"bad\name.xml", content="<view />")])
     template = model._base_manager.get()
@@ -301,8 +351,12 @@ def test_admin_can_delete_an_invalid_legacy_name(admin_client) -> None:
     assert model._base_manager.count() == 0
 
 
-def test_admin_can_rename_an_invalid_legacy_name(admin_client) -> None:
-    """A canonical edit repairs a historical name through the change view."""
+def test_admin_can_rename_an_invalid_legacy_name(admin_client: Client) -> None:
+    """A canonical edit repairs a historical name through the change view.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     model = _model()
     legacy_name = "bad\\name.xml"
     model._base_manager.bulk_create(
@@ -331,7 +385,12 @@ def test_admin_can_rename_an_invalid_legacy_name(admin_client) -> None:
     )
 
 
-def test_admin_bulk_delete_uses_one_batch_invalidation(admin_client) -> None:
+def test_admin_bulk_delete_uses_one_batch_invalidation(admin_client: Client) -> None:
+    """Bulk admin delete schedules one batch invalidation.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     model = _model()
     rows = [
         model.objects.create(name=f"{name}.xml", content="<view />")
@@ -353,7 +412,15 @@ def test_admin_bulk_delete_uses_one_batch_invalidation(admin_client) -> None:
     schedule.assert_called_once_with("one.xml", "two.xml", using="default")
 
 
-def test_admin_transaction_outcomes_preserve_database_truth(admin_client) -> None:
+def test_admin_transaction_outcomes_preserve_database_truth(
+    admin_client: Client,
+) -> None:
+    """Admin transaction outcomes keep the database truthful after a cache or log
+    failure.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin")
     model = _model()
     template = model.objects.create(name="screen.xml", content="<old />")
@@ -382,7 +449,14 @@ def test_admin_transaction_outcomes_preserve_database_truth(admin_client) -> Non
     invalidate.assert_not_called()
 
 
-def test_add_form_excludes_revision_control_from_get_and_post(admin_client) -> None:
+def test_add_form_excludes_revision_control_from_get_and_post(
+    admin_client: Client,
+) -> None:
+    """The add form leaves out the revision control and ignores a posted revision.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     model = _model()
     add = reverse("admin:dj_hyperview_database_hyperviewtemplate_add")
 
@@ -401,8 +475,14 @@ def test_add_form_excludes_revision_control_from_get_and_post(admin_client) -> N
 
 @pytest.mark.parametrize("values", [["999", "1"], ["1", "999"], ["1", "1"]])
 def test_admin_change_rejects_duplicate_revision_values(
-    admin_client, values: list[str]
+    admin_client: Client, values: list[str]
 ) -> None:
+    """Admin change rejects repeated revision values without publishing.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        values: Revision values the client posts for the same field.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin")
     model = _model()
     template = model.objects.create(name="screen.xml", content="<old />")
@@ -425,8 +505,14 @@ def test_admin_change_rejects_duplicate_revision_values(
 
 @pytest.mark.parametrize("values", [["999", "1"], ["1", "999"], ["1", "1"]])
 def test_admin_delete_rejects_duplicate_revision_values(
-    admin_client, values: list[str]
+    admin_client: Client, values: list[str]
 ) -> None:
+    """Admin delete rejects repeated revision values without deleting.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        values: Revision values the client posts for the same field.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin")
     model = _model()
     template = model.objects.create(name="screen.xml", content="<view />")
@@ -453,8 +539,15 @@ def test_admin_delete_rejects_duplicate_revision_values(
     "token", ["9" * 5_000, "\u0669" * 5_000], ids=["ascii", "unicode"]
 )
 def test_admin_rejects_oversized_revision_before_publication(
-    admin_client, operation: str, token: str
+    admin_client: Client, operation: str, token: str
 ) -> None:
+    """The admin rejects an oversized revision before it publishes anything.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+        operation: Admin operation under test, either change or delete.
+        token: Oversized revision value that the client posts.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin")
     model = _model()
     template = model.objects.create(name="screen.xml", content="<old />")
@@ -479,7 +572,12 @@ def test_admin_rejects_oversized_revision_before_publication(
     schedule.assert_not_called()
 
 
-def test_admin_revision_parser_honors_database_range(admin_client) -> None:
+def test_admin_revision_parser_honors_database_range(admin_client: Client) -> None:
+    """The admin revision parser honors the range of the database column.
+
+    Args:
+        admin_client: Client signed in as a superuser that uses the template admin.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.admin")
     maximum = connections[DEFAULT_DB_ALIAS].ops.integer_field_range(
         "PositiveIntegerField"
@@ -524,6 +622,7 @@ def test_admin_revision_parser_honors_database_range(admin_client) -> None:
 
 
 def test_admin_form_public_overrides_have_complete_docstrings() -> None:
+    """The public overrides of the admin form have complete docstrings."""
     module = importlib.import_module("dj_hyperview.contrib.database.admin")
     init_doc = module.HyperviewTemplateAdminForm.__init__.__doc__ or ""
     clean_doc = module.HyperviewTemplateAdminForm.clean.__doc__ or ""

@@ -1,13 +1,17 @@
+"""Tests for the optional database app, its template model and its validation."""
+
 import os
 import subprocess
 import sys
 import traceback
+from collections.abc import Iterator
 from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from django.core.exceptions import ValidationError
 from django.db import IntegrityError, connection, transaction
+from django.db.models import Model
 from django.forms import modelform_factory
 from django.test import override_settings
 
@@ -30,7 +34,19 @@ UNSAFE_UNICODE_NAMES = (
 )
 
 
-def run_isolated(settings_module, source, *, database=None):
+def run_isolated(
+    settings_module: str, source: str, *, database: Path | None = None
+) -> subprocess.CompletedProcess[str]:
+    """Run Python source in a fresh process that uses the given settings module.
+
+    Args:
+        settings_module: Dotted path of the Django settings module the process uses.
+        source: Python source the subprocess runs.
+        database: SQLite file the process uses, if any.
+
+    Returns:
+        Completed process with the captured text output.
+    """
     environment = {
         **os.environ,
         "DJANGO_SETTINGS_MODULE": settings_module,
@@ -48,13 +64,19 @@ def run_isolated(settings_module, source, *, database=None):
     )
 
 
-def template_model():
+def template_model() -> type[Model]:
+    """Import the optional template model on demand.
+
+    Returns:
+        The HyperviewTemplate model class.
+    """
     from dj_hyperview.contrib.database.models import HyperviewTemplate
 
     return HyperviewTemplate
 
 
-def test_base_startup_does_not_import_optional_database_models():
+def test_base_startup_does_not_import_optional_database_models() -> None:
+    """Starting Django without the database app never imports its models."""
     result = run_isolated(
         "tests.settings",
         "import django, sys; django.setup(); "
@@ -64,7 +86,8 @@ def test_base_startup_does_not_import_optional_database_models():
     assert (result.returncode, result.stdout.strip()) == (0, "False")
 
 
-def test_database_package_import_is_lazy_before_django_setup():
+def test_database_package_import_is_lazy_before_django_setup() -> None:
+    """Importing the database package before Django setup does not load its models."""
     result = run_isolated(
         "tests.settings",
         "import sys, dj_hyperview.contrib.database; "
@@ -74,7 +97,8 @@ def test_database_package_import_is_lazy_before_django_setup():
     assert (result.returncode, result.stdout.strip()) == (0, "False")
 
 
-def test_contrib_startup_exposes_expected_app_and_model_metadata():
+def test_contrib_startup_exposes_expected_app_and_model_metadata() -> None:
+    """The database settings expose the expected app and model metadata."""
     result = run_isolated(
         "tests.settings_database",
         "import django; django.setup(); from django.apps import apps; "
@@ -90,7 +114,8 @@ def test_contrib_startup_exposes_expected_app_and_model_metadata():
     )
 
 
-def test_template_model_fields_defaults_meta_and_string():
+def test_template_model_fields_defaults_meta_and_string() -> None:
+    """The template model has the expected fields, defaults, options and string form."""
     model = template_model()
     fields = {field.name: field for field in model._meta.fields}
     template = model(name="screens/home.xml", content="<view />")
@@ -122,7 +147,12 @@ def test_template_model_fields_defaults_meta_and_string():
         *UNSAFE_UNICODE_NAMES,
     ],
 )
-def test_full_clean_rejects_noncanonical_or_too_long_names(name):
+def test_full_clean_rejects_noncanonical_or_too_long_names(name: str | None) -> None:
+    """Full validation rejects non-canonical and too long names without echoing them.
+
+    Args:
+        name: Template name the model is given.
+    """
     template = template_model()(name=name, content="<view />")
 
     with pytest.raises(ValidationError) as captured:
@@ -133,7 +163,8 @@ def test_full_clean_rejects_noncanonical_or_too_long_names(name):
         assert name not in str(captured.value)
 
 
-def test_name_validator_drops_invalid_name_exception_context():
+def test_name_validator_drops_invalid_name_exception_context() -> None:
+    """The name validator raises an error that carries no cause, context or name."""
     sensitive_name = "../private-screen.xml"
 
     with pytest.raises(ValidationError) as captured:
@@ -170,7 +201,15 @@ def test_name_validator_drops_invalid_name_exception_context():
         ),
     ],
 )
-def test_full_clean_rejects_invalid_template_source_without_leaking_it(content, code):
+def test_full_clean_rejects_invalid_template_source_without_leaking_it(
+    content: str | None, code: str
+) -> None:
+    """Full validation rejects invalid template source without echoing it.
+
+    Args:
+        content: Template source the model is given.
+        code: Validation error code the content error is expected to carry.
+    """
     template = template_model()(name="screen.xml", content=content)
 
     with pytest.raises(ValidationError) as captured:
@@ -182,7 +221,8 @@ def test_full_clean_rejects_invalid_template_source_without_leaking_it(content, 
 
 
 @override_settings(HYPERVIEW={"VALIDATION": {"MAX_BYTES": 10}})
-def test_full_clean_uses_configured_source_size_limit():
+def test_full_clean_uses_configured_source_size_limit() -> None:
+    """Full validation applies the configured source size limit."""
     template = template_model()(name="screen.xml", content="<view>secret</view>")
 
     with pytest.raises(ValidationError) as captured:
@@ -204,7 +244,14 @@ def test_full_clean_uses_configured_source_size_limit():
         "{% load dj_hyperview %}<view><text>unclosed</view>",
     ],
 )
-def test_full_clean_accepts_safe_documents_partials_and_template_source(content):
+def test_full_clean_accepts_safe_documents_partials_and_template_source(
+    content: str | None,
+) -> None:
+    """Full validation accepts documents, partials and template source.
+
+    Args:
+        content: Template source the model is given.
+    """
     template = template_model()(name="screens/home.xml", content=content)
 
     template.full_clean(validate_unique=False, validate_constraints=False)
@@ -213,7 +260,8 @@ def test_full_clean_accepts_safe_documents_partials_and_template_source(content)
 
 
 @override_settings(HYPERVIEW={})
-def test_model_source_validation_does_not_apply_schema_before_render():
+def test_model_source_validation_does_not_apply_schema_before_render() -> None:
+    """Model validation does not apply the schema before the template renders."""
     template = template_model()(name="screen.xml", content="<view />")
 
     with patch("dj_hyperview.schema._validate_schema_root") as validate_schema:
@@ -223,7 +271,14 @@ def test_model_source_validation_does_not_apply_schema_before_render():
 
 
 @pytest.mark.parametrize("name", ["../screen.xml", "x" * 256, *UNSAFE_UNICODE_NAMES])
-def test_clean_fields_rejects_unsafe_name_without_normalizing_it(name):
+def test_clean_fields_rejects_unsafe_name_without_normalizing_it(
+    name: str | None,
+) -> None:
+    """Field validation rejects an unsafe name and leaves it unchanged.
+
+    Args:
+        name: Template name the model is given.
+    """
     template = template_model()(name=name, content="<view />")
 
     with pytest.raises(ValidationError) as captured:
@@ -235,7 +290,12 @@ def test_clean_fields_rejects_unsafe_name_without_normalizing_it(name):
 
 @pytest.mark.django_db
 @pytest.mark.parametrize("revision", [0, -1])
-def test_full_clean_reports_nonpositive_revision_on_field(revision):
+def test_full_clean_reports_nonpositive_revision_on_field(revision: int) -> None:
+    """Full validation reports a non-positive revision on the revision field.
+
+    Args:
+        revision: Revision number the model is given.
+    """
     template = template_model()(
         name="screen.xml", content="<view />", revision=revision
     )
@@ -247,7 +307,15 @@ def test_full_clean_reports_nonpositive_revision_on_field(revision):
 
 
 @pytest.fixture
-def template_table(transactional_db):
+def template_table(transactional_db: None) -> Iterator[type[Model]]:
+    """Create the template table for one test and drop it afterwards.
+
+    Args:
+        transactional_db: Database access that lets the test create the table.
+
+    Yields:
+        The template model class, with its table created.
+    """
     model = template_model()
     with connection.schema_editor() as editor:
         editor.create_model(model)
@@ -264,7 +332,15 @@ def template_table(transactional_db):
         ({"name", "content"}, {"name": "../unsafe.xml", "content": "<view>"}),
     ],
 )
-def test_clean_fields_honors_explicit_exclusions(exclude, attributes):
+def test_clean_fields_honors_explicit_exclusions(
+    exclude: set[str], attributes: dict[str, str]
+) -> None:
+    """Field validation skips the fields it is told to exclude.
+
+    Args:
+        exclude: Field names the validation skips.
+        attributes: Field values of the stored model instance.
+    """
     template = template_model()(**attributes)
 
     template.clean_fields(exclude=exclude)
@@ -282,8 +358,19 @@ def test_clean_fields_honors_explicit_exclusions(exclude, attributes):
     ],
 )
 def test_modelform_ignores_invalid_fields_it_excludes(
-    template_table, fields, attributes, data
-):
+    template_table: type[Model],
+    fields: list[str],
+    attributes: dict[str, str],
+    data: dict[str, str | int],
+) -> None:
+    """A model form ignores invalid stored values of the fields it leaves out.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+        fields: Field names the model form includes.
+        attributes: Field values of the stored model instance.
+        data: Data the model form is bound to.
+    """
     instance = template_table(**attributes)
     form_class = modelform_factory(template_table, fields=fields)
 
@@ -310,8 +397,19 @@ def test_modelform_ignores_invalid_fields_it_excludes(
     ],
 )
 def test_modelform_exclude_option_skips_stored_invalid_fields(
-    template_table, exclude, attributes, data
-):
+    template_table: type[Model],
+    exclude: set[str],
+    attributes: dict[str, str],
+    data: dict[str, str | int],
+) -> None:
+    """A model form with an exclude option skips invalid stored fields.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+        exclude: Field names the validation skips.
+        attributes: Field values of the stored model instance.
+        data: Data the model form is bound to.
+    """
     form_class = modelform_factory(template_table, exclude=exclude)
 
     form = form_class(data, instance=template_table(**attributes))
@@ -333,8 +431,21 @@ def test_modelform_exclude_option_skips_stored_invalid_fields(
     ],
 )
 def test_modelform_reports_only_included_invalid_field(
-    template_table, fields, instance, data, error_field
-):
+    template_table: type[Model],
+    fields: list[str],
+    instance: dict[str, str],
+    data: dict[str, str | int],
+    error_field: str,
+) -> None:
+    """A model form reports only the invalid field it includes.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+        fields: Field names the model form includes.
+        instance: Field values of the instance the form edits.
+        data: Data the model form is bound to.
+        error_field: Only field that is expected to report an error.
+    """
     form_class = modelform_factory(template_table, fields=fields)
 
     form = form_class(data, instance=template_table(**instance))
@@ -343,7 +454,14 @@ def test_modelform_reports_only_included_invalid_field(
     assert set(form.errors.as_data()) == {error_field}
 
 
-def test_deferred_instance_full_clean_remains_valid(template_table):
+def test_deferred_instance_full_clean_remains_valid(
+    template_table: type[Model],
+) -> None:
+    """Full validation of an instance with deferred fields stays valid.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+    """
     row = template_table.objects.create(name="screen.xml", content="<view />")
 
     deferred = template_table.objects.only("name").get(pk=row.pk)
@@ -352,7 +470,14 @@ def test_deferred_instance_full_clean_remains_valid(template_table):
     assert deferred.name == "screen.xml"
 
 
-def test_sqlite_uniqueness_is_case_sensitive_by_default(template_table):
+def test_sqlite_uniqueness_is_case_sensitive_by_default(
+    template_table: type[Model],
+) -> None:
+    """SQLite treats names that differ only by case as distinct by default.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+    """
     template_table.objects.create(name="screen.xml", content="<view />")
     other = template_table(name="Screen.xml", content="<view />")
 
@@ -365,8 +490,14 @@ def test_sqlite_uniqueness_is_case_sensitive_by_default(template_table):
     }
 
 
-def test_full_clean_reports_duplicate_exact_name_on_public_field(template_table):
-    """Model validation maps byte-exact identity conflicts to name."""
+def test_full_clean_reports_duplicate_exact_name_on_public_field(
+    template_table: type[Model],
+) -> None:
+    """Model validation maps byte-exact identity conflicts to name.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+    """
     template_table.objects.create(name="screen.xml", content="<view />")
     duplicate = template_table(name="screen.xml", content="<other />")
 
@@ -377,8 +508,14 @@ def test_full_clean_reports_duplicate_exact_name_on_public_field(template_table)
     assert captured.value.error_dict["name"][0].code == "unique"
 
 
-def test_plain_modelform_reports_duplicate_exact_name_before_save(template_table):
-    """Non-admin model forms surface duplicate names without an integrity error."""
+def test_plain_modelform_reports_duplicate_exact_name_before_save(
+    template_table: type[Model],
+) -> None:
+    """Non-admin model forms surface duplicate names without an integrity error.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+    """
     template_table.objects.create(name="screen.xml", content="<view />")
     form_class = modelform_factory(template_table, fields=["name", "content"])
 
@@ -389,7 +526,14 @@ def test_plain_modelform_reports_duplicate_exact_name_before_save(template_table
     assert form.errors.as_data()["name"][0].code == "unique"
 
 
-def test_database_enforces_unique_name_and_positive_revision(template_table):
+def test_database_enforces_unique_name_and_positive_revision(
+    template_table: type[Model],
+) -> None:
+    """The database enforces unique names and positive revisions.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+    """
     model = template_table
     model.objects.create(name="screen.xml", content="<view />")
 
@@ -399,7 +543,14 @@ def test_database_enforces_unique_name_and_positive_revision(template_table):
         model.objects.create(name="other.xml", content="<view />", revision=0)
 
 
-def test_save_persists_defaults_and_does_not_call_full_clean(template_table):
+def test_save_persists_defaults_and_does_not_call_full_clean(
+    template_table: type[Model],
+) -> None:
+    """Saving persists the defaults and does not call full validation.
+
+    Args:
+        template_table: Template model class whose table exists for this test.
+    """
     template = template_table(name="screen.xml", content="<view />")
 
     with patch.object(template, "full_clean") as full_clean:

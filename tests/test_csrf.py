@@ -1,3 +1,5 @@
+"""Tests for the CSRF template tag."""
+
 from xml.etree import ElementTree
 
 import pytest
@@ -18,7 +20,8 @@ TEMPLATES = [
 
 
 @override_settings(TEMPLATES=TEMPLATES)
-def test_csrf_tag_uses_django_token_in_hidden_hyperview_field():
+def test_csrf_tag_uses_django_token_in_hidden_hyperview_field() -> None:
+    """The CSRF tag renders Django's token as a hidden Hyperview field."""
     request = RequestFactory().get("/form")
     template = Template("{% load dj_hyperview %}{% hv_csrf_token %}")
 
@@ -50,7 +53,14 @@ def test_csrf_tag_uses_django_token_in_hidden_hyperview_field():
 
 
 @override_settings(TEMPLATES=TEMPLATES)
-def test_csrf_tag_escapes_untrusted_token_for_xml(monkeypatch):
+def test_csrf_tag_escapes_untrusted_token_for_xml(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Csrf tag escapes untrusted token for xml.
+
+    Args:
+        monkeypatch: Replaces the token lookup with one that returns hostile text.
+    """
     request = RequestFactory().get("/form")
     monkeypatch.setattr(
         hyperview_tags,

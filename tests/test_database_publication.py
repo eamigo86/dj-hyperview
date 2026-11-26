@@ -45,6 +45,15 @@ class _WriteRouter:
 
 @pytest.fixture
 def publication_model(django_db_blocker: Any) -> Iterator[type[Model]]:
+    """Create the template table on every alias for one test.
+
+    Args:
+        django_db_blocker: Allows the fixture to create the tables outside a test
+        transaction.
+
+    Yields:
+        The template model class, with its table created on every alias.
+    """
     with override_settings(INSTALLED_APPS=DATABASE_APPS):
         model = apps.get_model("dj_hyperview_database", "HyperviewTemplate")
         with django_db_blocker.unblock():
@@ -59,6 +68,9 @@ def publication_model(django_db_blocker: Any) -> Iterator[type[Model]]:
 
 
 def test_service_module_is_lazy_before_optional_app_setup() -> None:
+    """Importing the services module does not load the models, and publishing fails
+    while the app is unavailable.
+    """
     result = run_isolated(
         "tests.settings",
         "import sys, dj_hyperview.contrib.database.services; "
@@ -72,6 +84,11 @@ def test_service_module_is_lazy_before_optional_app_setup() -> None:
 def test_publish_creates_validated_inactive_template_and_immutable_result(
     publication_model: type[Model],
 ) -> None:
+    """Publishing creates a validated inactive template and returns an immutable result.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     with patch(SCHEDULE) as schedule:
         result = publish_template("screen.xml", "<view />", active=False)
     stored = publication_model.objects.get(name="screen.xml")
@@ -85,6 +102,11 @@ def test_publish_creates_validated_inactive_template_and_immutable_result(
 def test_publish_keeps_the_existing_activity_unless_it_is_given(
     publication_model: type[Model],
 ) -> None:
+    """Publishing keeps the existing activity flag unless one is given.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     publication_model.objects.create(name="screen.xml", content="<one />", active=False)
     with patch(SCHEDULE):
         publish_template("screen.xml", "<two />")
@@ -100,6 +122,11 @@ def test_publish_keeps_the_existing_activity_unless_it_is_given(
 def test_publish_updates_revision_and_enforces_expected_revision(
     publication_model: type[Model],
 ) -> None:
+    """Publishing bumps the revision and enforces the expected revision.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     publication_model.objects.create(name="screen.xml", content="<one />")
     with patch(SCHEDULE) as schedule:
         latest = publish_template("screen.xml", "<two />")
@@ -119,6 +146,11 @@ def test_publish_updates_revision_and_enforces_expected_revision(
 def test_missing_expected_revision_conflicts_without_write(
     publication_model: type[Model],
 ) -> None:
+    """An expected revision for a missing template conflicts without writing.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     with (
         patch(SCHEDULE) as schedule,
         pytest.raises(PublicationConflict),
@@ -152,6 +184,14 @@ def test_invalid_publication_never_persists(
     content: str,
     error_type: type[Exception],
 ) -> None:
+    """An invalid name or content is never persisted.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+        name: Template name passed to publish_template.
+        content: Template source passed to publish_template.
+        error_type: Exception class publishing is expected to raise.
+    """
     with (
         patch(SCHEDULE) as schedule,
         pytest.raises(error_type),
@@ -173,7 +213,12 @@ def test_invalid_publication_never_persists(
 def test_publication_rejects_invalid_django_template_syntax_before_writing(
     publication_model: type[Model], content: str
 ) -> None:
-    """Database publication compiles Django syntax without rendering context."""
+    """Database publication compiles Django syntax without rendering context.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+        content: Template source passed to publish_template.
+    """
     with (
         patch(SCHEDULE) as schedule,
         pytest.raises(ValidationError) as captured,
@@ -188,7 +233,11 @@ def test_publication_rejects_invalid_django_template_syntax_before_writing(
 def test_publication_reports_excessive_nesting_as_a_validation_error(
     publication_model: type[Model],
 ) -> None:
-    """Django's recursive parser gives up on deeply nested blocks."""
+    """Django's recursive parser gives up on deeply nested blocks.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     content = "{% if x %}" * 3000 + "{% endif %}" * 3000
 
     with (
@@ -205,7 +254,11 @@ def test_publication_reports_excessive_nesting_as_a_validation_error(
 def test_invalid_django_syntax_does_not_increment_an_existing_revision(
     publication_model: type[Model],
 ) -> None:
-    """A rejected update preserves the last published source and revision."""
+    """A rejected update preserves the last published source and revision.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     template = publication_model.objects.create(name="screen.xml", content="<view />")
 
     with pytest.raises(ValidationError):
@@ -219,6 +272,11 @@ def test_invalid_django_syntax_does_not_increment_an_existing_revision(
 def test_invalid_expected_revision_fails_before_database_access(
     expected: object,
 ) -> None:
+    """An invalid expected revision fails before any database access.
+
+    Args:
+        expected: Expected revision passed to publish_template.
+    """
     with (
         patch("dj_hyperview.contrib.database.services.transaction.atomic") as atomic,
         pytest.raises(ValueError, match="expected_revision"),
@@ -231,6 +289,12 @@ def test_invalid_expected_revision_fails_before_database_access(
 def test_publication_validates_then_saves_once_under_row_lock(
     publication_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Publishing locks the row, validates once and saves once.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+        monkeypatch: Wraps the row lock, validation and save to record their order.
+    """
     template = publication_model.objects.create(name="screen.xml", content="<old />")
     events: list[str] = []
     original_lock = QuerySet.select_for_update
@@ -261,6 +325,11 @@ def test_publication_validates_then_saves_once_under_row_lock(
 def test_publish_selects_write_router_once_and_honors_explicit_alias(
     publication_model: type[Model],
 ) -> None:
+    """Publishing asks the write router once and honors an explicit alias.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     router = _WriteRouter("replica")
     with override_settings(DATABASE_ROUTERS=[router]):
         routed = publish_template("routed.xml", "<replica />")
@@ -278,6 +347,11 @@ def test_publish_selects_write_router_once_and_honors_explicit_alias(
 
 @pytest.mark.parametrize("using", [True, "", "missing"])
 def test_invalid_database_alias_fails_safely(using: object) -> None:
+    """An invalid database alias fails with a redacted error.
+
+    Args:
+        using: Database alias passed to publish_template.
+    """
     with pytest.raises(SourceUnavailable) as captured:
         publish_template("screen.xml", "<view />", using=using)
 
@@ -291,6 +365,12 @@ def test_invalid_database_alias_fails_safely(using: object) -> None:
 def test_create_race_becomes_redacted_publication_conflict(
     publication_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A lost creation race becomes a redacted publication conflict.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+        monkeypatch: Makes the first lookup miss an existing row.
+    """
     publication_model.objects.create(name="screen.xml", content="<winner />")
     original_get = QuerySet.get
     lookup_count = 0
@@ -323,6 +403,12 @@ def test_create_race_becomes_redacted_publication_conflict(
 def test_unverified_create_integrity_error_remains_database_error(
     publication_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """An unexplained integrity error on create stays a database error.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+        monkeypatch: Makes saving the model raise an integrity error.
+    """
     failure = IntegrityError("private create infrastructure failure")
 
     def fail_save(instance: Model, *args: object, **kwargs: object) -> None:
@@ -344,6 +430,12 @@ def test_unverified_create_integrity_error_remains_database_error(
 def test_update_integrity_error_remains_database_error(
     publication_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """An integrity error on update stays a database error.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+        monkeypatch: Makes saving the model raise an integrity error.
+    """
     publication_model.objects.create(name="screen.xml", content="<original />")
     failure = IntegrityError("private update infrastructure failure")
 
@@ -367,6 +459,11 @@ def test_update_integrity_error_remains_database_error(
 def test_sqlite_update_constraint_error_is_not_a_publication_conflict(
     publication_model: type[Model],
 ) -> None:
+    """A SQLite constraint error on update is not reported as a publication conflict.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     connection = connections["default"]
     if connection.vendor != "sqlite":
         pytest.skip("SQLite trigger regression")
@@ -396,6 +493,16 @@ def test_sqlite_update_constraint_error_is_not_a_publication_conflict(
 def test_database_failure_and_outer_rollback_leave_no_publication(
     publication_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A database failure or an outer rollback leaves no publication behind.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+        monkeypatch: Makes saving the model raise a database error.
+
+    Raises:
+        RuntimeError: Raised on purpose inside the transaction to force a rollback.
+    """
+
     def fail_save(instance: Model, *args: object, **kwargs: object) -> None:
         del instance, args, kwargs
         raise DatabaseError("write failed")
@@ -416,6 +523,11 @@ def test_database_failure_and_outer_rollback_leave_no_publication(
 def test_cache_failure_after_commit_keeps_published_database_row(
     publication_model: type[Model],
 ) -> None:
+    """A cache failure after the commit keeps the published row.
+
+    Args:
+        publication_model: Template model class whose table exists on every alias.
+    """
     with (
         patch(
             "dj_hyperview.contrib.database._invalidation.invalidate_templates",
