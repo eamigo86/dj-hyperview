@@ -463,9 +463,6 @@ def test_updates_follow_outer_commit_rollback_and_savepoint(
 
     Args:
         queryset_model: Template model class whose table exists on the default database.
-
-    Raises:
-        RuntimeError: Raised on purpose inside the transaction to force a rollback.
     """
     template = queryset_model.objects.create(name="screen.xml", content="<old />")
 

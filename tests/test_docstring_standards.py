@@ -40,6 +40,9 @@ Finding = tuple[int, str, str]
 
 FUNCS = (ast.FunctionDef, ast.AsyncFunctionDef)
 TRYS = (ast.Try, ast.TryStar)
+CATCHING_CONTEXTS = frozenset(
+    {"raises", "assertRaises", "assertRaisesRegex", "suppress"}
+)
 Function = ast.FunctionDef | ast.AsyncFunctionDef
 Param = tuple[str, ast.expr | None, str]
 
@@ -417,6 +420,46 @@ def handler_names(node: ast.Try | ast.TryStar) -> set[str]:
     return names
 
 
+def context_catches(node: ast.With | ast.AsyncWith) -> set[str]:
+    """List the exception names that a with statement's context managers absorb.
+
+    Args:
+        node: the with statement.
+
+    Returns:
+        Names given to pytest.raises, assertRaises, assertRaisesRegex or
+        contextlib.suppress.
+    """
+    names: set[str] = set()
+    for item in node.items:
+        call = item.context_expr
+        if not isinstance(call, ast.Call):
+            continue
+        func = call.func
+        func_name = (
+            func.id
+            if isinstance(func, ast.Name)
+            else func.attr
+            if isinstance(func, ast.Attribute)
+            else ""
+        )
+        if func_name not in CATCHING_CONTEXTS:
+            continue
+        arguments = call.args if func_name == "suppress" else call.args[:1]
+        for argument in arguments:
+            for kind in (
+                argument.elts if isinstance(argument, ast.Tuple) else [argument]
+            ):
+                names.add(
+                    kind.id
+                    if isinstance(kind, ast.Name)
+                    else kind.attr
+                    if isinstance(kind, ast.Attribute)
+                    else "?"
+                )
+    return names
+
+
 def own_raises(function: Function) -> list[str]:
     """Find exceptions raised by name and not caught inside the function.
 
@@ -456,6 +499,10 @@ def own_raises(function: Function) -> list[str]:
                 rest = [s for h in child.handlers for s in h.body]
                 for statement in rest + child.orelse + child.finalbody:
                     walk(ast.Module(body=[statement], type_ignores=[]), caught)
+            elif isinstance(child, (ast.With, ast.AsyncWith)):
+                inner = caught | context_catches(child)
+                for statement in child.body:
+                    walk(ast.Module(body=[statement], type_ignores=[]), inner)
             else:
                 walk(child, caught)
 
@@ -803,9 +850,40 @@ QUIET = {
         + "def f() -> None:\n    '''x.'''\n    try:\n        raise ValueError\n"
         + "    except ValueError:\n        pass\n"
     ),
+    "raise expected by pytest.raises": (
+        D
+        + "import pytest\n"
+        + "def f() -> None:\n    '''x.'''\n"
+        + "    with pytest.raises(ValueError):\n        raise ValueError\n"
+    ),
+    "raise expected by assertRaises": (
+        D
+        + "class K:\n    '''x.'''\n"
+        + "    def m(self) -> None:\n        '''x.'''\n"
+        + "        with self.assertRaises((KeyError, ValueError)):\n"
+        + "            raise ValueError\n"
+    ),
+    "raise suppressed by contextlib.suppress": (
+        D
+        + "from contextlib import suppress\n"
+        + "def f() -> None:\n    '''x.'''\n"
+        + "    with suppress(KeyError, ValueError):\n        raise ValueError\n"
+    ),
     "overload": D
     + "from typing import overload\n@overload\ndef f(a: int) -> int: ...\n",
 }
+
+
+def test_a_context_manager_absorbs_only_the_exceptions_it_names() -> None:
+    """Report a raise that the surrounding pytest.raises does not expect."""
+    source = (
+        D
+        + "import pytest\n"
+        + "def f() -> None:\n    '''x.'''\n"
+        + "    with pytest.raises(KeyError):\n        raise ValueError\n"
+    )
+
+    assert "missing_raises" in kinds(source)
 
 
 def kinds(source: str, path: str = "m.py") -> set[str]:

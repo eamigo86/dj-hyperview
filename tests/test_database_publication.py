@@ -498,9 +498,6 @@ def test_database_failure_and_outer_rollback_leave_no_publication(
     Args:
         publication_model: Template model class whose table exists on every alias.
         monkeypatch: Makes saving the model raise a database error.
-
-    Raises:
-        RuntimeError: Raised on purpose inside the transaction to force a rollback.
     """
 
     def fail_save(instance: Model, *args: object, **kwargs: object) -> None:
