@@ -81,8 +81,9 @@ def template_snapshot(resolver: TemplateResolver) -> Iterator[None]:
     Args:
         resolver: Resolver that owns the snapshot.
 
-    Returns:
-        A context manager that isolates one render snapshot.
+    Yields:
+        Nothing; the with block runs inside the resolver's snapshot, which an
+        enclosing block for the same resolver keeps instead of replacing.
     """
     if _snapshot_for(resolver) is not None:
         yield
@@ -180,8 +181,9 @@ class ResolverLoader(Loader):
         Args:
             template_name: Canonical template name.
 
-        Returns:
-            Available origins for the canonical template.
+        Yields:
+            The one origin of the canonical template, or nothing when the resolver
+            does not find it.
         """
         try:
             resolved = self._resolve(template_name)
