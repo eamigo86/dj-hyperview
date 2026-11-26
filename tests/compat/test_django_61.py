@@ -17,7 +17,11 @@ HTTP_SETTINGS = {
 @pytest.mark.skipif(django.VERSION[:2] != (6, 1), reason="requires Django 6.1")
 @override_settings(**HTTP_SETTINGS)
 def test_django_61_renders_the_public_consumer_contract(client: Client) -> None:
-    """Django 6.1 renders escaped HXML through the public response path."""
+    """Django 6.1 renders escaped HXML through the public response path.
+
+    Args:
+        client: Client that requests the filesystem consumer documents.
+    """
     response = client.get("/documents/full/", {"title": "6.1 & <supported>"})
 
     assert django.get_version() in SUPPORTED_DJANGOS

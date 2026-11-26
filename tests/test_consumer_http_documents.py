@@ -26,7 +26,11 @@ HTTP_SETTINGS = {
 
 @override_settings(**HTTP_SETTINGS)
 def test_full_document_preserves_context_and_http_metadata(client: Client) -> None:
-    """The full endpoint returns escaped UTF-8 HXML and custom metadata."""
+    """The full endpoint returns escaped UTF-8 HXML and custom metadata.
+
+    Args:
+        client: Client that requests the consumer document endpoints.
+    """
     response = client.get("/documents/full/", {"title": "Café & <consumer>"})
 
     assert response.status_code == 201
@@ -48,7 +52,11 @@ def test_full_document_preserves_context_and_http_metadata(client: Client) -> No
 def test_fragment_uses_public_engine_response_and_canonical_name(
     client: Client,
 ) -> None:
-    """The fragment endpoint renders its canonical consumer template."""
+    """The fragment endpoint renders its canonical consumer template.
+
+    Args:
+        client: Client that requests the consumer document endpoints.
+    """
     response = client.get("/documents/fragment/", {"label": "Niño & <fragment>"})
 
     assert response.status_code == 206
@@ -69,7 +77,11 @@ def test_fragment_uses_public_engine_response_and_canonical_name(
 def test_unknown_document_route_returns_a_redacted_django_404(
     client: Client,
 ) -> None:
-    """Unknown consumer routes do not disclose filesystem template origins."""
+    """Unknown consumer routes do not disclose filesystem template origins.
+
+    Args:
+        client: Client that requests the consumer document endpoints.
+    """
     response = client.get("/documents/unknown/")
 
     assert response.status_code == 404
@@ -78,7 +90,11 @@ def test_unknown_document_route_returns_a_redacted_django_404(
 
 
 def test_full_document_defers_template_resolution_until_render(tmp_path: Path) -> None:
-    """The class-based endpoint remains lazy until Django renders its response."""
+    """The class-based endpoint remains lazy until Django renders its response.
+
+    Args:
+        tmp_path: Temporary directory that holds the templates.
+    """
     settings = {
         "TEMPLATE_DIRS": [tmp_path],
         "SOURCES": [{"BACKEND": "dj_hyperview.sources.FileSystemSource"}],
@@ -116,7 +132,12 @@ def test_full_document_defers_template_resolution_until_render(tmp_path: Path) -
 def test_document_endpoints_reject_unsupported_methods(
     client: Client, path: str
 ) -> None:
-    """Generic document endpoints reject mutations outside their GET contract."""
+    """Generic document endpoints reject mutations outside their GET contract.
+
+    Args:
+        client: Client that requests the consumer document endpoints.
+        path: Document endpoint that receives a POST.
+    """
     response = client.post(path)
 
     assert response.status_code == 405
@@ -127,7 +148,11 @@ def test_document_endpoints_reject_unsupported_methods(
 def test_documents_do_not_touch_optional_database_or_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Filesystem HTTP rendering stays independent from optional infrastructure."""
+    """Filesystem HTTP rendering stays independent from optional infrastructure.
+
+    Args:
+        monkeypatch: Makes any cache or database access fail the test.
+    """
 
     def _forbidden_optional_access(*args: object, **kwargs: object) -> None:
         raise AssertionError("document endpoint accessed optional infrastructure")

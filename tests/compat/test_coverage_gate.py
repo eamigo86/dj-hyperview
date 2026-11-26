@@ -8,7 +8,12 @@ from tools import test_matrix
 
 
 def write_report(path: Path, **updates: str) -> None:
-    """Write a small report with explicit integer coverage counters."""
+    """Write a small report with explicit integer coverage counters.
+
+    Args:
+        path: Where the report is written.
+        **updates: Counter attributes that replace the default full-coverage values.
+    """
     attributes = {
         "lines-covered": "100",
         "lines-valid": "100",
@@ -32,9 +37,19 @@ def write_report(path: Path, **updates: str) -> None:
     ],
 )
 def test_each_coverage_dimension_has_an_exact_independent_threshold(
-    tmp_path: Path, counts: tuple[int, int, int, int], expected: int, capsys
+    tmp_path: Path,
+    counts: tuple[int, int, int, int],
+    expected: int,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """A passing combined or rounded percentage cannot conceal either deficit."""
+    """A passing combined or rounded percentage cannot conceal either deficit.
+
+    Args:
+        tmp_path: Temporary directory for the report.
+        counts: Covered and valid counters for lines, then for branches.
+        expected: Exit code the coverage check must return.
+        capsys: Captures the output printed by this test.
+    """
     report = tmp_path / "coverage.xml"
     write_report(
         report,
@@ -56,9 +71,16 @@ def test_each_coverage_dimension_has_an_exact_independent_threshold(
 @pytest.mark.parametrize("counter", ["lines-covered", "branches-covered"])
 @pytest.mark.parametrize("value", ["NaN", "inf", "-1", "95.0", "", "101"])
 def test_invalid_coverage_counters_fail_closed(
-    tmp_path: Path, counter: str, value: str, capsys
+    tmp_path: Path, counter: str, value: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Counters must be nonnegative integers no greater than their totals."""
+    """Counters must be nonnegative integers no greater than their totals.
+
+    Args:
+        tmp_path: Temporary directory for this test.
+        counter: Covered counter that receives the invalid value.
+        value: Invalid counter text written to the report.
+        capsys: Captures the output printed by this test.
+    """
     report = tmp_path / "coverage.xml"
     write_report(report, **{counter: value})
 
@@ -71,7 +93,13 @@ def test_invalid_coverage_counters_fail_closed(
 def test_invalid_or_empty_coverage_totals_fail_closed(
     tmp_path: Path, counter: str, value: str
 ) -> None:
-    """Neither dimension may claim success without measured executable code."""
+    """Neither dimension may claim success without measured executable code.
+
+    Args:
+        tmp_path: Temporary directory for this test.
+        counter: Valid-total counter that receives the invalid value.
+        value: Invalid or empty total written to the report.
+    """
     report = tmp_path / "coverage.xml"
     write_report(report, **{counter: value})
 
@@ -84,7 +112,12 @@ def test_invalid_or_empty_coverage_totals_fail_closed(
 def test_missing_malformed_or_incomplete_reports_fail_closed(
     tmp_path: Path, content: str | None
 ) -> None:
-    """Missing files, wrong roots and missing counters are not passing reports."""
+    """Missing files, wrong roots and missing counters are not passing reports.
+
+    Args:
+        tmp_path: Temporary directory for this test.
+        content: Report text to write, or None to leave the report missing.
+    """
     report = tmp_path / "coverage.xml"
     if content is not None:
         report.write_text(content, encoding="utf-8")
@@ -94,9 +127,15 @@ def test_missing_malformed_or_incomplete_reports_fail_closed(
 
 @pytest.mark.parametrize("codes", [[7], [0, 9]])
 def test_independent_gate_never_runs_after_a_failed_phase(
-    tmp_path: Path, monkeypatch, codes: list[int]
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, codes: list[int]
 ) -> None:
-    """A stale valid report cannot replace either successful test phase."""
+    """A stale valid report cannot replace either successful test phase.
+
+    Args:
+        tmp_path: Temporary directory for this test.
+        monkeypatch: Patches the code under test for this test.
+        codes: Exit codes returned by the successive test phases.
+    """
     monkeypatch.chdir(tmp_path)
     write_report(tmp_path / "coverage.xml")
     remaining = iter(codes)
@@ -117,15 +156,31 @@ def test_independent_gate_never_runs_after_a_failed_phase(
 
 @pytest.mark.parametrize("create_report", [True, False])
 def test_runner_checks_only_the_report_written_after_both_successful_phases(
-    tmp_path: Path, monkeypatch, create_report: bool
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, create_report: bool
 ) -> None:
-    """Successful process exits without a fresh report cannot reuse old coverage."""
+    """Successful process exits without a fresh report cannot reuse old coverage.
+
+    Args:
+        tmp_path: Temporary directory for this test.
+        monkeypatch: Patches the code under test for this test.
+        create_report: Whether the second phase writes a fresh report.
+    """
     monkeypatch.chdir(tmp_path)
     report = tmp_path / "coverage.xml"
     write_report(report)
     calls = []
 
-    def run(command, *, check, env):
+    def run(command: list[str], *, check: bool, env: dict[str, str]) -> SimpleNamespace:
+        """Record the command and write the report during the second phase.
+
+        Args:
+            command: Command the runner would execute.
+            check: Check flag forwarded by the runner.
+            env: Environment forwarded by the runner.
+
+        Returns:
+            A process result with a zero exit code.
+        """
         calls.append(command)
         assert not report.exists()
         if len(calls) == 2 and create_report:
@@ -138,8 +193,15 @@ def test_runner_checks_only_the_report_written_after_both_successful_phases(
     assert calls == list(test_matrix.coverage_commands())
 
 
-def test_report_reset_failure_stops_before_executing_tests(tmp_path: Path, monkeypatch):
-    """An unwritable report destination cannot permit stale report acceptance."""
+def test_report_reset_failure_stops_before_executing_tests(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An unwritable report destination cannot permit stale report acceptance.
+
+    Args:
+        tmp_path: Temporary directory for this test.
+        monkeypatch: Patches the code under test for this test.
+    """
     monkeypatch.chdir(tmp_path)
     (tmp_path / "coverage.xml").mkdir()
     monkeypatch.setattr(
@@ -153,13 +215,30 @@ def test_report_reset_failure_stops_before_executing_tests(tmp_path: Path, monke
 
 @pytest.mark.parametrize("dimension", ["lines", "branches"])
 def test_successful_phases_do_not_accept_a_failing_individual_dimension(
-    tmp_path: Path, monkeypatch, dimension: str
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, dimension: str
 ) -> None:
-    """Reproduce the audit: the combined gate passes while one dimension fails."""
+    """Reproduce the audit: the combined gate passes while one dimension fails.
+
+    Args:
+        tmp_path: Temporary directory for this test.
+        monkeypatch: Patches the code under test for this test.
+        dimension: Coverage dimension, lines or branches, that falls below its
+            threshold.
+    """
     monkeypatch.chdir(tmp_path)
     calls = []
 
-    def run(command, *, check, env):
+    def run(command: list[str], *, check: bool, env: dict[str, str]) -> SimpleNamespace:
+        """Record the command and write a report whose chosen dimension fails.
+
+        Args:
+            command: Command the runner would execute.
+            check: Check flag forwarded by the runner.
+            env: Environment forwarded by the runner.
+
+        Returns:
+            A process result with a zero exit code.
+        """
         calls.append(command)
         if len(calls) == 2:
             other = "branches" if dimension == "lines" else "lines"

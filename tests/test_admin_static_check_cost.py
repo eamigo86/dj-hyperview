@@ -232,7 +232,14 @@ GOLDEN: dict[str, list[dict[str, Any]]] = {
 
 @pytest.fixture
 def is_valid_calls(monkeypatch: pytest.MonkeyPatch) -> list[tuple[int, str]]:
-    """Record the (type, value) pair of every simple type validity question."""
+    """Record the type and value of every simple type validity question.
+
+    Args:
+        monkeypatch: Wraps the schema validity check with a recording spy.
+
+    Returns:
+        The list that collects one (type identity, value) pair per question.
+    """
     from xmlschema.validators.simple_types import XsdSimpleType
     from xmlschema.validators.validation import ValidationMixin
 
@@ -266,7 +273,14 @@ def _thaw(value: Any) -> Any:
     return value
 
 
-def test_the_catalog_is_returned_without_a_copy(monkeypatch: pytest.MonkeyPatch):
+def test_the_catalog_is_returned_without_a_copy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The cached catalog is returned as the same object and never deep-copied.
+
+    Args:
+        monkeypatch: Replaces the schema deepcopy with a recorder.
+    """
     from dj_hyperview import schema
 
     with _settings(None):
@@ -282,7 +296,8 @@ def test_the_catalog_is_returned_without_a_copy(monkeypatch: pytest.MonkeyPatch)
     assert copies == []
 
 
-def test_the_cached_catalog_cannot_be_edited_at_any_depth():
+def test_the_cached_catalog_cannot_be_edited_at_any_depth() -> None:
+    """No level of the cached catalog accepts an edit."""
     with _settings(EXTENSIONS):
         catalog = _get_static_validation_catalog()
         assert catalog["behavior_variants"]
@@ -307,7 +322,12 @@ def test_the_cached_catalog_cannot_be_edited_at_any_depth():
 
 
 @pytest.mark.parametrize("name", sorted(CORPUS))
-def test_checking_drafts_leaves_the_cached_catalog_unchanged(name: str):
+def test_checking_drafts_leaves_the_cached_catalog_unchanged(name: str) -> None:
+    """Checking a draft never alters the cached catalog.
+
+    Args:
+        name: Corpus entry whose draft is checked.
+    """
     draft, extra = CORPUS[name]
     with _settings(extra):
         before = _thaw(_get_static_validation_catalog())
@@ -320,7 +340,13 @@ def test_checking_drafts_leaves_the_cached_catalog_unchanged(name: str):
 @pytest.mark.parametrize("name", sorted(CORPUS))
 def test_is_valid_runs_once_per_distinct_type_and_value(
     name: str, is_valid_calls: list[tuple[int, str]]
-):
+) -> None:
+    """Each distinct type and value is asked to the schema only once.
+
+    Args:
+        name: Corpus entry whose draft is checked.
+        is_valid_calls: Records each simple type validity question.
+    """
     draft, extra = CORPUS[name]
     with _settings(extra):
         _static_schema_diagnostics(NAME, draft)
@@ -330,7 +356,12 @@ def test_is_valid_runs_once_per_distinct_type_and_value(
 
 def test_is_valid_asks_one_question_per_distinct_type_and_value(
     is_valid_calls: list[tuple[int, str]],
-):
+) -> None:
+    """A draft with repeated values asks one question per distinct type and value.
+
+    Args:
+        is_valid_calls: Records each simple type validity question.
+    """
     with _settings(None):
         _static_schema_diagnostics(NAME, REPEATED_INVALID)
 
@@ -345,7 +376,12 @@ def test_is_valid_asks_one_question_per_distinct_type_and_value(
 
 def test_the_memo_is_per_call_and_keeps_no_state_between_calls(
     is_valid_calls: list[tuple[int, str]],
-):
+) -> None:
+    """The memo is rebuilt on every call, so a repeated check asks the same questions.
+
+    Args:
+        is_valid_calls: Records each simple type validity question.
+    """
     with _settings(None):
         _static_schema_diagnostics(NAME, REPEATED_INVALID)
         first = list(is_valid_calls)
@@ -358,7 +394,12 @@ def test_the_memo_is_per_call_and_keeps_no_state_between_calls(
 
 def test_the_memo_does_not_cross_types_that_share_a_value(
     is_valid_calls: list[tuple[int, str]],
-):
+) -> None:
+    """Types that share a value are asked separately and each reports its own verdict.
+
+    Args:
+        is_valid_calls: Records each simple type validity question.
+    """
     with _settings(None):
         diagnostics = _static_schema_diagnostics(NAME, SAME_VALUE_DIFFERENT_TYPES)
 
@@ -374,7 +415,12 @@ def test_the_memo_does_not_cross_types_that_share_a_value(
 
 def test_a_value_that_is_not_checked_is_not_asked(
     is_valid_calls: list[tuple[int, str]],
-):
+) -> None:
+    """Values with template tokens are skipped and never asked to the schema.
+
+    Args:
+        is_valid_calls: Records each simple type validity question.
+    """
     with _settings(None):
         _static_schema_diagnostics(NAME, DYNAMIC_VALUES)
 
@@ -382,7 +428,12 @@ def test_a_value_that_is_not_checked_is_not_asked(
 
 
 @pytest.mark.parametrize("name", sorted(CORPUS))
-def test_diagnostics_are_the_ones_the_check_reported_before(name: str):
+def test_diagnostics_are_the_ones_the_check_reported_before(name: str) -> None:
+    """The check reports exactly the diagnostics captured before the memoization.
+
+    Args:
+        name: Corpus entry whose draft is checked.
+    """
     draft, extra = CORPUS[name]
     with _settings(extra):
         assert _static_schema_diagnostics(NAME, draft) == GOLDEN[name]

@@ -31,7 +31,11 @@ def test_pytest_treats_deprecations_as_compatibility_failures() -> None:
 @pytest.mark.skipif(django.VERSION[:2] != (5, 2), reason="requires Django 5.2")
 @override_settings(**HTTP_SETTINGS)
 def test_django_52_renders_the_public_consumer_contract(client: Client) -> None:
-    """Django 5.2 renders escaped HXML through the public response path."""
+    """Django 5.2 renders escaped HXML through the public response path.
+
+    Args:
+        client: Client that requests the filesystem consumer documents.
+    """
     response = client.get("/documents/full/", {"title": "5.2 & <supported>"})
 
     assert django.get_version() in SUPPORTED_DJANGOS

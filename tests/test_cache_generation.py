@@ -1,4 +1,7 @@
+"""Cache invalidation rotates generations safely under races and failures."""
+
 import traceback
+from collections.abc import Callable
 from threading import Barrier, Event, Lock, Thread
 from unittest.mock import patch
 
@@ -23,7 +26,16 @@ LOCMEM_CACHES = {
 }
 
 
-def config(namespace, failure_mode="raise"):
+def config(namespace: str, failure_mode: str = "raise") -> dict[str, dict[str, str]]:
+    """Build the Hyperview settings of a cache in a namespace.
+
+    Args:
+        namespace: Cache namespace to configure.
+        failure_mode: Cache failure mode to configure.
+
+    Returns:
+        The HYPERVIEW settings mapping with the cache section.
+    """
     return {
         "CACHE": {
             "ALIAS": "screens",
@@ -34,12 +46,28 @@ def config(namespace, failure_mode="raise"):
 
 
 class Source:
-    def __init__(self, values, readers=0):
+    """Template source with scripted contents that can block readers on demand.
+
+    Args:
+        values: Template text by name, None for a missing template.
+        readers: Number of resolutions that block until released.
+    """
+
+    def __init__(self, values: dict[str, str | None], readers: int = 0) -> None:
+        """Keep the contents and prepare the blocking barrier."""
         self.values, self.calls = values, []
         self.started = Barrier(readers + 1) if readers else None
         self.release, self.remaining, self.lock = Event(), readers, Lock()
 
-    def resolve(self, name):
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Record the call, optionally block until released, then serve the content.
+
+        Args:
+            name: Template name to resolve.
+
+        Returns:
+            The resolved template, or None when the name has no content.
+        """
         self.calls.append(name)
         with self.lock:
             content, blocks = self.values.get(name), self.remaining > 0
@@ -52,7 +80,19 @@ class Source:
         return ResolvedTemplate(name, content, f"memory:{name}", "memory", content)
 
 
-def resolver(source, namespace, failure_mode="raise"):
+def resolver(
+    source: Source, namespace: str, failure_mode: str = "raise"
+) -> TemplateResolver:
+    """Build a resolver over one source and a cache in the namespace.
+
+    Args:
+        source: Source the resolver reads.
+        namespace: Cache namespace of the resolver.
+        failure_mode: Cache failure mode of the resolver.
+
+    Returns:
+        A resolver bound to the source and the cache.
+    """
     return TemplateResolver(
         [source],
         cache=TemplateCache(namespace, alias="screens"),
@@ -61,10 +101,18 @@ def resolver(source, namespace, failure_mode="raise"):
     )
 
 
-def launch(call):
+def launch(call: Callable[[], object]) -> tuple[Thread, dict[str, object]]:
+    """Run a call in a started thread and collect its outcome.
+
+    Args:
+        call: Function to run in the thread.
+
+    Returns:
+        The started thread and a dictionary that receives the value or the error.
+    """
     outcome = {}
 
-    def target():
+    def target() -> None:
         try:
             outcome["value"] = call()
         except Exception as error:  # noqa: BLE001 - the caller asserts the error.
@@ -76,7 +124,8 @@ def launch(call):
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_invalidation_isolates_name_namespace_content_miss_and_eviction():
+def test_invalidation_isolates_name_namespace_content_miss_and_eviction() -> None:
+    """Invalidation affects only the named templates of its own namespace."""
     namespace = "rotate-content-miss"
     source = Source({"screen.xml": "old", "missing.xml": None, "other.xml": "stable"})
     current, isolated = resolver(source, namespace), resolver(source, "isolated")
@@ -103,7 +152,14 @@ def test_invalidation_isolates_name_namespace_content_miss_and_eviction():
 
 @pytest.mark.parametrize("old", ["old", None])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_concurrent_old_readers_and_invalidations_never_repopulate(old):
+def test_concurrent_old_readers_and_invalidations_never_repopulate(
+    old: str | None,
+) -> None:
+    """Readers that started before an invalidation never repopulate the cache.
+
+    Args:
+        old: Old template text, or None for a template that was missing.
+    """
     namespace = f"race-{'miss' if old is None else 'content'}"
     source = Source({"screen.xml": old}, readers=3)
     current = resolver(source, namespace, failure_mode="bypass")
@@ -111,7 +167,7 @@ def test_concurrent_old_readers_and_invalidations_never_repopulate(old):
     source.started.wait(timeout=3)
     gate = Barrier(3)
 
-    def rotate():
+    def rotate() -> None:
         gate.wait(timeout=3)
         invalidate_templates("screen.xml")
 
@@ -135,7 +191,8 @@ def test_concurrent_old_readers_and_invalidations_never_repopulate(old):
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_names_validate_before_effects_and_duplicates_rotate_once():
+def test_names_validate_before_effects_and_duplicates_rotate_once() -> None:
+    """Names are validated before any effect and duplicates rotate only once."""
     unsafe_name = "../private-screen.xml"
     with override_settings(HYPERVIEW=config("validation")):
         with patch.object(TemplateCache, "invalidate") as rotate:
@@ -153,7 +210,8 @@ def test_names_validate_before_effects_and_duplicates_rotate_once():
             rotate.assert_called_once_with("screen.xml")
 
 
-def test_noop_or_disabled_cache_never_initializes_backend():
+def test_noop_or_disabled_cache_never_initializes_backend() -> None:
+    """Invalidating nothing, or with the cache disabled, never builds the cache."""
     with patch(
         "dj_hyperview.cache.TemplateCache.from_settings",
         side_effect=AssertionError("cache must stay disabled"),
@@ -165,7 +223,12 @@ def test_noop_or_disabled_cache_never_initializes_backend():
 
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_invalidation_initialization_failure_obeys_policy(failure_mode):
+def test_invalidation_initialization_failure_obeys_policy(failure_mode: str) -> None:
+    """A cache that fails to start fails the invalidation in both failure modes.
+
+    Args:
+        failure_mode: Cache failure mode that is configured.
+    """
     error = SourceUnavailable("cache:screens", "backend failure")
     with override_settings(HYPERVIEW=config("init-failure", failure_mode)):
         with patch.object(TemplateCache, "from_settings", side_effect=error):
@@ -177,8 +240,15 @@ def test_invalidation_initialization_failure_obeys_policy(failure_mode):
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_generation_failures_are_safe_and_obey_policy(
-    monkeypatch, operation, failure_mode
-):
+    monkeypatch: pytest.MonkeyPatch, operation: str, failure_mode: str
+) -> None:
+    """Generation failures stay safe and follow the failure mode.
+
+    Args:
+        monkeypatch: Makes a cache backend operation fail for this test.
+        operation: Failing step: read, write-false, write-error or payload.
+        failure_mode: Cache failure mode that is configured.
+    """
     namespace = f"{operation}-failure-{failure_mode}"
     source = Source({"screen.xml": "old"})
     current = resolver(source, namespace, failure_mode)

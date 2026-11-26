@@ -1,3 +1,5 @@
+"""Base Django settings for the test suite: two in-memory SQLite databases."""
+
 SECRET_KEY = "test-only-key"
 INSTALLED_APPS = ["dj_hyperview"]
 DATABASES = {

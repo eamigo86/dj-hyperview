@@ -1,3 +1,6 @@
+"""Normalization and validation of the HYPERVIEW settings."""
+
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
@@ -18,13 +21,19 @@ from dj_hyperview.conf import (
 
 @override_settings(HYPERVIEW={})
 def test_settings_use_safe_optional_defaults() -> None:
+    """Empty settings produce the safe defaults with every option off."""
     assert get_settings() == HyperviewSettings()
 
 
 @pytest.mark.parametrize(
     "profile", ["upstream-0.110.0", "compatible-0.110.0", "compatible-0.110.0-r2"]
 )
-def test_previous_schema_profiles_raise_explicit_migration_errors(profile):
+def test_previous_schema_profiles_raise_explicit_migration_errors(profile: str) -> None:
+    """Retired schema profiles raise an explicit migration error.
+
+    Args:
+        profile: Retired schema profile name.
+    """
     with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
         with pytest.raises(HyperviewConfigurationError, match="E019.*removed"):
             get_settings()
@@ -34,13 +43,22 @@ def test_previous_schema_profiles_raise_explicit_migration_errors(profile):
     "profile", ["compatible", "upstream-0.111.0", None, True, [], {}]
 )
 def test_invalid_schema_profiles_raise_e019(profile: object) -> None:
-    """Unknown or non-string schema profiles cannot silently change behavior."""
+    """Unknown or non-string schema profiles cannot silently change behavior.
+
+    Args:
+        profile: Unknown or non-string schema profile.
+    """
     with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
         with pytest.raises(HyperviewConfigurationError, match="dj_hyperview.E019"):
             get_settings()
 
 
-def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
+def test_settings_normalize_a_complete_configuration(tmp_path: Path) -> None:
+    """A complete configuration is normalized into immutable settings.
+
+    Args:
+        tmp_path: Temporary directory for template and schema files.
+    """
     (tmp_path / "extension.xsd").write_text(
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema"/>',
         encoding="utf-8",
@@ -103,7 +121,15 @@ def test_settings_normalize_a_complete_configuration(tmp_path) -> None:
         ),
     ],
 )
-def test_invalid_settings_raise_stable_error(cache, issues) -> None:
+def test_invalid_settings_raise_stable_error(
+    cache: dict[str, object], issues: tuple[str, ...]
+) -> None:
+    """Invalid cache settings raise one error that lists every issue in order.
+
+    Args:
+        cache: Invalid CACHE setting.
+        issues: Issue messages the error must carry.
+    """
     with override_settings(HYPERVIEW={"CACHE": cache}):
         with pytest.raises(HyperviewConfigurationError) as captured:
             get_settings()
@@ -153,7 +179,11 @@ def test_settings_snapshot_is_replaced_when_hyperview_changes() -> None:
 @pytest.mark.filterwarnings("ignore:Overriding setting DATABASES can lead")
 @override_settings(HYPERVIEW={})
 def test_settings_snapshot_tracks_check_dependencies(setting: str) -> None:
-    """Settings that affect configuration checks invalidate their cached result."""
+    """Settings that affect configuration checks invalidate their cached result.
+
+    Args:
+        setting: Django setting whose change invalidates the snapshot.
+    """
     first = get_settings()
 
     setting_changed.send(sender=object, setting=setting, value=None, enter=True)

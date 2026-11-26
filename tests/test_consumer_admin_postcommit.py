@@ -23,7 +23,11 @@ def _run_admin_consumer(
 def test_publication_invalidation_waits_for_commit_and_skips_rollback(
     tmp_path: Path,
 ) -> None:
-    """Cached HTTP content changes only after its database transaction commits."""
+    """Cached HTTP content changes only after its database transaction commits.
+
+    Args:
+        tmp_path: Temporary directory for the consumer project of this test.
+    """
     result = _run_admin_consumer(
         tmp_path,
         r"""
@@ -106,7 +110,11 @@ print(json.dumps({
 
 
 def test_admin_edit_rename_and_delete_refresh_cached_requests(tmp_path: Path) -> None:
-    """Committed admin mutations rotate cached old and new template names."""
+    """Committed admin mutations rotate cached old and new template names.
+
+    Args:
+        tmp_path: Temporary directory for the consumer project of this test.
+    """
     result = _run_admin_consumer(
         tmp_path,
         r"""
@@ -194,7 +202,11 @@ print(json.dumps({
 def test_admin_postcommit_cache_failure_preserves_database_commit(
     tmp_path: Path,
 ) -> None:
-    """A failing cache callback stays visible after the database mutation commits."""
+    """A failing cache callback stays visible after the database mutation commits.
+
+    Args:
+        tmp_path: Temporary directory for the consumer project of this test.
+    """
     result = _run_admin_consumer(
         tmp_path,
         r"""

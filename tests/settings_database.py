@@ -1,3 +1,5 @@
+"""Settings that add the database contrib app and a configurable database name."""
+
 import os
 
 from . import settings as base

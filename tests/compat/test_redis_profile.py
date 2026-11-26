@@ -3,7 +3,6 @@
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 from uuid import uuid4
 
 import pytest
@@ -14,9 +13,14 @@ from tools import test_matrix
 
 
 def test_default_runner_removes_redis_configuration(
-    monkeypatch: Any, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """The canonical default gate never activates Redis implicitly."""
+    """The default gate strips the Redis URL and opt-in variables from each phase.
+
+    Args:
+        monkeypatch: Patches the environment and the subprocess runner for this test.
+        tmp_path: Temporary directory for this test.
+    """
     environments: list[dict[str, str]] = []
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(test_matrix.REDIS_URL_ENV, "redis://sensitive.invalid/0")
@@ -39,9 +43,15 @@ def test_default_runner_removes_redis_configuration(
 
 
 def test_redis_runner_requires_explicit_service_url(
-    monkeypatch: Any, capsys: Any
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Redis opt-in fails safely before starting tests without a service URL."""
+    """Redis opt-in fails safely before starting tests without a service URL.
+
+    Args:
+        monkeypatch: Removes the service URL and patches the subprocess runner for this
+            test.
+        capsys: Captures the error output of the runner.
+    """
     monkeypatch.delenv(test_matrix.REDIS_URL_ENV, raising=False)
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(
@@ -56,14 +66,22 @@ def test_redis_runner_requires_explicit_service_url(
 
 
 def test_redis_runner_forwards_explicit_opt_in(
-    monkeypatch: Any, tmp_path: Path
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """An explicit Redis profile activates the live test in subprocesses."""
+    """An explicit Redis profile activates the live test in subprocesses.
+
+    Args:
+        monkeypatch: Sets the service URL and patches the subprocess runner for this
+            test.
+        tmp_path: Temporary directory for this test.
+    """
     environments: list[dict[str, str]] = []
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv(test_matrix.REDIS_URL_ENV, "redis://127.0.0.1:6379/15")
 
-    def _fake_run(command, *, check, env):
+    def _fake_run(
+        command: tuple[str, ...], *, check: bool, env: dict[str, str]
+    ) -> SimpleNamespace:
         environments.append(env)
         if len(environments) == 2:
             write_report(tmp_path / "coverage.xml")
@@ -89,7 +107,7 @@ def test_redis_runner_forwards_explicit_opt_in(
     reason="Redis compatibility is explicitly opt-in",
 )
 def test_opt_in_redis_backend_round_trip() -> None:
-    """The opt-in cell exercises Django's public Redis cache backend."""
+    """The opt-in cell stores, reads and deletes a value in the Redis cache backend."""
     url = os.environ["DJHV_REDIS_URL"]
     configured = {
         "djhv-redis": {

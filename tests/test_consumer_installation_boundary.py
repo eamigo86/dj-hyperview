@@ -25,7 +25,12 @@ from tests.consumer_project.process import PROJECT_ROOT, run_consumer
 def test_clean_startup_loads_only_enabled_optional_apps(
     settings_module: str, expected: list[bool | int]
 ) -> None:
-    """Each clean process imports only capabilities selected by its settings."""
+    """Each clean process imports only capabilities selected by its settings.
+
+    Args:
+        settings_module: Consumer settings module started in a clean process.
+        expected: Whether the database app and the admin load, and the app count.
+    """
     result = run_consumer(
         f"tests.consumer_project.{settings_module}",
         r"""
@@ -75,7 +80,11 @@ print(json.dumps([
     ],
 )
 def test_consumer_profiles_pass_framework_checks(settings_module: str) -> None:
-    """Every optional capability profile satisfies Django system checks."""
+    """Every optional capability profile satisfies Django system checks.
+
+    Args:
+        settings_module: Consumer settings module whose checks run.
+    """
     result = run_consumer(
         f"tests.consumer_project.{settings_module}",
         "import django; django.setup(); from django.core.management import "

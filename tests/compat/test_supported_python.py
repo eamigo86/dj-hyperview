@@ -5,7 +5,6 @@ import sys
 import tomllib
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
 
 import pytest
 from tools import test_matrix
@@ -44,9 +43,13 @@ def test_coverage_commands_enforce_the_aggregate_after_admin() -> None:
 
 
 def test_requested_django_version_reexecutes_the_canonical_runner(
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A requested patch release runs the same gate in a locked uv overlay."""
+    """A requested patch release runs the same gate in a locked uv overlay.
+
+    Args:
+        monkeypatch: Patches the version lookup and the subprocess runner for this test.
+    """
     seen: list[tuple[str, ...]] = []
     monkeypatch.setattr(test_matrix.metadata, "version", lambda name: NEWEST)
 
@@ -74,9 +77,13 @@ def test_requested_django_version_reexecutes_the_canonical_runner(
 
 
 def test_requested_installed_django_runs_coverage_without_reexec(
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The active supported patch release runs coverage directly."""
+    """The active supported patch release runs coverage directly.
+
+    Args:
+        monkeypatch: Patches the version lookup and the coverage runner for this test.
+    """
     seen: list[bool] = []
     monkeypatch.setattr(test_matrix.metadata, "version", lambda name: OLDEST)
     monkeypatch.setattr(
@@ -90,9 +97,14 @@ def test_requested_installed_django_runs_coverage_without_reexec(
 
 
 def test_django_selector_redis_requires_url_before_overlay(
-    monkeypatch: Any, capsys: Any
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A Redis selector fails closed before starting an overlay without a URL."""
+    """A Redis selector fails closed before starting an overlay without a URL.
+
+    Args:
+        monkeypatch: Patches the version lookup and the subprocess runner for this test.
+        capsys: Captures the error output of the runner.
+    """
     monkeypatch.setattr(test_matrix.metadata, "version", lambda name: NEWEST)
     monkeypatch.delenv(test_matrix.REDIS_URL_ENV, raising=False)
     calls: list[tuple[str, ...]] = []
@@ -110,9 +122,13 @@ def test_django_selector_redis_requires_url_before_overlay(
 
 
 def test_django_selector_forwards_redis_and_overlay_failure(
-    monkeypatch: Any,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """An explicit Redis selector forwards opt-in and subprocess status."""
+    """An explicit Redis selector forwards opt-in and subprocess status.
+
+    Args:
+        monkeypatch: Patches the version lookup and the subprocess runner for this test.
+    """
     seen: list[tuple[tuple[str, ...], dict[str, str]]] = []
     monkeypatch.setattr(test_matrix.metadata, "version", lambda name: NEWEST)
     monkeypatch.setenv(test_matrix.REDIS_URL_ENV, "redis://127.0.0.1:6379/15")
@@ -130,8 +146,14 @@ def test_django_selector_forwards_redis_and_overlay_failure(
     assert seen[0][1][test_matrix.REDIS_OPT_IN_ENV] == "1"
 
 
-def test_main_without_selector_uses_active_environment(monkeypatch: Any) -> None:
-    """The default CLI delegates directly to aggregate coverage."""
+def test_main_without_selector_uses_active_environment(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The default CLI delegates directly to aggregate coverage.
+
+    Args:
+        monkeypatch: Patches the coverage runner for this test.
+    """
     seen: list[bool] = []
     monkeypatch.setattr(
         test_matrix,
@@ -144,9 +166,14 @@ def test_main_without_selector_uses_active_environment(monkeypatch: Any) -> None
 
 
 def test_module_entrypoint_exits_with_the_status_of_main(
-    monkeypatch: Any, capsys: Any
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """The executable module propagates the main return code."""
+    """The executable module propagates the main return code.
+
+    Args:
+        monkeypatch: Removes the service URL and sets the command line for this test.
+        capsys: Captures the error output of the module.
+    """
     monkeypatch.delenv(test_matrix.REDIS_URL_ENV, raising=False)
     monkeypatch.setattr(sys, "argv", ["tools.test_matrix", "--redis"])
 
@@ -161,9 +188,14 @@ def test_module_entrypoint_exits_with_the_status_of_main(
 
 @pytest.mark.parametrize("selector", ["6.1", "../../outside"])
 def test_django_selector_rejects_unapproved_versions_and_paths(
-    monkeypatch: Any, selector: str
+    monkeypatch: pytest.MonkeyPatch, selector: str
 ) -> None:
-    """Only exact audited Django patch releases are selectable."""
+    """Only exact audited Django patch releases are selectable.
+
+    Args:
+        monkeypatch: Patches the subprocess runner for this test.
+        selector: Django selector that must be rejected.
+    """
     calls: list[tuple[str, ...]] = []
     monkeypatch.setattr(
         test_matrix.subprocess,

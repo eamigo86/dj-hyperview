@@ -1,3 +1,5 @@
+"""The resolver reads through the template cache and obeys its failure mode."""
+
 from unittest.mock import patch
 
 import pytest
@@ -18,15 +20,34 @@ STUB_SOURCE = {"BACKEND": "tests.stubs.TemplateSource"}
 
 
 class RecordingSource:
+    """Cacheable source that records the names it resolves.
+
+    Args:
+        content: Template text to serve, or None to resolve nothing.
+        source: Source label of the resolved templates.
+        revision: Revision of the resolved templates.
+    """
+
     cacheable = True
 
-    def __init__(self, content: str | None, *, source="memory", revision="r1"):
+    def __init__(
+        self, content: str | None, *, source: str = "memory", revision: str = "r1"
+    ) -> None:
+        """Keep the content, source label and revision."""
         self.content = content
         self.source = source
         self.revision = revision
         self.calls = []
 
-    def resolve(self, name):
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Record the name and serve the content when there is some.
+
+        Args:
+            name: Template name to resolve.
+
+        Returns:
+            The resolved template, or None when the source has no content.
+        """
         self.calls.append(name)
         if self.content is None:
             return None
@@ -36,15 +57,20 @@ class RecordingSource:
 
 
 class UncacheableRecordingSource(RecordingSource):
+    """Recording source that opts out of caching."""
+
     cacheable = False
 
 
 class BooleanSafeRecordingSource(RecordingSource):
+    """Recording source that marks itself cache safe with a boolean."""
+
     _dj_hyperview_cache_safe = True
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_resolver_cache_hit_preserves_empty_content_without_source_lookup():
+def test_resolver_cache_hit_preserves_empty_content_without_source_lookup() -> None:
+    """A cache hit keeps empty content and skips the source."""
     cache = TemplateCache("empty-hit", alias="screens")
     source = RecordingSource("", source="database", revision="publish:42")
     resolver = TemplateResolver([source], cache=cache)
@@ -58,7 +84,8 @@ def test_resolver_cache_hit_preserves_empty_content_without_source_lookup():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_cached_source_miss_skips_only_that_source():
+def test_cached_source_miss_skips_only_that_source() -> None:
+    """A cached miss skips only the source that missed."""
     cache = TemplateCache("source-miss", alias="screens")
     missing = RecordingSource(None, source="first")
     winner = RecordingSource("winner", source="second")
@@ -101,8 +128,15 @@ def test_boolean_cache_safety_marker_is_supported() -> None:
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_resolver_cache_operation_failure_obeys_policy(
-    monkeypatch, operation, failure_mode
-):
+    monkeypatch: pytest.MonkeyPatch, operation: str, failure_mode: str
+) -> None:
+    """A failing cache operation follows the failure mode.
+
+    Args:
+        monkeypatch: Makes a cache backend operation fail for this test.
+        operation: Cache operation that fails: get, set or set_miss.
+        failure_mode: Cache failure mode of the resolver.
+    """
     cache = TemplateCache(f"{operation}-{failure_mode}", alias="screens")
     first = RecordingSource(None if operation == "set_miss" else "source")
     winner = RecordingSource("winner")
@@ -125,7 +159,14 @@ def test_resolver_cache_operation_failure_obeys_policy(
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_bypass_does_not_hide_a_real_source_failure(monkeypatch):
+def test_bypass_does_not_hide_a_real_source_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bypass mode never hides a failure of the real source.
+
+    Args:
+        monkeypatch: Makes the cache read fail for this test.
+    """
     cache = TemplateCache("source-failure", alias="screens")
     source = RecordingSource("unused")
     resolver = TemplateResolver([source], cache=cache, failure_mode="bypass")
@@ -141,7 +182,8 @@ def test_bypass_does_not_hide_a_real_source_failure(monkeypatch):
 @override_settings(
     HYPERVIEW={"SOURCES": [{**STUB_SOURCE, "OPTIONS": {"content": "ok"}}]}
 )
-def test_resolver_without_cache_configuration_does_not_create_cache():
+def test_resolver_without_cache_configuration_does_not_create_cache() -> None:
+    """Without cache settings the resolver never builds a cache."""
     with patch(
         "dj_hyperview.resolver.TemplateCache.from_settings",
         side_effect=AssertionError("cache should remain opt-in"),
@@ -150,7 +192,8 @@ def test_resolver_without_cache_configuration_does_not_create_cache():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_settings_cache_is_shared_by_source_identity():
+def test_settings_cache_is_shared_by_source_identity() -> None:
+    """Resolvers built from settings share cached entries by source identity."""
     configured = {
         "SOURCES": [STUB_SOURCE],
         "CACHE": {
@@ -179,7 +222,15 @@ def test_settings_cache_is_shared_by_source_identity():
 @pytest.mark.parametrize(
     ("failure_mode", "should_raise"), [("bypass", False), ("raise", True)]
 )
-def test_resolver_cache_initialization_failure_obeys_policy(failure_mode, should_raise):
+def test_resolver_cache_initialization_failure_obeys_policy(
+    failure_mode: str, should_raise: bool
+) -> None:
+    """A cache that fails to start follows the failure mode.
+
+    Args:
+        failure_mode: Cache failure mode that is configured.
+        should_raise: Whether building the resolver must raise.
+    """
     caches = {"broken": {"BACKEND": "tests.test_cache_fail_closed.ExplodingInitCache"}}
     configured = {
         "SOURCES": [{**STUB_SOURCE, "OPTIONS": {"content": "source"}}],
@@ -201,7 +252,12 @@ def test_resolver_cache_initialization_failure_obeys_policy(failure_mode, should
 
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_resolver_corrupt_entry_obeys_policy(failure_mode):
+def test_resolver_corrupt_entry_obeys_policy(failure_mode: str) -> None:
+    """A corrupt cache entry follows the failure mode.
+
+    Args:
+        failure_mode: Cache failure mode of the resolver.
+    """
     cache = TemplateCache(f"corrupt-{failure_mode}", alias="screens")
     source = RecordingSource("source")
     resolver = TemplateResolver([source], cache=cache, failure_mode=failure_mode)
@@ -219,7 +275,14 @@ def test_resolver_corrupt_entry_obeys_policy(failure_mode):
 
 @pytest.mark.parametrize("state", ["resolved", "source-miss"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_resolver_cache_envelope_cannot_move_between_source_identities(state):
+def test_resolver_cache_envelope_cannot_move_between_source_identities(
+    state: str,
+) -> None:
+    """A cached envelope copied to another source identity is rejected.
+
+    Args:
+        state: Kind of envelope that is copied: resolved or source-miss.
+    """
     cache = TemplateCache(f"identity-{state}", alias="screens")
     template = ResolvedTemplate("screen.xml", "raw", "memory:x", "memory", "r1")
     if state == "resolved":
@@ -233,7 +296,14 @@ def test_resolver_cache_envelope_cannot_move_between_source_identities(state):
 
 
 @pytest.mark.parametrize("namespace", ["", None, True])
-def test_cache_namespace_configuration_must_be_a_non_empty_string(namespace):
+def test_cache_namespace_configuration_must_be_a_non_empty_string(
+    namespace: object,
+) -> None:
+    """The cache namespace setting must be a non-empty string.
+
+    Args:
+        namespace: Invalid namespace value.
+    """
     from dj_hyperview.checks import check_hyperview_settings
 
     with override_settings(HYPERVIEW={"CACHE": {"NAMESPACE": namespace}}):

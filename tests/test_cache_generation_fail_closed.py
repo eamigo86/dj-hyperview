@@ -1,3 +1,6 @@
+"""Failed generation writes are never reported as successful invalidations."""
+
+from typing import Any
 from unittest.mock import patch
 
 import pytest
@@ -22,7 +25,15 @@ SHARED_CACHES = {
 @pytest.mark.parametrize("old", ["old", None], ids=["content", "negative-miss"])
 @pytest.mark.parametrize("failure", ["false", "exception"])
 @override_settings(CACHES=SHARED_CACHES)
-def test_bypass_invalidation_failure_never_reports_success(old, failure):
+def test_bypass_invalidation_failure_never_reports_success(
+    old: str | None, failure: str
+) -> None:
+    """A failed rotation write raises instead of reporting success.
+
+    Args:
+        old: Old template text, or None for a template that was missing.
+        failure: How the write fails: a false result or an exception.
+    """
     namespace = f"barrier-{old}-{failure}"
     source = Source({"screen.xml": old})
     cache = TemplateCache(namespace, alias="publisher")
@@ -60,7 +71,8 @@ def test_bypass_invalidation_failure_never_reports_success(old, failure):
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_partial_batch_failure_is_observable_and_retryable():
+def test_partial_batch_failure_is_observable_and_retryable() -> None:
+    """A failure part way through a batch surfaces and the batch can be retried."""
     cache = TemplateCache("partial-batch", alias="screens")
     error = SourceUnavailable("cache:screens", "backend failure")
     with (
@@ -83,7 +95,12 @@ def test_partial_batch_failure_is_observable_and_retryable():
 
 @pytest.mark.parametrize("operation", ["set", "set_miss", "resolved", "resolved_miss"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_false_raw_write_raises_source_unavailable(operation):
+def test_false_raw_write_raises_source_unavailable(operation: str) -> None:
+    """A cache write that returns false raises the unavailability error.
+
+    Args:
+        operation: Cache write operation that fails.
+    """
     cache = TemplateCache(f"raw-false-{operation}", alias="screens")
     template = ResolvedTemplate("screen.xml", "raw", "memory:x", "memory", "r1")
     calls = {
@@ -100,7 +117,15 @@ def test_false_raw_write_raises_source_unavailable(operation):
 @pytest.mark.parametrize("old", ["old", None], ids=["content", "negative-miss"])
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_resolver_false_write_obeys_failure_mode(old, failure_mode):
+def test_resolver_false_write_obeys_failure_mode(
+    old: str | None, failure_mode: str
+) -> None:
+    """A false cache write follows the failure mode of the resolver.
+
+    Args:
+        old: Old template text, or None for a template that is missing.
+        failure_mode: Cache failure mode of the resolver.
+    """
     source = Source({"screen.xml": old})
     current = resolver(source, f"resolver-false-{old}-{failure_mode}", failure_mode)
     current.cache.generation("screen.xml")
@@ -117,12 +142,13 @@ def test_resolver_false_write_obeys_failure_mode(old, failure_mode):
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_documented_none_write_result_remains_successful():
+def test_documented_none_write_result_remains_successful() -> None:
+    """A write that returns None, as documented, still counts as stored."""
     cache = TemplateCache("none-success", alias="screens")
     old = cache.generation("screen.xml")
     original = cache.backend.set
 
-    def successful_none(*args, **kwargs):
+    def successful_none(*args: Any, **kwargs: Any) -> None:
         original(*args, **kwargs)
         return None
 

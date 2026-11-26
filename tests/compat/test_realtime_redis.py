@@ -3,10 +3,14 @@
 import asyncio
 import json
 import os
+from typing import TYPE_CHECKING, Never
 from uuid import uuid4
 
 import pytest
 from django.db import transaction
+
+if TYPE_CHECKING:
+    from dj_hyperview.realtime import RedisBroker
 
 pytestmark = pytest.mark.skipif(
     os.environ.get("DJHV_TEST_REDIS") != "1",
@@ -16,22 +20,32 @@ EVENT = {"event": "invalidate", "data": {"version": 1, "resources": ["tasks"]}}
 RESYNC = {"event": "resync", "data": {"version": 1}}
 
 
-def new_broker(suffix=""):
+def new_broker(suffix: str = "") -> "RedisBroker":
+    """Build a Redis broker in a fresh namespace of the opt-in service.
+
+    Args:
+        suffix: Text appended to the unique namespace.
+
+    Returns:
+        A broker bound to the service URL and the fresh namespace.
+    """
     from dj_hyperview.realtime import RedisBroker
 
     return RedisBroker(os.environ["DJHV_REDIS_URL"], "test-" + uuid4().hex + suffix)
 
 
 @pytest.mark.django_db(transaction=True)
-def test_real_redis_commit_alias_payload_and_namespace_isolation():
-    async def run():
+def test_real_redis_commit_alias_payload_and_namespace_isolation() -> None:
+    """Commits reach their channels, while rollbacks and other namespaces do not."""
+
+    async def run() -> None:
         broker, other = new_broker(), new_broker()
         subscription = await broker.subscribe(["private.a", "ui"])
         foreign = await other.subscribe(["private.a", "ui"])
         try:
             assert await anext(subscription) == await anext(foreign) == RESYNC
 
-            def committed():
+            def committed() -> None:
                 with transaction.atomic():
                     broker.publish_after_commit(
                         EVENT, ["private.a", "ui"], using="default"
@@ -43,7 +57,7 @@ def test_real_redis_commit_alias_payload_and_namespace_isolation():
             with pytest.raises(TimeoutError):
                 await asyncio.wait_for(anext(foreign), 0.03)
 
-            def rolled_back():
+            def rolled_back() -> None:
                 with transaction.atomic():
                     broker.publish_after_commit(EVENT, ["private.a"], using="default")
                     transaction.set_rollback(True)
@@ -64,10 +78,11 @@ def test_real_redis_commit_alias_payload_and_namespace_isolation():
         _publisher._after_fork()
 
 
-def test_real_redis_idle_beyond_two_seconds_and_heartbeat_cancellation():
+def test_real_redis_idle_beyond_two_seconds_and_heartbeat_cancellation() -> None:
+    """A subscription survives over two idle seconds and still delivers events."""
     from dj_hyperview.realtime._clients import _async_client
 
-    async def run():
+    async def run() -> None:
         broker = new_broker()
         subscription = await broker.subscribe(["a"])
         client = _async_client(broker._config)
@@ -84,22 +99,25 @@ def test_real_redis_idle_beyond_two_seconds_and_heartbeat_cancellation():
     asyncio.run(run())
 
 
-def test_real_retry_zero_control_and_configured_empty_errors_disable_failure_hook():
+def test_real_retry_zero_control_and_configured_empty_errors_disable_failure_hook() -> (
+    None
+):
+    """The configured retry policy skips the failure hook of a bare zero retry."""
     from redis.asyncio.retry import Retry
     from redis.backoff import NoBackoff
     from redis.exceptions import ConnectionError
 
     from dj_hyperview.realtime._clients import _async_client, _sync_client
 
-    async def run():
+    async def run() -> None:
         broker = new_broker()
         client = _async_client(broker._config)
         failed = []
 
-        async def attempt():
+        async def attempt() -> Never:
             raise ConnectionError("deliberate closed test transport")
 
-        async def on_failure(*args):
+        async def on_failure(*args: object) -> None:
             failed.append(1)
 
         try:
@@ -128,19 +146,20 @@ def test_real_retry_zero_control_and_configured_empty_errors_disable_failure_hoo
     asyncio.run(run())
 
 
-def test_real_pubsub_disconnect_does_not_run_reconnect_callback():
+def test_real_pubsub_disconnect_does_not_run_reconnect_callback() -> None:
+    """Killing a subscribed connection raises without the reconnect callback."""
     from redis.exceptions import ConnectionError
 
     from dj_hyperview.realtime._clients import _async_client
 
     class Observer:
-        def __init__(self):
+        def __init__(self) -> None:
             self.calls = 0
 
-        async def connected(self, connection):
+        async def connected(self, connection: object) -> None:
             self.calls += 1
 
-    async def run():
+    async def run() -> None:
         broker = new_broker()
         client = _async_client(broker._config)
         control = _async_client(broker._config)
@@ -172,11 +191,16 @@ def test_real_pubsub_disconnect_does_not_run_reconnect_callback():
 @pytest.mark.parametrize(
     "url", ["unix:///tmp/djhv-not-opened.sock?db=0", "rediss://redis.example/0"]
 )
-def test_real_lazy_connection_constructors_accept_bounds_without_io(url):
+def test_real_lazy_connection_constructors_accept_bounds_without_io(url: str) -> None:
+    """Lazy clients carry the connection bounds and TLS settings without any I/O.
+
+    Args:
+        url: Redis URL, Unix socket or TLS, whose client is built.
+    """
     from dj_hyperview.realtime import RedisBroker
     from dj_hyperview.realtime._clients import _async_client, _sync_client
 
-    async def run():
+    async def run() -> None:
         config = RedisBroker(url, "test-construction")._config
         sync = _sync_client(config)
         asynchronous = _async_client(config)

@@ -154,7 +154,12 @@ def test_empty_content_is_a_hit_and_miss_remains_typed() -> None:
 def test_unsafe_names_fail_before_filesystem_access(
     name: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Unsafe names produce one redacted public error contract."""
+    """Unsafe names produce one redacted public error contract.
+
+    Args:
+        name: Unsafe template name that must be rejected.
+        monkeypatch: Fails the test if the filesystem is reached.
+    """
     with override_settings(HYPERVIEW=FILESYSTEM_SETTINGS.HYPERVIEW):
         resolver = TemplateResolver.from_settings()
         monkeypatch.setattr(

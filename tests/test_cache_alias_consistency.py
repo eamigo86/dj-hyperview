@@ -1,3 +1,6 @@
+"""Cache alias validation agrees between system checks and runtime."""
+
+from collections.abc import Iterator
 from contextlib import contextmanager
 from unittest.mock import patch
 
@@ -15,7 +18,15 @@ BACKEND = "django.core.cache.backends.locmem.LocMemCache"
 COLLISIONS = ("__dict__", "__class__", "_storage")
 
 
-def cache_settings(*aliases):
+def cache_settings(*aliases: str) -> dict[str, dict[str, str]]:
+    """Build in-memory cache settings for the given aliases.
+
+    Args:
+        *aliases: Cache aliases to configure.
+
+    Returns:
+        A CACHES mapping with one locmem backend per alias.
+    """
     return {
         alias: {"BACKEND": BACKEND, "LOCATION": f"alias-consistency-{alias}"}
         for alias in aliases
@@ -23,7 +34,15 @@ def cache_settings(*aliases):
 
 
 @contextmanager
-def patched_alias(alias):
+def patched_alias(alias: str) -> Iterator[None]:
+    """Patch the settings so that one alias is the only configured cache.
+
+    Args:
+        alias: Alias to configure and select for Hyperview.
+
+    Yields:
+        Control, while the patched settings are active.
+    """
     configured = cache_settings(alias)
     hyperview = {"CACHE": {"ALIAS": alias}}
     with (
@@ -38,7 +57,8 @@ def patched_alias(alias):
     CACHES=cache_settings("_private"),
     HYPERVIEW={"CACHE": {"ALIAS": "_private"}},
 )
-def test_configured_private_alias_passes_checks_and_round_trips():
+def test_configured_private_alias_passes_checks_and_round_trips() -> None:
+    """A configured underscore alias passes checks and stores entries."""
     assert check_hyperview_settings() == []
 
     cache = TemplateCache.from_settings("tenant")
@@ -48,7 +68,12 @@ def test_configured_private_alias_passes_checks_and_round_trips():
 
 
 @pytest.mark.parametrize("alias", COLLISIONS)
-def test_configured_handler_collisions_fail_checks_and_runtime(alias):
+def test_configured_handler_collisions_fail_checks_and_runtime(alias: str) -> None:
+    """Aliases that collide with handler attributes fail checks and runtime.
+
+    Args:
+        alias: Handler attribute name used as the cache alias.
+    """
     with patched_alias(alias):
         errors = check_hyperview_settings()
         with pytest.raises(SourceUnavailable) as captured:
@@ -59,7 +84,8 @@ def test_configured_handler_collisions_fail_checks_and_runtime(alias):
     assert captured.value.reason == "invalid alias"
 
 
-def test_another_dunder_collision_is_discovered_and_rejected():
+def test_another_dunder_collision_is_discovered_and_rejected() -> None:
+    """Another dunder alias that collides with the handler is found and rejected."""
     candidates = sorted(set(dir(object)) - set(COLLISIONS))
     configured = cache_settings(*candidates)
     with patch.object(caches, "settings", configured):
@@ -79,7 +105,12 @@ def test_another_dunder_collision_is_discovered_and_rejected():
 
 
 @pytest.mark.parametrize("alias", ["_private", *COLLISIONS])
-def test_unconfigured_aliases_fail_checks_and_runtime_consistently(alias):
+def test_unconfigured_aliases_fail_checks_and_runtime_consistently(alias: str) -> None:
+    """Unconfigured aliases are invalid in the checks and at runtime alike.
+
+    Args:
+        alias: Alias that is not configured in CACHES.
+    """
     configured = cache_settings("default")
     with override_settings(CACHES=configured, HYPERVIEW={"CACHE": {"ALIAS": alias}}):
         errors = check_hyperview_settings()
@@ -92,7 +123,12 @@ def test_unconfigured_aliases_fail_checks_and_runtime_consistently(alias):
 
 
 @pytest.mark.parametrize("alias", ["", None, True, [], {}])
-def test_empty_and_non_string_aliases_remain_invalid(alias):
+def test_empty_and_non_string_aliases_remain_invalid(alias: object) -> None:
+    """Empty and non-string aliases are invalid in the checks and at runtime.
+
+    Args:
+        alias: Invalid alias value.
+    """
     with override_settings(HYPERVIEW={"CACHE": {"ALIAS": alias}}):
         errors = check_hyperview_settings()
         with pytest.raises(SourceUnavailable) as captured:
@@ -110,7 +146,8 @@ def test_empty_and_non_string_aliases_remain_invalid(alias):
     },
     HYPERVIEW={"CACHE": {"ALIAS": "broken"}},
 )
-def test_backend_initialization_failure_is_safe_in_checks_and_runtime():
+def test_backend_initialization_failure_is_safe_in_checks_and_runtime() -> None:
+    """A backend that fails to start yields a warning and a safe runtime error."""
     errors = check_hyperview_settings()
     with pytest.raises(SourceUnavailable) as captured:
         TemplateCache("tenant", alias="broken")
@@ -135,12 +172,20 @@ def test_backend_initialization_failure_is_safe_in_checks_and_runtime():
     },
     HYPERVIEW={"CACHE": {"ALIAS": "checked"}},
 )
-def test_system_check_resolves_backend_without_cache_io():
+def test_system_check_resolves_backend_without_cache_io() -> None:
+    """The system check resolves the backend without calling the cache."""
     assert check_hyperview_settings() == []
 
 
 @pytest.mark.parametrize("field", ["namespace", "source", "name", "revision"])
-def test_cache_key_supports_lone_surrogates_without_escape_collisions(field):
+def test_cache_key_supports_lone_surrogates_without_escape_collisions(
+    field: str,
+) -> None:
+    """A lone surrogate gives a stable key, distinct from its escaped text.
+
+    Args:
+        field: Key component that receives the lone surrogate.
+    """
     surrogate = "\ud800"
     components = {
         "namespace": "tenant",

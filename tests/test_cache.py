@@ -1,3 +1,5 @@
+"""The template cache contract: keys, entries, namespaces, expiry and failures."""
+
 from threading import Thread
 from unittest.mock import patch
 
@@ -21,7 +23,16 @@ LOCMEM_CACHES = {
 }
 
 
-def resolved(content="", *, revision="r1"):
+def resolved(content: str = "", *, revision: str = "r1") -> ResolvedTemplate:
+    """Build a resolved template for the cache tests.
+
+    Args:
+        content: Template text of the resolved template.
+        revision: Revision of the resolved template.
+
+    Returns:
+        A resolved in-memory template named screen.xml.
+    """
     return ResolvedTemplate(
         name="screen.xml",
         content=content,
@@ -31,7 +42,8 @@ def resolved(content="", *, revision="r1"):
     )
 
 
-def test_template_cache_keys_are_deterministic_and_component_safe():
+def test_template_cache_keys_are_deterministic_and_component_safe() -> None:
+    """Cache keys are stable, ASCII, bounded and distinct for shifted components."""
     components = [
         ("tenant:a", "source", "screen.xml", "rev"),
         ("tenant", "a:source", "screen.xml", "rev"),
@@ -49,7 +61,8 @@ def test_template_cache_keys_are_deterministic_and_component_safe():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_cache_distinguishes_absent_miss_and_empty_content():
+def test_cache_distinguishes_absent_miss_and_empty_content() -> None:
+    """Absent, miss and empty-content entries are three different answers."""
     cache = TemplateCache("tenant", alias="screens")
     template = resolved()
 
@@ -70,7 +83,8 @@ def test_cache_distinguishes_absent_miss_and_empty_content():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_cache_preserves_content_and_resolved_metadata():
+def test_cache_preserves_content_and_resolved_metadata() -> None:
+    """A cached template comes back with its content and metadata intact."""
     cache = TemplateCache("tenant", alias="screens")
     template = resolved("<view>cached</view>", revision="sha256:abc")
 
@@ -80,7 +94,8 @@ def test_cache_preserves_content_and_resolved_metadata():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_cache_namespaces_do_not_overwrite_each_other():
+def test_cache_namespaces_do_not_overwrite_each_other() -> None:
+    """Caches with different namespaces never see each other's entries."""
     first = TemplateCache("consumer-one", alias="screens")
     second = TemplateCache("consumer-two", alias="screens")
     template = resolved("<view />")
@@ -96,7 +111,15 @@ def test_cache_namespaces_do_not_overwrite_each_other():
     [("template", 5), ("miss", 2)],
 )
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_cache_entries_expire_at_the_configured_ttl_without_sleep(store, ttl):
+def test_cache_entries_expire_at_the_configured_ttl_without_sleep(
+    store: str, ttl: int
+) -> None:
+    """Templates and misses expire at their configured TTL, with the clock patched.
+
+    Args:
+        store: Kind of entry stored, template or miss.
+        ttl: Seconds after which that entry must be gone.
+    """
     cache = TemplateCache(f"expiry-{store}", alias="screens", ttl=5, negative_ttl=2)
     template = resolved()
     key = ("memory", "screen.xml", "r1")
@@ -112,7 +135,8 @@ def test_cache_entries_expire_at_the_configured_ttl_without_sleep(store, ttl):
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_cache_uses_validated_django_settings():
+def test_cache_uses_validated_django_settings() -> None:
+    """A cache built from settings takes its alias and TTLs from validated settings."""
     configured = {
         "CACHE": {
             "ALIAS": "screens",
@@ -131,8 +155,8 @@ def test_cache_uses_validated_django_settings():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_reusable_cache_resolves_the_backend_for_each_thread():
-    """Long-lived cache objects never retain Django's thread-local backend."""
+def test_reusable_cache_resolves_the_backend_for_each_thread() -> None:
+    """A long-lived cache resolves the backend per thread and never retains it."""
     cache = TemplateCache("thread-safe-binding", alias="screens")
     main_backend = cache.backend
     outcome = {}
@@ -148,7 +172,8 @@ def test_reusable_cache_resolves_the_backend_for_each_thread():
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_unknown_cache_alias_raises_stable_public_error():
+def test_unknown_cache_alias_raises_stable_public_error() -> None:
+    """An unknown cache alias raises the stable public unavailability error."""
     with pytest.raises(SourceUnavailable) as captured:
         TemplateCache("tenant", alias="missing")
 
@@ -171,7 +196,15 @@ def test_unknown_cache_alias_raises_stable_public_error():
     ],
 )
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_cache_rejects_invalid_direct_configuration(kwargs, message):
+def test_cache_rejects_invalid_direct_configuration(
+    kwargs: dict[str, object], message: str
+) -> None:
+    """Invalid namespace, TTL or negative TTL values are rejected with exact messages.
+
+    Args:
+        kwargs: Constructor arguments that are invalid.
+        message: Exact error message expected.
+    """
     with pytest.raises(ValueError, match=f"^{message}$"):
         TemplateCache(**kwargs)
 
@@ -185,7 +218,12 @@ def test_cache_rejects_invalid_direct_configuration(kwargs, message):
     ],
 )
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_corrupt_cache_payload_raises_stable_public_error(payload):
+def test_corrupt_cache_payload_raises_stable_public_error(payload: str) -> None:
+    """A corrupt stored payload raises the stable public unavailability error.
+
+    Args:
+        payload: Corrupt payload stored under the entry key.
+    """
     cache = TemplateCache("tenant", alias="screens")
     key = cache.key("memory", "screen.xml", "r1")
     caches["screens"].set(key, payload)
@@ -200,7 +238,8 @@ def test_corrupt_cache_payload_raises_stable_public_error(payload):
     )
 
 
-def test_cache_contract_is_exported_from_package_root():
+def test_cache_contract_is_exported_from_package_root() -> None:
+    """The cache contract is importable from the package root."""
     import dj_hyperview
 
     assert dj_hyperview.CACHE_MISS is CACHE_MISS

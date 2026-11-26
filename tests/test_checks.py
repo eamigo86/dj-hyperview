@@ -1,12 +1,15 @@
+"""System checks for the HYPERVIEW settings and their dependencies."""
+
 import sys
 from collections import Counter
+from collections.abc import Callable, Iterable
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Never
 from unittest.mock import MagicMock, patch
 
 import pytest
-from django.core.checks import WARNING
+from django.core.checks import WARNING, CheckMessage
 from django.test import override_settings
 
 from dj_hyperview.checks import check_hyperview_settings
@@ -23,22 +26,42 @@ STUB_SOURCE = "tests.stubs.TemplateSource"
 
 
 class RequiredOptionSource:
-    """Source whose constructor requires one keyword option."""
+    """Source whose constructor requires one keyword option.
+
+    Args:
+        token: Option that the constructor requires.
+    """
 
     def __init__(self, *, token: str) -> None:
+        """Keep the required token."""
         self.token = token
 
     def resolve(self, name: str) -> None:
+        """Resolve nothing; only the constructor signature matters.
+
+        Args:
+            name: Template name, unused.
+        """
         return None
 
 
 class QuotedAnnotationSource:
-    """Source whose constructor names a type that only static checkers import."""
+    """Source whose constructor names a type that only static checkers import.
+
+    Args:
+        limit: Option whose annotation names a type only checkers import.
+    """
 
     def __init__(self, *, limit: "Decimal") -> None:
+        """Keep the limit."""
         self.limit = limit
 
     def resolve(self, name: str) -> None:
+        """Resolve nothing; only the constructor signature matters.
+
+        Args:
+            name: Template name, unused.
+        """
         return None
 
 
@@ -67,10 +90,12 @@ class OpaqueBackend:
     """Callable backend whose signature cannot be introspected."""
 
     @property
-    def __signature__(self):
+    def __signature__(self) -> Never:
+        """Raise, so the signature cannot be introspected."""
         raise RuntimeError("signature unavailable")
 
     def __call__(self, **options: object) -> object:
+        """Build an opaque object from any options."""
         return object()
 
 
@@ -79,7 +104,11 @@ OPAQUE_BACKEND = OpaqueBackend()
 
 @pytest.mark.parametrize("profile", ["unknown", None, True, [], {}])
 def test_invalid_schema_profile_returns_e019(profile: object) -> None:
-    """Invalid profile values are deterministic system-check errors."""
+    """Invalid profile values are deterministic system-check errors.
+
+    Args:
+        profile: Invalid schema profile value.
+    """
     with override_settings(HYPERVIEW={"SCHEMA_PROFILE": profile}):
         messages = check_hyperview_settings()
     assert [message.id for message in messages] == ["dj_hyperview.E019"]
@@ -98,7 +127,15 @@ def test_invalid_schema_profile_returns_e019(profile: object) -> None:
 def test_filebased_cache_rejected_by_configuration_even_in_bypass(
     tmp_path: Path, mode: str, entrypoint: str, backend: str
 ) -> None:
-    """Unsafe generation backends are configuration errors, never read bypasses."""
+    """Unsafe generation backends are configuration errors, never read bypasses.
+
+    Args:
+        tmp_path: Temporary directory used as the cache location.
+        mode: Cache failure mode that is configured.
+        entrypoint: Entry point that must reject the cache: checks, settings or
+            resolver.
+        backend: Dotted path of the file-based cache backend.
+    """
     from dj_hyperview.conf import get_settings
     from dj_hyperview.exceptions import HyperviewConfigurationError
 
@@ -124,6 +161,7 @@ def test_filebased_cache_rejected_by_configuration_even_in_bypass(
 
 @override_settings(HYPERVIEW={})
 def test_minimal_installation_requires_no_optional_services() -> None:
+    """Minimal settings need no optional service and only warn about sources."""
     messages = check_hyperview_settings()
 
     assert [message.id for message in messages] == ["dj_hyperview.W005"]
@@ -162,7 +200,15 @@ def test_explicit_empty_sources_emit_an_actionable_warning() -> None:
         ({"VALIDATION": {"MAX_DEPTH": 257}}, ["E009"]),
     ],
 )
-def test_invalid_settings_return_actionable_checks(value, expected) -> None:
+def test_invalid_settings_return_actionable_checks(
+    value: object, expected: list[str]
+) -> None:
+    """Each invalid setting yields the expected checks with a hint.
+
+    Args:
+        value: Invalid HYPERVIEW settings.
+        expected: Short ids of the checks that must be reported.
+    """
     with override_settings(HYPERVIEW=value):
         errors = check_hyperview_settings()
 
@@ -174,7 +220,12 @@ def test_invalid_settings_return_actionable_checks(value, expected) -> None:
     assert all(error.hint and error.obj == "settings.HYPERVIEW" for error in errors)
 
 
-def test_complete_valid_settings_pass_checks(tmp_path) -> None:
+def test_complete_valid_settings_pass_checks(tmp_path: Path) -> None:
+    """A complete valid configuration produces no check messages.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema and templates.
+    """
     schema = tmp_path / "schema.xsd"
     schema.write_text(
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" />',
@@ -191,8 +242,12 @@ def test_complete_valid_settings_pass_checks(tmp_path) -> None:
         assert check_hyperview_settings() == []
 
 
-def test_missing_filesystem_root_is_an_operational_warning(tmp_path) -> None:
-    """A temporarily absent earlier root does not block a later mounted root."""
+def test_missing_filesystem_root_is_an_operational_warning(tmp_path: Path) -> None:
+    """A temporarily absent earlier root does not block a later mounted root.
+
+    Args:
+        tmp_path: Temporary directory that holds the missing and available roots.
+    """
     missing = tmp_path / "unmounted"
     available = tmp_path / "available"
     available.mkdir()
@@ -246,9 +301,14 @@ def test_dummy_cache_emits_an_actionable_warning() -> None:
     ],
 )
 def test_removed_schema_replacement_is_rejected_before_reading(
-    tmp_path, schema_content
+    tmp_path: Path, schema_content: str
 ) -> None:
-    """Retired schema replacement paths never select another compiler."""
+    """Retired schema replacement paths never select another compiler.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema file.
+        schema_content: Content of the retired replacement schema.
+    """
     schema = tmp_path / "screen.xsd"
     schema.write_text(schema_content, encoding="utf-8")
 
@@ -260,8 +320,12 @@ def test_removed_schema_replacement_is_rejected_before_reading(
     ] == ["dj_hyperview.E008"]
 
 
-def test_source_and_template_directory_mismatches_emit_warnings(tmp_path) -> None:
-    """Checks expose inert roots and filesystem sources without roots."""
+def test_source_and_template_directory_mismatches_emit_warnings(tmp_path: Path) -> None:
+    """Checks expose inert roots and filesystem sources without roots.
+
+    Args:
+        tmp_path: Temporary directory used as a template root.
+    """
     filesystem = "dj_hyperview.sources.FileSystemSource"
     cases = [
         ({"TEMPLATE_DIRS": [tmp_path]}, ["W002"]),
@@ -281,9 +345,14 @@ def test_source_and_template_directory_mismatches_emit_warnings(tmp_path) -> Non
 
 
 def test_global_template_roots_are_probed_once_per_check(
-    tmp_path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Consistency warnings reuse the already computed directory result."""
+    """Consistency warnings reuse the already computed directory result.
+
+    Args:
+        tmp_path: Temporary directory used as a template root.
+        monkeypatch: Wraps the directory probe with a recording spy.
+    """
     calls: list[Path] = []
     original = Path.is_dir
 
@@ -300,8 +369,14 @@ def test_global_template_roots_are_probed_once_per_check(
 
 
 @pytest.mark.parametrize("template_dirs", ["/tmp/hyperview", Path("/tmp/hyperview")])
-def test_filesystem_source_options_reject_scalar_template_roots(template_dirs) -> None:
-    """Checks reject values that FileSystemSource cannot treat as root lists."""
+def test_filesystem_source_options_reject_scalar_template_roots(
+    template_dirs: str | Path,
+) -> None:
+    """Checks reject values that FileSystemSource cannot treat as root lists.
+
+    Args:
+        template_dirs: Scalar value given instead of a list of roots.
+    """
     configured = {
         "SOURCES": [
             {
@@ -331,7 +406,15 @@ def test_filesystem_source_options_reject_scalar_template_roots(template_dirs) -
         ),
     ],
 )
-def test_root_and_optional_database_config_are_validated(value, expected) -> None:
+def test_root_and_optional_database_config_are_validated(
+    value: object, expected: str
+) -> None:
+    """Invalid roots and a misconfigured database source report their checks.
+
+    Args:
+        value: Invalid HYPERVIEW settings.
+        expected: Short id of the check that must be reported.
+    """
     with override_settings(HYPERVIEW=value):
         errors = check_hyperview_settings()
 
@@ -342,8 +425,12 @@ def test_root_and_optional_database_config_are_validated(value, expected) -> Non
     "extra_schemas",
     ["schema.xsd", ["https://example.test/app.xsd"], ["/missing/app.xsd"]],
 )
-def test_extra_schemas_must_be_a_sequence_of_local_files(extra_schemas) -> None:
-    """Schema extensions fail startup checks before an editor or request uses them."""
+def test_extra_schemas_must_be_a_sequence_of_local_files(extra_schemas: object) -> None:
+    """Schema extensions fail startup checks before an editor or request uses them.
+
+    Args:
+        extra_schemas: Invalid EXTRA_SCHEMAS value.
+    """
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": extra_schemas}):
         messages = check_hyperview_settings()
 
@@ -379,7 +466,13 @@ XS = "http://www.w3.org/2001/XMLSchema"
 def test_extra_schema_error_names_the_stable_cause(
     tmp_path: Path, content: str, cause: str
 ) -> None:
-    """One message for every failure hid whether the file, a rule or the XSD failed."""
+    """One message for every failure hid whether the file, a rule or the XSD failed.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema file.
+        content: Schema file content that is invalid.
+        cause: Stable reason expected in the message.
+    """
     schema = tmp_path / "app.xsd"
     schema.write_text(content, encoding="utf-8")
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [schema]}):
@@ -397,6 +490,13 @@ def test_extra_schema_error_names_the_stable_cause(
 def test_unusable_extra_schema_entry_is_unreadable_or_not_a_path(
     tmp_path: Path, configured: object, cause: str
 ) -> None:
+    """An unreadable or non-path schema entry is reported with its stable reason.
+
+    Args:
+        tmp_path: Temporary directory the entry is resolved against.
+        configured: Schema entry: a relative path or a non-path value.
+        cause: Stable reason expected in the message.
+    """
     entry = tmp_path / configured if isinstance(configured, str) else configured
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [entry]}):
         messages = [m for m in check_hyperview_settings() if m.id.endswith("E012")]
@@ -408,7 +508,11 @@ def test_unusable_extra_schema_entry_is_unreadable_or_not_a_path(
 
 
 def test_valid_extra_schema_passes_startup_checks(tmp_path: Path) -> None:
-    """A local XSD 1.1 extension is accepted when the schema extra is installed."""
+    """A local XSD 1.1 extension is accepted when the schema extra is installed.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema file.
+    """
     schema = tmp_path / "app.xsd"
     schema.write_text(
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" '
@@ -431,7 +535,16 @@ ALERT = "https://hyperview.org/hyperview-alert"
 
 
 def extra_schema(path: Path, declaration: str, namespace: str = "urn:app") -> Path:
-    """Write a schema that is valid alone, whatever the other schemas declare."""
+    """Write a schema that is valid alone, whatever the other schemas declare.
+
+    Args:
+        path: Where the schema is written.
+        declaration: Schema declarations placed inside the schema element.
+        namespace: Target namespace of the schema.
+
+    Returns:
+        The path of the written schema.
+    """
     path.write_text(
         f'<xs:schema xmlns:xs="{XS}" targetNamespace="{namespace}" '
         f'elementFormDefault="qualified">{declaration}</xs:schema>',
@@ -441,7 +554,11 @@ def extra_schema(path: Path, declaration: str, namespace: str = "urn:app") -> Pa
 
 
 def run_check() -> list:
-    """Run the check, leaving out the warning that an empty SOURCES setting adds."""
+    """Run the check, leaving out the warning that an empty SOURCES setting adds.
+
+    Returns:
+        The check messages, without the empty SOURCES warning.
+    """
     return [m for m in check_hyperview_settings() if m.id != "dj_hyperview.W005"]
 
 
@@ -462,6 +579,10 @@ def test_schemas_that_only_conflict_when_merged_fail_the_check(
     A duplicate declaration is detected only by the merged registry, so a check that
     compiles the files one by one passed and each validation recompiled and failed.
     The bundled schemas already declare "text" and "option" in their namespaces.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema files.
+        declarations: Namespace, element name and type declared by each schema.
     """
     paths = [
         extra_schema(
@@ -485,7 +606,11 @@ def test_schemas_that_only_conflict_when_merged_fail_the_check(
 
 
 def test_merged_failure_is_not_added_to_a_failing_file(tmp_path: Path) -> None:
-    """A file that fails alone is reported by index and the merge is not attempted."""
+    """A file that fails alone is reported by index and the merge is not attempted.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema files.
+    """
     broken = tmp_path / "broken.xsd"
     broken.write_text("not xml", encoding="utf-8")
     fine = extra_schema(tmp_path / "fine.xsd", '<xs:element name="w"/>')
@@ -501,7 +626,12 @@ def test_merged_failure_is_not_added_to_a_failing_file(tmp_path: Path) -> None:
 def test_valid_extra_schemas_are_compiled_once_for_check_and_requests(
     tmp_path: Path, cold_schema_caches: None
 ) -> None:
-    """The check warms the registry the first request would otherwise compile."""
+    """The check warms the registry the first request would otherwise compile.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema files.
+        cold_schema_caches: Empties the compiled schema caches around the test.
+    """
     from dj_hyperview import validate_hyperview_schema
     from dj_hyperview.schema import _cached_registry
 
@@ -521,7 +651,11 @@ def test_valid_extra_schemas_are_compiled_once_for_check_and_requests(
 def test_check_without_extra_schemas_compiles_no_registry(
     cold_schema_caches: None,
 ) -> None:
-    """The default configuration pays nothing for the merged-registry check."""
+    """The default configuration pays nothing for the merged-registry check.
+
+    Args:
+        cold_schema_caches: Empties the compiled schema caches around the test.
+    """
     from dj_hyperview.schema import _cached_registry
 
     check_hyperview_settings()
@@ -532,7 +666,12 @@ def test_check_without_extra_schemas_compiles_no_registry(
 def test_invalid_registrations_skip_the_merged_compile(
     tmp_path: Path, cold_schema_caches: None
 ) -> None:
-    """Registrations that are reported as E021 cannot key a registry."""
+    """Registrations that are reported as E021 cannot key a registry.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema file.
+        cold_schema_caches: Empties the compiled schema caches around the test.
+    """
     from dj_hyperview.schema import _cached_registry
 
     schema = extra_schema(tmp_path / "app.xsd", '<xs:element name="w"/>')
@@ -548,7 +687,12 @@ def test_invalid_registrations_skip_the_merged_compile(
 def test_check_compiles_without_reading_the_settings_it_is_validating(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """get_settings() runs this check, so asking it for settings would recurse."""
+    """get_settings() runs this check, so asking it for settings would recurse.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema file.
+        monkeypatch: Replaces the settings lookup of the schema module.
+    """
 
     def forbidden() -> None:
         raise AssertionError("the check must not ask for the settings snapshot")
@@ -569,6 +713,11 @@ def test_unexpected_compile_failure_is_reported_instead_of_crashing_startup(
 
     The check runs inside get_settings(), so a crash there would take every entry
     point down with a traceback instead of one E012 with a stable reason.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema file.
+        monkeypatch: Makes the chosen compile step fail.
+        target: Name of the compile step that fails.
     """
 
     def explode(*args: object, **kwargs: object) -> None:
@@ -600,8 +749,15 @@ def test_builtin_validator_requires_its_regular_dependency() -> None:
 REALTIME = {"REALTIME": {"REDIS_URL": "redis://localhost/0", "NAMESPACE": "app"}}
 
 
-def _redis_spec(installed: bool):
-    """Report only redis-py as present or missing; everything else is installed."""
+def _redis_spec(installed: bool) -> Callable[[str], object | None]:
+    """Report only redis-py as present or missing; everything else is installed.
+
+    Args:
+        installed: Whether redis-py is reported as installed.
+
+    Returns:
+        A spec lookup that reports only redis-py as present or missing.
+    """
     return lambda name: None if name == "redis" and not installed else object()
 
 
@@ -620,6 +776,7 @@ def test_configured_realtime_warns_when_redis_py_is_missing() -> None:
 
 @override_settings(HYPERVIEW=REALTIME)
 def test_configured_realtime_is_silent_when_redis_py_is_installed() -> None:
+    """Configured realtime stays silent when redis-py is installed."""
     with patch("dj_hyperview.checks.find_spec", side_effect=_redis_spec(True)):
         messages = check_hyperview_settings()
 
@@ -627,7 +784,12 @@ def test_configured_realtime_is_silent_when_redis_py_is_installed() -> None:
 
 
 @pytest.mark.parametrize("raw", [{}, {"REALTIME": None}])
-def test_disabled_realtime_does_not_require_redis_py(raw) -> None:
+def test_disabled_realtime_does_not_require_redis_py(raw: dict[str, object]) -> None:
+    """Disabled realtime never asks for redis-py.
+
+    Args:
+        raw: HYPERVIEW settings that leave realtime off.
+    """
     with (
         override_settings(HYPERVIEW=raw),
         patch("dj_hyperview.checks.find_spec", side_effect=_redis_spec(False)),
@@ -651,12 +813,23 @@ def test_disabled_realtime_does_not_require_redis_py(raw) -> None:
     ],
 )
 def test_stub_module_without_a_spec_counts_as_installed(
-    monkeypatch: pytest.MonkeyPatch, make_stub, raw, module: str, absent: str
+    monkeypatch: pytest.MonkeyPatch,
+    make_stub: Callable[[], object],
+    raw: dict[str, object],
+    module: str,
+    absent: str,
 ) -> None:
     """A stand-in module in sys.modules makes find_spec raise, not return None.
 
     importlib reports a spec of None, or no spec at all, with ValueError. Such a
     module still imports, so the check treats it as installed rather than crashing.
+
+    Args:
+        monkeypatch: Puts the stub module in the module table.
+        make_stub: Factory of the stand-in module object.
+        raw: HYPERVIEW settings that need the module.
+        module: Name of the dependency that is stubbed.
+        absent: Check id that must not be reported.
     """
     monkeypatch.setitem(sys.modules, module, make_stub())
     with override_settings(HYPERVIEW=raw):
@@ -667,9 +840,13 @@ def test_stub_module_without_a_spec_counts_as_installed(
 
 @pytest.mark.parametrize("admin_config", [True, [], {"EDITOR": "yes"}])
 def test_admin_editor_configuration_requires_a_mapping_and_boolean(
-    admin_config,
+    admin_config: object,
 ) -> None:
-    """Malformed editor settings fail through stable startup checks."""
+    """Malformed editor settings fail through stable startup checks.
+
+    Args:
+        admin_config: Malformed ADMIN setting.
+    """
     with override_settings(HYPERVIEW={"ADMIN": admin_config}):
         messages = check_hyperview_settings()
 
@@ -706,7 +883,15 @@ def test_enabled_editor_reports_a_missing_optional_dependency() -> None:
 def test_enabled_editor_requires_schema_dependency_for_static_validation() -> None:
     """The editor fails startup when its static XSD dependency is incomplete."""
 
-    def dependency(name: str):
+    def dependency(name: str) -> object | None:
+        """Report only xmlschema as missing.
+
+        Args:
+            name: Module name that is looked up.
+
+        Returns:
+            None for the missing module, a placeholder spec for the others.
+        """
         return None if name == "xmlschema" else object()
 
     with (
@@ -724,8 +909,14 @@ def test_enabled_editor_requires_schema_dependency_for_static_validation() -> No
     "permission",
     [object(), "missing.permission_callback", lambda: True],
 )
-def test_admin_permission_requires_a_single_request_callable(permission) -> None:
-    """Invalid mutation policies fail through an actionable startup check."""
+def test_admin_permission_requires_a_single_request_callable(
+    permission: object,
+) -> None:
+    """Invalid mutation policies fail through an actionable startup check.
+
+    Args:
+        permission: Invalid permission policy.
+    """
     with override_settings(HYPERVIEW={"ADMIN": {"PERMISSION": permission}}):
         messages = check_hyperview_settings()
 
@@ -734,8 +925,15 @@ def test_admin_permission_requires_a_single_request_callable(permission) -> None
     assert "request" in relevant[0].hint
 
 
-def _ids(messages) -> list[str]:
-    """Return short check ids, ignoring the unrelated empty-sources warning."""
+def _ids(messages: Iterable[CheckMessage]) -> list[str]:
+    """Return short check ids, ignoring the unrelated empty-sources warning.
+
+    Args:
+        messages: Check messages to summarize.
+
+    Returns:
+        The short ids of the messages.
+    """
     return [
         message.id.rsplit(".", 1)[-1]
         for message in messages
@@ -758,8 +956,16 @@ def _ids(messages) -> list[str]:
         ),
     ],
 )
-def test_unknown_keys_are_configuration_errors(configured, unknown, valid) -> None:
-    """A typo in any settings section can no longer fall back to a default."""
+def test_unknown_keys_are_configuration_errors(
+    configured: dict[str, object], unknown: str, valid: str
+) -> None:
+    """A typo in any settings section can no longer fall back to a default.
+
+    Args:
+        configured: HYPERVIEW settings that contain a typo.
+        unknown: Misspelled key that the message must name.
+        valid: Valid key that the hint must suggest.
+    """
     with override_settings(HYPERVIEW=configured):
         messages = check_hyperview_settings()
 
@@ -800,7 +1006,11 @@ def test_retired_keys_keep_their_dedicated_errors_without_e023() -> None:
 
 
 def test_every_documented_key_is_accepted(tmp_path: Path) -> None:
-    """The unknown-key rule rejects only keys that no section reads."""
+    """The unknown-key rule rejects only keys that no section reads.
+
+    Args:
+        tmp_path: Temporary directory used as a template root.
+    """
     configured = {
         "TEMPLATE_DIRS": [tmp_path],
         "SOURCES": [{"BACKEND": FILESYSTEM, "OPTIONS": {"template_dirs": [tmp_path]}}],
@@ -838,7 +1048,14 @@ def test_every_documented_key_is_accepted(tmp_path: Path) -> None:
 def test_source_options_must_match_the_backend_constructor(
     tmp_path: Path, backend: str, options: dict, expected: list[str]
 ) -> None:
-    """A mistyped constructor option fails the check instead of every request."""
+    """A mistyped constructor option fails the check instead of every request.
+
+    Args:
+        tmp_path: Temporary directory used as a template root.
+        backend: Dotted path of the source backend.
+        options: OPTIONS given to the backend.
+        expected: Short ids of the checks that must be reported.
+    """
     configured: dict = {"SOURCES": [{"BACKEND": backend, "OPTIONS": options}]}
     if backend == FILESYSTEM:
         configured["TEMPLATE_DIRS"] = [tmp_path]
@@ -869,7 +1086,12 @@ def test_signature_introspection_failure_never_breaks_or_fails_the_check() -> No
 def test_annotations_naming_checker_only_types_do_not_affect_the_options_check(
     options: dict, expected: list[str]
 ) -> None:
-    """The constructor is bound without evaluating or resolving its annotations."""
+    """The constructor is bound without evaluating or resolving its annotations.
+
+    Args:
+        options: OPTIONS given to the backend.
+        expected: Short ids of the checks that must be reported.
+    """
     configured = {
         "SOURCES": [
             {"BACKEND": f"{__name__}.QuotedAnnotationSource", "OPTIONS": options}
@@ -886,7 +1108,11 @@ def test_annotations_naming_checker_only_types_do_not_affect_the_options_check(
 def test_unresolved_annotation_names_neither_skip_e024_nor_crash_e017(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """signature() raises NameError for such a name unless it reads FORWARDREF."""
+    """signature() raises NameError for such a name unless it reads FORWARDREF.
+
+    Args:
+        monkeypatch: Publishes the lazily annotated definitions in this module.
+    """
     definitions: dict[str, object] = {}
     exec(LAZY_ANNOTATIONS, definitions)
     for name in ("LazyAnnotationSource", "lazy_annotation_permission"):
@@ -895,7 +1121,18 @@ def test_unresolved_annotation_names_neither_skip_e024_nor_crash_e017(
         )
     source = f"{__name__}.LazyAnnotationSource"
 
-    def configured(options: dict, permission: str = "tests.stubs.allow_template_admin"):
+    def configured(
+        options: dict, permission: str = "tests.stubs.allow_template_admin"
+    ) -> dict[str, object]:
+        """Build settings for the lazily annotated source and permission.
+
+        Args:
+            options: OPTIONS given to the source.
+            permission: Dotted path of the admin permission.
+
+        Returns:
+            The HYPERVIEW settings mapping.
+        """
         return {
             "SOURCES": [{"BACKEND": source, "OPTIONS": options}],
             "ADMIN": {"PERMISSION": permission},
@@ -910,8 +1147,14 @@ def test_unresolved_annotation_names_neither_skip_e024_nor_crash_e017(
         assert _ids(check_hyperview_settings()) == []
 
 
-def test_mismatched_options_fail_settings_instead_of_each_request(tmp_path) -> None:
-    """Resolver construction reports the typo as a configuration error."""
+def test_mismatched_options_fail_settings_instead_of_each_request(
+    tmp_path: Path,
+) -> None:
+    """Resolver construction reports the typo as a configuration error.
+
+    Args:
+        tmp_path: Temporary directory used as a template root.
+    """
     configured = {
         "TEMPLATE_DIRS": [tmp_path],
         "SOURCES": [{"BACKEND": FILESYSTEM, "OPTIONS": {"template_dir": [tmp_path]}}],
@@ -929,15 +1172,29 @@ def test_mismatched_options_fail_settings_instead_of_each_request(tmp_path) -> N
         {"SOURCES": [{"BACKEND": FILESYSTEM, "OPTIONS": "template_dirs"}]},
     ],
 )
-def test_unusable_backend_or_options_report_only_their_own_error(configured) -> None:
-    """E024 needs an importable backend and a mapping of options."""
+def test_unusable_backend_or_options_report_only_their_own_error(
+    configured: dict[str, object],
+) -> None:
+    """E024 needs an importable backend and a mapping of options.
+
+    Args:
+        configured: HYPERVIEW settings with an unusable backend or options.
+    """
     with override_settings(HYPERVIEW=configured):
         assert set(_ids(check_hyperview_settings())) == {"E003"}
 
 
 @pytest.fixture
 def exploding_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
-    """Return an importable module whose import raises with a secret in its message."""
+    """Return an importable module whose import raises with a secret in its message.
+
+    Args:
+        tmp_path: Temporary directory that holds the module.
+        monkeypatch: Adds the directory to the import path.
+
+    Returns:
+        The name of the module whose import raises.
+    """
     (tmp_path / "exploding_backend_module.py").write_text(
         'raise RuntimeError("secret-token")\n', encoding="utf-8"
     )
@@ -957,7 +1214,13 @@ def exploding_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> str:
 def test_unimportable_backend_names_the_exception_class_only(
     exploding_module: str, backend: object, cause: str | None
 ) -> None:
-    """The class name helps diagnosis; the message text can carry secrets or paths."""
+    """The class name helps diagnosis; the message text can carry secrets or paths.
+
+    Args:
+        exploding_module: Name of a module whose import raises.
+        backend: BACKEND value that cannot be imported.
+        cause: Exception class named in the message, or None.
+    """
     with override_settings(HYPERVIEW={"SOURCES": [{"BACKEND": backend}]}):
         messages = [m for m in check_hyperview_settings() if m.id.endswith("E003")]
 
@@ -979,6 +1242,13 @@ def test_unimportable_backend_names_the_exception_class_only(
 def test_unimportable_admin_permission_names_the_exception_class_only(
     exploding_module: str, permission: object, cause: str | None
 ) -> None:
+    """An unimportable permission is reported by exception class, never by message.
+
+    Args:
+        exploding_module: Name of a module whose import raises.
+        permission: PERMISSION value that cannot be imported.
+        cause: Exception class named in the message, or None.
+    """
     with override_settings(HYPERVIEW={"ADMIN": {"PERMISSION": permission}}):
         messages = [m for m in check_hyperview_settings() if m.id.endswith("E017")]
 
@@ -992,7 +1262,11 @@ def test_unimportable_admin_permission_names_the_exception_class_only(
 
 @pytest.mark.parametrize("name", ["MAX_BYTES", "MAX_DEPTH", "MAX_NODES"])
 def test_validation_limits_reject_int_subclasses_at_check_time(name: str) -> None:
-    """Checks use the dataclass rule, so no bare ValueError escapes at runtime."""
+    """Checks use the dataclass rule, so no bare ValueError escapes at runtime.
+
+    Args:
+        name: Validation limit that receives the int subclass.
+    """
     with override_settings(HYPERVIEW={"VALIDATION": {name: Limit(10)}}):
         assert _ids(check_hyperview_settings()) == ["E009"]
         with pytest.raises(HyperviewConfigurationError, match="E009"):
