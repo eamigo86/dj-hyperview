@@ -29,7 +29,7 @@ vocabulary; it does not need to return a web page.
 This guide uses:
 
 ```text
-https://example.com/hypertodo
+https://hypertodo.app/components
 ```
 
 The prefix `app` is only a local abbreviation. The namespace URI, rather than
@@ -37,70 +37,76 @@ the prefix, is the identity that must match between the XSD and HXML.
 
 ## 2. Define the custom elements
 
-Create `schema/hypertodo.xsd` in the Django project:
+Create `schema/hypertodo.xsd` in the Django project. This excerpt keeps the
+header and two of the elements; the checked-in example below adds the rest:
 
 ```xml
 <?xml version="1.0" encoding="UTF-8"?>
 <xs:schema
   xmlns:xs="http://www.w3.org/2001/XMLSchema"
-  xmlns:app="https://example.com/hypertodo"
-  targetNamespace="https://example.com/hypertodo"
+  xmlns:app="https://hypertodo.app/components"
+  xmlns:hv="https://hyperview.org/hyperview"
+  targetNamespace="https://hypertodo.app/components"
   elementFormDefault="qualified"
   version="1.1"
 >
+  <xs:simpleType name="action">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="navigate" />
+      <xs:enumeration value="replace" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="verb">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="get" />
+      <xs:enumeration value="post" />
+    </xs:restriction>
+  </xs:simpleType>
+
   <xs:element name="swipe-row">
     <xs:complexType>
-      <xs:sequence>
-        <xs:element
-          ref="app:swipe-action"
-          minOccurs="1"
-          maxOccurs="unbounded"
-        />
-        <xs:any
-          namespace="https://hyperview.org/hyperview"
-          processContents="lax"
-        />
-      </xs:sequence>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" />
+        <xs:element ref="app:swipe-action" />
+      </xs:choice>
       <xs:attribute name="id" type="xs:ID" />
-      <xs:attribute name="direction" use="required">
-        <xs:simpleType>
-          <xs:restriction base="xs:string">
-            <xs:enumeration value="left" />
-            <xs:enumeration value="right" />
-          </xs:restriction>
-        </xs:simpleType>
-      </xs:attribute>
+      <xs:attribute name="style" type="xs:string" />
+      <xs:attribute name="edit-href" type="xs:string" />
+      <xs:attribute name="toggle-href" type="xs:string" />
+      <xs:attribute name="delete-href" type="xs:string" />
+      <xs:attribute name="completed" type="xs:boolean" />
     </xs:complexType>
   </xs:element>
 
   <xs:element name="swipe-action">
     <xs:complexType>
+      <xs:attribute name="href" type="xs:string" use="required" />
+      <xs:attribute name="action" type="app:action" use="required" />
+      <xs:attribute name="verb" type="app:verb" use="required" />
       <xs:attribute name="label" type="xs:string" use="required" />
-      <xs:attribute name="href" type="xs:anyURI" use="required" />
-      <xs:attribute name="verb" default="post">
-        <xs:simpleType>
-          <xs:restriction base="xs:string">
-            <xs:enumeration value="delete" />
-            <xs:enumeration value="patch" />
-            <xs:enumeration value="post" />
-          </xs:restriction>
-        </xs:simpleType>
-      </xs:attribute>
+      <xs:attribute name="a11y-label" type="xs:string" use="required" />
+      <xs:attribute name="tone" type="xs:string" />
+      <xs:attribute name="confirm-title" type="xs:string" />
+      <xs:attribute name="confirm-body" type="xs:string" />
+      <xs:attribute name="confirm-label" type="xs:string" />
     </xs:complexType>
   </xs:element>
+
+  <!-- side-menu, edge-menu-opener, time-picker, realtime, realtime-page: see the example. -->
 </xs:schema>
 ```
 
 This definition gives the editor enough information to suggest:
 
-- `app:swipe-action` inside `app:swipe-row`;
+- `app:swipe-action` and Hyperview elements inside `app:swipe-row`;
 - unused attributes for each element;
-- `left` and `right` for `direction`;
-- `delete`, `patch`, and `post` for `verb`;
+- `navigate` and `replace` for `action`, and `get` and `post` for `verb`;
 - required-attribute metadata for validation.
 
-The checked-in [complete example](examples/hypertodo.xsd) can be copied as a
-starting point.
+The checked-in [complete example](examples/hypertodo.xsd) is the schema of the
+HyperTodo reference app and can be copied as a starting point. Its realtime
+elements only validate markup that HyperTodo's mobile host handles.
 
 To let Hyperview elements appear inside a custom element, declare an `xs:any` with
 the Hyperview namespace, as `swipe-row` does. An `xs:import` of that namespace does
@@ -145,19 +151,22 @@ Declare the namespace on the document and use its chosen prefix:
 <?xml version="1.0" encoding="UTF-8"?>
 <doc
   xmlns="https://hyperview.org/hyperview"
-  xmlns:app="https://example.com/hypertodo"
+  xmlns:app="https://hypertodo.app/components"
 >
   <screen id="tasks">
     <body>
-      <app:swipe-row id="task-42" direction="left">
-        <app:swipe-action
-          label="Delete"
-          href="/hv/tasks/42/"
-          verb="delete"
-        />
-        <view>
+      <app:swipe-row id="task-swipe-42" style="swipe-row" completed="false">
+        <view style="task">
           <text>Review custom schema support</text>
         </view>
+        <app:swipe-action
+          href="/hv/tasks/42/delete/"
+          action="replace"
+          verb="post"
+          label="Delete"
+          a11y-label="Delete task"
+          tone="danger"
+        />
       </app:swipe-row>
     </body>
   </screen>
@@ -165,7 +174,7 @@ Declare the namespace on the document and use its chosen prefix:
 ```
 
 The same schema continues to work if the document uses another prefix such as
-`todo`, provided that prefix maps to `https://example.com/hypertodo`.
+`todo`, provided that prefix maps to `https://hypertodo.app/components`.
 
 ## 5. Verify the integration
 

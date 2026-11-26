@@ -21,6 +21,13 @@ DOCS = ROOT / "docs"
 SITE = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["urls"][
     "Documentation"
 ]
+COMPONENTS = (
+    "side-menu",
+    "swipe-row",
+    "swipe-action",
+    "edge-menu-opener",
+    "time-picker",
+)
 # Rows of the settings reference that are not fields of the settings dataclasses.
 UNMAPPED_SETTING_ROWS = {
     "HYPERVIEW",
@@ -75,7 +82,28 @@ def test_compatibility_page_describes_the_active_contract() -> None:
 def test_custom_component_schema_example_is_valid_xsd_1_1() -> None:
     schema = xmlschema.XMLSchema11(DOCS / "examples" / "hypertodo.xsd", allow="local")
 
-    assert {"swipe-row", "swipe-action"} <= set(schema.elements)
+    namespace = "https://hypertodo.app/components"
+    assert schema.target_namespace == namespace
+    assert set(COMPONENTS) <= set(schema.elements)
+
+
+def test_custom_schema_guide_sample_validates_against_the_example(
+    cold_schema_caches: None,
+) -> None:
+    from django.test import override_settings
+
+    from dj_hyperview import validate_hyperview_schema
+
+    guide = (DOCS / "custom-schemas.md").read_text()
+    sample = guide.split("## 4. Use the namespace in HXML", 1)[1]
+    document = re.search(r"```xml\n(.*?)```", sample, re.S).group(1)
+    example = DOCS / "examples" / "hypertodo.xsd"
+    target = xmlschema.XMLSchema11(example, allow="local").target_namespace
+
+    assert f'xmlns:app="{target}"' in document
+
+    with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [example]}):
+        validate_hyperview_schema(document)
 
 
 def test_api_reference_names_every_public_export() -> None:

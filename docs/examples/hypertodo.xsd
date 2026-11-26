@@ -1,42 +1,154 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xs:schema
   xmlns:xs="http://www.w3.org/2001/XMLSchema"
-  xmlns:app="https://example.com/hypertodo"
-  targetNamespace="https://example.com/hypertodo"
+  xmlns:app="https://hypertodo.app/components"
+  xmlns:hv="https://hyperview.org/hyperview"
+  targetNamespace="https://hypertodo.app/components"
   elementFormDefault="qualified"
   version="1.1"
 >
-  <xs:element name="swipe-row">
+  <xs:simpleType name="action">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="navigate" />
+      <xs:enumeration value="replace" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="verb">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="get" />
+      <xs:enumeration value="post" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="side-menu">
     <xs:complexType>
       <xs:sequence>
-        <xs:element ref="app:swipe-action" minOccurs="1" maxOccurs="unbounded" />
-        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" />
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" minOccurs="0" maxOccurs="unbounded" />
       </xs:sequence>
       <xs:attribute name="id" type="xs:ID" />
-      <xs:attribute name="direction" use="required">
+      <xs:attribute name="style" type="xs:string" />
+      <xs:attribute name="close-href" type="xs:string" />
+      <xs:attribute name="animation-duration" type="xs:positiveInteger" />
+      <xs:attribute name="panel-width" type="xs:positiveInteger" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="swipe-row">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" />
+        <xs:element ref="app:swipe-action" />
+      </xs:choice>
+      <xs:attribute name="id" type="xs:ID" />
+      <xs:attribute name="style" type="xs:string" />
+      <xs:attribute name="edit-href" type="xs:string" />
+      <xs:attribute name="toggle-href" type="xs:string" />
+      <xs:attribute name="delete-href" type="xs:string" />
+      <xs:attribute name="completed" type="xs:boolean" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="swipe-action">
+    <xs:complexType>
+      <xs:attribute name="href" type="xs:string" use="required" />
+      <xs:attribute name="action" type="app:action" use="required" />
+      <xs:attribute name="verb" type="app:verb" use="required" />
+      <xs:attribute name="label" type="xs:string" use="required" />
+      <xs:attribute name="a11y-label" type="xs:string" use="required" />
+      <xs:attribute name="tone" type="xs:string" />
+      <xs:attribute name="confirm-title" type="xs:string" />
+      <xs:attribute name="confirm-body" type="xs:string" />
+      <xs:attribute name="confirm-label" type="xs:string" />
+    </xs:complexType>
+  </xs:element>
+
+  <xs:element name="edge-menu-opener">
+    <xs:complexType>
+      <xs:attribute name="id" type="xs:ID" />
+      <xs:attribute name="style" type="xs:string" />
+      <xs:attribute name="href" type="xs:string" use="required" />
+      <xs:attribute name="action" type="app:action" use="required" />
+      <xs:attribute name="target" type="xs:string" use="required" />
+    </xs:complexType>
+  </xs:element>
+
+  <!-- The native time selector (mobile/src/components/TimePicker.tsx). Its hidden child
+       text-field is the only value the form posts, as HH:MM or empty. -->
+  <xs:element name="time-picker">
+    <xs:complexType>
+      <xs:sequence>
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="lax" minOccurs="0" maxOccurs="unbounded" />
+      </xs:sequence>
+      <xs:attribute name="id" type="xs:ID" />
+      <xs:attribute name="hide" type="xs:boolean" />
+      <xs:attribute name="disabled" type="xs:boolean" />
+      <xs:attribute name="editable" type="xs:boolean" />
+      <xs:attribute name="accessibilityLabel" type="xs:string" />
+      <xs:attribute name="placeholder" type="xs:string" />
+      <xs:attribute name="placeholderTextColor" type="xs:string" />
+      <xs:attribute name="field-style" type="xs:string" />
+      <xs:attribute name="field-text-style" type="xs:string" />
+      <xs:attribute name="modal-style" type="xs:string" />
+      <xs:attribute name="modal-text-style" type="xs:string" />
+      <xs:attribute name="cancel-label" type="xs:string" />
+      <xs:attribute name="done-label" type="xs:string" />
+      <xs:attribute name="clear-label" type="xs:string" />
+      <xs:attribute name="clear-a11y-label" type="xs:string" />
+    </xs:complexType>
+  </xs:element>
+
+  <!-- Realtime boundary markup. These declarations only validate the HXML: the mobile
+       host registers app:realtime and app:realtime-page (mobile/src/realtime/gate.tsx),
+       and the backend serves SSE through HYPERVIEW["REALTIME"]. -->
+  <xs:simpleType name="realtime-request-id">
+    <xs:restriction base="xs:string">
+      <xs:minLength value="1" />
+      <xs:maxLength value="80" />
+      <xs:pattern value="[A-Za-z0-9_-]+" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:simpleType name="realtime-resources">
+    <xs:restriction base="xs:string">
+      <xs:enumeration value="tasks" />
+      <xs:enumeration value="categories" />
+      <xs:enumeration value="ui" />
+      <xs:enumeration value="tasks categories" />
+      <xs:enumeration value="tasks ui" />
+      <xs:enumeration value="categories ui" />
+      <xs:enumeration value="tasks categories ui" />
+    </xs:restriction>
+  </xs:simpleType>
+
+  <xs:element name="realtime">
+    <xs:complexType>
+      <xs:choice minOccurs="0" maxOccurs="unbounded">
+        <xs:any namespace="https://hyperview.org/hyperview" processContents="strict" minOccurs="0" maxOccurs="unbounded" />
+        <xs:element ref="app:realtime-page" />
+        <xs:element ref="app:edge-menu-opener" />
+      </xs:choice>
+      <xs:attribute name="resources" type="app:realtime-resources" use="required" />
+      <xs:attribute name="refresh-href" type="xs:anyURI" use="required" />
+      <xs:attribute name="target" type="xs:string" use="required" />
+      <xs:attribute name="entities" type="xs:string" />
+      <xs:attribute name="mode" use="required">
         <xs:simpleType>
           <xs:restriction base="xs:string">
-            <xs:enumeration value="left" />
-            <xs:enumeration value="right" />
+            <xs:enumeration value="list" />
+            <xs:enumeration value="notice" />
+            <xs:enumeration value="readonly" />
+            <xs:enumeration value="form" />
           </xs:restriction>
         </xs:simpleType>
       </xs:attribute>
     </xs:complexType>
   </xs:element>
 
-  <xs:element name="swipe-action">
+  <xs:element name="realtime-page">
     <xs:complexType>
-      <xs:attribute name="label" type="xs:string" use="required" />
-      <xs:attribute name="href" type="xs:anyURI" use="required" />
-      <xs:attribute name="verb" default="post">
-        <xs:simpleType>
-          <xs:restriction base="xs:string">
-            <xs:enumeration value="delete" />
-            <xs:enumeration value="patch" />
-            <xs:enumeration value="post" />
-          </xs:restriction>
-        </xs:simpleType>
-      </xs:attribute>
+      <xs:attribute name="request-id" type="app:realtime-request-id" use="required" />
+      <xs:attribute name="page" type="xs:positiveInteger" use="required" />
     </xs:complexType>
   </xs:element>
 </xs:schema>
