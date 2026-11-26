@@ -35,6 +35,11 @@ def _backticked(source: str, path: str) -> list[str]:
 
 @pytest.mark.parametrize("folder", ["src/dj_hyperview", "tests", "tools"])
 def test_docstrings_contain_no_backticks(folder: str) -> None:
+    """No docstring in the package, the tests or the tools contains a backtick.
+
+    Args:
+        folder: Folder under the repository root whose Python files are scanned.
+    """
     offenders = [
         hit
         for path in sorted((REPOSITORY_ROOT / folder).rglob("*.py"))
@@ -47,6 +52,7 @@ def test_docstrings_contain_no_backticks(folder: str) -> None:
 
 
 def test_backticks_are_found_at_every_docstring_level() -> None:
+    """A backtick is found in module, class and function docstrings."""
     source = (
         '"""Uses `a`."""\n'
         "class C:\n"
@@ -59,7 +65,14 @@ def test_backticks_are_found_at_every_docstring_level() -> None:
 
 
 def exporting_modules(root: Path = PACKAGE_ROOT) -> list[str]:
-    """Return the dotted name of every module under the root that sets __all__."""
+    """Return the dotted name of every module under the root that sets __all__.
+
+    Args:
+        root: Folder whose modules are scanned.
+
+    Returns:
+        The dotted module names, sorted by path.
+    """
     names = []
     for path in sorted(root.rglob("*.py")):
         tree = ast.parse(path.read_text(encoding="utf-8"))
@@ -95,6 +108,13 @@ def checked_names(
     for a dataclass or a protocol (Python 3.14 also generates __annotate__ for any
     class with annotations), and ones a base class from another package defines,
     are not ours to document.
+
+    Args:
+        module_names: Dotted names of the modules whose exports are checked.
+        root: Folder whose modules are scanned.
+
+    Returns:
+        A mapping from each checked name to whether it has a docstring.
     """
     checked: dict[str, bool] = {}
     for module_name in module_names:
@@ -121,12 +141,21 @@ def checked_names(
 def undocumented_exports(
     module_names: list[str], root: Path = PACKAGE_ROOT
 ) -> list[str]:
-    """Return what the exports of these modules leave without a docstring."""
+    """Return what the exports of these modules leave without a docstring.
+
+    Args:
+        module_names: Dotted names of the modules whose exports are checked.
+        root: Folder whose modules are scanned.
+
+    Returns:
+        The sorted names that lack a docstring.
+    """
     checked = checked_names(module_names, root)
     return sorted(name for name, documented in checked.items() if not documented)
 
 
 def test_the_exporting_modules_are_found_by_their_all() -> None:
+    """The modules that set __all__ are found by that assignment."""
     assert {
         "dj_hyperview",
         "dj_hyperview.realtime",
@@ -136,6 +165,11 @@ def test_the_exporting_modules_are_found_by_their_all() -> None:
 
 
 def test_all_is_found_however_it_is_written(tmp_path: Path) -> None:
+    """A module that sets __all__ is found however the assignment is written.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+    """
     package = tmp_path / "sample_pkg"
     package.mkdir()
     for name, source in {
@@ -158,6 +192,12 @@ def test_all_is_found_however_it_is_written(tmp_path: Path) -> None:
 def test_undocumented_exports_are_found_through_private_bases(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """Undocumented exports are found through private bases.
+
+    Args:
+        tmp_path: Temporary directory for the files this test writes.
+        monkeypatch: Patches the code under test for this test.
+    """
     (tmp_path / "walk_sample.py").write_text(
         "from dataclasses import dataclass\n"
         "__all__ = ['Public', 'Data', 'documented', 'bare']\n"
@@ -192,6 +232,7 @@ def test_undocumented_exports_are_found_through_private_bases(
 
 
 def test_every_exported_name_and_member_has_a_docstring() -> None:
+    """Every exported name and member has a docstring."""
     # The contrib modules need their apps installed, so one process loads them all.
     result = run_isolated(
         "tests.settings_database_admin",

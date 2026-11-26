@@ -3,14 +3,23 @@
 import importlib
 import json
 import os
+from collections.abc import Iterator
 from dataclasses import FrozenInstanceError
 from pathlib import Path
+from typing import Any, Never
 
 import pytest
 from django.db import transaction
 
+from dj_hyperview.realtime import RedisBroker
 
-def broker_api():
+
+def broker_api() -> type[RedisBroker]:
+    """Import the RedisBroker class on demand.
+
+    Returns:
+        The RedisBroker class, imported on demand.
+    """
     from dj_hyperview.realtime import RedisBroker
 
     return RedisBroker
@@ -25,11 +34,19 @@ def broker_api():
         "unix:///tmp/owned.sock?db=0",
     ],
 )
-def test_config_accepts_dns_tls_unix_and_never_connects(url, monkeypatch):
+def test_config_accepts_dns_tls_unix_and_never_connects(
+    url: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Config accepts DNS, TLS and Unix URLs and never connects.
+
+    Args:
+        url: Redis URL given to the broker.
+        monkeypatch: Patches the code under test for this test.
+    """
     imports = []
     original = __import__
 
-    def guarded(name, *args, **kwargs):
+    def guarded(name: str, *args: Any, **kwargs: Any) -> Any:
         if name == "redis" or name.startswith("redis."):
             imports.append(name)
             raise AssertionError("eager Redis import")
@@ -63,20 +80,39 @@ def test_config_accepts_dns_tls_unix_and_never_connects(url, monkeypatch):
         "redis://host/0\n",
     ],
 )
-def test_config_rejects_overrides_and_malformed_url_without_reflection(url):
+def test_config_rejects_overrides_and_malformed_url_without_reflection(
+    url: str,
+) -> None:
+    """Config rejects overrides and malformed URL without reflection.
+
+    Args:
+        url: Redis URL given to the broker.
+    """
     with pytest.raises(ValueError) as caught:
         broker_api()(url, "test-app")
     assert str(caught.value) == "Invalid Redis configuration"
 
 
 @pytest.mark.parametrize("namespace", ["", "x:y", "x.y", "*", "x" * 65, "é"])
-def test_namespace_cannot_collide_or_select_patterns(namespace):
+def test_namespace_cannot_collide_or_select_patterns(namespace: str) -> None:
+    """Namespace cannot collide or select patterns.
+
+    Args:
+        namespace: Namespace given to the broker.
+    """
     with pytest.raises(ValueError, match="Invalid Redis configuration"):
         broker_api()("redis://localhost/0", namespace)
 
 
 @pytest.mark.django_db(transaction=True, databases=["default", "replica"])
-def test_capture_event_topics_alias_before_single_on_commit(monkeypatch):
+def test_capture_event_topics_alias_before_single_on_commit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capture event topics alias before single on commit.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     broker = broker_api()("redis://localhost/0", "test-app")
     module = importlib.import_module("dj_hyperview.realtime._broker")
     calls = []
@@ -102,13 +138,19 @@ def test_capture_event_topics_alias_before_single_on_commit(monkeypatch):
 
 @pytest.mark.django_db(transaction=True)
 def test_rollback_has_no_publication_and_failure_does_not_change_commit(
-    monkeypatch, caplog
-):
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Rollback has no publication and failure does not change commit.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records of the commit hook.
+    """
     broker = broker_api()("redis://localhost/0", "test-app")
     module = importlib.import_module("dj_hyperview.realtime._broker")
     calls = []
 
-    def failed(*args):
+    def failed(*args: object) -> Never:
         calls.append(1)
         raise RuntimeError("redis://credential/topic")
 
@@ -129,7 +171,15 @@ def test_rollback_has_no_publication_and_failure_does_not_change_commit(
     "topics",
     [[], "topic", ["*"], ["bad topic"], ["x" * 129], [f"t{i}" for i in range(33)]],
 )
-def test_bad_topics_fail_before_scheduling(topics, monkeypatch):
+def test_bad_topics_fail_before_scheduling(
+    topics: list[str] | str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Bad topics fail before scheduling.
+
+    Args:
+        topics: Topics given to the capture.
+        monkeypatch: Patches the code under test for this test.
+    """
     calls = []
     monkeypatch.setattr(transaction, "on_commit", lambda *a, **k: calls.append(a))
     with pytest.raises(ValueError, match="Invalid realtime topics"):
@@ -139,10 +189,11 @@ def test_bad_topics_fail_before_scheduling(topics, monkeypatch):
     assert calls == []
 
 
-def test_capture_is_finitely_bounded_and_alias_validated_before_iterable():
+def test_capture_is_finitely_bounded_and_alias_validated_before_iterable() -> None:
+    """Capture is finitely bounded, and the alias is validated before the iterable."""
     seen = []
 
-    def topics():
+    def topics() -> Iterator[str]:
         while True:
             seen.append(1)
             yield "same"
@@ -158,7 +209,12 @@ def test_capture_is_finitely_bounded_and_alias_validated_before_iterable():
     assert len(seen) == 33
 
 
-def test_bad_envelope_never_schedules(monkeypatch):
+def test_bad_envelope_never_schedules(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bad envelope never schedules.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     calls = []
     monkeypatch.setattr(transaction, "on_commit", lambda *a, **k: calls.append(a))
     with pytest.raises(ValueError, match="Invalid realtime event"):
@@ -173,7 +229,14 @@ def test_bad_envelope_never_schedules(monkeypatch):
     assert not calls
 
 
-def test_fresh_process_import_and_construction_need_no_redis_or_worker(monkeypatch):
+def test_fresh_process_import_and_construction_need_no_redis_or_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fresh process import and construction need no Redis or worker.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     import subprocess
     import sys
 

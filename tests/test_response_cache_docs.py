@@ -3,6 +3,7 @@
 import re
 from pathlib import Path
 from types import ModuleType
+from typing import Any
 
 from django.core.cache import caches
 from django.test import Client, override_settings
@@ -12,7 +13,12 @@ ROOT = Path(__file__).parents[1]
 GUIDE = ROOT / "docs/http-responses.md"
 
 
-def test_public_response_cache_example_is_safe_and_executable(tmp_path):
+def test_public_response_cache_example_is_safe_and_executable(tmp_path: Path) -> None:
+    """The documented public response cache example is safe and runs as written.
+
+    Args:
+        tmp_path: Temporary directory that holds the template of the example.
+    """
     page = GUIDE.read_text()
     section = page.split("## Cache public responses with Django", 1)[1].split(
         "\n## ", 1
@@ -33,11 +39,11 @@ def test_public_response_cache_example_is_safe_and_executable(tmp_path):
     hxml_constructor = urls.HyperviewTemplateResponse
     html_constructor = urls.HttpResponse
 
-    def counted_hxml(*args, **kwargs):
+    def counted_hxml(*args: Any, **kwargs: Any) -> Any:
         hxml_calls.append(1)
         return hxml_constructor(*args, **kwargs)
 
-    def counted_html(*args, **kwargs):
+    def counted_html(*args: Any, **kwargs: Any) -> Any:
         html_calls.append(1)
         return html_constructor(*args, **kwargs)
 

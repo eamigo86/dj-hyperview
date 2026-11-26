@@ -18,7 +18,12 @@ from dj_hyperview.realtime import RedisBroker
 
 
 @pytest.mark.parametrize("raw", [{}, {"REALTIME": None}])
-def test_realtime_defaults_disabled(raw):
+def test_realtime_defaults_disabled(raw: object) -> None:
+    """Realtime is disabled by default.
+
+    Args:
+        raw: Value of the REALTIME setting.
+    """
     with override_settings(HYPERVIEW=raw):
         assert get_settings().realtime is None
         assert not [e for e in check_hyperview_settings() if e.level >= ERROR]
@@ -33,7 +38,12 @@ def test_realtime_defaults_disabled(raw):
         "unix:///tmp/owned.sock?db=0",
     ],
 )
-def test_realtime_settings_share_valid_broker_configuration(url):
+def test_realtime_settings_share_valid_broker_configuration(url: str) -> None:
+    """Realtime settings share valid broker configuration.
+
+    Args:
+        url: Redis URL of the REALTIME setting.
+    """
     raw = MappingProxyType({"REDIS_URL": url, "NAMESPACE": "app-dev"})
     with override_settings(HYPERVIEW={"REALTIME": raw}):
         config = get_settings().realtime
@@ -61,7 +71,12 @@ def test_realtime_settings_share_valid_broker_configuration(url):
         {"redis_url": "redis://localhost/0", "namespace": "app"},
     ],
 )
-def test_realtime_invalid_shape_has_one_redacted_system_check(raw):
+def test_realtime_invalid_shape_has_one_redacted_system_check(raw: object) -> None:
+    """Realtime invalid shape has one redacted system check.
+
+    Args:
+        raw: Value of the REALTIME setting.
+    """
     with override_settings(HYPERVIEW={"REALTIME": raw}):
         errors = [e for e in check_hyperview_settings() if e.level >= ERROR]
         assert len(errors) == 1
@@ -99,7 +114,12 @@ def test_realtime_invalid_shape_has_one_redacted_system_check(raw):
         "redis://user:secret@host/not-a-db",
     ],
 )
-def test_realtime_url_security_matches_direct_broker(url):
+def test_realtime_url_security_matches_direct_broker(url: str) -> None:
+    """Realtime URL security matches direct broker.
+
+    Args:
+        url: Redis URL of the REALTIME setting.
+    """
     with pytest.raises(ValueError, match="Invalid Redis configuration"):
         RedisBroker(url, "app")
     with override_settings(
@@ -112,7 +132,12 @@ def test_realtime_url_security_matches_direct_broker(url):
 
 
 @pytest.mark.parametrize("namespace", ["", "x:y", "x.y", "*", "x" * 65, "é"])
-def test_realtime_namespace_security_matches_direct_broker(namespace):
+def test_realtime_namespace_security_matches_direct_broker(namespace: str) -> None:
+    """Realtime namespace security matches direct broker.
+
+    Args:
+        namespace: Namespace of the REALTIME setting.
+    """
     with pytest.raises(ValueError):
         RedisBroker("redis://localhost/0", namespace)
     with override_settings(
@@ -127,7 +152,8 @@ def test_realtime_namespace_security_matches_direct_broker(namespace):
             get_settings()
 
 
-def test_realtime_public_type_snapshot_and_override_restore():
+def test_realtime_public_type_snapshot_and_override_restore() -> None:
+    """Realtime public type snapshot and override restore."""
     from dj_hyperview.conf import RealtimeSettings
 
     raw = {"REDIS_URL": "rediss://user:secret@localhost/0", "NAMESPACE": "first"}
@@ -154,8 +180,14 @@ def test_realtime_public_type_snapshot_and_override_restore():
 
 @pytest.mark.parametrize("enabled", [False, True])
 def test_fresh_process_checks_never_import_optional_redis_or_start_network(
-    enabled, monkeypatch
-):
+    enabled: bool, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Fresh process checks never import optional Redis or start network.
+
+    Args:
+        enabled: Whether REALTIME is enabled in the settings that the process loads.
+        monkeypatch: Patches the code under test for this test.
+    """
     monkeypatch.delenv("PYTHONPATH", raising=False)
     source_root = Path(__file__).resolve().parents[1] / "src"
     assert (source_root / "dj_hyperview" / "__init__.py").is_file()

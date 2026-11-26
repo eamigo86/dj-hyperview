@@ -36,7 +36,13 @@ def test_normal_ci_pushes_exclude_tags() -> None:
 def test_release_tag_must_exactly_match_project_version(
     tmp_path: Path, version: str, tag: str
 ) -> None:
-    """Exact stable and prerelease project versions accept one tag."""
+    """Exact stable and prerelease project versions accept one tag.
+
+    Args:
+        tmp_path: Temporary directory that holds the project file.
+        version: Project version under test.
+        tag: Release tag that is checked.
+    """
     project_file = _project_file(tmp_path, version)
 
     assert _release_module().main([tag], project_file=project_file) == 0
@@ -60,7 +66,13 @@ def test_release_tag_rejects_invalid_or_noncanonical_versions(
     capsys: pytest.CaptureFixture[str],
     version: str,
 ) -> None:
-    """Invalid and normalized project versions fail before release."""
+    """Invalid and normalized project versions fail before release.
+
+    Args:
+        tmp_path: Temporary directory that holds the project file.
+        capsys: Captures the output of the gate.
+        version: Project version under test.
+    """
     project_file = _project_file(tmp_path, version)
 
     status = _release_module().main([f"v{version}"], project_file=project_file)
@@ -72,7 +84,12 @@ def test_release_tag_rejects_invalid_or_noncanonical_versions(
 def test_release_tag_mismatch_fails_without_metadata_details(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """A mismatched tag fails with one stable public diagnostic."""
+    """A mismatched tag fails with one stable public diagnostic.
+
+    Args:
+        tmp_path: Temporary directory that holds the project file.
+        capsys: Captures the output of the gate.
+    """
     project_file = _project_file(tmp_path, "1.2.3")
 
     status = _release_module().main(["v1.2.4"], project_file=project_file)
@@ -84,7 +101,12 @@ def test_release_tag_mismatch_fails_without_metadata_details(
 def test_release_tag_requires_exactly_one_argument(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    """Missing or extra tag values fail before metadata inspection."""
+    """Missing or extra tag values fail before metadata inspection.
+
+    Args:
+        tmp_path: Temporary directory that holds the project file.
+        capsys: Captures the output of the gate.
+    """
     missing = tmp_path / "private-project.toml"
 
     status = _release_module().main([], project_file=missing)
@@ -107,7 +129,13 @@ def test_release_tag_rejects_unusable_project_metadata(
     capsys: pytest.CaptureFixture[str],
     content: str,
 ) -> None:
-    """Missing, mistyped, and malformed versions fail with one message."""
+    """Missing, mistyped, and malformed versions fail with one message.
+
+    Args:
+        tmp_path: Temporary directory that holds the project file.
+        capsys: Captures the output of the gate.
+        content: Content of the project file.
+    """
     project_file = tmp_path / "private-project.toml"
     project_file.write_text(content)
 
@@ -120,7 +148,11 @@ def test_release_tag_rejects_unusable_project_metadata(
 def test_release_tag_module_entrypoint_uses_process_arguments(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The module entrypoint validates the tag supplied by the runner."""
+    """The module entrypoint validates the tag supplied by the runner.
+
+    Args:
+        monkeypatch: Replaces the process arguments for this test.
+    """
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     tag = f"v{project['project']['version']}"
     monkeypatch.setattr(sys, "argv", ["check_release_tag", tag])
@@ -136,7 +168,11 @@ def test_release_tag_module_entrypoint_uses_process_arguments(
 def test_release_tag_gate_finds_the_project_from_any_working_directory(
     tmp_path: Path,
 ) -> None:
-    """The tool reads its own repository's metadata, not the current directory's."""
+    """The tool reads its own repository's metadata, not the current directory's.
+
+    Args:
+        tmp_path: Temporary directory that holds the project file.
+    """
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())
     tag = f"v{project['project']['version']}"
     script = ROOT / "tools" / "check_release_tag.py"
@@ -219,7 +255,12 @@ def _allowed_maturities(version: Version) -> set[str]:
 def test_release_maturity_follows_the_version_stage(
     version: str, allowed: set[str]
 ) -> None:
-    """A development build is a prerelease too, and a 0.x final may stay Beta."""
+    """A development build is a prerelease too, and a 0.x final may stay Beta.
+
+    Args:
+        version: Project version under test.
+        allowed: Development Status values that the version allows.
+    """
     assert _allowed_maturities(Version(version)) == allowed
 
 

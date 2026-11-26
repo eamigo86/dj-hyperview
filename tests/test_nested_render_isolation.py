@@ -1,3 +1,6 @@
+"""Nested renders keep the resolver snapshots of their own engines apart."""
+
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 
@@ -10,12 +13,23 @@ from .stubs import TemplateSource
 
 
 class NestedRenderValue:
-    def __init__(self, render, *, after=None):
+    """A value that renders another template while its own string form is built.
+
+    Args:
+        render: Callable that renders the inner template.
+        after: Callable that runs after the inner render, or None.
+    """
+
+    def __init__(
+        self, render: Callable[[], str], *, after: Callable[[], object] | None = None
+    ) -> None:
+        """Store the render callable and the callable that runs after it."""
         self.render = render
         self.after = after
         self.rendered = None
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Render the inner template, run the follow-up and return the markup."""
         self.rendered = self.render()
         if self.after is not None:
             self.after()
@@ -23,11 +37,19 @@ class NestedRenderValue:
 
 
 class RecoveringRenderValue:
-    def __init__(self, render):
+    """A value that recovers from a validation error of its inner render.
+
+    Args:
+        render: Callable that renders the inner template.
+    """
+
+    def __init__(self, render: Callable[[], str]) -> None:
+        """Store the render callable."""
         self.render = render
         self.error_code = None
 
-    def __str__(self):
+    def __str__(self) -> str:
+        """Render the inner template, or return a marker after a validation error."""
         try:
             return self.render()
         except TemplateValidationError as error:
@@ -36,11 +58,27 @@ class RecoveringRenderValue:
 
 
 class MutableSource:
-    def __init__(self, templates, identity):
+    """A source whose templates the test can change between renders.
+
+    Args:
+        templates: Template source by template name.
+        identity: Identity the source reports for its templates.
+    """
+
+    def __init__(self, templates: Mapping[str, str], identity: str) -> None:
+        """Store a copy of the templates and the identity."""
         self.templates = dict(templates)
         self.identity = identity
 
-    def resolve(self, name):
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Resolve a template by name from the dictionary.
+
+        Args:
+            name: Name of the template to resolve.
+
+        Returns:
+            The resolved template, or None when the name is unknown.
+        """
         content = self.templates.get(name)
         if content is None:
             return None
@@ -54,14 +92,19 @@ class MutableSource:
 
 
 class EqualResolver(TemplateResolver):
-    def __eq__(self, other):
+    """A resolver that equals every other instance and hashes to the same value."""
+
+    def __eq__(self, other: object) -> bool:
+        """Equal every other instance of this class."""
         return isinstance(other, EqualResolver)
 
-    def __hash__(self):
+    def __hash__(self) -> int:
+        """Hash every instance to the same value."""
         return 1
 
 
-def test_nested_engines_isolate_same_template_name_by_resolver():
+def test_nested_engines_isolate_same_template_name_by_resolver() -> None:
+    """Nested engines isolate same template name by resolver."""
     outer = HyperviewEngine(
         TemplateResolver(
             [
@@ -101,7 +144,8 @@ def test_nested_engines_isolate_same_template_name_by_resolver():
     )
 
 
-def test_nested_engines_with_the_same_resolver_reuse_its_snapshot():
+def test_nested_engines_with_the_same_resolver_reuse_its_snapshot() -> None:
+    """Nested engines with the same resolver reuse its snapshot."""
     source = MutableSource(
         {
             "screen.xml": (
@@ -137,7 +181,8 @@ def test_nested_engines_with_the_same_resolver_reuse_its_snapshot():
     )
 
 
-def test_inner_scope_preserves_outer_resolutions_made_while_nested():
+def test_inner_scope_preserves_outer_resolutions_made_while_nested() -> None:
+    """Inner scope preserves outer resolutions made while nested."""
     outer_source = MutableSource(
         {
             "screen.xml": (
@@ -193,7 +238,8 @@ def test_inner_scope_preserves_outer_resolutions_made_while_nested():
     )
 
 
-def test_inner_exception_cleans_only_its_scope_and_next_render_sees_changes():
+def test_inner_exception_cleans_only_its_scope_and_next_render_sees_changes() -> None:
+    """Inner exception cleans only its scope and next render sees changes."""
     outer_source = MutableSource(
         {
             "screen.xml": (
@@ -214,7 +260,7 @@ def test_inner_exception_cleans_only_its_scope_and_next_render_sees_changes():
     outer = HyperviewEngine(TemplateResolver([outer_source]))
     inner = HyperviewEngine(TemplateResolver([inner_source]))
 
-    def render_invalid_inner():
+    def render_invalid_inner() -> str:
         outer_source.templates["shared.xml"] = (
             '<text xmlns="https://hyperview.org/hyperview" id="outer-new" />'
         )
@@ -244,7 +290,8 @@ def test_inner_exception_cleans_only_its_scope_and_next_render_sees_changes():
     )
 
 
-def test_equal_resolver_objects_still_have_distinct_snapshot_identity():
+def test_equal_resolver_objects_still_have_distinct_snapshot_identity() -> None:
+    """Equal resolver objects still have distinct snapshot identity."""
     outer = HyperviewEngine(
         EqualResolver(
             [
@@ -282,10 +329,11 @@ def test_equal_resolver_objects_still_have_distinct_snapshot_identity():
     )
 
 
-def test_concurrent_reentrant_renders_do_not_cross_resolvers():
+def test_concurrent_reentrant_renders_do_not_cross_resolvers() -> None:
+    """Concurrent reentrant renders do not cross resolvers."""
     barrier = Barrier(2)
 
-    def render_pair(label):
+    def render_pair(label: str) -> str:
         outer = HyperviewEngine(
             TemplateResolver(
                 [
@@ -311,7 +359,7 @@ def test_concurrent_reentrant_renders_do_not_cross_resolvers():
             )
         )
 
-        def render_inner():
+        def render_inner() -> str:
             barrier.wait(timeout=2)
             return inner.render("screen.xml")
 

@@ -8,6 +8,9 @@ the current contract.
 """
 
 import gzip
+from collections.abc import Iterable, Iterator
+from pathlib import Path
+from typing import Any
 
 import pytest
 from django.middleware.gzip import GZipMiddleware
@@ -30,7 +33,16 @@ OTHER_DOCUMENT = (
 COMMENT = "<!-- appended -->"
 
 
-def hyperview(extra_schema, **options):
+def hyperview(extra_schema: Path, **options: Any) -> dict[str, Any]:
+    """Build a HYPERVIEW setting with the extra schema and a stub source.
+
+    Args:
+        extra_schema: Path of the extra schema that the settings load.
+        **options: Further HYPERVIEW settings.
+
+    Returns:
+        A HYPERVIEW setting with the extra schema and a stub source.
+    """
     sources = [
         {"BACKEND": "tests.stubs.TemplateSource", "OPTIONS": {"content": DOCUMENT}}
     ]
@@ -38,8 +50,18 @@ def hyperview(extra_schema, **options):
 
 
 @pytest.fixture
-def snapshots(extra_schema, monkeypatch):
-    """Count the registry-state guards that run after the settings are ready."""
+def snapshots(
+    extra_schema: Path, monkeypatch: pytest.MonkeyPatch
+) -> Iterator[list[tuple[Path, ...]]]:
+    """Count the registry-state guards that run after the settings are ready.
+
+    Args:
+        extra_schema: Path of the extra schema that the settings load.
+        monkeypatch: Patches the code under test for this test.
+
+    Yields:
+        The extra schemas of each registry-state guard that ran.
+    """
     with override_settings(TEMPLATES=TEMPLATES, HYPERVIEW=hyperview(extra_schema)):
         # The settings snapshot guards the schemas once, and the first response
         # builds the engine and compiles the registry: neither is under test.
@@ -48,7 +70,7 @@ def snapshots(extra_schema, monkeypatch):
         calls = []
         original = schema._registry_state
 
-        def counted(extra_schemas):
+        def counted(extra_schemas: Iterable[Path]) -> Any:
             calls.append(tuple(extra_schemas))
             return original(extra_schemas)
 
@@ -61,8 +83,15 @@ def snapshots(extra_schema, monkeypatch):
     "response_type", [HyperviewTemplateResponse, HyperviewFragmentTemplateResponse]
 )
 def test_rendered_template_response_checks_the_snapshot_once(
-    snapshots, using, response_type
-):
+    snapshots: list[tuple[Path, ...]], using: str | None, response_type: type
+) -> None:
+    """Rendered template response checks the snapshot once.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        using: Template engine alias, or None for the default.
+        response_type: Response class under test.
+    """
     response = response_type(RequestFactory().get("/"), "screen.xml", using=using)
     response.render()
     assert response.content == DOCUMENT.encode()
@@ -71,7 +100,14 @@ def test_rendered_template_response_checks_the_snapshot_once(
     assert len(snapshots) == 1
 
 
-def test_constructor_content_checks_the_snapshot_once(snapshots):
+def test_constructor_content_checks_the_snapshot_once(
+    snapshots: list[tuple[Path, ...]],
+) -> None:
+    """Constructor content checks the snapshot once.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+    """
     assert HyperviewResponse(DOCUMENT).content == DOCUMENT.encode()
     assert len(snapshots) == 1
 
@@ -80,7 +116,16 @@ def test_constructor_content_checks_the_snapshot_once(snapshots):
     "response_type", [HyperviewResponse, HyperviewFragmentResponse]
 )
 @pytest.mark.parametrize("action", ["assign", "write", "writelines"])
-def test_body_mutation_checks_the_snapshot_once(snapshots, response_type, action):
+def test_body_mutation_checks_the_snapshot_once(
+    snapshots: list[tuple[Path, ...]], response_type: type, action: str
+) -> None:
+    """Body mutation checks the snapshot once.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        response_type: Response class under test.
+        action: How the body is changed: assign, write or writelines.
+    """
     response = response_type(OTHER_DOCUMENT)
     snapshots.clear()
     if action == "assign":
@@ -94,10 +139,18 @@ def test_body_mutation_checks_the_snapshot_once(snapshots, response_type, action
     assert len(snapshots) == 1
 
 
-def test_overridden_rendered_content_output_is_what_the_response_holds(snapshots):
+def test_overridden_rendered_content_output_is_what_the_response_holds(
+    snapshots: list[tuple[Path, ...]],
+) -> None:
+    """Overridden rendered content output is what the response holds.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+    """
+
     class Overriding(HyperviewTemplateResponse):
         @property
-        def rendered_content(self):
+        def rendered_content(self) -> str:
             return OTHER_DOCUMENT
 
     response = Overriding(RequestFactory().get("/"), "screen.xml", using="django")
@@ -112,10 +165,20 @@ def test_overridden_rendered_content_output_is_what_the_response_holds(snapshots
         (f'<view xmlns="{HV}"><unknown/></view>', "schema"),
     ],
 )
-def test_overridden_rendered_content_output_is_validated(snapshots, output, code):
+def test_overridden_rendered_content_output_is_validated(
+    snapshots: list[tuple[Path, ...]], output: str, code: str
+) -> None:
+    """Overridden rendered content output is validated.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        output: Document that the overridden rendered content returns.
+        code: Validation error code that the document produces.
+    """
+
     class Overriding(HyperviewTemplateResponse):
         @property
-        def rendered_content(self):
+        def rendered_content(self) -> str:
             return output
 
     response = Overriding(RequestFactory().get("/"), "screen.xml", using="django")
@@ -125,7 +188,14 @@ def test_overridden_rendered_content_output_is_validated(snapshots, output, code
     assert not response.is_rendered
 
 
-def test_gzip_handoff_checks_the_snapshot_once_more(snapshots):
+def test_gzip_handoff_checks_the_snapshot_once_more(
+    snapshots: list[tuple[Path, ...]],
+) -> None:
+    """Gzip handoff checks the snapshot once more.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+    """
     request = RequestFactory().get("/", HTTP_ACCEPT_ENCODING="gzip")
     response = HyperviewTemplateResponse(request, "screen.xml", using="django")
     response.render()
@@ -138,7 +208,15 @@ def test_gzip_handoff_checks_the_snapshot_once_more(snapshots):
     assert len(snapshots) == 2
 
 
-def test_gzip_handoff_rechecks_a_changed_schema_dependency(snapshots, extra_schema):
+def test_gzip_handoff_rechecks_a_changed_schema_dependency(
+    snapshots: list[tuple[Path, ...]], extra_schema: Path
+) -> None:
+    """Gzip handoff rechecks a changed schema dependency.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        extra_schema: Path of the extra schema that the settings load.
+    """
     request = RequestFactory().get("/", HTTP_ACCEPT_ENCODING="gzip")
     response = HyperviewResponse(DOCUMENT, request=request)
     extra_schema.write_text(STRICT_XSD, encoding="utf-8")
@@ -149,7 +227,15 @@ def test_gzip_handoff_rechecks_a_changed_schema_dependency(snapshots, extra_sche
     assert "Content-Encoding" not in response
 
 
-def test_assigned_content_rechecks_limits_changed_before_commit(snapshots, monkeypatch):
+def test_assigned_content_rechecks_limits_changed_before_commit(
+    snapshots: list[tuple[Path, ...]], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Assigned content rechecks limits changed before commit.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        monkeypatch: Patches the code under test for this test.
+    """
     from dj_hyperview import http
 
     response = HyperviewResponse(DOCUMENT)
@@ -157,7 +243,7 @@ def test_assigned_content_rechecks_limits_changed_before_commit(snapshots, monke
     changed = override_settings(HYPERVIEW={"VALIDATION": {"MAX_BYTES": 10}})
     enabled = []
 
-    def validated_then_changed(*args, **kwargs):
+    def validated_then_changed(*args: Any, **kwargs: Any) -> Any:
         result = original(*args, **kwargs)
         if not enabled:
             enabled.append(changed.enable())
@@ -174,13 +260,28 @@ def test_assigned_content_rechecks_limits_changed_before_commit(snapshots, monke
     assert response.content == DOCUMENT.encode()
 
 
-def validated(document, **kwargs):
-    """Validate as a response does: read the settings snapshot, then validate."""
+def validated(document: str, **kwargs: Any) -> tuple[Any, Any]:
+    """Validate as a response does: read the settings snapshot, then validate.
+
+    Args:
+        document: Document to validate.
+        **kwargs: Keyword arguments passed through.
+
+    Returns:
+        The validation result and the settings snapshot that was read first.
+    """
     snapshot = get_settings()
     return validation._validate_hxml_result(document, **kwargs), snapshot
 
 
-def test_commit_rechecks_a_result_validated_for_another_root_mode(snapshots):
+def test_commit_rechecks_a_result_validated_for_another_root_mode(
+    snapshots: list[tuple[Path, ...]],
+) -> None:
+    """Commit rechecks a result validated for another root mode.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+    """
     document = f'<doc xmlns="{HV}"><screen><body/></screen></doc>'
     result, under = validated(document)
     response = HyperviewFragmentResponse(OTHER_DOCUMENT)
@@ -191,8 +292,14 @@ def test_commit_rechecks_a_result_validated_for_another_root_mode(snapshots):
 
 
 def test_check_under_the_same_settings_does_not_guard_the_dependencies_again(
-    snapshots, extra_schema
-):
+    snapshots: list[tuple[Path, ...]], extra_schema: Path
+) -> None:
+    """Check under the same settings does not guard the dependencies again.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        extra_schema: Path of the extra schema that the settings load.
+    """
     result, under = validated(DOCUMENT)
     snapshots.clear()
     assert validation._is_current_hxml_result(result, validated_under=under)
@@ -205,8 +312,14 @@ def test_check_under_the_same_settings_does_not_guard_the_dependencies_again(
 
 
 def test_check_falls_back_to_the_full_check_after_a_settings_change(
-    snapshots, extra_schema
-):
+    snapshots: list[tuple[Path, ...]], extra_schema: Path
+) -> None:
+    """Check falls back to the full check after a settings change.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        extra_schema: Path of the extra schema that the settings load.
+    """
     result, under = validated(DOCUMENT)
     changed = hyperview(extra_schema, VALIDATION={"MAX_NODES": 50})
     with override_settings(HYPERVIEW=changed):
@@ -223,15 +336,28 @@ def test_check_falls_back_to_the_full_check_after_a_settings_change(
 
 
 def test_check_guards_the_dependencies_when_the_settings_changed(
-    snapshots, extra_schema
-):
+    snapshots: list[tuple[Path, ...]], extra_schema: Path
+) -> None:
+    """Check guards the dependencies when the settings changed.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        extra_schema: Path of the extra schema that the settings load.
+    """
     result, under = validated(DOCUMENT)
     extra_schema.write_text(STRICT_XSD, encoding="utf-8")
     with override_settings(HYPERVIEW=hyperview(extra_schema)):
         assert not validation._is_current_hxml_result(result, validated_under=under)
 
 
-def test_check_compares_the_limits_the_result_was_validated_with(snapshots):
+def test_check_compares_the_limits_the_result_was_validated_with(
+    snapshots: list[tuple[Path, ...]],
+) -> None:
+    """Check compares the limits the result was validated with.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+    """
     narrow = ValidationSettings(max_nodes=50)
     result, under = validated(DOCUMENT, config=narrow)
     assert not validation._is_current_hxml_result(result, validated_under=under)
@@ -244,7 +370,14 @@ def test_check_compares_the_limits_the_result_was_validated_with(snapshots):
     assert snapshots == []
 
 
-def test_check_compares_the_root_mode_and_the_explicit_config(snapshots):
+def test_check_compares_the_root_mode_and_the_explicit_config(
+    snapshots: list[tuple[Path, ...]],
+) -> None:
+    """Check compares the root mode and the explicit config.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+    """
     result, under = validated(DOCUMENT)
     assert not validation._is_current_hxml_result(
         result, fragment=True, validated_under=under
@@ -255,7 +388,14 @@ def test_check_compares_the_root_mode_and_the_explicit_config(snapshots):
     )
 
 
-def test_check_without_the_settings_it_was_validated_under_is_the_full_check(snapshots):
+def test_check_without_the_settings_it_was_validated_under_is_the_full_check(
+    snapshots: list[tuple[Path, ...]],
+) -> None:
+    """Check without the settings it was validated under is the full check.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+    """
     result, _ = validated(DOCUMENT)
     snapshots.clear()
     assert validation._is_current_hxml_result(result)
@@ -263,9 +403,17 @@ def test_check_without_the_settings_it_was_validated_under_is_the_full_check(sna
 
 
 def test_settings_that_change_while_content_validates_are_checked_at_commit(
-    snapshots, extra_schema, monkeypatch
-):
-    """A change after the settings were read still needs the dependency guard."""
+    snapshots: list[tuple[Path, ...]],
+    extra_schema: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A change after the settings were read still needs the dependency guard.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        extra_schema: Path of the extra schema that the settings load.
+        monkeypatch: Patches the code under test for this test.
+    """
     from dj_hyperview import http
 
     response = HyperviewResponse(DOCUMENT)
@@ -275,7 +423,7 @@ def test_settings_that_change_while_content_validates_are_checked_at_commit(
     changed = override_settings(HYPERVIEW=hyperview(strict))
     enabled = []
 
-    def validated_then_changed(*args, **kwargs):
+    def validated_then_changed(*args: Any, **kwargs: Any) -> Any:
         result = original(*args, **kwargs)
         if not enabled:
             enabled.append(changed.enable())
@@ -293,15 +441,24 @@ def test_settings_that_change_while_content_validates_are_checked_at_commit(
 
 
 def test_settings_that_change_while_a_template_renders_are_checked_at_commit(
-    snapshots, extra_schema, monkeypatch
-):
+    snapshots: list[tuple[Path, ...]],
+    extra_schema: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Settings that change while a template renders are checked at commit.
+
+    Args:
+        snapshots: Registry-state guards that ran after the settings were ready.
+        extra_schema: Path of the extra schema that the settings load.
+        monkeypatch: Patches the code under test for this test.
+    """
     original = HyperviewTemplateResponse._rendered_result
     strict = extra_schema.with_name("strict.xsd")
     strict.write_text(STRICT_XSD, encoding="utf-8")
     changed = override_settings(HYPERVIEW=hyperview(strict))
     enabled = []
 
-    def rendered_then_changed(self):
+    def rendered_then_changed(self: Any) -> Any:
         result = original(self)
         if not enabled:
             enabled.append(changed.enable())

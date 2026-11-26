@@ -3,11 +3,19 @@
 import importlib
 import threading
 import time
+from collections.abc import Callable
+from types import ModuleType
+from typing import Any, Never
 
 import pytest
 
 
-def publisher():
+def publisher() -> ModuleType:
+    """Import the publisher module on demand.
+
+    Returns:
+        The publisher module.
+    """
     return importlib.import_module("dj_hyperview.realtime._publisher")
 
 
@@ -15,29 +23,56 @@ class FakeClock:
     """A monotonic clock that stands still until a test moves it."""
 
     def __init__(self) -> None:
+        """Start the clock at a fixed time."""
         self.now = 1_000.0
 
     def monotonic(self) -> float:
+        """Return the current time of the fake clock.
+
+        Returns:
+            The seconds on the fake clock.
+        """
         return self.now
 
 
 @pytest.fixture
-def clock(monkeypatch):
+def clock(monkeypatch: pytest.MonkeyPatch) -> FakeClock:
+    """Replace the clock of the publisher with a fake one that tests move by hand.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+
+    Returns:
+        A fake clock that the publisher reads instead of the real one.
+    """
     fake = FakeClock()
     monkeypatch.setattr(publisher(), "time", fake)
     return fake
 
 
 def test_one_worker_bounds_actual_caller_wait_and_does_not_retry(
-    monkeypatch, caplog, clock
-):
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, clock: FakeClock
+) -> None:
+    """One worker bounds actual caller wait and does not retry.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records of the publisher.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     entered = threading.Event()
     release = threading.Event()
     calls = []
     deadlines = []
 
-    def send(target, config, channels, payload, deadline):
+    def send(
+        target: object,
+        config: object,
+        channels: tuple[str, ...],
+        payload: bytes,
+        deadline: float,
+    ) -> None:
         calls.append(threading.get_ident())
         deadlines.append(deadline)
         entered.set()
@@ -63,14 +98,20 @@ def test_one_worker_bounds_actual_caller_wait_and_does_not_retry(
 
 
 def test_queue32_rejects_overflow_and_expired_queued_job_never_sends(
-    monkeypatch, caplog
-):
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A queue of 32 rejects overflow, and an expired queued job never sends.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records of the publisher.
+    """
     module = publisher()
     entered = threading.Event()
     release = threading.Event()
     calls = []
 
-    def send(*args):
+    def send(*args: object) -> None:
         calls.append(1)
         entered.set()
         release.wait(2)
@@ -99,11 +140,19 @@ def test_queue32_rejects_overflow_and_expired_queued_job_never_sends(
         dispatcher.close()
 
 
-def test_worker_failure_is_contained_and_next_hint_progresses(monkeypatch, caplog):
+def test_worker_failure_is_contained_and_next_hint_progresses(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Worker failure is contained and next hint progresses.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records of the publisher.
+    """
     module = publisher()
     calls = []
 
-    def send(*args):
+    def send(*args: object) -> None:
         calls.append(1)
         if len(calls) == 1:
             raise RuntimeError("redis://secret/private-topic")
@@ -120,7 +169,14 @@ def test_worker_failure_is_contained_and_next_hint_progresses(monkeypatch, caplo
         dispatcher.close()
 
 
-def test_dispatcher_singleton_and_child_reset_do_not_reuse_parent_worker(monkeypatch):
+def test_dispatcher_singleton_and_child_reset_do_not_reuse_parent_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Dispatcher singleton and child reset do not reuse parent worker.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     module._after_fork()
     first = module._get_dispatcher()
@@ -137,43 +193,63 @@ def test_dispatcher_singleton_and_child_reset_do_not_reuse_parent_worker(monkeyp
         module._after_fork()
 
 
-def fake_clients(monkeypatch, module, fail=lambda config: False):
-    """Replace redis-py with recording clients and return the constructed ones."""
+def fake_clients(
+    monkeypatch: pytest.MonkeyPatch,
+    module: ModuleType,
+    fail: Callable[[object], bool] = lambda config: False,
+) -> list[Any]:
+    """Replace redis-py with recording clients and return the constructed ones.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        module: Publisher module under test.
+        fail: Tells whether sending through a configuration fails.
+
+    Returns:
+        The recording clients, in the order they were built.
+    """
     made = []
 
     class Client:
-        def __init__(self, config):
+        def __init__(self, config: object) -> None:
             self.config = config
             self.calls = []
             self.closed = False
             made.append(self)
 
-        def pipeline(self, *, transaction):
+        def pipeline(self, *, transaction: bool) -> "Client":
             assert transaction is False
             return self
 
-        def __enter__(self):
+        def __enter__(self) -> "Client":
             return self
 
-        def __exit__(self, *args):
+        def __exit__(self, *args: object) -> None:
             pass
 
-        def publish(self, channel, payload):
+        def publish(self, channel: str, payload: bytes) -> None:
             self.calls.append("queued")
 
-        def execute(self):
+        def execute(self) -> None:
             self.calls.append("sent")
             if fail(self.config):
                 raise ConnectionError("redis://secret/private-topic")
 
-        def close(self):
+        def close(self) -> None:
             self.closed = True
 
     monkeypatch.setattr(module, "_sync_client", Client)
     return made
 
 
-def test_pipeline_checks_expiry_and_discards_client_without_sending(monkeypatch):
+def test_pipeline_checks_expiry_and_discards_client_without_sending(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pipeline checks expiry and discards client without sending.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     import pytest
 
     module = publisher()
@@ -185,7 +261,14 @@ def test_pipeline_checks_expiry_and_discards_client_without_sending(monkeypatch)
     assert made[0].closed and target.client is None
 
 
-def test_worker_reuses_one_pipelined_client_and_closes_it_on_stop(monkeypatch):
+def test_worker_reuses_one_pipelined_client_and_closes_it_on_stop(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Worker reuses one pipelined client and closes it on stop.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module)
     config = module._Config("redis://127.0.0.1/0", "ns")
@@ -201,7 +284,15 @@ def test_worker_reuses_one_pipelined_client_and_closes_it_on_stop(monkeypatch):
     assert made[0].closed
 
 
-def test_idle_connection_is_replaced_before_use(monkeypatch, clock):
+def test_idle_connection_is_replaced_before_use(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """Idle connection is replaced before use.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module)
     config = module._Config("redis://127.0.0.1/0", "ns")
@@ -215,7 +306,14 @@ def test_idle_connection_is_replaced_before_use(monkeypatch, clock):
         dispatcher.close()
 
 
-def test_failure_discards_the_client_and_the_next_hint_reconnects(monkeypatch):
+def test_failure_discards_the_client_and_the_next_hint_reconnects(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Failure discards the client and the next hint reconnects.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     outcomes = iter([True, False])
     made = fake_clients(monkeypatch, module, lambda config: next(outcomes))
@@ -230,7 +328,14 @@ def test_failure_discards_the_client_and_the_next_hint_reconnects(monkeypatch):
         dispatcher.close()
 
 
-def test_forked_child_neither_inherits_nor_closes_the_parent_client(monkeypatch):
+def test_forked_child_neither_inherits_nor_closes_the_parent_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Forked child neither inherits nor closes the parent client.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module)
     config = module._Config("redis://127.0.0.1/0", "ns")
@@ -250,7 +355,15 @@ def test_forked_child_neither_inherits_nor_closes_the_parent_client(monkeypatch)
         module._after_fork()
 
 
-def test_breaker_opens_after_consecutive_failures_and_fails_fast(monkeypatch, caplog):
+def test_breaker_opens_after_consecutive_failures_and_fails_fast(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Breaker opens after consecutive failures and fails fast.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records of the publisher.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module, lambda config: True)
     config = module._Config("redis://127.0.0.1/0", "ns")
@@ -269,7 +382,15 @@ def test_breaker_opens_after_consecutive_failures_and_fails_fast(monkeypatch, ca
         dispatcher.close()
 
 
-def test_breaker_half_opens_after_cooldown_and_closes_on_success(monkeypatch, clock):
+def test_breaker_half_opens_after_cooldown_and_closes_on_success(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """Breaker half-opens after the cooldown and closes on success.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     down = [True]
     made = fake_clients(monkeypatch, module, lambda config: down[0])
@@ -293,7 +414,12 @@ def test_breaker_half_opens_after_cooldown_and_closes_on_success(monkeypatch, cl
         dispatcher.close()
 
 
-def test_breaker_state_is_per_configuration(monkeypatch):
+def test_breaker_state_is_per_configuration(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Breaker state is per configuration.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     made = fake_clients(
         monkeypatch, module, lambda config: config.url.endswith("/down")
@@ -311,7 +437,14 @@ def test_breaker_state_is_per_configuration(monkeypatch):
         dispatcher.close()
 
 
-def test_jobs_queued_before_the_breaker_opened_do_not_connect(monkeypatch):
+def test_jobs_queued_before_the_breaker_opened_do_not_connect(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Jobs queued before the breaker opened do not connect.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module)
     config = module._Config("redis://127.0.0.1/0", "ns")
@@ -326,7 +459,14 @@ def test_jobs_queued_before_the_breaker_opened_do_not_connect(monkeypatch):
         dispatcher.close()
 
 
-def test_stopped_dispatcher_and_changed_pid_do_not_reuse_worker(monkeypatch):
+def test_stopped_dispatcher_and_changed_pid_do_not_reuse_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Stopped dispatcher and changed PID do not reuse worker.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     first = module._get_dispatcher()
     first.close()
@@ -345,8 +485,14 @@ def test_stopped_dispatcher_and_changed_pid_do_not_reuse_worker(monkeypatch):
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
-def test_a_base_exception_in_the_client_does_not_strand_later_hints(monkeypatch):
-    """A gevent Timeout is a BaseException: it ends the worker, so a new one starts."""
+def test_a_base_exception_in_the_client_does_not_strand_later_hints(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A gevent Timeout is a BaseException: it ends the worker, so a new one starts.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
 
     class Stop(BaseException):
@@ -354,7 +500,7 @@ def test_a_base_exception_in_the_client_does_not_strand_later_hints(monkeypatch)
 
     calls = []
 
-    def send(*args):
+    def send(*args: object) -> None:
         calls.append(1)
         if len(calls) == 1:
             raise Stop
@@ -379,7 +525,14 @@ def test_a_base_exception_in_the_client_does_not_strand_later_hints(monkeypatch)
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
-def test_a_worker_ended_by_a_base_exception_still_closes_every_client(monkeypatch):
+def test_a_worker_ended_by_a_base_exception_still_closes_every_client(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A worker ended by a base exception still closes every client.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
 
     class Stop(BaseException):
@@ -401,8 +554,13 @@ def test_a_worker_ended_by_a_base_exception_still_closes_every_client(monkeypatc
 
 
 def test_a_client_that_raises_a_base_exception_when_closed_does_not_leak_the_rest(
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A client that raises a base exception when closed does not leak the rest.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
 
     class Stop(BaseException):
@@ -415,7 +573,7 @@ def test_a_client_that_raises_a_base_exception_when_closed_does_not_leak_the_res
     second = module._Config("redis://127.0.0.1/1", "ns")
     dispatcher = module._Dispatcher()
 
-    def close(self):
+    def close(self: Any) -> None:
         self.closed = True
         if self is made[0]:
             raise Stop
@@ -435,7 +593,14 @@ def test_a_client_that_raises_a_base_exception_when_closed_does_not_leak_the_res
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
-def test_callers_queued_behind_a_worker_that_dies_return_at_once(monkeypatch):
+def test_callers_queued_behind_a_worker_that_dies_return_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Callers queued behind a worker that dies return at once.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
 
     class Stop(BaseException):
@@ -447,12 +612,12 @@ def test_callers_queued_behind_a_worker_that_dies_return_at_once(monkeypatch):
     release = threading.Event()
     outcomes = []
 
-    def die_when_released(self):
+    def die_when_released(self: Any) -> Never:
         entered.set()
         release.wait(5)
         raise Stop
 
-    def caller():
+    def caller() -> None:
         # A deadline far beyond the test: only the dying worker can end the wait.
         outcomes.append(
             dispatcher.submit(config, ("a",), b"x", deadline=time.monotonic() + 60)
@@ -481,9 +646,13 @@ def test_callers_queued_behind_a_worker_that_dies_return_at_once(monkeypatch):
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
 def test_callers_are_released_even_when_closing_a_client_ends_the_cleanup(
-    monkeypatch,
-):
-    """A BaseException from close() must not skip releasing the queued callers."""
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A BaseException from close() must not skip releasing the queued callers.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
 
     class Stop(BaseException):
@@ -496,17 +665,17 @@ def test_callers_are_released_even_when_closing_a_client_ends_the_cleanup(
     release = threading.Event()
     outcomes = []
 
-    def close(self):
+    def close(self: Any) -> None:
         self.closed = True
         if self is made[0]:
             raise Stop
 
-    def die_when_released(self):
+    def die_when_released(self: Any) -> Never:
         entered.set()
         release.wait(5)
         raise Stop
 
-    def caller(config):
+    def caller(config: object) -> None:
         # A deadline far beyond the test: only the dying worker can end the wait.
         outcomes.append(
             dispatcher.submit(config, ("a",), b"x", deadline=time.monotonic() + 60)
@@ -539,8 +708,14 @@ def test_callers_are_released_even_when_closing_a_client_ends_the_cleanup(
         dispatcher.close()
 
 
-def test_a_dispatcher_that_stops_while_a_job_is_queued_returns_at_once(monkeypatch):
-    """The worker may stop between the check on entry and the put: nobody serves it."""
+def test_a_dispatcher_that_stops_while_a_job_is_queued_returns_at_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The worker may stop between the check on entry and the put: nobody serves it.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     dispatcher = module._Dispatcher()
     try:
@@ -557,20 +732,38 @@ def test_a_dispatcher_that_stops_while_a_job_is_queued_returns_at_once(monkeypat
         dispatcher.close()
 
 
-def raise_stop(error):
-    def execute(self):
+def raise_stop(error: BaseException) -> Callable[[Any], Never]:
+    """Build a method that raises the given exception.
+
+    Args:
+        error: Exception that the returned method raises.
+
+    Returns:
+        A method that raises the given exception.
+    """
+
+    def execute(self: Any) -> Never:
         raise error
 
     return execute
 
 
-def test_circuit_open_is_logged_once_per_cooldown_window(monkeypatch, caplog, clock):
+def test_circuit_open_is_logged_once_per_cooldown_window(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture, clock: FakeClock
+) -> None:
+    """Circuit open is logged once per cooldown window.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records of the publisher.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module, lambda config: True)
     config = module._Config("redis://:s3cr3t-pw@secret-host:6379/0", "ns")
     dispatcher = module._Dispatcher()
 
-    def opened():
+    def opened() -> int:
         return caplog.text.count("realtime_publish_circuit_open")
 
     try:
@@ -590,7 +783,15 @@ def test_circuit_open_is_logged_once_per_cooldown_window(monkeypatch, caplog, cl
         dispatcher.close()
 
 
-def test_failures_must_be_consecutive_to_open_the_breaker(monkeypatch, caplog):
+def test_failures_must_be_consecutive_to_open_the_breaker(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Failures must be consecutive to open the breaker.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records of the publisher.
+    """
     module = publisher()
     outcomes = iter([True, True, False, True, True, False])
     made = fake_clients(monkeypatch, module, lambda config: next(outcomes))
@@ -605,11 +806,19 @@ def test_failures_must_be_consecutive_to_open_the_breaker(monkeypatch, caplog):
         dispatcher.close()
 
 
-def test_a_client_that_cannot_be_built_counts_toward_the_breaker(monkeypatch, caplog):
+def test_a_client_that_cannot_be_built_counts_toward_the_breaker(
+    monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    """A client that cannot be built counts toward the breaker.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        caplog: Captures the log records of the publisher.
+    """
     module = publisher()
     built = []
 
-    def broken(config):
+    def broken(config: object) -> Never:
         built.append(config)
         raise ValueError("redis://:s3cr3t-pw@secret-host:6379/0")
 
@@ -628,8 +837,14 @@ def test_a_client_that_cannot_be_built_counts_toward_the_breaker(monkeypatch, ca
         dispatcher.close()
 
 
-def test_a_connection_is_replaced_after_its_maximum_age_despite_traffic(monkeypatch):
-    """A busy connection is never idle, yet DNS must be resolved again some day."""
+def test_a_connection_is_replaced_after_its_maximum_age_despite_traffic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A busy connection is never idle, yet DNS must be resolved again some day.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module)
     target = module._Target()
@@ -647,11 +862,29 @@ def test_a_connection_is_replaced_after_its_maximum_age_despite_traffic(monkeypa
     assert len(made) == 2
 
 
-def configs(module, count):
+def configs(module: ModuleType, count: int) -> list[Any]:
+    """Build configurations that differ by namespace.
+
+    Args:
+        module: Publisher module under test.
+        count: Number of configurations to build.
+
+    Returns:
+        Configurations that differ by namespace.
+    """
     return [module._Config("redis://127.0.0.1/0", f"ns{i}") for i in range(count)]
 
 
-def wait_until(condition, timeout=2.0):
+def wait_until(condition: Callable[[], bool], timeout: float | None = 2.0) -> bool:
+    """Wait until a condition holds or the timeout passes.
+
+    Args:
+        condition: Condition the helper waits for.
+        timeout: Seconds to wait before giving up.
+
+    Returns:
+        Whether the condition holds when the wait ends.
+    """
     end = time.monotonic() + timeout
     while not condition() and time.monotonic() < end:
         time.sleep(0.005)
@@ -660,8 +893,15 @@ def wait_until(condition, timeout=2.0):
 
 @pytest.mark.parametrize("age", ["_IDLE", "_MAX_AGE"])
 def test_a_job_closes_the_clients_of_configurations_never_used_again(
-    monkeypatch, clock, age
-):
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock, age: str
+) -> None:
+    """A job closes the clients of configurations never used again.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+        age: Name of the module limit that is exceeded.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module)
     first, *others = configs(module, 6)
@@ -683,8 +923,14 @@ def test_a_job_closes_the_clients_of_configurations_never_used_again(
 
 
 def test_a_busy_configuration_keeps_its_client_while_an_idle_one_goes(
-    monkeypatch, clock
-):
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """A busy configuration keeps its client while an idle one goes.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module)
     busy, idle = configs(module, 2)
@@ -703,14 +949,22 @@ def test_a_busy_configuration_keeps_its_client_while_an_idle_one_goes(
         dispatcher.close()
 
 
-def test_an_idle_worker_closes_expired_clients_without_any_job(monkeypatch, clock):
+def test_an_idle_worker_closes_expired_clients_without_any_job(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """An idle worker closes expired clients without any job.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module)
     # The worker wakes up this often, in real time, while nothing is submitted.
     monkeypatch.setattr(module, "_IDLE", 0.01)
     expire = module._expire
 
-    def slow_expire(target, now):
+    def slow_expire(target: object, now: float) -> None:
         expire(target, now)
         # The sweep forgets a target only after it has closed the client.
         time.sleep(0.05)
@@ -732,13 +986,18 @@ def test_an_idle_worker_closes_expired_clients_without_any_job(monkeypatch, cloc
 
 
 def test_the_worker_waits_on_the_queue_with_a_timeout_instead_of_spinning(
-    monkeypatch,
-):
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The worker waits on the queue with a timeout instead of spinning.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = publisher()
     waits = []
 
     class Spy(module.queue.Queue):
-        def get(self, block=True, timeout=None):
+        def get(self, block: bool = True, timeout: float | None = None) -> Any:
             waits.append((block, timeout))
             return super().get(block, timeout)
 
@@ -756,7 +1015,15 @@ def test_the_worker_waits_on_the_queue_with_a_timeout_instead_of_spinning(
     assert waits[:2] == [(True, module._IDLE)] * 2
 
 
-def test_a_sweep_keeps_the_breaker_state_of_a_failing_configuration(monkeypatch, clock):
+def test_a_sweep_keeps_the_breaker_state_of_a_failing_configuration(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """A sweep keeps the breaker state of a failing configuration.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     made = fake_clients(
         monkeypatch, module, lambda config: config.url.endswith("/down")
@@ -765,7 +1032,7 @@ def test_a_sweep_keeps_the_breaker_state_of_a_failing_configuration(monkeypatch,
     up = module._Config("redis://127.0.0.1/up", "ns")
     dispatcher = module._Dispatcher()
 
-    def connections():
+    def connections() -> int:
         return [client.config for client in made].count(down)
 
     try:
@@ -785,12 +1052,20 @@ def test_a_sweep_keeps_the_breaker_state_of_a_failing_configuration(monkeypatch,
         dispatcher.close()
 
 
-def count_expiries(monkeypatch, module):
-    """Record each target that a sweep or a send looks at."""
+def count_expiries(monkeypatch: pytest.MonkeyPatch, module: ModuleType) -> list[Any]:
+    """Record each target that a sweep or a send looks at.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        module: Publisher module under test.
+
+    Returns:
+        The targets, in the order the sweep looked at them.
+    """
     walked = []
     expire = module._expire
 
-    def counting(target, now):
+    def counting(target: object, now: float) -> None:
         walked.append(target)
         expire(target, now)
 
@@ -798,7 +1073,15 @@ def count_expiries(monkeypatch, module):
     return walked
 
 
-def test_a_failed_attempt_counts_as_the_last_use_of_a_target(monkeypatch, clock):
+def test_a_failed_attempt_counts_as_the_last_use_of_a_target(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """A failed attempt counts as the last use of a target.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     fake_clients(monkeypatch, module, lambda config: True)
     target = module._Target()
@@ -811,8 +1094,14 @@ def test_a_failed_attempt_counts_as_the_last_use_of_a_target(monkeypatch, clock)
 
 
 def test_a_burst_of_failing_configurations_costs_work_linear_in_their_number(
-    monkeypatch, clock
-):
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """A burst of failing configurations costs work linear in their number.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     fake_clients(monkeypatch, module, lambda config: True)
     walked = count_expiries(monkeypatch, module)
@@ -827,7 +1116,15 @@ def test_a_burst_of_failing_configurations_costs_work_linear_in_their_number(
     assert len(walked) <= 2 * 100
 
 
-def test_failed_configurations_are_forgotten_after_the_idle_period(monkeypatch, clock):
+def test_failed_configurations_are_forgotten_after_the_idle_period(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """Failed configurations are forgotten after the idle period.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     fake_clients(monkeypatch, module, lambda config: config.namespace != "ns0")
     good, *failing = configs(module, 50)
@@ -852,7 +1149,15 @@ def test_failed_configurations_are_forgotten_after_the_idle_period(monkeypatch, 
         dispatcher.close()
 
 
-def test_jobs_sweep_at_most_once_per_idle_period(monkeypatch, clock):
+def test_jobs_sweep_at_most_once_per_idle_period(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """Jobs sweep at most once per idle period.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     fake_clients(monkeypatch, module)
     sweeps = []
@@ -874,8 +1179,14 @@ def test_jobs_sweep_at_most_once_per_idle_period(monkeypatch, clock):
 
 
 def test_failures_older_than_the_idle_period_do_not_count_toward_the_breaker(
-    monkeypatch, clock
-):
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """Failures older than the idle period do not count toward the breaker.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module, lambda config: True)
     (config,) = configs(module, 1)
@@ -894,7 +1205,15 @@ def test_failures_older_than_the_idle_period_do_not_count_toward_the_breaker(
         dispatcher.close()
 
 
-def test_a_sustained_outage_costs_one_attempt_per_cooldown(monkeypatch, clock):
+def test_a_sustained_outage_costs_one_attempt_per_cooldown(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """A sustained outage costs one attempt per cooldown.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     made = fake_clients(monkeypatch, module, lambda config: True)
     (config,) = configs(module, 1)
@@ -911,7 +1230,15 @@ def test_a_sustained_outage_costs_one_attempt_per_cooldown(monkeypatch, clock):
         dispatcher.close()
 
 
-def test_a_sweep_never_forgets_a_target_whose_breaker_is_open(monkeypatch, clock):
+def test_a_sweep_never_forgets_a_target_whose_breaker_is_open(
+    monkeypatch: pytest.MonkeyPatch, clock: FakeClock
+) -> None:
+    """A sweep never forgets a target whose breaker is open.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        clock: Fake clock that replaces the monotonic clock of the publisher.
+    """
     module = publisher()
     monkeypatch.setattr(module, "_COOLDOWN", 3 * module._IDLE)
     fake_clients(monkeypatch, module, lambda config: True)

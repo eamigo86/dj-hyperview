@@ -3,6 +3,7 @@
 import copy
 import importlib
 import json
+from typing import Any
 
 import pytest
 from django.db import transaction
@@ -11,7 +12,12 @@ from dj_hyperview.realtime import RedisBroker
 from dj_hyperview.realtime._events import _encode_payload, encode_event
 
 
-def change():
+def change() -> dict[str, Any]:
+    """Build an invalidate event that carries version 2 metadata.
+
+    Returns:
+        An invalidate event that carries version 2 entity metadata.
+    """
     return {
         "event": "invalidate",
         "data": {
@@ -26,14 +32,20 @@ def change():
     }
 
 
-def test_capability_is_public_and_immutable():
+def test_capability_is_public_and_immutable() -> None:
+    """Capability is public and immutable."""
     api = importlib.import_module("dj_hyperview.realtime")
     assert api.INVALIDATION_VERSIONS == (1, 2)
     assert "INVALIDATION_VERSIONS" in api.__all__
 
 
 @pytest.mark.parametrize("unknown", [False, True])
-def test_v2_payload_and_frame_preserve_only_closed_metadata(unknown):
+def test_v2_payload_and_frame_preserve_only_closed_metadata(unknown: bool) -> None:
+    """The v2 payload and frame preserve only closed metadata.
+
+    Args:
+        unknown: Whether the entity metadata carries an unknown key.
+    """
     event = change()
     if unknown:
         event["data"].update(mutation_id=None, entities=None)
@@ -44,7 +56,12 @@ def test_v2_payload_and_frame_preserve_only_closed_metadata(unknown):
 
 
 @pytest.mark.parametrize("kind", ["invalidate", "resync", "auth-required"])
-def test_v1_wire_remains_exact(kind):
+def test_v1_wire_remains_exact(kind: str) -> None:
+    """The v1 wire format remains exact.
+
+    Args:
+        kind: Kind of the control event.
+    """
     data = {"version": 1}
     if kind == "invalidate":
         data["resources"] = ["tasks"]
@@ -57,7 +74,15 @@ def test_v1_wire_remains_exact(kind):
     "mutation",
     ["a" * 32, "a" * 39, "a" * 41, "A" * 40, "g" * 40, 1, False, {}, "a" * 40 + "\n"],
 )
-def test_invalid_mutation_never_schedules_or_reflects_content(mutation, monkeypatch):
+def test_invalid_mutation_never_schedules_or_reflects_content(
+    mutation: object, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Invalid mutation never schedules or reflects content.
+
+    Args:
+        mutation: Mutation identifier that the capture receives.
+        monkeypatch: Patches the code under test for this test.
+    """
     event = change()
     event["data"]["mutation_id"] = mutation
     calls = []
@@ -98,14 +123,22 @@ def test_invalid_mutation_never_schedules_or_reflects_content(mutation, monkeypa
         },
     ],
 )
-def test_entity_metadata_is_bounded_closed_and_resource_scoped(entities):
+def test_entity_metadata_is_bounded_closed_and_resource_scoped(
+    entities: object,
+) -> None:
+    """Entity metadata is bounded, closed and resource scoped.
+
+    Args:
+        entities: Entity metadata that the capture receives.
+    """
     event = change()
     event["data"]["entities"] = entities
     with pytest.raises(ValueError, match="^Invalid realtime event$"):
         _encode_payload(event)
 
 
-def test_32_entities_fit_but_four_kib_limit_still_applies():
+def test_32_entities_fit_but_four_kib_limit_still_applies() -> None:
+    """32 entities fit, but the four KiB limit still applies."""
     event = change()
     event["data"]["entities"]["items"] = [
         {"resource": "tasks", "key": f"{n:064x}"} for n in range(32)
@@ -121,13 +154,23 @@ def test_32_entities_fit_but_four_kib_limit_still_applies():
 
 
 @pytest.mark.parametrize("kind", ["resync", "auth-required"])
-def test_control_events_do_not_silently_upgrade_to_v2(kind):
+def test_control_events_do_not_silently_upgrade_to_v2(kind: str) -> None:
+    """Control events do not silently upgrade to v2.
+
+    Args:
+        kind: Kind of the control event.
+    """
     with pytest.raises(ValueError, match="^Invalid realtime event$"):
         encode_event({"event": kind, "data": {"version": 2}})
 
 
 @pytest.mark.parametrize("edit", ["missing", "extra", "v1-extra", "bool-version"])
-def test_version_schema_never_implicitly_accepts_extensions(edit):
+def test_version_schema_never_implicitly_accepts_extensions(edit: str) -> None:
+    """Version schema never implicitly accepts extensions.
+
+    Args:
+        edit: Edit applied to the version schema.
+    """
     event = change()
     if edit == "missing":
         del event["data"]["mutation_id"]
@@ -142,7 +185,14 @@ def test_version_schema_never_implicitly_accepts_extensions(edit):
 
 
 @pytest.mark.django_db(transaction=True, databases=["default", "replica"])
-def test_v2_nested_values_are_captured_before_alias_commit_and_rollback(monkeypatch):
+def test_v2_nested_values_are_captured_before_alias_commit_and_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The v2 nested values are captured before the alias commit and the rollback.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     module = importlib.import_module("dj_hyperview.realtime._broker")
     calls = []
     monkeypatch.setattr(module, "_dispatch", lambda *args: calls.append(args))

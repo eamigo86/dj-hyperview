@@ -23,16 +23,30 @@ SECRET_NAME = "secret-screen.xml"
 
 
 class Source:
-    """A cacheable source that returns whatever its test tells it to."""
+    """A cacheable source that returns whatever its test tells it to.
+
+    Args:
+        revision: Revision that each resolved template carries.
+        content: Content that each resolved template carries.
+    """
 
     cacheable = True
 
-    def __init__(self, *, revision: object = "r1", content: object = "<view/>"):
+    def __init__(self, *, revision: object = "r1", content: object = "<view/>") -> None:
+        """Store the revision and the content, and start with no calls."""
         self.revision = revision
         self.content = content
         self.calls = 0
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Count the call and return the configured template.
+
+        Args:
+            name: Name of the template to resolve.
+
+        Returns:
+            The template, or None when there is none.
+        """
         self.calls += 1
         return ResolvedTemplate(
             name,
@@ -57,9 +71,21 @@ def _messages(caplog: pytest.LogCaptureFixture) -> list[str]:
 )
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_bypass_logs_each_swallowed_cache_failure_with_a_fixed_reason(
-    monkeypatch, caplog, break_cache, operation, reason
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+    break_cache: str,
+    operation: str,
+    reason: str,
 ) -> None:
-    """A cache that never works must not be invisible; the log holds no secrets."""
+    """A cache that never works must not be invisible; the log holds no secrets.
+
+    Args:
+        monkeypatch: Patches the cache backend for this test.
+        caplog: Captures the log records of the template cache.
+        break_cache: How the cache is broken: get, set or corrupt.
+        operation: Cache operation the log message names.
+        reason: Fixed reason the log message gives.
+    """
     cache = TemplateCache("logged-bypass", alias="screens")
     source = Source()
     resolver = TemplateResolver([source], cache=cache, failure_mode="bypass")
@@ -88,8 +114,14 @@ def test_bypass_logs_each_swallowed_cache_failure_with_a_fixed_reason(
 
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 def test_cache_initialization_failure_is_logged_only_when_it_is_bypassed(
-    caplog, failure_mode
+    caplog: pytest.LogCaptureFixture, failure_mode: str
 ) -> None:
+    """Cache initialization failure is logged only when it is bypassed.
+
+    Args:
+        caplog: Captures the log records of the template cache.
+        failure_mode: Cache failure mode of the resolver: bypass or raise.
+    """
     caches = {"broken": {"BACKEND": "tests.test_cache_fail_closed.ExplodingInitCache"}}
     configured = {
         "SOURCES": [{"BACKEND": "tests.stubs.TemplateSource"}],
@@ -112,7 +144,12 @@ def test_cache_initialization_failure_is_logged_only_when_it_is_bypassed(
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_a_working_cache_logs_nothing(caplog) -> None:
+def test_a_working_cache_logs_nothing(caplog: pytest.LogCaptureFixture) -> None:
+    """A working cache logs nothing.
+
+    Args:
+        caplog: Captures the log records of the template cache.
+    """
     cache = TemplateCache("quiet", alias="screens")
     resolver = TemplateResolver([Source()], cache=cache)
 
@@ -124,8 +161,14 @@ def test_a_working_cache_logs_nothing(caplog) -> None:
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_a_cacheable_source_with_unsupported_options_is_reported_once(caplog) -> None:
-    """Options that cannot be fingerprinted silently disable caching for the source."""
+def test_a_cacheable_source_with_unsupported_options_is_reported_once(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Options that cannot be fingerprinted silently disable caching for the source.
+
+    Args:
+        caplog: Captures the log records of the template cache.
+    """
     source = Source()
     source.opaque = object()  # type: ignore[attr-defined]
     cache = TemplateCache("unfingerprintable", alias="screens")
@@ -142,22 +185,39 @@ def test_a_cacheable_source_with_unsupported_options_is_reported_once(caplog) ->
 
 
 class OpaqueOptionsSource:
-    """A cacheable source whose constructor option cannot be fingerprinted."""
+    """A cacheable source whose constructor option cannot be fingerprinted.
+
+    Args:
+        opaque: Option value that cannot be fingerprinted.
+    """
 
     cacheable = True
 
     def __init__(self, opaque: object) -> None:
+        """Store the option that cannot be fingerprinted."""
         self.opaque = opaque
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Return no template, because the source has none.
+
+        Args:
+            name: Name of the template to resolve.
+
+        Returns:
+            The template, or None when there is none.
+        """
         return None
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_settings_built_resolver_reports_an_unfingerprintable_source_once(
-    caplog,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    """The settings path computes identities on its own, and must report them too."""
+    """The settings path computes identities on its own, and must report them too.
+
+    Args:
+        caplog: Captures the log records of the template cache.
+    """
     configured = {
         "SOURCES": [
             {
@@ -185,7 +245,14 @@ def test_settings_built_resolver_reports_an_unfingerprintable_source_once(
 
 
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_a_source_that_is_not_cacheable_by_choice_is_not_reported(caplog) -> None:
+def test_a_source_that_is_not_cacheable_by_choice_is_not_reported(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A source that is not cacheable by choice is not reported.
+
+    Args:
+        caplog: Captures the log records of the template cache.
+    """
     source = Source()
     source.cacheable = False
     source.opaque = object()  # type: ignore[attr-defined]
@@ -210,9 +277,14 @@ def test_a_source_that_is_not_cacheable_by_choice_is_not_reported(caplog) -> Non
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_a_resolved_template_with_non_text_fields_is_rejected_before_caching(
-    bad, failure_mode
+    bad: dict[str, object], failure_mode: str
 ) -> None:
-    """The cache reader rejects what the writer produced, so the writer never runs."""
+    """The cache reader rejects what the writer produced, so the writer never runs.
+
+    Args:
+        bad: Source fields that are not text.
+        failure_mode: Cache failure mode of the resolver: bypass or raise.
+    """
     cache = TemplateCache(f"fields-{failure_mode}", alias="screens")
     source = Source(**bad)
     resolver = TemplateResolver([source], cache=cache, failure_mode=failure_mode)
@@ -229,12 +301,18 @@ def test_a_resolved_template_with_non_text_fields_is_rejected_before_caching(
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_a_resolved_template_for_another_name_is_rejected_before_caching(
-    failure_mode,
+    failure_mode: str,
 ) -> None:
+    """A resolved template for another name is rejected before caching.
+
+    Args:
+        failure_mode: Cache failure mode of the resolver: bypass or raise.
+    """
+
     class Renamer:
         cacheable = True
 
-        def resolve(self, name):
+        def resolve(self, name: str) -> ResolvedTemplate:
             return ResolvedTemplate("other.xml", "<view/>", "memory:x", "memory", "r1")
 
     cache = TemplateCache(f"renamed-{failure_mode}", alias="screens")
@@ -252,8 +330,10 @@ def test_the_contract_is_enforced_without_a_cache_too() -> None:
 
 
 def test_a_source_that_returns_something_else_is_rejected() -> None:
+    """A source that returns something else is rejected."""
+
     class Wrong:
-        def resolve(self, name):
+        def resolve(self, name: str) -> dict[str, str]:
             return {"name": name}
 
     with pytest.raises(SourceUnavailable, match="invalid resolved template"):
@@ -262,6 +342,7 @@ def test_a_source_that_returns_something_else_is_rejected() -> None:
 
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_a_valid_text_subclass_is_still_cached() -> None:
+    """A valid text subclass is still cached."""
     from django.utils.safestring import mark_safe
 
     cache = TemplateCache("safe-text", alias="screens")
@@ -291,18 +372,39 @@ class NumberExtra(ResolvedTemplate):
 
 
 class SubclassSource(Source):
+    """A source that returns a template of the class its test chooses.
+
+    Args:
+        kind: Resolved template class that the source returns.
+    """
+
     def __init__(self, kind: type[ResolvedTemplate]) -> None:
+        """Store the template class that the source returns."""
         super().__init__()
         self.kind = kind
 
     def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Count the call and return a template of the configured class.
+
+        Args:
+            name: Name of the template to resolve.
+
+        Returns:
+            The template, or None when there is none.
+        """
         self.calls += 1
         return self.kind(name, "<view/>", f"memory:{name}", "memory", "r1")
 
 
 @pytest.mark.parametrize("kind", [TextExtra, NumberExtra])
-def test_a_resolved_template_subclass_is_served_without_a_cache(kind) -> None:
-    """Only the five fields of the contract are checked; a subclass may add more."""
+def test_a_resolved_template_subclass_is_served_without_a_cache(
+    kind: type[ResolvedTemplate],
+) -> None:
+    """Only the five fields of the contract are checked; a subclass may add more.
+
+    Args:
+        kind: Resolved template class that the source returns.
+    """
     result = TemplateResolver([SubclassSource(kind)]).resolve("screen.xml")
 
     assert isinstance(result, kind)
@@ -313,9 +415,14 @@ def test_a_resolved_template_subclass_is_served_without_a_cache(kind) -> None:
 @pytest.mark.parametrize("failure_mode", ["bypass", "raise"])
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_a_resolved_template_subclass_is_cached_as_its_five_base_fields(
-    kind, failure_mode
+    kind: type[ResolvedTemplate], failure_mode: str
 ) -> None:
-    """The cache reader accepts exactly five fields, so the writer must send those."""
+    """The cache reader accepts exactly five fields, so the writer must send those.
+
+    Args:
+        kind: Resolved template class that the source returns.
+        failure_mode: Cache failure mode of the resolver: bypass or raise.
+    """
     cache = TemplateCache(f"subclass-{kind.__name__}-{failure_mode}", alias="screens")
     source = SubclassSource(kind)
     resolver = TemplateResolver([source], cache=cache, failure_mode=failure_mode)
@@ -345,8 +452,14 @@ def test_a_resolved_template_subclass_is_cached_as_its_five_base_fields(
 
 @pytest.mark.parametrize("kind", [TextExtra, NumberExtra])
 @override_settings(CACHES=LOCMEM_CACHES)
-def test_cache_set_stores_exactly_the_five_contract_fields_of_a_subclass(kind) -> None:
-    """A direct write follows the reader's five-field rule, like the resolver's."""
+def test_cache_set_stores_exactly_the_five_contract_fields_of_a_subclass(
+    kind: type[ResolvedTemplate],
+) -> None:
+    """A direct write follows the reader's five-field rule, like the resolver's.
+
+    Args:
+        kind: Resolved template class that the source returns.
+    """
     cache = TemplateCache(f"set-{kind.__name__}", alias="screens")
     template = kind("screen.xml", "<view/>", "memory:screen.xml", "memory", "r1")
     base = ResolvedTemplate(

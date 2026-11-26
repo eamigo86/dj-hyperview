@@ -29,6 +29,15 @@ CACHES = (_cached_registry, _cached_static_validation_catalog, _active_catalog)
 
 
 def schema_file(path: Path, element: str) -> Path:
+    """Write a schema that declares one element with a required id.
+
+    Args:
+        path: Path of the schema file to write.
+        element: Name of the element the schema declares.
+
+    Returns:
+        The path of the schema file.
+    """
     path.write_text(
         '<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" '
         f'targetNamespace="{NS}" elementFormDefault="qualified">'
@@ -41,10 +50,26 @@ def schema_file(path: Path, element: str) -> Path:
 
 
 def document(element: str) -> str:
+    """Build a document that uses an element of the test schema.
+
+    Args:
+        element: Name of the element the schema declares.
+
+    Returns:
+        A document that uses the element.
+    """
     return f'<view xmlns="{HV}" xmlns:app="{NS}"><app:{element}/></view>'
 
 
 def accepts(content: str) -> bool:
+    """Tell whether schema validation accepts a document.
+
+    Args:
+        content: Document to validate.
+
+    Returns:
+        True when the document passes validation.
+    """
     try:
         validate_hyperview_schema(content)
     except TemplateValidationError:
@@ -53,11 +78,26 @@ def accepts(content: str) -> bool:
 
 
 def declares(element: str) -> bool:
-    """Whether the registry knows the element: only then is a missing id an error."""
+    """Whether the registry knows the element: only then is a missing id an error.
+
+    Args:
+        element: Name of the element the schema declares.
+
+    Returns:
+        True when the registry knows the element.
+    """
     return not accepts(document(element))
 
 
 def extensions(tones: list[str]) -> dict[str, Any]:
+    """Build a schema extension that restricts the tone of the snackbar behavior.
+
+    Args:
+        tones: Allowed values of the tone attribute.
+
+    Returns:
+        A HYPERVIEW setting that restricts the tone of the snackbar behavior.
+    """
     return {
         "SCHEMA_EXTENSIONS": {
             "BEHAVIORS": {
@@ -70,14 +110,28 @@ def extensions(tones: list[str]) -> dict[str, Any]:
 
 
 def snackbar(tone: str) -> str:
+    """Build a document with one snackbar behavior.
+
+    Args:
+        tone: Value of the tone attribute.
+
+    Returns:
+        A document with one snackbar behavior.
+    """
     return f'<view xmlns="{HV}"><behavior action="show-snackbar" tone="{tone}"/></view>'
 
 
 def misses() -> tuple[int, ...]:
+    """Count the misses of each compiled registry cache.
+
+    Returns:
+        The cache misses of each compiled registry cache.
+    """
     return tuple(cache.cache_info().misses for cache in CACHES)
 
 
 def warm() -> None:
+    """Compile the registry and the catalogs of the current settings."""
     _get_compiled_registry()
     _get_static_validation_catalog()
     get_hyperview_catalog()
@@ -86,6 +140,11 @@ def warm() -> None:
 def test_the_same_settings_keep_every_compiled_result_across_an_override(
     tmp_path: Path,
 ) -> None:
+    """The same settings keep every compiled result across an override.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema files.
+    """
     value = {"EXTRA_SCHEMAS": [schema_file(tmp_path / "app.xsd", "alpha")]}
     base = _get_compiled_registry()
     with override_settings(HYPERVIEW=value):
@@ -107,6 +166,7 @@ def test_the_same_settings_keep_every_compiled_result_across_an_override(
 
 
 def test_entering_the_same_empty_override_compiles_nothing() -> None:
+    """Entering the same empty override compiles nothing."""
     base = _get_compiled_registry()
     warm()
     before = misses()
@@ -120,6 +180,11 @@ def test_entering_the_same_empty_override_compiles_nothing() -> None:
 
 
 def test_each_extra_schema_selects_its_own_registry(tmp_path: Path) -> None:
+    """Each extra schema selects its own registry.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema files.
+    """
     first = schema_file(tmp_path / "first.xsd", "alpha")
     second = schema_file(tmp_path / "second.xsd", "beta")
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [first]}):
@@ -142,6 +207,7 @@ def test_each_extra_schema_selects_its_own_registry(tmp_path: Path) -> None:
 
 
 def test_each_schema_extension_selects_its_own_registry() -> None:
+    """Each schema extension selects its own registry."""
     with override_settings(HYPERVIEW=extensions(["calm", "loud"])):
         calm = _get_compiled_registry()
         assert accepts(snackbar("calm"))
@@ -165,6 +231,11 @@ def test_each_schema_extension_selects_its_own_registry() -> None:
 def test_a_schema_file_rewritten_between_overrides_is_not_served_from_the_cache(
     tmp_path: Path,
 ) -> None:
+    """A schema file rewritten between overrides is not served from the cache.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema files.
+    """
     path = schema_file(tmp_path / "app.xsd", "alpha")
     value = {"EXTRA_SCHEMAS": [path]}
     with override_settings(HYPERVIEW=value):
@@ -181,6 +252,7 @@ def test_a_schema_file_rewritten_between_overrides_is_not_served_from_the_cache(
 
 
 def test_validation_limits_follow_the_override_while_the_registry_is_shared() -> None:
+    """Validation limits follow the override while the registry is shared."""
     content = f'<view xmlns="{HV}"><text/><text/></view>'
     base = _get_compiled_registry()
     assert accepts(content)
@@ -193,6 +265,11 @@ def test_validation_limits_follow_the_override_while_the_registry_is_shared() ->
 
 
 def test_a_setting_change_empties_none_of_the_schema_caches(tmp_path: Path) -> None:
+    """A setting change empties none of the schema caches.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema files.
+    """
     value = {"EXTRA_SCHEMAS": [schema_file(tmp_path / "app.xsd", "alpha")]}
     with override_settings(HYPERVIEW=value):
         warm()
@@ -208,4 +285,9 @@ def test_a_setting_change_empties_none_of_the_schema_caches(tmp_path: Path) -> N
 
 @pytest.mark.parametrize("cache", CACHES, ids=lambda cache: cache.__wrapped__.__name__)
 def test_the_kept_results_stay_bounded(cache: Any) -> None:
+    """The kept results stay bounded.
+
+    Args:
+        cache: Compiled registry cache whose bound is checked.
+    """
     assert cache.cache_info().maxsize == 64

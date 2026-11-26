@@ -24,7 +24,16 @@ SCHEMAS = Path(__file__).resolve().parents[1] / "src/dj_hyperview/schemas"
 
 @pytest.mark.parametrize("element", ["view", "list", "section-list"])
 @pytest.mark.parametrize("value", ["true", "false", "1", "0"])
-def test_active_schema_accepts_optional_content_insets(element, value):
+def test_active_schema_accepts_optional_content_insets(
+    element: str, value: str
+) -> None:
+    """The active schema accepts the optional content-insets attribute on views, lists
+    and section lists.
+
+    Args:
+        element: Hyperview element that carries the attribute.
+        value: Value given to the content-insets attribute.
+    """
     with override_settings(HYPERVIEW={}):
         validate_hyperview_schema(
             f'<{element} xmlns="{HV}" content-insets="{value}">' + f"</{element}>"
@@ -42,13 +51,21 @@ def test_active_schema_accepts_optional_content_insets(element, value):
         '<view content-inset="true"/>',
     ],
 )
-def test_content_insets_does_not_relax_other_attributes(markup):
+def test_content_insets_does_not_relax_other_attributes(markup: str) -> None:
+    """The content-insets attribute does not relax the validation of other attributes.
+
+    Args:
+        markup: Markup that carries a content-insets or a neighbouring attribute.
+    """
     with override_settings(HYPERVIEW={}):
         with pytest.raises(TemplateValidationError, match=r"\[schema\]"):
             validate_hyperview_schema(markup.replace(" ", f' xmlns="{HV}" ', 1))
 
 
-def test_active_catalog_and_extension_collision_use_new_corrected_contract():
+def test_active_catalog_and_extension_collision_use_new_corrected_contract() -> None:
+    """The active catalog and the extension collision check use the new corrected
+    contract.
+    """
     with override_settings(HYPERVIEW={}):
         revision, _registry = _get_registry_snapshot()
         catalog = get_hyperview_catalog()
@@ -88,7 +105,12 @@ def test_active_catalog_and_extension_collision_use_new_corrected_contract():
             get_settings()
 
 
-def test_upstream_0111_resources_have_published_checksums_and_legacy_is_stable():
+def test_upstream_0111_resources_have_published_checksums_and_legacy_is_stable() -> (
+    None
+):
+    """The upstream 0.111.0 resources match their published checksums and the legacy
+    archive is stable.
+    """
     current = SCHEMAS / "0.111.0"
     legacy = get_hyperview_schema_path().parent
     assert legacy == SCHEMAS / "0.110.0"
@@ -104,7 +126,8 @@ def test_upstream_0111_resources_have_published_checksums_and_legacy_is_stable()
     )
 
 
-def test_active_revision_is_named_once_and_every_loader_follows_it():
+def test_active_revision_is_named_once_and_every_loader_follows_it() -> None:
+    """The active revision is named once and every loader follows it."""
     from dj_hyperview import _schema_extensions, schema
     from dj_hyperview import _schema_revision as active
 
@@ -123,7 +146,7 @@ def test_active_revision_is_named_once_and_every_loader_follows_it():
     assert _schema_extensions._standards() == shipped
 
 
-def test_no_other_module_hard_codes_the_active_revision():
+def test_no_other_module_hard_codes_the_active_revision() -> None:
     """Bumping the schema is one edit; a stale copy would load the old files."""
     package = Path(__file__).resolve().parents[1] / "src/dj_hyperview"
     offenders = sorted(
@@ -135,7 +158,8 @@ def test_no_other_module_hard_codes_the_active_revision():
     assert offenders == []
 
 
-def test_corrected_r4_catalog_and_manifest_match_the_active_validator():
+def test_corrected_r4_catalog_and_manifest_match_the_active_validator() -> None:
+    """The corrected R4 catalog and manifest match the active validator."""
     current = SCHEMAS / "0.111.0"
     revision = current / "r4"
     manifest = json.loads((revision / "manifest.json").read_text())

@@ -6,6 +6,7 @@ import socket
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 
 import pytest
 from django.test import RequestFactory, override_settings
@@ -30,16 +31,30 @@ KEYS = {
 }
 
 
-def first_example():
+def first_example() -> str:
+    """Extract the first Python example of the configuration guide.
+
+    Returns:
+        The source of the first Python example of the guide.
+    """
     return re.search(r"```python\n(.*?)\n```", CONFIG.read_text(), re.DOTALL)[1]
 
 
-def test_complete_example_immediately_follows_title():
+def test_complete_example_immediately_follows_title() -> None:
+    """Complete example immediately follows title."""
     assert re.match(r"^# [^\n]+\n\n```python\n", CONFIG.read_text())
 
 
 @pytest.fixture
-def documented_settings(tmp_path):
+def documented_settings(tmp_path: Path) -> dict[str, Any]:
+    """Run the first documented example and return the HYPERVIEW setting it defines.
+
+    Args:
+        tmp_path: Temporary directory that holds the template directory of the example.
+
+    Returns:
+        The HYPERVIEW setting that the first example defines.
+    """
     # Only declared prerequisites: a project-owned template directory and a
     # configured default cache. No Redis service or extra schema file is needed.
     (tmp_path / "hyperview").mkdir()
@@ -52,8 +67,13 @@ def documented_settings(tmp_path):
 
 
 def test_first_example_covers_all_public_sections_and_source_options(
-    documented_settings,
-):
+    documented_settings: dict[str, Any],
+) -> None:
+    """First example covers all public sections and source options.
+
+    Args:
+        documented_settings: Settings that the first documented example defines.
+    """
     raw = documented_settings
     assert set(raw) == KEYS
     assert set(raw["SOURCES"][0]) == {"BACKEND", "OPTIONS"}
@@ -75,15 +95,21 @@ def test_first_example_covers_all_public_sections_and_source_options(
 
 
 def test_complete_example_passes_actual_checks_without_redis_import_or_network(
-    documented_settings, monkeypatch
-):
+    documented_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Complete example passes actual checks without Redis import or network.
+
+    Args:
+        documented_settings: Settings that the first documented example defines.
+        monkeypatch: Patches the imports of this test.
+    """
     original = builtins.__import__
 
-    def import_without_redis(name, *args, **kwargs):
+    def import_without_redis(name: str, *args: Any, **kwargs: Any) -> Any:
         assert name != "redis" and not name.startswith("redis."), name
         return original(name, *args, **kwargs)
 
-    def no_connection(*args, **kwargs):
+    def no_connection(*args: Any, **kwargs: Any) -> None:
         pytest.fail("A documented configuration must not connect to Redis")
 
     monkeypatch.setattr(builtins, "__import__", import_without_redis)
@@ -117,7 +143,14 @@ def test_complete_example_passes_actual_checks_without_redis_import_or_network(
             assert current.admin.permission(request) is admin
 
 
-def test_example_schema_descriptors_enforce_required_and_enum(documented_settings):
+def test_example_schema_descriptors_enforce_required_and_enum(
+    documented_settings: dict[str, Any],
+) -> None:
+    """Example schema descriptors enforce required and enum.
+
+    Args:
+        documented_settings: Settings that the first documented example defines.
+    """
     with override_settings(HYPERVIEW=documented_settings):
         prefix = '<view xmlns="https://hyperview.org/hyperview">'
         validate_hyperview_schema(
@@ -136,8 +169,15 @@ def test_example_schema_descriptors_enforce_required_and_enum(documented_setting
 
 @pytest.mark.parametrize("realtime", [None, "omitted"])
 def test_documented_disabled_realtime_keeps_sources_and_cache(
-    documented_settings, realtime
-):
+    documented_settings: dict[str, Any], realtime: str | None
+) -> None:
+    """Documented disabled realtime keeps sources and cache.
+
+    Args:
+        documented_settings: Settings that the first documented example defines.
+        realtime: Value of the REALTIME setting, or the string omitted to remove the
+        key.
+    """
     raw = {**documented_settings, "REALTIME": realtime}
     if realtime == "omitted":
         raw.pop("REALTIME")
@@ -147,7 +187,14 @@ def test_documented_disabled_realtime_keeps_sources_and_cache(
         assert get_settings().cache.alias == "default"
 
 
-def test_invalid_realtime_never_falls_back_to_disabled(documented_settings):
+def test_invalid_realtime_never_falls_back_to_disabled(
+    documented_settings: dict[str, Any],
+) -> None:
+    """Invalid realtime never falls back to disabled.
+
+    Args:
+        documented_settings: Settings that the first documented example defines.
+    """
     raw = {**documented_settings, "REALTIME": {"ALIAS": "default"}}
     with override_settings(HYPERVIEW=raw):
         assert any(
@@ -158,8 +205,14 @@ def test_invalid_realtime_never_falls_back_to_disabled(documented_settings):
 
 
 def test_guide_adoption_merges_existing_hyperview_without_losing_extensions(
-    documented_settings, monkeypatch
-):
+    documented_settings: dict[str, Any], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Guide adoption merges existing Hyperview without losing extensions.
+
+    Args:
+        documented_settings: Settings that the first documented example defines.
+        monkeypatch: Patches the imports of this test.
+    """
     monkeypatch.setenv("APP_REDIS_URL", "redis://127.0.0.1:6379/0")
     monkeypatch.setenv("APP_REALTIME_NAMESPACE", "docs-merge")
     match = re.search(
@@ -191,7 +244,8 @@ def test_guide_adoption_merges_existing_hyperview_without_losing_extensions(
         assert get_settings().realtime.namespace == "docs-merge"
 
 
-def test_public_references_point_to_central_realtime_configuration():
+def test_public_references_point_to_central_realtime_configuration() -> None:
+    """Public references point to central realtime configuration."""
     for name in (
         "configuration.md",
         "realtime.md",
@@ -205,7 +259,8 @@ def test_public_references_point_to_central_realtime_configuration():
     assert "get_settings().realtime" in (ROOT / "docs/api-reference.md").read_text()
 
 
-def test_configuration_sections_preserve_existing_incoming_anchors():
+def test_configuration_sections_preserve_existing_incoming_anchors() -> None:
+    """Configuration sections preserve existing incoming anchors."""
     source = CONFIG.read_text()
     # English headings retain their original generated anchors; explicit IDs
     # remain supported without requiring duplicate IDs on the rendered page.

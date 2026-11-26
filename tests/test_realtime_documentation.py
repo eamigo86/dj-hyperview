@@ -5,14 +5,18 @@ import asyncio
 import importlib
 import json
 import re
+from collections.abc import AsyncIterator, Iterator
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any
 from urllib.parse import parse_qs, urlsplit
 from xml.etree import ElementTree
 
 import pytest
 from django import forms
 from django.db import transaction
+from django.http import HttpRequest
+from django.http.response import HttpResponseBase
 from django.template import Engine, RequestContext
 from django.test import RequestFactory, override_settings
 from django.urls import path
@@ -28,7 +32,16 @@ APP = "https://hypertodo.app/components"
 urlpatterns = []
 
 
-def example(name, language):
+def example(name: str, language: str) -> str:
+    """Extract a documented example of the guide by its name and language.
+
+    Args:
+        name: Name of the documented example.
+        language: Language of the documented code block.
+
+    Returns:
+        The source of the example.
+    """
     source = GUIDE.read_text()
     pattern = rf"<!-- example: {name} -->\s*```{language}\n(.*?)\n```"
     match = re.search(pattern, source, re.DOTALL)
@@ -36,7 +49,8 @@ def example(name, language):
     return match[1]
 
 
-def test_guide_python_examples_parse_and_relative_links_resolve():
+def test_guide_python_examples_parse_and_relative_links_resolve() -> None:
+    """Guide Python examples parse and relative links resolve."""
     source = GUIDE.read_text()
     examples = re.findall(r"```python\n(.*?)\n```", source, re.DOTALL)
     assert examples
@@ -49,19 +63,26 @@ def test_guide_python_examples_parse_and_relative_links_resolve():
             assert (GUIDE.parent / link.split("#")[0]).is_file(), link
 
 
-def test_documented_asgi_entry_streams_and_releases_through_real_django(monkeypatch):
+def test_documented_asgi_entry_streams_and_releases_through_real_django(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Documented ASGI entry streams and releases through real Django.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     monkeypatch.setenv("DJANGO_SETTINGS_MODULE", "tests.settings")
 
-    async def run():
+    async def run() -> None:
         released, sent = [], []
 
-        async def events():
+        async def events() -> AsyncIterator[dict[str, Any]]:
             yield {"event": "resync", "data": {"version": 1}}
 
-        async def release():
+        async def release() -> None:
             released.append(True)
 
-        async def view(request):
+        async def view(request: HttpRequest) -> HttpResponseBase:
             return sse_response(events(), aclose=release)
 
         global urlpatterns
@@ -74,7 +95,7 @@ def test_documented_asgi_entry_streams_and_releases_through_real_django(monkeypa
             incoming = asyncio.Queue()
             await incoming.put({"type": "http.request", "body": b""})
 
-            async def send(message):
+            async def send(message: dict[str, Any]) -> None:
                 sent.append(message)
 
             await namespace["application"](
@@ -98,7 +119,12 @@ def test_documented_asgi_entry_streams_and_releases_through_real_django(monkeypa
 
 
 @pytest.mark.parametrize("name", ["tasks", "task_form"])
-def test_documented_screen_mapping_preserves_filters_or_form_get(name):
+def test_documented_screen_mapping_preserves_filters_or_form_get(name: str) -> None:
+    """Documented screen mapping preserves filters or the form GET.
+
+    Args:
+        name: Name of the documented example.
+    """
     request = RequestFactory().get(
         "/hv/tasks/new/"
         if name == "task_form"
@@ -129,7 +155,14 @@ def test_documented_screen_mapping_preserves_filters_or_form_get(name):
 
 
 @pytest.mark.django_db(transaction=True, databases=["default", "replica"])
-def test_documented_publication_uses_selected_commit_and_never_rollback(monkeypatch):
+def test_documented_publication_uses_selected_commit_and_never_rollback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Documented publication uses selected commit and never rollback.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+    """
     namespace, calls = {}, []
     exec(compile(example("publication", "python"), str(GUIDE), "exec"), namespace)
     module = importlib.import_module("dj_hyperview.realtime._broker")
@@ -153,7 +186,15 @@ def test_documented_publication_uses_selected_commit_and_never_rollback(monkeypa
 
 
 @pytest.fixture
-def schema_settings(tmp_path):
+def schema_settings(tmp_path: Path) -> Iterator[None]:
+    """Configure the realtime schema and its extensions of the guide.
+
+    Args:
+        tmp_path: Temporary directory that holds the schema file.
+
+    Yields:
+        Nothing, while the schema settings are active.
+    """
     schema = tmp_path / "realtime.xsd"
     schema.write_text(example("schema", "xml"))
     namespace = {}
@@ -167,7 +208,16 @@ def schema_settings(tmp_path):
         yield
 
 
-def render(name, **values):
+def render(name: str, **values: Any) -> str:
+    """Render a documented template example with the default realtime variables.
+
+    Args:
+        name: Name of the documented example.
+        **values: Template variables that override the defaults.
+
+    Returns:
+        The rendered markup of the example.
+    """
     engine = Engine(
         libraries={"dj_hyperview": "dj_hyperview.templatetags.dj_hyperview"}
     )
@@ -184,8 +234,15 @@ def render(name, **values):
 
 @pytest.mark.parametrize("page,count", [(1, 0), (1, 2), (2, 1), (2, 0)])
 def test_documented_list_has_one_correlated_marker_without_extra_items(
-    schema_settings, page, count
-):
+    schema_settings: None, page: int, count: int
+) -> None:
+    """Documented list has one correlated marker without extra items.
+
+    Args:
+        schema_settings: Settings that load the realtime schema of the guide.
+        page: Number of the current page.
+        count: Number of items on the page.
+    """
     xml = render(
         "list",
         tasks=[{"id": n, "title": "A & <B>"} for n in range(count)],
@@ -209,7 +266,15 @@ def test_documented_list_has_one_correlated_marker_without_extra_items(
         assert root.find(f".//{{{HV}}}text").text == "A & <B>"
 
 
-def test_documented_form_preserves_bound_value_errors_and_real_csrf(schema_settings):
+def test_documented_form_preserves_bound_value_errors_and_real_csrf(
+    schema_settings: None,
+) -> None:
+    """Documented form preserves bound value errors and real CSRF.
+
+    Args:
+        schema_settings: Settings that load the realtime schema of the guide.
+    """
+
     class TaskForm(forms.Form):
         title = forms.CharField(max_length=3)
 
@@ -241,15 +306,29 @@ def test_documented_form_preserves_bound_value_errors_and_real_csrf(schema_setti
     ],
 )
 def test_documented_schema_rejects_invalid_boundary_and_marker(
-    schema_settings, old, new
-):
+    schema_settings: None, old: str, new: str
+) -> None:
+    """Documented schema rejects invalid boundary and marker.
+
+    Args:
+        schema_settings: Settings that load the realtime schema of the guide.
+        old: Text of the documented example that is replaced.
+        new: Text that replaces the old one.
+    """
     xml = render("list", tasks=[])
     assert old in xml
     with pytest.raises(TemplateValidationError):
         validate_hyperview_schema(xml.replace(old, new, 1))
 
 
-def test_documented_local_behavior_has_typed_unqualified_resources(schema_settings):
+def test_documented_local_behavior_has_typed_unqualified_resources(
+    schema_settings: None,
+) -> None:
+    """Documented local behavior has typed unqualified resources.
+
+    Args:
+        schema_settings: Settings that load the realtime schema of the guide.
+    """
     xml = example("local-notify", "xml")
     validate_hyperview_schema(xml)
     with pytest.raises(TemplateValidationError):
@@ -263,9 +342,14 @@ def test_documented_local_behavior_has_typed_unqualified_resources(schema_settin
 @pytest.mark.django_db(transaction=True, databases=["default", "replica"])
 @pytest.mark.parametrize("version", [1, 2])
 def test_documented_wire_examples_capture_exact_negotiated_or_legacy_event(
-    monkeypatch, version
-):
-    """Documented envelopes use public after-commit capture, not invented APIs."""
+    monkeypatch: pytest.MonkeyPatch, version: int
+) -> None:
+    """Documented envelopes use public after-commit capture, not invented APIs.
+
+    Args:
+        monkeypatch: Patches the code under test for this test.
+        version: Version of the invalidation payload.
+    """
     calls = []
     module = importlib.import_module("dj_hyperview.realtime._broker")
     monkeypatch.setattr(module, "_dispatch", lambda *args: calls.append(args))

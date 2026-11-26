@@ -14,14 +14,20 @@ ROOT = Path(__file__).parents[1]
 NS = {"hv": "https://hyperview.org/hyperview"}
 
 
-def test_request_lifecycle_is_discoverable():
+def test_request_lifecycle_is_discoverable() -> None:
+    """The quickstart documents the request lifecycle and the guides link to it."""
     page = (ROOT / "docs/quickstart.md").read_text()
     assert "## Request lifecycle" in page
     for guide in ("index.md", "mobile-getting-started.md", "http-responses.md"):
         assert "quickstart.md#request-lifecycle" in (ROOT / "docs" / guide).read_text()
 
 
-def test_documented_screen_and_tap_return_validated_hxml(tmp_path):
+def test_documented_screen_and_tap_return_validated_hxml(tmp_path: Path) -> None:
+    """The documented screen and tap return validated HXML.
+
+    Args:
+        tmp_path: Temporary directory that holds the documented templates.
+    """
     page = (ROOT / "docs/quickstart.md").read_text()
     assert "## 5. Follow a tap back to Django" in page
     example = page.split("## 5. Follow a tap back to Django", 1)[1]

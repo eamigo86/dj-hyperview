@@ -1,7 +1,10 @@
+"""Template names, sources and the resolver that combines them."""
+
 import traceback
 from dataclasses import FrozenInstanceError
 from hashlib import sha256
 from pathlib import Path
+from typing import Never
 
 import pytest
 from django.test import override_settings
@@ -53,7 +56,12 @@ UNSAFE_UNICODE_NAMES = (
         "screens/👩💻.xml",
     ],
 )
-def test_canonical_name_preserves_relative_posix_path(name):
+def test_canonical_name_preserves_relative_posix_path(name: str) -> None:
+    """Canonical name preserves a relative POSIX path.
+
+    Args:
+        name: Template name under test.
+    """
     assert canonicalize_template_name(name) == name
 
 
@@ -74,7 +82,12 @@ def test_canonical_name_preserves_relative_posix_path(name):
         *UNSAFE_UNICODE_NAMES,
     ],
 )
-def test_canonical_name_rejects_unsafe_names(name):
+def test_canonical_name_rejects_unsafe_names(name: str | None) -> None:
+    """Canonical name rejects unsafe names.
+
+    Args:
+        name: Template name under test.
+    """
     with pytest.raises(InvalidTemplateName, match="Invalid template name") as error:
         canonicalize_template_name(name)
 
@@ -86,7 +99,8 @@ def test_canonical_name_rejects_unsafe_names(name):
         assert name not in repr(error.value)
 
 
-def test_canonical_name_error_traceback_redacts_name():
+def test_canonical_name_error_traceback_redacts_name() -> None:
+    """Canonical name error traceback redacts name."""
     sensitive_name = "../private-screen.xml"
 
     with pytest.raises(InvalidTemplateName) as captured:
@@ -96,7 +110,12 @@ def test_canonical_name_error_traceback_redacts_name():
     assert sensitive_name not in rendered
 
 
-def test_filesystem_source_uses_directories_in_order_and_utf8(tmp_path):
+def test_filesystem_source_uses_directories_in_order_and_utf8(tmp_path: Path) -> None:
+    """Filesystem source uses directories in order and UTF-8.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     first, second = tmp_path / "first", tmp_path / "second"
     first.mkdir()
     second.mkdir()
@@ -120,25 +139,46 @@ def test_filesystem_source_uses_directories_in_order_and_utf8(tmp_path):
         resolved.content = "changed"
 
 
-def test_filesystem_source_returns_none_on_miss(tmp_path):
+def test_filesystem_source_returns_none_on_miss(tmp_path: Path) -> None:
+    """Filesystem source returns None on a miss.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     assert FileSystemSource([tmp_path]).resolve("missing.xml") is None
 
 
 @pytest.mark.parametrize("template_dirs", ["/tmp/hyperview", b"/tmp/hyperview"])
-def test_filesystem_source_rejects_scalar_template_roots(template_dirs) -> None:
-    """A scalar root cannot be misinterpreted as an iterable of characters."""
+def test_filesystem_source_rejects_scalar_template_roots(
+    template_dirs: str | bytes,
+) -> None:
+    """A scalar root cannot be misinterpreted as an iterable of characters.
+
+    Args:
+        template_dirs: Scalar given as the template roots.
+    """
     with pytest.raises(HyperviewConfigurationError, match="template_dirs"):
         FileSystemSource(template_dirs)
 
 
-def test_filesystem_source_rejects_a_bare_path_root(tmp_path) -> None:
-    """A Path must be wrapped in an ordered roots collection."""
+def test_filesystem_source_rejects_a_bare_path_root(tmp_path: Path) -> None:
+    """A Path must be wrapped in an ordered roots collection.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     with pytest.raises(HyperviewConfigurationError, match="template_dirs"):
         FileSystemSource(tmp_path)
 
 
-def test_filesystem_source_follows_a_configured_root_symlink_swap(tmp_path) -> None:
-    """Long-lived source instances follow atomic release symlink changes."""
+def test_filesystem_source_follows_a_configured_root_symlink_swap(
+    tmp_path: Path,
+) -> None:
+    """Long-lived source instances follow atomic release symlink changes.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     first = tmp_path / "release-1"
     second = tmp_path / "release-2"
     first.mkdir()
@@ -156,23 +196,37 @@ def test_filesystem_source_follows_a_configured_root_symlink_swap(tmp_path) -> N
     assert source.resolve("screen.xml").content == "<view>second</view>"
 
 
-def test_filesystem_source_treats_platform_path_limit_as_a_miss(tmp_path) -> None:
-    """Host filesystem limits cannot leak an absolute path through a raw error."""
+def test_filesystem_source_treats_platform_path_limit_as_a_miss(tmp_path: Path) -> None:
+    """Host filesystem limits cannot leak an absolute path through a raw error.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     source = FileSystemSource([tmp_path])
 
     assert source.resolve(f"{'a' * 300}.xml") is None
 
 
-def test_filesystem_source_treats_a_symlink_loop_as_a_miss(tmp_path) -> None:
-    """A looping entry behaves like an unavailable candidate."""
+def test_filesystem_source_treats_a_symlink_loop_as_a_miss(tmp_path: Path) -> None:
+    """A looping entry behaves like an unavailable candidate.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     loop = tmp_path / "loop.xml"
     loop.symlink_to(loop)
 
     assert FileSystemSource([tmp_path]).resolve("loop.xml") is None
 
 
-def test_filesystem_source_maps_non_utf8_content_to_validation_error(tmp_path) -> None:
-    """Stored bytes must satisfy the source's explicit UTF-8 contract."""
+def test_filesystem_source_maps_non_utf8_content_to_validation_error(
+    tmp_path: Path,
+) -> None:
+    """Stored bytes must satisfy the source's explicit UTF-8 contract.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     (tmp_path / "screen.xml").write_bytes(b"<view>caf\xe9</view>")
 
     with pytest.raises(TemplateValidationError) as captured:
@@ -182,7 +236,12 @@ def test_filesystem_source_maps_non_utf8_content_to_validation_error(tmp_path) -
     assert captured.value.__cause__ is None
 
 
-def test_empty_template_is_a_hit_before_later_content(tmp_path):
+def test_empty_template_is_a_hit_before_later_content(tmp_path: Path) -> None:
+    """Empty template is a hit before later content.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     first, second = tmp_path / "first", tmp_path / "second"
     first.mkdir()
     second.mkdir()
@@ -196,7 +255,12 @@ def test_empty_template_is_a_hit_before_later_content(tmp_path):
     assert resolved.revision == sha256(b"").hexdigest()
 
 
-def test_filesystem_source_rejects_symlink_escape(tmp_path):
+def test_filesystem_source_rejects_symlink_escape(tmp_path: Path) -> None:
+    """Filesystem source rejects symlink escape.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     root = tmp_path / "root"
     root.mkdir()
     secret = tmp_path / "secret.xml"
@@ -207,7 +271,15 @@ def test_filesystem_source_rejects_symlink_escape(tmp_path):
         FileSystemSource([root]).resolve("linked.xml")
 
 
-def test_filesystem_symlink_rejection_redacts_exception_chain(tmp_path, monkeypatch):
+def test_filesystem_symlink_rejection_redacts_exception_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Filesystem symlink rejection redacts exception chain.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+        monkeypatch: Patches the code under test for this test.
+    """
     root = tmp_path / "private-root"
     outside = tmp_path / "private-outside"
     root.mkdir()
@@ -219,7 +291,7 @@ def test_filesystem_symlink_rejection_redacts_exception_chain(tmp_path, monkeypa
     source = FileSystemSource([root])
     requested_name = f"{link.name}/{secret.name}"
 
-    def fail_if_read(_path):
+    def fail_if_read(_path: Path) -> Never:
         raise AssertionError("outside template must not be read")
 
     monkeypatch.setattr(Path, "read_bytes", fail_if_read)
@@ -243,13 +315,21 @@ def test_filesystem_symlink_rejection_redacts_exception_chain(tmp_path, monkeypa
         assert sensitive not in rendered
 
 
-def test_filesystem_source_redacts_path_resolution_errors(tmp_path, monkeypatch):
+def test_filesystem_source_redacts_path_resolution_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Filesystem source redacts path resolution errors.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+        monkeypatch: Patches the code under test for this test.
+    """
     root = tmp_path / "root"
     root.mkdir()
     source = FileSystemSource([root])
     failure = OSError(f"storage unavailable at {root}")
 
-    def fail_resolve(_path):
+    def fail_resolve(_path: Path) -> Never:
         raise failure
 
     monkeypatch.setattr(Path, "resolve", fail_resolve)
@@ -263,12 +343,19 @@ def test_filesystem_source_redacts_path_resolution_errors(tmp_path, monkeypatch)
     assert str(root) not in str(captured.value)
 
 
-def test_filesystem_source_redacts_file_read_errors(tmp_path, monkeypatch):
-    """File access failures expose only the stable source error contract."""
+def test_filesystem_source_redacts_file_read_errors(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """File access failures expose only the stable source error contract.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+        monkeypatch: Patches the code under test for this test.
+    """
     path = tmp_path / "screen.xml"
     path.write_text("<view />", encoding="utf-8")
 
-    def fail_read(_path):
+    def fail_read(_path: Path) -> Never:
         raise PermissionError(f"permission denied: {path}")
 
     monkeypatch.setattr(Path, "read_bytes", fail_read)
@@ -281,11 +368,12 @@ def test_filesystem_source_redacts_file_read_errors(tmp_path, monkeypatch):
     assert str(path) not in str(captured.value)
 
 
-def test_resolver_preserves_source_unavailable():
+def test_resolver_preserves_source_unavailable() -> None:
+    """Resolver preserves the SourceUnavailable error."""
     failure = SourceUnavailable("filesystem", "storage unavailable")
 
     class FailingSource:
-        def resolve(self, name):
+        def resolve(self, name: str) -> Never:
             raise failure
 
     with pytest.raises(SourceUnavailable) as captured:
@@ -295,17 +383,37 @@ def test_resolver_preserves_source_unavailable():
 
 
 class RecordingSource:
-    def __init__(self, result=None):
+    """A source that records the names it is asked for.
+
+    Args:
+        result: Result that the source returns for every name.
+    """
+
+    def __init__(self, result: ResolvedTemplate | None = None) -> None:
+        """Store the result and start with no calls."""
         self.result = result
         self.calls = []
 
-    def resolve(self, name):
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Record the name and return the configured result.
+
+        Args:
+            name: Template name under test.
+
+        Returns:
+            The result that the source was given.
+        """
         self.calls.append(name)
         return self.result
 
 
 @pytest.mark.parametrize("name", UNSAFE_UNICODE_NAMES)
-def test_resolver_rejects_unsafe_unicode_name_before_source_lookup(name):
+def test_resolver_rejects_unsafe_unicode_name_before_source_lookup(name: str) -> None:
+    """Resolver rejects an unsafe Unicode name before the source lookup.
+
+    Args:
+        name: Template name under test.
+    """
     source = RecordingSource()
 
     with pytest.raises(InvalidTemplateName) as captured:
@@ -315,7 +423,8 @@ def test_resolver_rejects_unsafe_unicode_name_before_source_lookup(name):
     assert source.calls == []
 
 
-def test_resolver_uses_first_match_and_skips_misses():
+def test_resolver_uses_first_match_and_skips_misses() -> None:
+    """Resolver uses first match and skips misses."""
     resolved = ResolvedTemplate("screen.xml", "winner", "memory:screen", "test", "1")
     miss, winner, later = (
         RecordingSource(),
@@ -331,7 +440,8 @@ def test_resolver_uses_first_match_and_skips_misses():
     ]
 
 
-def test_resolver_raises_typed_error_after_all_sources_miss():
+def test_resolver_raises_typed_error_after_all_sources_miss() -> None:
+    """Resolver raises typed error after all sources miss."""
     with pytest.raises(
         TemplateNotFound, match="Template not found: missing.xml"
     ) as error:
@@ -350,13 +460,19 @@ def test_resolver_raises_typed_error_after_all_sources_miss():
         ]
     }
 )
-def test_resolver_imports_configured_backend_with_options():
+def test_resolver_imports_configured_backend_with_options() -> None:
+    """Resolver imports configured backend with options."""
     resolved = TemplateResolver.from_settings().resolve("screen.xml")
 
     assert (resolved.content, resolved.revision) == ("configured", "settings-r1")
 
 
-def test_configured_filesystem_source_uses_template_dirs(tmp_path):
+def test_configured_filesystem_source_uses_template_dirs(tmp_path: Path) -> None:
+    """Configured filesystem source uses template dirs.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     (tmp_path / "screen.xml").write_text("from settings", encoding="utf-8")
     configured = {
         "TEMPLATE_DIRS": [tmp_path],
@@ -367,7 +483,8 @@ def test_configured_filesystem_source_uses_template_dirs(tmp_path):
         assert resolve_template("screen.xml").content == "from settings"
 
 
-def test_resolution_contract_is_exported_from_package_root():
+def test_resolution_contract_is_exported_from_package_root() -> None:
+    """Resolution contract is exported from package root."""
     import dj_hyperview
 
     expected = {
