@@ -84,7 +84,7 @@ written against 0.110.0 and is described in
 - The package never runs the Hyperview client, so schema acceptance does not prove
   that a native component, behavior or route exists in your app.
 - The repository records bundled provenance for Hyperview 0.110.0 and 0.111.0
-  only. The 0.113.0 comparison above does not bundle new files or establish a
-  blanket compatibility range for future releases.
+  only. The 0.113.0 to 0.115.1 comparison above does not bundle new files or
+  establish a blanket compatibility range for future releases.
 - The reference mobile matrix in [Mobile Getting Started](mobile-getting-started.md)
   is a tested example, not a compatibility range.
