@@ -123,6 +123,7 @@ def _signature(tokens: list[Any]) -> list[tuple[Any, ...]]:
 
 
 def test_tag_spans_match_djangos_tag_regular_expression() -> None:
+    """Tag spans match the ones of Django's tag regular expression."""
     for seed in SEEDS:
         source = _random_source(seed, LEXER_ATOMS)
 
@@ -132,6 +133,7 @@ def test_tag_spans_match_djangos_tag_regular_expression() -> None:
 
 
 def test_linear_lexer_produces_the_tokens_of_djangos_debug_lexer() -> None:
+    """The linear lexer produces the same tokens as Django's debug lexer."""
     for seed in SEEDS:
         source = _random_source(seed, LEXER_ATOMS)
 
@@ -157,6 +159,11 @@ def test_linear_lexer_produces_the_tokens_of_djangos_debug_lexer() -> None:
     ],
 )
 def test_tag_spans_keep_djangos_delimiter_corner_cases(source: str) -> None:
+    """Tag spans keep Django's behavior for delimiter corner cases.
+
+    Args:
+        source: Source text with a delimiter corner case.
+    """
     assert list(_tag_spans(source)) == [m.span() for m in tag_re.finditer(source)]
 
 
@@ -178,6 +185,7 @@ def _characters_read_by_djangos_lexer(source: str) -> int:
 
 
 def test_unclosed_cost_matches_what_djangos_lexer_reads() -> None:
+    """The unclosed cost matches what Django's lexer reads."""
     for seed in SEEDS:
         source = _random_source(seed, LEXER_ATOMS)
 
@@ -203,15 +211,23 @@ def test_unclosed_cost_matches_what_djangos_lexer_reads() -> None:
 def test_unclosed_cost_counts_the_line_that_each_unclosed_opener_makes_django_read(
     source: str, cost: int
 ) -> None:
+    """The unclosed cost counts the line Django reads for each unclosed opener.
+
+    Args:
+        source: Template source whose cost is measured.
+        cost: Expected number of characters Django reads for the source.
+    """
     assert _unclosed_cost(source) == cost
 
 
 def test_unclosed_cost_stops_counting_once_over_the_limit() -> None:
+    """The unclosed cost stops counting once it is over the limit."""
     # The first opener alone reads the whole line, so the scan ends there.
     assert _unclosed_cost("{" * 1_000_000, limit=10) == 1_000_000
 
 
 def test_exceeding_the_limit_is_decided_as_the_exact_cost_decides_it() -> None:
+    """Exceeding the limit is decided exactly as the exact cost decides it."""
     for seed in SEEDS:
         source = _random_source(seed, LEXER_ATOMS)
         cost = _unclosed_cost(source)
@@ -226,7 +242,11 @@ def test_exceeding_the_limit_is_decided_as_the_exact_cost_decides_it() -> None:
 def test_a_source_whose_bound_is_within_the_limit_is_not_scanned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Every opener is a brace and costs at most the longest line: 6 * 4 here."""
+    """Every opener is a brace and costs at most the longest line: 6 * 4 here.
+
+    Args:
+        monkeypatch: Replaces the exact cost function with one that fails when called.
+    """
 
     def forbidden(*args: Any) -> int:
         raise AssertionError("scanned")
@@ -240,6 +260,11 @@ def test_a_source_whose_bound_is_within_the_limit_is_not_scanned(
 def test_a_source_whose_bound_passes_the_limit_is_scanned(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """A source whose bound passes the limit is scanned.
+
+    Args:
+        monkeypatch: Wraps the exact cost function so the test can see each call.
+    """
     scanned: list[tuple[str, float]] = []
     exact = _template_lexer._unclosed_cost
 
@@ -261,7 +286,11 @@ def test_a_source_whose_bound_passes_the_limit_is_scanned(
     ids=["unclosed-openers", "distant-closer", "comment-openers"],
 )
 def test_unclosed_openers_are_lexed_in_linear_time(build: Callable[[], str]) -> None:
-    """Django's lazy regular expression rescans the line for every opener."""
+    """Django's lazy regular expression rescans the line for every opener.
+
+    Args:
+        build: Builds the hostile template source to lex.
+    """
     source = build()
 
     started = time.perf_counter()
@@ -273,6 +302,7 @@ def test_unclosed_openers_are_lexed_in_linear_time(build: Callable[[], str]) -> 
 
 
 def test_compiled_nodelist_matches_the_one_djangos_template_builds() -> None:
+    """The compiled node list matches the one Django builds for a template."""
     engine = Engine(debug=True)
     source = (
         "{% if a %}{{ b|upper }}{% else %}{% comment 'x' %}y{% endcomment %}{% endif %}"
@@ -286,6 +316,7 @@ def test_compiled_nodelist_matches_the_one_djangos_template_builds() -> None:
 
 
 def test_compiled_nodelist_reports_syntax_errors_with_the_source_line() -> None:
+    """The compiled node list reports syntax errors with the source line."""
     with pytest.raises(TemplateSyntaxError) as captured:
         _compile_nodelist(Engine(), "<a>\n{% if x %}", Origin("hyperview:x"))
 
@@ -422,6 +453,7 @@ def _reference_scan(source: str) -> dict[str, Any]:
 
 
 def test_scan_matches_a_character_by_character_reference() -> None:
+    """The scan matches a character-by-character reference scanner."""
     for seed in SEEDS:
         source = _random_source(seed, (TEMPLATE_ATOMS, XML_ATOMS)[seed % 2])
 
@@ -438,6 +470,7 @@ def test_scan_matches_a_character_by_character_reference() -> None:
 
 
 def test_scan_keeps_every_line_break() -> None:
+    """The scan keeps every line break."""
     for seed in SEEDS:
         source = _random_source(seed, (TEMPLATE_ATOMS, XML_ATOMS)[seed % 2])
 
@@ -470,10 +503,17 @@ def test_scan_keeps_every_line_break() -> None:
 def test_scan_locates_each_django_token_in_xml_text_a_tag_or_an_attribute(
     source: str, expected: list[str]
 ) -> None:
+    """The scan locates each Django token in XML text, a tag or an attribute.
+
+    Args:
+        source: Template source that is scanned.
+        expected: Context of each Django token, in source order.
+    """
     assert list(scanning._scan_template(source).contexts.values()) == expected
 
 
 def test_scan_hides_comment_blocks_whatever_their_note() -> None:
+    """The scan hides comment blocks whatever their note says."""
     source = '<a>{% comment "why" %}<b x=1>{% if %}{% endcomment %}</a>'
 
     scan = scanning._scan_template(source)
@@ -483,6 +523,7 @@ def test_scan_hides_comment_blocks_whatever_their_note() -> None:
 
 
 def test_scan_does_not_take_a_tag_that_starts_with_comment_for_a_comment() -> None:
+    """The scan does not take a tag that starts with comment for a comment."""
     source = "<a>{% commentx %}<b x=1>{% endcomment %}</a>"
 
     scan = scanning._scan_template(source)
@@ -492,6 +533,7 @@ def test_scan_does_not_take_a_tag_that_starts_with_comment_for_a_comment() -> No
 
 
 def test_scan_treats_an_unclosed_comment_as_one_runtime_token() -> None:
+    """The scan treats an unclosed comment as one runtime token."""
     scan = scanning._scan_template("{% comment %}\n<b x=1>")
 
     assert scan.first_structure_line == 1
@@ -499,6 +541,7 @@ def test_scan_treats_an_unclosed_comment_as_one_runtime_token() -> None:
 
 
 def test_scan_reports_the_first_verbatim_line_and_hides_its_body() -> None:
+    """The scan reports the first verbatim line and hides its body."""
     body = "{% verbatim %}<b {{ x }}>{% endverbatim %}"
 
     scan = scanning._scan_template(f"<a/>\n{body}<c/>")
@@ -508,6 +551,7 @@ def test_scan_reports_the_first_verbatim_line_and_hides_its_body() -> None:
 
 
 def test_scan_stops_at_an_unclosed_verbatim_block() -> None:
+    """The scan stops at an unclosed verbatim block."""
     body = "{% verbatim %}<b/>"
 
     scan = scanning._scan_template(f"<a/>{body}")
@@ -517,6 +561,7 @@ def test_scan_stops_at_an_unclosed_verbatim_block() -> None:
 
 
 def test_markers_number_themselves_after_the_highest_one_in_the_source() -> None:
+    """Markers number themselves after the highest one in the source."""
     source = " ".join(
         f"DJHVSTATICDYNAMIC{suffix}" for suffix in ("", "_" * 3, "0", "7", "012")
     )
@@ -544,6 +589,11 @@ def test_markers_number_themselves_after_the_highest_one_in_the_source() -> None
 def test_markers_stay_unique_and_short_whatever_follows_the_marker_name(
     suffix: str,
 ) -> None:
+    """Markers stay unique and short whatever follows the marker name.
+
+    Args:
+        suffix: Text that follows the marker name in the source.
+    """
     source = (
         f"DJHVSTATICDYNAMIC{suffix} DJHVSTATICSTRUCTURE{suffix} {{{{ a }}}} {{% b %}}"
     )
@@ -568,7 +618,12 @@ def test_markers_stay_unique_and_short_whatever_follows_the_marker_name(
 def test_a_marker_that_cannot_be_numbered_above_every_run_is_refused(
     name: str, digits: str
 ) -> None:
-    """The next number would have nine digits, and the source can hold that prefix."""
+    """The next number would have nine digits, and the source can hold that prefix.
+
+    Args:
+        name: Marker name the source contains.
+        digits: Digits that follow the marker name in the source.
+    """
     source = f"{name}{digits} {name}100000000"
 
     with pytest.raises(scanning._MaskTooLarge):
@@ -581,7 +636,11 @@ def test_a_marker_that_cannot_be_numbered_above_every_run_is_refused(
 def test_a_run_of_underscores_does_not_lengthen_the_marker_or_the_masked_text(
     size: int,
 ) -> None:
-    """The marker used to outgrow the underscores, and every token carries it."""
+    """The marker used to outgrow the underscores, and every token carries it.
+
+    Args:
+        size: Approximate length of the generated source.
+    """
     head = "DJHVSTATICDYNAMIC"
     run = (size - len(head)) // 2
     tokens = (size - len(head) - run) // 5
@@ -596,6 +655,7 @@ def test_a_run_of_underscores_does_not_lengthen_the_marker_or_the_masked_text(
 
 
 def test_declarations_are_blanked_only_when_they_close() -> None:
+    """XML declarations are blanked only when they close."""
     closed = scanning._scan_template('<?xml version="1.0"?><a/>').masked
     unclosed = scanning._scan_template('<?xml version="1.0"<a/>').masked
 
@@ -617,6 +677,11 @@ def test_declarations_are_blanked_only_when_they_close() -> None:
 def test_scanning_unterminated_xml_constructs_takes_linear_time(
     build: Callable[[], str],
 ) -> None:
+    """Scanning unterminated XML constructs takes linear time.
+
+    Args:
+        build: Builds the source with unterminated XML constructs.
+    """
     source = build()
 
     started = time.perf_counter()
@@ -626,6 +691,7 @@ def test_scanning_unterminated_xml_constructs_takes_linear_time(
 
 
 def test_stored_source_validation_reports_excessive_nesting() -> None:
+    """Stored source validation reports excessive nesting."""
     from django.core.exceptions import ValidationError
 
     from dj_hyperview.contrib.database.validators import (
@@ -655,6 +721,15 @@ NESTED_BLOCKS = {
 
 
 def nested(tag: str, depth: int) -> str:
+    """Build a template with nested blocks around a view element.
+
+    Args:
+        tag: Block type that is nested, as a key of the nesting table.
+        depth: Number of nested blocks.
+
+    Returns:
+        Template source with depth nested blocks around a view element.
+    """
     opening, closing = NESTED_BLOCKS[tag]
     return opening * depth + "<view />" + closing * depth
 
@@ -663,7 +738,11 @@ def nested(tag: str, depth: int) -> str:
 def test_nesting_at_the_limit_is_accepted_and_renders_below_a_deep_caller(
     tag: str,
 ) -> None:
-    """Compiling takes about 490 nested blocks, but rendering fails at about 330."""
+    """Compiling takes about 490 nested blocks, but rendering fails at about 330.
+
+    Args:
+        tag: Block type that is nested, as a key of the nesting table.
+    """
     from dj_hyperview.contrib.database._template_syntax import _MAX_NESTING
     from dj_hyperview.contrib.database.validators import (
         validate_stored_template_source,
@@ -686,6 +765,11 @@ def test_nesting_at_the_limit_is_accepted_and_renders_below_a_deep_caller(
 def test_nesting_over_the_limit_is_too_deep_before_rendering_can_fail(
     tag: str,
 ) -> None:
+    """Nesting over the limit is reported as too deep before rendering can fail.
+
+    Args:
+        tag: Block type that is nested, as a key of the nesting table.
+    """
     from django.core.exceptions import ValidationError
 
     from dj_hyperview.contrib.database._template_syntax import _MAX_NESTING
@@ -701,7 +785,11 @@ def test_nesting_over_the_limit_is_too_deep_before_rendering_can_fail(
 
 @pytest.mark.parametrize("tag", NESTED_BLOCKS)
 def test_nesting_far_over_the_limit_is_too_deep_instead_of_a_crash(tag: str) -> None:
-    """A filter in an opening tag raised TypeError at about 490 levels, not too_deep."""
+    """A filter in an opening tag raised TypeError at about 490 levels, not too_deep.
+
+    Args:
+        tag: Block type that is nested, as a key of the nesting table.
+    """
     from django.core.exceptions import ValidationError
 
     from dj_hyperview.contrib.database.validators import (
@@ -718,7 +806,11 @@ def test_nesting_far_over_the_limit_is_too_deep_instead_of_a_crash(tag: str) -> 
 def test_nesting_is_capped_at_100_levels_whatever_the_innermost_body_holds(
     body: str,
 ) -> None:
-    """The limit is pinned here, so a change to _MAX_NESTING has to change this."""
+    """The limit is pinned here, so a change to _MAX_NESTING has to change this.
+
+    Args:
+        body: Innermost body of the nested blocks.
+    """
     from django.core.exceptions import ValidationError
 
     from dj_hyperview.contrib.database.validators import (
@@ -737,7 +829,12 @@ def test_nesting_is_capped_at_100_levels_whatever_the_innermost_body_holds(
 def test_a_recursion_error_that_django_turns_into_a_type_error_is_still_recursion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """inspect.getfullargspec raises TypeError from the RecursionError it caught."""
+    """inspect.getfullargspec raises TypeError from the RecursionError it caught.
+
+    Args:
+        monkeypatch: Patches the filter compiler to raise a TypeError chained to a
+            RecursionError.
+    """
 
     def exhausted(self: object, token: str) -> None:
         try:
@@ -754,6 +851,12 @@ def test_a_recursion_error_that_django_turns_into_a_type_error_is_still_recursio
 def test_an_unrelated_type_error_is_not_mistaken_for_recursion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """An unrelated type error is not mistaken for a recursion error.
+
+    Args:
+        monkeypatch: Patches the filter compiler to raise an unrelated TypeError.
+    """
+
     def broken(self: object, token: str) -> None:
         raise TypeError("not about recursion")
 
@@ -765,7 +868,11 @@ def test_an_unrelated_type_error_is_not_mistaken_for_recursion(
 
 @pytest.mark.parametrize("link", ["__cause__", "__context__"])
 def test_a_cyclic_chain_of_causes_ends_the_search(link: str) -> None:
-    """Two exceptions that name each other; reading the link too often fails."""
+    """Two exceptions that name each other; reading the link too often fails.
+
+    Args:
+        link: Name of the exception attribute that closes the cycle.
+    """
     reads: list[None] = []
 
     def follow(self: Any) -> BaseException:
@@ -782,6 +889,7 @@ def test_a_cyclic_chain_of_causes_ends_the_search(link: str) -> None:
 
 
 def test_a_recursion_error_behind_other_causes_is_still_found() -> None:
+    """A recursion error behind other causes is still found."""
     try:
         try:
             raise RecursionError
@@ -797,6 +905,7 @@ def test_a_recursion_error_behind_other_causes_is_still_found() -> None:
 
 
 def test_an_else_branch_does_not_deepen_the_nesting() -> None:
+    """An else branch does not deepen the nesting."""
     from dj_hyperview.contrib.database._template_syntax import _MAX_NESTING
     from dj_hyperview.contrib.database.validators import (
         validate_stored_template_source,
@@ -818,6 +927,12 @@ def test_an_else_branch_does_not_deepen_the_nesting() -> None:
 def test_stored_source_validation_keeps_reporting_django_syntax_errors(
     source: str, message: str
 ) -> None:
+    """Stored source validation keeps reporting Django syntax errors.
+
+    Args:
+        source: Template source with a syntax error.
+        message: Validation message the error is expected to carry.
+    """
     from django.core.exceptions import ValidationError
 
     from dj_hyperview.contrib.database.validators import (

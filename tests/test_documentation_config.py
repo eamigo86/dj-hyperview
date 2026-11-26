@@ -60,6 +60,7 @@ def _navigation_targets(items: list[dict[str, object]]) -> list[str]:
 
 
 def test_navigation_lists_every_public_page_exactly_once() -> None:
+    """The navigation lists every public page exactly once."""
     config = yaml.safe_load((ROOT / "zensical.yml").read_text())
     targets = _navigation_targets(config["nav"])
 
@@ -70,6 +71,7 @@ def test_navigation_lists_every_public_page_exactly_once() -> None:
 
 
 def test_compatibility_page_describes_the_active_contract() -> None:
+    """The compatibility page describes the active schema contract."""
     from dj_hyperview import HYPERVIEW_SCHEMA_VERSION
     from dj_hyperview._schema_revision import SCHEMA_REVISION
 
@@ -80,6 +82,7 @@ def test_compatibility_page_describes_the_active_contract() -> None:
 
 
 def test_custom_component_schema_example_is_valid_xsd_1_1() -> None:
+    """The custom component schema example is valid XSD 1.1."""
     schema = xmlschema.XMLSchema11(DOCS / "examples" / "hypertodo.xsd", allow="local")
 
     namespace = "https://hypertodo.app/components"
@@ -90,6 +93,11 @@ def test_custom_component_schema_example_is_valid_xsd_1_1() -> None:
 def test_custom_schema_guide_sample_validates_against_the_example(
     cold_schema_caches: None,
 ) -> None:
+    """The custom schema guide sample validates against the example schema.
+
+    Args:
+        cold_schema_caches: Clears the schema caches before the test runs.
+    """
     from django.test import override_settings
 
     from dj_hyperview import validate_hyperview_schema
@@ -107,12 +115,14 @@ def test_custom_schema_guide_sample_validates_against_the_example(
 
 
 def test_api_reference_names_every_public_export() -> None:
+    """The API reference names every public export."""
     reference = (DOCS / "api-reference.md").read_text()
 
     assert [name for name in public_api if f"`{name}`" not in reference] == []
 
 
 def test_settings_reference_documents_exactly_the_supported_keys() -> None:
+    """The settings reference documents exactly the supported keys."""
     page = (DOCS / "configuration.md").read_text()
     section = page.split("## Settings reference", 1)[1].split("\n## ", 1)[0]
     documented = set(re.findall(r"^\| `([A-Z_.\[\]]+)` \|", section, re.M))
@@ -129,6 +139,11 @@ def test_settings_reference_documents_exactly_the_supported_keys() -> None:
 def test_source_options_reference_covers_every_constructor_parameter(
     source: type,
 ) -> None:
+    """The source options reference covers every constructor parameter.
+
+    Args:
+        source: Source class whose constructor parameters the page documents.
+    """
     page = (DOCS / "configuration.md").read_text()
     parameters = set(inspect.signature(source).parameters)
 
@@ -149,6 +164,7 @@ def test_markdown_links_remain_inside_the_zensical_document_tree() -> None:
 
 
 def test_repository_links_point_at_files_that_exist() -> None:
+    """Repository links point at files that exist."""
     prefix = "https://github.com/eamigo86/dj-hyperview/blob/main/"
     pages = [ROOT / "README.md", *_public_markdown_paths()]
     targets = {
@@ -168,7 +184,11 @@ def test_repository_links_point_at_files_that_exist() -> None:
 def test_documented_verification_scope_matches_configured_profiles(
     contract: str,
 ) -> None:
-    """Compare published scope rows with executable matrix and database settings."""
+    """Compare published scope rows with executable matrix and database settings.
+
+    Args:
+        contract: Name of the contract row in the verified scope table.
+    """
     metadata = tomllib.loads((ROOT / "pyproject.toml").read_text())
     workflow = yaml.safe_load((ROOT / ".github/workflows/ci.yml").read_text())
     matrix = workflow["jobs"]["compatibility"]["strategy"]["matrix"]
@@ -202,7 +222,11 @@ def test_documented_verification_scope_matches_configured_profiles(
 def test_beta_entrypoints_link_to_existing_canonical_contract_sections(
     entry: str,
 ) -> None:
-    """Readers can reach the compatibility commitment and its measured limits."""
+    """Readers can reach the compatibility commitment and its measured limits.
+
+    Args:
+        entry: Entry document, relative to the repository root, that is checked.
+    """
     source = ROOT / entry
     text = source.read_text()
     for filename, anchor, heading in (

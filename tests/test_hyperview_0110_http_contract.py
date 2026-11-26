@@ -57,7 +57,11 @@ def _schema() -> etree.XMLSchema:
 
 @override_settings(**HTTP_SETTINGS)
 def test_full_fixture_satisfies_public_http_contract(client: Client) -> None:
-    """Serve and validate a full document through public package APIs."""
+    """Serve and validate a full document through public package APIs.
+
+    Args:
+        client: Client that requests the contract documents.
+    """
     response = client.get("/documents/source/", {"template": "full.xml"})
 
     document = validate_contract_response(
@@ -81,7 +85,14 @@ def test_full_fixture_satisfies_public_http_contract(client: Client) -> None:
 def test_partial_fixtures_satisfy_public_http_contract(
     client: Client, name: str, expected_root: str, expected_text: str
 ) -> None:
-    """Serve versioned fragment forms with valid behavior references."""
+    """Serve versioned fragment forms with valid behavior references.
+
+    Args:
+        client: Client that requests the contract documents.
+        name: Name of the fixture template to request.
+        expected_root: Local name of the expected root element.
+        expected_text: Text that the document is expected to contain.
+    """
     response = client.get("/documents/source/", {"template": name})
 
     document = validate_contract_response(
@@ -159,7 +170,12 @@ def test_versioned_request_escapes_context_and_accepts_real_csrf() -> None:
 def test_http_contract_rejects_invalid_protocol_boundaries(
     case: str, message: str
 ) -> None:
-    """Reject invalid media, encoding, XML, shape, and target references."""
+    """Reject invalid media, encoding, XML, shape, and target references.
+
+    Args:
+        case: Kind of protocol boundary that the response breaks.
+        message: Error message that the contract check is expected to raise.
+    """
     content = (CONTRACT / "fragment.xml").read_bytes()
     response: HttpResponse = HyperviewResponse(content)
     expected_root = "view"
@@ -205,7 +221,11 @@ def test_http_contract_rejects_invalid_protocol_boundaries(
 def test_http_contract_rejects_non_utf8_bytes_or_declaration(
     content: bytes,
 ) -> None:
-    """Reject body bytes and XML declarations that contradict HTTP UTF-8."""
+    """Reject body bytes and XML declarations that contradict HTTP UTF-8.
+
+    Args:
+        content: Response body that contradicts the UTF-8 contract.
+    """
     with pytest.raises(TemplateValidationError):
         HyperviewResponse(content)
     response = HttpResponse(content, content_type=HYPERVIEW_MEDIA_TYPE)
@@ -240,7 +260,12 @@ def test_http_contract_rejects_non_utf8_bytes_or_declaration(
 def test_http_contract_rejects_dtd_and_entities_without_details(
     body: str,
 ) -> None:
-    """Reject internal and external declarations without resolving resources."""
+    """Reject internal and external declarations without resolving resources.
+
+    Args:
+        body: Declaration markup placed after the XML declaration, with a namespace
+            placeholder.
+    """
     content = (
         '<?xml version="1.0" encoding="UTF-8"?>' + body.format(namespace=NAMESPACE)
     ).encode()

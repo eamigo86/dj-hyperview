@@ -1,10 +1,15 @@
+"""Database template source cache and alias isolation tests."""
+
 import traceback
+from collections.abc import Iterator
+from typing import Any
 from unittest.mock import patch
 
 import pytest
 from django.apps import apps
 from django.core.cache import caches
 from django.db import connections, transaction
+from django.db.models import Model
 from django.test import override_settings
 
 from dj_hyperview.cache import TemplateCache, invalidate_templates
@@ -31,24 +36,47 @@ UNSET = object()
 
 
 class SwitchingRouter:
+    """Database router whose read alias the test switches."""
+
     def __init__(self) -> None:
+        """Select the default alias and record no reads."""
         self.selected = "default"
         self.reads: list[str] = []
 
     def db_for_read(self, model: type, **hints: object) -> str:
+        """Record the selected alias and route the read to it.
+
+        Args:
+            model: Model class that is read.
+            **hints: Routing hints that Django passes.
+
+        Returns:
+            The currently selected database alias.
+        """
         del model, hints
         self.reads.append(self.selected)
         return self.selected
 
 
 class UncachedSource:
+    """Source that declares itself uncacheable and counts its calls."""
+
     cacheable = False
 
     def __init__(self) -> None:
+        """Start with the first content and no calls."""
         self.content = "first"
         self.calls = 0
 
     def resolve(self, name: str) -> ResolvedTemplate:
+        """Return the current content and count the call.
+
+        Args:
+            name: Template name to resolve.
+
+        Returns:
+            A resolved template that carries the current content.
+        """
         self.calls += 1
         return ResolvedTemplate(name, self.content, "memory", "memory", "1")
 
@@ -57,25 +85,52 @@ class ThirdPartySource:
     """Third-party source whose constructor happens to accept a using option."""
 
     def __init__(self, *, using: object = None) -> None:
+        """Keep the using option without giving it any database meaning.
+
+        Args:
+            using: Option value the source keeps.
+        """
         self.using = using
 
     def resolve(self, name: str) -> None:
+        """Resolve nothing.
+
+        Args:
+            name: Template name to resolve.
+        """
         del name
 
 
 class CacheableMissSource:
+    """Cacheable source that always misses and counts its calls."""
+
     cacheable = True
 
     def __init__(self) -> None:
+        """Start with no calls."""
         self.calls = 0
 
     def resolve(self, name: str) -> None:
+        """Count the call and report a miss.
+
+        Args:
+            name: Template name to resolve.
+        """
         del name
         self.calls += 1
 
 
 @pytest.fixture
-def dual_database_model(django_db_blocker):
+def dual_database_model(django_db_blocker: Any) -> Iterator[type[Model]]:
+    """Create the template table on every alias for one test.
+
+    Args:
+        django_db_blocker: Allows the fixture to create the tables outside a test
+            transaction.
+
+    Yields:
+        The template model class, with its table present on every alias.
+    """
     with override_settings(INSTALLED_APPS=DATABASE_APPS):
         model = apps.get_model("dj_hyperview_database", "HyperviewTemplate")
         with django_db_blocker.unblock():
@@ -90,6 +145,15 @@ def dual_database_model(django_db_blocker):
 
 
 def database_config(namespace: str, using: object = UNSET) -> dict[str, object]:
+    """Build Hyperview settings with a database source and an isolated cache.
+
+    Args:
+        namespace: Cache namespace of the scenario.
+        using: Value of the using option, or UNSET to omit the option.
+
+    Returns:
+        Hyperview settings that configure the database source.
+    """
     options = {} if using is UNSET else {"using": using}
     return {
         "SOURCES": [{"BACKEND": DATABASE_BACKEND, "OPTIONS": options}],
@@ -103,6 +167,11 @@ def database_config(namespace: str, using: object = UNSET) -> dict[str, object]:
     ids=["integer", "boolean", "list", "object", "empty", "unknown"],
 )
 def test_database_using_invalid_values_fail_safely_at_runtime(using: object) -> None:
+    """An invalid using option makes the source fail safely at runtime.
+
+    Args:
+        using: Invalid value of the using option.
+    """
     with override_settings(INSTALLED_APPS=DATABASE_APPS):
         source = DatabaseSource(using=using)
         with pytest.raises(SourceUnavailable) as captured:
@@ -123,6 +192,11 @@ def test_database_using_invalid_values_fail_safely_at_runtime(using: object) -> 
     ids=["integer", "boolean", "list", "object", "empty", "unknown"],
 )
 def test_database_using_invalid_values_have_actionable_checks(using: object) -> None:
+    """An invalid using option produces an actionable configuration error.
+
+    Args:
+        using: Invalid value of the using option.
+    """
     with override_settings(
         INSTALLED_APPS=DATABASE_APPS,
         HYPERVIEW=database_config("invalid-using", using),
@@ -139,6 +213,7 @@ def test_database_using_invalid_values_have_actionable_checks(using: object) -> 
 
 
 def test_database_using_check_does_not_apply_to_third_party_sources() -> None:
+    """The using check ignores third-party sources."""
     configured = {
         "SOURCES": [
             {"BACKEND": f"{__name__}.ThirdPartySource", "OPTIONS": {"using": object()}}
@@ -150,6 +225,7 @@ def test_database_using_check_does_not_apply_to_third_party_sources() -> None:
 
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_source_declaring_cacheable_false_bypasses_the_resolver_cache() -> None:
+    """A source that declares itself uncacheable bypasses the resolver cache."""
     source = UncachedSource()
     cache = TemplateCache("declared-uncacheable", alias="screens")
     resolver = TemplateResolver([source], cache=cache)
@@ -167,9 +243,14 @@ def test_source_declaring_cacheable_false_bypasses_the_resolver_cache() -> None:
 @pytest.mark.django_db(transaction=True, databases=ALIASES)
 @pytest.mark.parametrize("exists", [True, False], ids=["content", "miss"])
 def test_atomic_database_snapshots_never_publish_to_shared_cache(
-    dual_database_model, exists: bool
+    dual_database_model: type[Model], exists: bool
 ) -> None:
-    """Transaction-scoped database snapshots cannot populate shared cache state."""
+    """Transaction-scoped database snapshots cannot populate shared cache state.
+
+    Args:
+        dual_database_model: Template model class with its table created on every alias.
+        exists: Whether the database holds the template.
+    """
     if exists:
         dual_database_model.objects.using("default").create(
             name="screen.xml", content="snapshot", revision=1
@@ -197,9 +278,13 @@ def test_atomic_database_snapshots_never_publish_to_shared_cache(
 @pytest.mark.django_db(transaction=True, databases=ALIASES)
 @override_settings(CACHES=LOCMEM_CACHES)
 def test_atomic_database_hit_publishes_earlier_cacheable_miss(
-    dual_database_model,
+    dual_database_model: type[Model],
 ) -> None:
-    """Initialization inside atomic retains safe misses before an unsafe DB hit."""
+    """Initialization inside atomic retains safe misses before an unsafe DB hit.
+
+    Args:
+        dual_database_model: Template model class with its table created on every alias.
+    """
     dual_database_model.objects.using("default").create(
         name="screen.xml", content="snapshot", revision=1
     )
@@ -218,8 +303,14 @@ def test_atomic_database_hit_publishes_earlier_cacheable_miss(
 @pytest.mark.django_db(transaction=True, databases=ALIASES)
 @pytest.mark.parametrize("cached_miss", [False, True], ids=["content", "miss"])
 def test_router_selected_database_source_never_reuses_cross_database_cache(
-    dual_database_model, cached_miss: bool
+    dual_database_model: type[Model], cached_miss: bool
 ) -> None:
+    """A router-selected source never reuses a cache entry from another database.
+
+    Args:
+        dual_database_model: Template model class with its table created on every alias.
+        cached_miss: Whether the first lookup caches a miss instead of content.
+    """
     if not cached_miss:
         dual_database_model.objects.using("default").create(
             name="screen.xml", content="default"
@@ -250,8 +341,13 @@ def test_router_selected_database_source_never_reuses_cross_database_cache(
 
 @pytest.mark.django_db(transaction=True, databases=ALIASES)
 def test_explicit_database_aliases_isolate_cache_and_support_invalidation(
-    dual_database_model,
+    dual_database_model: type[Model],
 ) -> None:
+    """Explicit aliases isolate their caches and support invalidation.
+
+    Args:
+        dual_database_model: Template model class with its table created on every alias.
+    """
     dual_database_model.objects.using("default").create(
         name="screen.xml", content="default-old", revision=1
     )
@@ -283,8 +379,13 @@ def test_explicit_database_aliases_isolate_cache_and_support_invalidation(
 
 @pytest.mark.django_db(transaction=True, databases=ALIASES)
 def test_explicit_database_alias_negative_cache_is_isolated(
-    dual_database_model,
+    dual_database_model: type[Model],
 ) -> None:
+    """An explicit alias keeps its negative cache entry isolated.
+
+    Args:
+        dual_database_model: Template model class with its table created on every alias.
+    """
     dual_database_model.objects.using("replica").create(
         name="screen.xml", content="replica"
     )

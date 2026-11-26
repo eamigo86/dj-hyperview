@@ -59,6 +59,7 @@ def database_config(namespace: str) -> dict[str, object]:
 
 
 def test_app_ready_connects_signal_handlers() -> None:
+    """The database app connects its signal handlers when Django is ready."""
     with patch(
         "dj_hyperview.contrib.database.signals._connect_signal_handlers"
     ) as connect:
@@ -69,6 +70,14 @@ def test_app_ready_connects_signal_handlers() -> None:
 
 @pytest.fixture
 def signal_model(transactional_db: None) -> Iterator[type[Model]]:
+    """Create the template table and connect the signal handlers for one test.
+
+    Args:
+        transactional_db: Enables transactional database access for the fixture.
+
+    Yields:
+        The template model class, with its table present.
+    """
     from dj_hyperview.contrib.database.models import HyperviewTemplate
 
     _connect_signal_handlers()
@@ -81,6 +90,15 @@ def signal_model(transactional_db: None) -> Iterator[type[Model]]:
 
 @pytest.fixture
 def dual_signal_model(django_db_blocker: Any) -> Iterator[type[Model]]:
+    """Create the template table on every alias and connect the handlers.
+
+    Args:
+        django_db_blocker: Allows the fixture to create the tables outside a test
+            transaction.
+
+    Yields:
+        The template model class, with its table present on every alias.
+    """
     from dj_hyperview.contrib.database.models import HyperviewTemplate
 
     _connect_signal_handlers()
@@ -102,6 +120,14 @@ def proxy_model(
     """Yield a proxy, or a proxy of a proxy, defined after the handlers connected.
 
     The classes live in an isolated registry, like a model created at runtime.
+
+    Args:
+        request: Pytest request that selects the proxy flavor.
+        signal_model: Template model class with its table created and its handlers
+            connected.
+
+    Yields:
+        The proxy model class.
     """
     with isolate_apps():
 
@@ -125,7 +151,15 @@ def proxy_model(
 
 @pytest.fixture
 def scoped_proxy_model(signal_model: type[Model]) -> Iterator[type[Model]]:
-    """Yield a proxy whose default manager hides every row outside live/."""
+    """Yield a proxy whose default manager hides every row outside live/.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+
+    Yields:
+        The scoped proxy model class.
+    """
 
     class LiveOnly(Manager):
         def get_queryset(self) -> QuerySet:
@@ -145,7 +179,11 @@ def scoped_proxy_model(signal_model: type[Model]) -> Iterator[type[Model]]:
 
 
 def test_proxy_model_saves_schedule_invalidation(proxy_model: type[Model]) -> None:
-    """Django sends proxy instances' signals with the proxy class as sender."""
+    """Django sends proxy instances' signals with the proxy class as sender.
+
+    Args:
+        proxy_model: Proxy of the template model, or a proxy of that proxy.
+    """
     with patch(
         "dj_hyperview.contrib.database.signals._schedule_invalidation"
     ) as schedule:
@@ -170,6 +208,11 @@ def test_proxy_model_saves_schedule_invalidation(proxy_model: type[Model]) -> No
 
 
 def test_proxy_model_deletes_schedule_invalidation(proxy_model: type[Model]) -> None:
+    """Deleting a proxy instance schedules the invalidation of its name.
+
+    Args:
+        proxy_model: Proxy of the template model, or a proxy of that proxy.
+    """
     template = proxy_model.objects.create(name="screen.xml", content="<view />")
 
     with patch(
@@ -183,6 +226,13 @@ def test_proxy_model_deletes_schedule_invalidation(proxy_model: type[Model]) -> 
 def test_every_template_model_listens_to_all_four_signals(
     signal_model: type[Model], proxy_model: type[Model]
 ) -> None:
+    """Every template model class listens to all four model signals.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+        proxy_model: Proxy of the template model, or a proxy of that proxy.
+    """
     for model in (signal_model, proxy_model):
         assert all(signal.has_listeners(model) for signal in SIGNALS)
 
@@ -193,6 +243,10 @@ def test_other_models_keep_django_fast_delete(signal_model: type[Model]) -> None
     A receiver connected without a sender listens to every model, and Django only
     skips per-row deletion for a model that has no pre_delete or post_delete
     listener.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
     """
     with isolate_apps():
 
@@ -217,6 +271,10 @@ def test_a_stale_registration_never_reaches_the_template_handlers(
     Django 5.2 keeps no reference to a sender, so the registration of a collected
     proxy can match a later, unrelated class that reuses its id. Connecting the
     handlers to such a class stands in for that registration.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
     """
     with isolate_apps():
 
@@ -249,7 +307,11 @@ def test_a_stale_registration_never_reaches_the_template_handlers(
 def test_connecting_a_model_again_never_doubles_its_invalidations(
     proxy_model: type[Model],
 ) -> None:
-    """Repeated ready() calls reach the same registrations as the first."""
+    """Repeated ready() calls reach the same registrations as the first.
+
+    Args:
+        proxy_model: Proxy of the template model, or a proxy of that proxy.
+    """
     database_signals._connect_model(proxy_model)
     _connect_signal_handlers()
 
@@ -264,7 +326,13 @@ def test_connecting_a_model_again_never_doubles_its_invalidations(
 def test_scoped_proxy_rename_invalidates_the_stored_name(
     signal_model: type[Model], scoped_proxy_model: type[Model]
 ) -> None:
-    """The stored name comes from the base manager, which never filters rows."""
+    """The stored name comes from the base manager, which never filters rows.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+        scoped_proxy_model: Proxy whose default manager hides rows outside live/.
+    """
     stored = signal_model.objects.create(name="draft/home.xml", content="<view />")
     assert not scoped_proxy_model._default_manager.filter(pk=stored.pk).exists()
     scoped = scoped_proxy_model._base_manager.get(pk=stored.pk)
@@ -281,6 +349,13 @@ def test_scoped_proxy_rename_invalidates_the_stored_name(
 def test_scoped_proxy_delete_invalidates_the_stored_name(
     signal_model: type[Model], scoped_proxy_model: type[Model]
 ) -> None:
+    """Deleting through a scoped proxy invalidates the stored name.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+        scoped_proxy_model: Proxy whose default manager hides rows outside live/.
+    """
     stored = signal_model.objects.create(name="draft/home.xml", content="<view />")
     scoped = scoped_proxy_model._base_manager.get(pk=stored.pk)
     scoped.name = "live/unsaved.xml"
@@ -294,6 +369,12 @@ def test_scoped_proxy_delete_invalidates_the_stored_name(
 
 
 def test_created_template_schedules_invalidation(signal_model: type[Model]) -> None:
+    """Creating a template schedules its invalidation exactly once.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     _connect_signal_handlers()
     _connect_signal_handlers()
     with patch(
@@ -307,6 +388,12 @@ def test_created_template_schedules_invalidation(signal_model: type[Model]) -> N
 def test_renamed_template_schedules_old_and_new_names(
     signal_model: type[Model],
 ) -> None:
+    """Renaming a template schedules the invalidation of both names.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model.objects.create(name="old.xml", content="<view />")
 
     with patch(
@@ -325,6 +412,14 @@ def test_renamed_template_schedules_old_and_new_names(
 def test_observable_field_update_schedules_current_name(
     signal_model: type[Model], field: str, value: object
 ) -> None:
+    """Changing an observable field schedules the invalidation of the current name.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+        field: Name of the template field that is changed.
+        value: New value stored in that field.
+    """
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 
     with patch(
@@ -339,6 +434,12 @@ def test_observable_field_update_schedules_current_name(
 def test_irrelevant_save_skips_but_raw_save_schedules(
     signal_model: type[Model],
 ) -> None:
+    """A save of irrelevant fields schedules nothing, but a raw save does.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 
     with patch(
@@ -355,6 +456,12 @@ def test_irrelevant_save_skips_but_raw_save_schedules(
 def test_unsafe_new_name_fails_before_database_access(
     signal_model: type[Model],
 ) -> None:
+    """An unsafe new name fails before any query runs.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model(name="../private.xml", content="<view />")
 
     with CaptureQueriesContext(connection) as queries:
@@ -366,6 +473,12 @@ def test_unsafe_new_name_fails_before_database_access(
 
 
 def test_unsafe_rename_fails_before_update_sql(signal_model: type[Model]) -> None:
+    """An unsafe rename fails before the UPDATE runs and keeps the stored name.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model.objects.create(name="safe.xml", content="<view />")
     template.name = "../private.xml"
 
@@ -384,7 +497,12 @@ def test_unsafe_rename_fails_before_update_sql(signal_model: type[Model]) -> Non
 
 
 def test_invalid_legacy_name_can_be_repaired(signal_model: type[Model]) -> None:
-    """A canonical replacement can recover a row created outside normal writes."""
+    """A canonical replacement can recover a row created outside normal writes.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     signal_model._base_manager.bulk_create(
         [signal_model(name=r"bad\name.xml", content="<view />")]
     )
@@ -401,7 +519,12 @@ def test_invalid_legacy_name_can_be_repaired(signal_model: type[Model]) -> None:
 
 
 def test_invalid_legacy_name_can_be_deleted(signal_model: type[Model]) -> None:
-    """An uncanonical persisted name never makes its row immortal."""
+    """An uncanonical persisted name never makes its row immortal.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     signal_model._base_manager.bulk_create(
         [signal_model(name=r"bad\name.xml", content="<view />")]
     )
@@ -417,6 +540,12 @@ def test_invalid_legacy_name_can_be_deleted(signal_model: type[Model]) -> None:
 
 
 def test_instance_delete_schedules_its_name(signal_model: type[Model]) -> None:
+    """Deleting an instance schedules the invalidation of its name.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 
     with patch(
@@ -431,7 +560,13 @@ def test_instance_delete_schedules_its_name(signal_model: type[Model]) -> None:
 def test_direct_mutations_lock_the_persisted_name_inside_a_transaction(
     signal_model: type[Model], operation: str
 ) -> None:
-    """Direct instance writes cannot race an unlocked persisted-name snapshot."""
+    """Direct instance writes cannot race an unlocked persisted-name snapshot.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+        operation: Direct instance write under test, either save or delete.
+    """
     template = signal_model.objects.create(name="screen.xml", content="<view />")
     original = QuerySet.select_for_update
     lock_states: list[bool] = []
@@ -453,7 +588,12 @@ def test_direct_mutations_lock_the_persisted_name_inside_a_transaction(
 def test_model_save_avoids_redundant_nested_savepoint(
     signal_model: type[Model],
 ) -> None:
-    """The model keeps its transaction boundary without nested savepoint SQL."""
+    """The model keeps its transaction boundary without nested savepoint SQL.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 
     with transaction.atomic(using="default"):
@@ -469,7 +609,12 @@ def test_model_save_avoids_redundant_nested_savepoint(
 def test_queryset_delete_uses_one_snapshot_and_one_invalidation(
     signal_model: type[Model],
 ) -> None:
-    """Bulk deletion avoids per-row lookups and post-commit callbacks."""
+    """Bulk deletion avoids per-row lookups and post-commit callbacks.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     signal_model.objects.bulk_create(
         [
             signal_model(name=f"screen-{index}.xml", content="<view />")
@@ -501,6 +646,12 @@ def test_queryset_delete_uses_one_snapshot_and_one_invalidation(
 def test_already_deleted_instance_preserves_fallback_invalidation(
     signal_model: type[Model],
 ) -> None:
+    """Deleting an already deleted instance still invalidates its name.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model.objects.create(name="screen.xml", content="<view />")
     signal_model.objects.filter(pk=template.pk).delete()
 
@@ -519,6 +670,12 @@ def test_already_deleted_instance_preserves_fallback_invalidation(
 def test_instance_delete_invalidates_persisted_name_after_unsaved_rename(
     signal_model: type[Model],
 ) -> None:
+    """Deleting after an unsaved rename invalidates the persisted name.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     caches["signals"].clear()
 
     with (
@@ -550,6 +707,13 @@ def test_instance_delete_invalidates_persisted_name_after_unsaved_rename(
 def test_detached_update_invalidates_persisted_name(
     signal_model: type[Model], force_update: bool
 ) -> None:
+    """Updating a detached instance invalidates the persisted name.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+        force_update: Whether the detached save forces an UPDATE.
+    """
     caches["signals"].clear()
 
     with (
@@ -579,6 +743,12 @@ def test_detached_update_invalidates_persisted_name(
 
 
 def test_save_callbacks_follow_commit_and_rollback(signal_model: type[Model]) -> None:
+    """Save callbacks run after a commit and are dropped on a rollback.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 
     with patch(
@@ -603,6 +773,12 @@ def test_save_callbacks_follow_commit_and_rollback(signal_model: type[Model]) ->
 def test_nested_savepoint_rollback_discards_signal_callback(
     signal_model: type[Model],
 ) -> None:
+    """A rolled back savepoint discards the callback of the save inside it.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+    """
     template = signal_model.objects.create(name="screen.xml", content="<view />")
 
     with patch(
@@ -623,6 +799,11 @@ def test_nested_savepoint_rollback_discards_signal_callback(
 def test_replica_rename_reads_old_name_from_mutation_alias(
     dual_signal_model: type[Model],
 ) -> None:
+    """A rename reads the old name from the alias that receives the write.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+    """
     default = dual_signal_model.objects.using("default").create(
         name="default.xml", content="<view />"
     )
@@ -645,6 +826,11 @@ def test_replica_rename_reads_old_name_from_mutation_alias(
 def test_replica_detached_update_reads_persisted_name_from_mutation_alias(
     dual_signal_model: type[Model],
 ) -> None:
+    """A detached update reads the persisted name from the write alias.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+    """
     default = dual_signal_model.objects.using("default").create(
         name="default.xml", content="<default />"
     )
@@ -673,6 +859,11 @@ def test_replica_detached_update_reads_persisted_name_from_mutation_alias(
 def test_replica_delete_ignores_unsaved_name_and_uses_mutation_alias(
     dual_signal_model: type[Model],
 ) -> None:
+    """A delete ignores an unsaved name and uses the stored one from the write alias.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+    """
     default = dual_signal_model.objects.using("default").create(
         name="default.xml", content="<default />"
     )
@@ -693,6 +884,11 @@ def test_replica_delete_ignores_unsaved_name_and_uses_mutation_alias(
 def test_queryset_delete_callbacks_follow_replica_commit_and_rollback(
     dual_signal_model: type[Model],
 ) -> None:
+    """Queryset delete callbacks follow the commit or rollback of the replica.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+    """
     for name in ("first.xml", "second.xml"):
         dual_signal_model.objects.using("replica").create(name=name, content="<view />")
 
@@ -718,6 +914,12 @@ def test_queryset_delete_callbacks_follow_replica_commit_and_rollback(
 def test_optional_app_ready_imports_signals_without_queries(
     settings_module: str, expected: str
 ) -> None:
+    """Starting Django imports the signals only with the database app and runs no SQL.
+
+    Args:
+        settings_module: Dotted path of the Django settings module the probe runs with.
+        expected: Printed flag that says whether the signals module was imported.
+    """
     source = (
         "import django,sys; from unittest.mock import patch; "
         "from django.db.backends.utils import CursorWrapper; "
@@ -801,7 +1003,11 @@ print(
 
 
 def test_ready_connects_template_models_and_their_proxies_only(tmp_path: Path) -> None:
-    """A project keeps Django's bulk delete while its own proxies still invalidate."""
+    """A project keeps Django's bulk delete while its own proxies still invalidate.
+
+    Args:
+        tmp_path: Temporary directory that holds the generated project and probe.
+    """
     app = tmp_path / "proxyapp"
     app.mkdir()
     (app / "__init__.py").touch()
@@ -827,7 +1033,13 @@ def test_ready_connects_template_models_and_their_proxies_only(tmp_path: Path) -
 def test_save_accepts_single_use_update_fields(
     signal_model: type[Model], fields: list[str]
 ) -> None:
-    """Iterables retain every requested field and keep name identities aligned."""
+    """Iterables retain every requested field and keep name identities aligned.
+
+    Args:
+        signal_model: Template model class with its table created and its handlers
+            connected.
+        fields: Field names the test passes to save as a one-shot generator.
+    """
     from dj_hyperview.contrib.database._identity import template_name_identity
 
     template = signal_model.objects.create(name="old.xml", content="<old />")
@@ -856,7 +1068,12 @@ def test_save_accepts_single_use_update_fields(
 def test_nested_cross_database_delete_with_matching_primary_key(
     dual_signal_model: type[Model], rollback: bool
 ) -> None:
-    """Batch suppression applies only to rows in the same database alias."""
+    """Batch suppression applies only to rows in the same database alias.
+
+    Args:
+        dual_signal_model: Template model class with its table created on every alias.
+        rollback: Whether the outer transaction is rolled back instead of committed.
+    """
     default = dual_signal_model.objects.using("default").create(
         name="default.xml", content="<default />"
     )

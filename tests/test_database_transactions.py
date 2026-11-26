@@ -17,6 +17,7 @@ pytestmark = pytest.mark.django_db(
 
 
 def test_scheduler_invalidates_immediately_in_autocommit() -> None:
+    """The scheduler invalidates immediately in autocommit mode."""
     with patch(
         "dj_hyperview.contrib.database._invalidation.invalidate_templates"
     ) as invalidate:
@@ -26,6 +27,7 @@ def test_scheduler_invalidates_immediately_in_autocommit() -> None:
 
 
 def test_scheduler_waits_for_outer_commit_and_skips_rollback() -> None:
+    """The scheduler waits for the outer commit and skips a rollback."""
     with patch(
         "dj_hyperview.contrib.database._invalidation.invalidate_templates"
     ) as invalidate:
@@ -44,6 +46,7 @@ def test_scheduler_waits_for_outer_commit_and_skips_rollback() -> None:
 
 
 def test_nested_savepoint_rollback_discards_only_nested_callback() -> None:
+    """A rolled back savepoint discards only the callbacks scheduled inside it."""
     with patch(
         "dj_hyperview.contrib.database._invalidation.invalidate_templates"
     ) as invalidate:
@@ -59,6 +62,7 @@ def test_nested_savepoint_rollback_discards_only_nested_callback() -> None:
 
 
 def test_scheduler_uses_the_selected_database_connection() -> None:
+    """The scheduler registers its callback on the selected database connection."""
     events: list[tuple[str, ...]] = []
 
     def record(*names: str) -> None:
@@ -77,6 +81,7 @@ def test_scheduler_uses_the_selected_database_connection() -> None:
 
 
 def test_scheduler_validates_all_names_before_registering() -> None:
+    """The scheduler validates every name before it registers a callback."""
     with patch(
         "dj_hyperview.contrib.database._invalidation.transaction.on_commit"
     ) as on_commit:
@@ -87,6 +92,7 @@ def test_scheduler_validates_all_names_before_registering() -> None:
 
 
 def test_scheduler_deduplicates_order_into_immutable_callback_capture() -> None:
+    """The scheduler deduplicates names, keeps their order and copies the input."""
     callbacks: list[Callable[[], None]] = []
 
     def register(callback: Callable[[], None], *, using: str, robust: bool) -> None:
@@ -112,6 +118,7 @@ def test_scheduler_deduplicates_order_into_immutable_callback_capture() -> None:
 
 
 def test_scheduler_with_no_names_has_no_transaction_or_cache_effect() -> None:
+    """The scheduler does nothing when it receives no names."""
     with (
         patch(
             "dj_hyperview.contrib.database._invalidation.transaction.on_commit"
@@ -127,6 +134,7 @@ def test_scheduler_with_no_names_has_no_transaction_or_cache_effect() -> None:
 
 
 def test_scheduler_preserves_django_invalid_alias_behavior() -> None:
+    """The scheduler keeps Django's error for an unknown database alias."""
     with patch(
         "dj_hyperview.contrib.database._invalidation.invalidate_templates"
     ) as invalidate:
@@ -137,6 +145,7 @@ def test_scheduler_preserves_django_invalid_alias_behavior() -> None:
 
 
 def test_cache_failure_is_observable_after_successful_commit() -> None:
+    """A cache failure surfaces after the transaction has committed."""
     callback_autocommit: list[bool] = []
 
     def fail_after_commit(*names: str) -> None:

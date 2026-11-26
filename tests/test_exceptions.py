@@ -25,7 +25,11 @@ from dj_hyperview.exceptions import (
     ],
 )
 def test_public_exceptions_survive_pickle_and_deepcopy(error: Exception) -> None:
-    """Process and test-runner boundaries preserve exception semantics."""
+    """Process and test-runner boundaries preserve exception semantics.
+
+    Args:
+        error: Public exception instance that is pickled and copied.
+    """
     for cloned in (pickle.loads(pickle.dumps(error)), copy.deepcopy(error)):
         assert type(cloned) is type(error)
         assert vars(cloned) == vars(error)

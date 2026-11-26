@@ -14,24 +14,27 @@ import random
 import sys
 import threading
 import xml.etree.ElementTree as ET
+from collections.abc import Callable, Iterable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
+from typing import Never
 
 import pytest
 import xmlschema
 from django.test import override_settings
 from elementpath import xpath_context
 from lxml import etree
-from xmlschema.validators.attributes import XsdAttributeGroup
+from xmlschema.validators.attributes import XsdAttribute, XsdAttributeGroup
 from xmlschema.validators.elements import Xsd11Element, XsdAlternative, XsdElement
 from xmlschema.validators.validation import ValidationContext
 
 from dj_hyperview import schema
-from dj_hyperview._schema_extensions import _EMPTY_EXTENSIONS
+from dj_hyperview._schema_extensions import _EMPTY_EXTENSIONS, _SchemaExtensions
 from dj_hyperview.conf import get_settings
 from dj_hyperview.exceptions import TemplateValidationError
+from dj_hyperview.schema import _SchemaDependencies
 from dj_hyperview.validation import validate_hxml
 
 HV = "https://hyperview.org/hyperview"
@@ -147,15 +150,41 @@ EXTRA_SEEDS = (
 )
 
 
-def build(extensions, *, plain, state=()):
-    """Compile one registry through the package, with or without the fast class."""
+def build(
+    extensions: _SchemaExtensions,
+    *,
+    plain: bool,
+    state: tuple[_SchemaDependencies, ...] = (),
+) -> xmlschema.XMLSchema11:
+    """Compile one registry through the package, with or without the fast class.
+
+    Args:
+        extensions: Schema extensions the registry is compiled with.
+        plain: Whether to compile with plain xmlschema instead of the fast class.
+        state: Registry state of the extra schemas to compile.
+
+    Returns:
+        The compiled registry.
+    """
     with pytest.MonkeyPatch.context() as patch:
         if plain:
             patch.setattr(schema, "_registry_class", lambda module: module.XMLSchema11)
         return schema._cached_registry.__wrapped__(state, extensions)
 
 
-def verdict(root, registry):
+def verdict(
+    root: etree._Element, registry: xmlschema.XMLSchema11
+) -> tuple[str, str, int | None, int | None] | None:
+    """Return the validation outcome of one tree as an error tuple.
+
+    Args:
+        root: Parsed document that is validated.
+        registry: Registry that validates the document.
+
+    Returns:
+        The code, message, line and column of the validation error, or None when the
+            tree is valid.
+    """
     try:
         schema._validate_schema_root(root, registry)
     except TemplateValidationError as error:
@@ -163,11 +192,22 @@ def verdict(root, registry):
     return None
 
 
-def pools(registry, namespaces=(HV,)):
+def pools(
+    registry: xmlschema.XMLSchema11, namespaces: tuple[str, ...] = (HV,)
+) -> tuple[list[str], list[str], list[str]]:
+    """Collect the attribute names, values and element tags of a registry.
+
+    Args:
+        registry: Registry the names, values and tags are read from.
+        namespaces: Namespaces whose elements are collected.
+
+    Returns:
+        Sorted attribute names, attribute values and element tags.
+    """
     names, values, tags = set(), set(GENERIC_VALUES), set()
     prefixes = tuple(f"{{{namespace}}}" for namespace in namespaces)
 
-    def collect(attributes):
+    def collect(attributes: Mapping[str | None, XsdAttribute]) -> None:
         for name, attribute in attributes.items():
             if name:
                 names.add(name)
@@ -185,7 +225,24 @@ def pools(registry, namespaces=(HV,)):
     return sorted(names), sorted(values), sorted(tags)
 
 
-def mutate(root, rng, names, values, tags, actions):
+def mutate(
+    root: etree._Element,
+    rng: random.Random,
+    names: list[str],
+    values: list[str],
+    tags: list[str],
+    actions: tuple[str, ...],
+) -> None:
+    """Apply one random structural or attribute mutation to a tree in place.
+
+    Args:
+        root: Document that is mutated in place.
+        rng: Random generator that drives the mutation.
+        names: Attribute names a mutation may set.
+        values: Attribute values a mutation may set.
+        tags: Element tags a mutation may use.
+        actions: Action values a mutation may set.
+    """
     nodes = [node for node in root.iter() if isinstance(node.tag, str)]
     node = rng.choice(nodes)
     kind = rng.choice(
@@ -222,11 +279,40 @@ def mutate(root, rng, names, values, tags, actions):
             second.set("id", first.get("id"))
 
 
-def parse(data):
+def parse(data: bytes | str) -> etree._Element:
+    """Parse XML bytes or text without resolving entities.
+
+    Args:
+        data: XML bytes or text to parse.
+
+    Returns:
+        The root element of the document.
+    """
     return etree.fromstring(data, parser=etree.XMLParser(resolve_entities=False))
 
 
-def corpus(seeds, registry, count, *, seed, namespaces=(HV,), fixtures=True):
+def corpus(
+    seeds: tuple[str, ...],
+    registry: xmlschema.XMLSchema11,
+    count: int,
+    *,
+    seed: int,
+    namespaces: tuple[str, ...] = (HV,),
+    fixtures: bool = True,
+) -> list[etree._Element]:
+    """Build a corpus of mutated documents from the seed documents.
+
+    Args:
+        seeds: Seed documents as XML text.
+        registry: Registry the names, values and tags come from.
+        count: Number of mutated documents to add.
+        seed: Seed of the random generator.
+        namespaces: Namespaces whose elements are mutated.
+        fixtures: Whether the contract fixtures are added to the seeds.
+
+    Returns:
+        The parsed seed documents followed by the mutated ones.
+    """
     names, values, tags = pools(registry, namespaces)
     actions = (*ACTIONS, *GENERIC_VALUES)
     rng = random.Random(seed)
@@ -243,20 +329,46 @@ def corpus(seeds, registry, count, *, seed, namespaces=(HV,), fixtures=True):
 
 
 @pytest.fixture(scope="module")
-def extensions():
+def extensions() -> _SchemaExtensions:
+    """Normalize the schema extensions used by the extended registry.
+
+    Returns:
+        The normalized schema extensions.
+    """
     with override_settings(HYPERVIEW={"SCHEMA_EXTENSIONS": EXTENSIONS}):
         return get_settings().schema_extensions
 
 
 @pytest.fixture(scope="module")
-def extra_state(tmp_path_factory):
+def extra_state(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[_SchemaDependencies, ...]:
+    """Write the extra schema file and fingerprint it as a registry state.
+
+    Args:
+        tmp_path_factory: Creates the temporary directory that holds the schema file.
+
+    Returns:
+        Registry state that identifies the extra schema.
+    """
     path = tmp_path_factory.mktemp("extra") / "cards.xsd"
     path.write_text(EXTRA_SCHEMA, encoding="utf-8")
     return schema._registry_state([path])
 
 
 @pytest.fixture(scope="module")
-def registries(extensions, extra_state):
+def registries(
+    extensions: _SchemaExtensions, extra_state: tuple[_SchemaDependencies, ...]
+) -> dict[str, tuple[xmlschema.XMLSchema11, xmlschema.XMLSchema11]]:
+    """Compile the plain and fast registry of every schema profile once.
+
+    Args:
+        extensions: Schema extensions of the extended registry.
+        extra_state: Registry state of the extra schema.
+
+    Returns:
+        Registry pairs by profile, each as the plain registry then the fast one.
+    """
     return {
         "default": (
             build(_EMPTY_EXTENSIONS, plain=True),
@@ -271,7 +383,16 @@ def registries(extensions, extra_state):
 
 
 @pytest.mark.parametrize("profile", ["default", "extended", "extra"])
-def test_fast_registry_gives_the_verdicts_of_plain_xmlschema(registries, profile):
+def test_fast_registry_gives_the_verdicts_of_plain_xmlschema(
+    registries: dict[str, tuple[xmlschema.XMLSchema11, xmlschema.XMLSchema11]],
+    profile: str,
+) -> None:
+    """The fast registry gives the same verdicts as plain xmlschema.
+
+    Args:
+        registries: Plain and fast registry pairs by profile.
+        profile: Registry profile under test.
+    """
     plain, fast = registries[profile]
     if profile == "extra":
         # Only the extra schema's own declarations, which the fast classes also see.
@@ -318,7 +439,14 @@ def test_fast_registry_gives_the_verdicts_of_plain_xmlschema(registries, profile
         )
 
 
-def test_documents_of_the_contract_fixtures_are_valid_for_both_registries(registries):
+def test_documents_of_the_contract_fixtures_are_valid_for_both_registries(
+    registries: dict[str, tuple[xmlschema.XMLSchema11, xmlschema.XMLSchema11]],
+) -> None:
+    """Contract fixture documents are valid for both registries.
+
+    Args:
+        registries: Plain and fast registry pairs by profile.
+    """
     for plain, fast in registries.values():
         for path in sorted(CONTRACT.glob("*.xml")):
             root = parse(path.read_bytes())
@@ -326,7 +454,7 @@ def test_documents_of_the_contract_fixtures_are_valid_for_both_registries(regist
             assert verdict(root, fast) is None
 
 
-def _fast_schema():
+def _fast_schema() -> ModuleType:
     from dj_hyperview import _fast_schema
 
     return _fast_schema
@@ -334,8 +462,15 @@ def _fast_schema():
 
 @pytest.mark.parametrize("profile", ["default", "extended", "extra"])
 def test_registries_use_the_fast_components_with_the_locked_xmlschema(
-    registries, profile
-):
+    registries: dict[str, tuple[xmlschema.XMLSchema11, xmlschema.XMLSchema11]],
+    profile: str,
+) -> None:
+    """Registries use the fast components with the locked xmlschema release.
+
+    Args:
+        registries: Plain and fast registry pairs by profile.
+        profile: Registry profile under test.
+    """
     fast_schema = _fast_schema()
     registry = registries[profile][1]
 
@@ -346,7 +481,8 @@ def test_registries_use_the_fast_components_with_the_locked_xmlschema(
     assert isinstance(registry.maps.elements[BEHAVIOR], fast_schema.FastElement)
 
 
-def test_the_locked_xmlschema_is_a_tested_release():
+def test_the_locked_xmlschema_is_a_tested_release() -> None:
+    """The locked xmlschema release is a tested one."""
     # A new locked release has to pass the differential tests before this changes.
     fast_schema = _fast_schema()
 
@@ -354,14 +490,21 @@ def test_the_locked_xmlschema_is_a_tested_release():
     assert fast_schema.FastXMLSchema11.__base__ is xmlschema.XMLSchema11
 
 
-def test_registry_class_uses_the_fast_class_only_for_the_verified_release(monkeypatch):
+def test_registry_class_uses_the_fast_class_only_for_the_verified_release(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The fast class is used only for the verified xmlschema release.
+
+    Args:
+        monkeypatch: Sets the xmlschema version to the verified release.
+    """
     monkeypatch.setattr(xmlschema, "__version__", "4.3.2")
 
     assert schema._registry_class(xmlschema) is _fast_schema().FastXMLSchema11
 
 
 class _VersionLike:
-    def __str__(self):
+    def __str__(self) -> str:
         return "4.3.2"
 
 
@@ -405,8 +548,14 @@ class _VersionLike:
     ],
 )
 def test_registry_class_keeps_plain_xmlschema_for_every_unverified_version(
-    monkeypatch, version
-):
+    monkeypatch: pytest.MonkeyPatch, version: object
+) -> None:
+    """Plain xmlschema is kept for every unverified xmlschema version.
+
+    Args:
+        monkeypatch: Sets the xmlschema version to the unverified value.
+        version: Unverified value of the xmlschema version attribute.
+    """
     monkeypatch.setattr(xmlschema, "__version__", version)
 
     assert schema._registry_class(xmlschema) is xmlschema.XMLSchema11
@@ -414,8 +563,14 @@ def test_registry_class_keeps_plain_xmlschema_for_every_unverified_version(
 
 @pytest.mark.parametrize("version", ["4.3.3", "4.3.9", "4.3.99"])
 def test_an_unverified_patch_compiles_and_validates_with_plain_xmlschema(
-    monkeypatch, version
-):
+    monkeypatch: pytest.MonkeyPatch, version: object
+) -> None:
+    """An unverified patch release compiles and validates with plain xmlschema.
+
+    Args:
+        monkeypatch: Sets the xmlschema version to the unverified patch release.
+        version: Unverified patch release of xmlschema.
+    """
     monkeypatch.setattr(xmlschema, "__version__", version)
 
     registry = schema._cached_registry.__wrapped__((), _EMPTY_EXTENSIONS)
@@ -431,14 +586,23 @@ def test_an_unverified_patch_compiles_and_validates_with_plain_xmlschema(
     )
 
 
-def test_registry_class_keeps_plain_xmlschema_when_the_release_is_unknown(monkeypatch):
+def test_registry_class_keeps_plain_xmlschema_when_the_release_is_unknown(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Plain xmlschema is kept when the release is unknown.
+
+    Args:
+        monkeypatch: Removes the version attribute of xmlschema.
+    """
     monkeypatch.delattr(xmlschema, "__version__")
 
     assert schema._registry_class(xmlschema) is xmlschema.XMLSchema11
 
 
-def test_registry_class_keeps_a_substituted_xmlschema_module_unchanged():
-    def compiler(*args, **kwargs):
+def test_registry_class_keeps_a_substituted_xmlschema_module_unchanged() -> None:
+    """A substituted xmlschema module is left unchanged."""
+
+    def compiler(*args: object, **kwargs: object) -> Never:
         raise AssertionError
 
     assert schema._registry_class(SimpleNamespace(XMLSchema11=compiler)) is compiler
@@ -449,7 +613,15 @@ def test_registry_class_keeps_a_substituted_xmlschema_module_unchanged():
 @pytest.mark.parametrize(
     "breakage", ["missing module", "incompatible builders", "unexpected failure"]
 )
-def test_registry_class_falls_back_to_plain_xmlschema(monkeypatch, breakage):
+def test_registry_class_falls_back_to_plain_xmlschema(
+    monkeypatch: pytest.MonkeyPatch, breakage: str
+) -> None:
+    """A broken fast module falls back to plain xmlschema.
+
+    Args:
+        monkeypatch: Breaks the import of the fast module.
+        breakage: Way the fast module fails to load.
+    """
     monkeypatch.delitem(sys.modules, "dj_hyperview._fast_schema", raising=False)
     if breakage == "missing module":
         monkeypatch.setitem(sys.modules, "xmlschema.validators.builders", None)
@@ -457,7 +629,7 @@ def test_registry_class_falls_back_to_plain_xmlschema(monkeypatch, breakage):
         failure = TypeError if breakage == "incompatible builders" else RuntimeError
 
         class Incompatible:
-            def __init__(self, *args, **kwargs):
+            def __init__(self, *args: object, **kwargs: object) -> None:
                 raise failure("unsupported builders")
 
         monkeypatch.setattr("xmlschema.validators.builders.XsdBuilders", Incompatible)
@@ -477,7 +649,14 @@ def test_registry_class_falls_back_to_plain_xmlschema(monkeypatch, breakage):
     )
 
 
-def assert_groups_precompute_what_the_base_class_iterates(groups):
+def assert_groups_precompute_what_the_base_class_iterates(
+    groups: Iterable[XsdAttributeGroup],
+) -> None:
+    """Assert that attribute groups precompute what the base class iterates.
+
+    Args:
+        groups: Attribute groups of a fast registry.
+    """
     for group in groups:
         assert list(group.iter_required()) == list(
             XsdAttributeGroup.iter_required(group)
@@ -488,7 +667,14 @@ def assert_groups_precompute_what_the_base_class_iterates(groups):
             )
 
 
-def test_attribute_groups_precompute_what_the_base_class_iterates(registries):
+def test_attribute_groups_precompute_what_the_base_class_iterates(
+    registries: dict[str, tuple[xmlschema.XMLSchema11, xmlschema.XMLSchema11]],
+) -> None:
+    """Attribute groups precompute what the base class iterates.
+
+    Args:
+        registries: Plain and fast registry pairs by profile.
+    """
     fast_schema = _fast_schema()
     registry = registries["extended"][1]
     groups = list(registry.maps.iter_components(fast_schema.FastAttributeGroup))
@@ -498,7 +684,8 @@ def test_attribute_groups_precompute_what_the_base_class_iterates(registries):
     assert_groups_precompute_what_the_base_class_iterates(groups)
 
 
-def test_attribute_groups_precompute_fixed_and_default_values_separately():
+def test_attribute_groups_precompute_fixed_and_default_values_separately() -> None:
+    """Attribute groups precompute fixed and default values separately."""
     group = attributes_of(_fast_schema().FastXMLSchema11(SAFETY))
 
     assert dict(group.iter_value_constraints(True)) == {"fixed": "1", "default": "2"}
@@ -509,7 +696,15 @@ def test_attribute_groups_precompute_fixed_and_default_values_separately():
     assert_groups_precompute_what_the_base_class_iterates([group])
 
 
-def alternative_declarations(registry):
+def alternative_declarations(registry: xmlschema.XMLSchema11) -> list[XsdElement]:
+    """Find the behavior element declarations that have type alternatives.
+
+    Args:
+        registry: Registry that validates the documents.
+
+    Returns:
+        Declarations of the behavior element that carry alternatives.
+    """
     return [
         component
         for component in registry.maps.iter_components(XsdElement)
@@ -519,8 +714,17 @@ def alternative_declarations(registry):
 
 @pytest.mark.parametrize("action", [*ACTIONS, None])
 def test_generated_action_alternatives_select_the_type_xpath_selects(
-    registries, monkeypatch, action
-):
+    registries: dict[str, tuple[xmlschema.XMLSchema11, xmlschema.XMLSchema11]],
+    monkeypatch: pytest.MonkeyPatch,
+    action: str | None,
+) -> None:
+    """Generated action alternatives select the type that the XPath selects.
+
+    Args:
+        registries: Plain and fast registry pairs by profile.
+        monkeypatch: Replaces the XPath test with one that fails when called.
+        action: Action value of the behavior element, or None to omit it.
+    """
     registry = registries["extended"][1]
     declarations = alternative_declarations(registry)
     assert declarations
@@ -532,7 +736,7 @@ def test_generated_action_alternatives_select_the_type_xpath_selects(
         for declaration in declarations
     ]
 
-    def forbidden(self, elem):
+    def forbidden(self: object, elem: object) -> Never:
         raise AssertionError("XPath was evaluated")
 
     monkeypatch.setattr(XsdAlternative, "test", forbidden)
@@ -545,7 +749,14 @@ def test_generated_action_alternatives_select_the_type_xpath_selects(
         assert selected == f"{{{HV}}}behavior"
 
 
-def test_alternatives_inherited_from_ancestors_keep_the_xpath_path(registries):
+def test_alternatives_inherited_from_ancestors_keep_the_xpath_path(
+    registries: dict[str, tuple[xmlschema.XMLSchema11, xmlschema.XMLSchema11]],
+) -> None:
+    """Alternatives inherited from ancestors keep the XPath path.
+
+    Args:
+        registries: Plain and fast registry pairs by profile.
+    """
     registry = registries["extended"][1]
     declaration = alternative_declarations(registry)[0]
     element = etree.Element(BEHAVIOR, action="notify")
@@ -557,7 +768,8 @@ def test_alternatives_inherited_from_ancestors_keep_the_xpath_path(registries):
     )
 
 
-def test_attributes_inherited_from_ancestors_reach_the_alternative_tests():
+def test_attributes_inherited_from_ancestors_reach_the_alternative_tests() -> None:
+    """Attributes inherited from ancestors reach the alternative tests."""
     registry = _fast_schema().FastXMLSchema11(ALTERNATIVES)
     declaration = registry.elements["generated"]
     assert declaration._types_by_action is not None
@@ -647,7 +859,15 @@ ALTERNATIVES = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version
         ("spaced", False),
     ],
 )
-def test_only_the_generated_alternative_form_is_selected_by_dictionary(name, indexed):
+def test_only_the_generated_alternative_form_is_selected_by_dictionary(
+    name: str, indexed: bool
+) -> None:
+    """Only the generated alternative form is selected by dictionary.
+
+    Args:
+        name: Name of the element declaration or attribute that is checked.
+        indexed: Whether the declaration selects its type by dictionary.
+    """
     registry = _fast_schema().FastXMLSchema11(ALTERNATIVES)
     declaration = registry.elements[name]
 
@@ -669,7 +889,8 @@ def test_only_the_generated_alternative_form_is_selected_by_dictionary(name, ind
         ) is Xsd11Element.get_alternative_type(declaration, element)
 
 
-def test_encoding_selects_the_alternative_type_like_plain_xmlschema():
+def test_encoding_selects_the_alternative_type_like_plain_xmlschema() -> None:
+    """Encoding selects the alternative type like plain xmlschema."""
     plain = xmlschema.XMLSchema11(ALTERNATIVES)
     fast = _fast_schema().FastXMLSchema11(ALTERNATIVES)
 
@@ -731,28 +952,61 @@ SAFETY = """<xs:schema xmlns:xs="http://www.w3.org/2001/XMLSchema" version="1.1"
 MEMOIZED = {"number", "flag", "mixed", "digits"}
 
 
-def attributes_of(registry):
+def attributes_of(registry: xmlschema.XMLSchema11) -> XsdAttributeGroup:
+    """Return the attribute group of the first item under the root.
+
+    Args:
+        registry: Registry that validates the documents.
+
+    Returns:
+        The attribute group of the item element.
+    """
     item = next(iter(registry.elements["root"].type.content))
     return item.type.attributes
 
 
-def document(**attributes):
+def document(**attributes: str) -> str:
+    """Build a document with one item that has the given attributes.
+
+    Args:
+        **attributes: Attribute names and values of the item element.
+
+    Returns:
+        XML text of the document.
+    """
     rendered = " ".join(f'{name}="{value}"' for name, value in attributes.items())
     return f"<root><item {rendered}/></root>"
 
 
 @pytest.fixture
-def fast():
+def fast() -> xmlschema.XMLSchema11:
+    """Compile the safety schema with the fast registry.
+
+    Returns:
+        The fast registry of the safety schema.
+    """
     return _fast_schema().FastXMLSchema11(SAFETY)
 
 
-def test_only_context_free_attribute_types_are_memoized(fast):
+def test_only_context_free_attribute_types_are_memoized(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """Only context-free attribute types are memoized.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     attributes = attributes_of(fast)
 
     assert {name for name, a in attributes.items() if a._memo is not None} == MEMOIZED
 
 
-def test_invalid_values_are_never_memoized(fast):
+def test_invalid_values_are_never_memoized(fast: xmlschema.XMLSchema11) -> None:
+    """Invalid values are never memoized.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     number = attributes_of(fast)["number"]
 
     for value in ("x", "1.5", "", "1e3", "9" * 3 + "z"):
@@ -769,7 +1023,14 @@ def test_invalid_values_are_never_memoized(fast):
     assert number._memo == {"7"}
 
 
-def test_a_lax_pass_memoizes_only_the_values_that_passed(fast):
+def test_a_lax_pass_memoizes_only_the_values_that_passed(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """A lax pass memoizes only the values that passed.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     two_items = "<root><item number='1'/><item number='x'/><item number='2'/></root>"
 
     assert len(list(fast.iter_errors(two_items))) == 1
@@ -777,7 +1038,12 @@ def test_a_lax_pass_memoizes_only_the_values_that_passed(fast):
     assert attributes_of(fast)["number"]._memo == {"1", "2"}
 
 
-def test_id_values_are_validated_every_time(fast):
+def test_id_values_are_validated_every_time(fast: xmlschema.XMLSchema11) -> None:
+    """ID values are validated every time.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     once = '<root><item id="a"/></root>'
     twice = '<root><item id="a"/><item id="a"/></root>'
 
@@ -788,7 +1054,14 @@ def test_id_values_are_validated_every_time(fast):
     assert attributes_of(fast)["id"]._memo is None
 
 
-def test_identity_constraints_still_see_a_remembered_value(fast):
+def test_identity_constraints_still_see_a_remembered_value(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """Identity constraints still see a remembered value.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     duplicated = "<root><item number='7'/><item number='7'/></root>"
     fast.validate(document(number="7"))
     assert "7" in attributes_of(fast)["number"]._memo
@@ -798,7 +1071,12 @@ def test_identity_constraints_still_see_a_remembered_value(fast):
             fast.validate(duplicated)
 
 
-def test_a_skipped_validation_memoizes_nothing(fast):
+def test_a_skipped_validation_memoizes_nothing(fast: xmlschema.XMLSchema11) -> None:
+    """A skipped validation memoizes nothing.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     number = attributes_of(fast)["number"]
 
     fast.validate(document(number="x"), validation_hook=lambda elem, xsd: "skip")
@@ -808,7 +1086,14 @@ def test_a_skipped_validation_memoizes_nothing(fast):
         fast.validate(document(number="x"))
 
 
-def test_values_are_not_memoized_while_patterns_are_pushed(fast):
+def test_values_are_not_memoized_while_patterns_are_pushed(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """Values are not memoized while patterns are pushed.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     number = attributes_of(fast)["number"]
     context = ValidationContext(xmlschema.XMLResource("<root/>"))
     context.patterns = []
@@ -821,7 +1106,14 @@ def test_values_are_not_memoized_while_patterns_are_pushed(fast):
         number.raw_decode("x", "strict", context)
 
 
-def test_attribute_values_that_are_not_text_are_left_to_xmlschema(fast):
+def test_attribute_values_that_are_not_text_are_left_to_xmlschema(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """Attribute values that are not text are left to xmlschema.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     # ElementTree trees can carry any object as a value; lxml, which the package
     # validates, cannot. xmlschema accepts 5, True and b"5" for an integer.
     plain = xmlschema.XMLSchema11(SAFETY)
@@ -842,7 +1134,14 @@ def test_attribute_values_that_are_not_text_are_left_to_xmlschema(fast):
     assert number._memo == set()
 
 
-def test_a_repeated_valid_value_is_served_from_the_memo(fast):
+def test_a_repeated_valid_value_is_served_from_the_memo(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """A repeated valid value is served from the memo.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     number = attributes_of(fast)["number"]
     fast.validate(document(number="7"))
     assert "7" in number._memo
@@ -855,7 +1154,12 @@ def test_a_repeated_valid_value_is_served_from_the_memo(fast):
         fast.validate(document(number="not a number"))
 
 
-def test_decoding_does_not_consult_the_memo(fast):
+def test_decoding_does_not_consult_the_memo(fast: xmlschema.XMLSchema11) -> None:
+    """Decoding does not consult the memo.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     number = attributes_of(fast)["number"]
     fast.validate(document(number="7"))
 
@@ -865,7 +1169,14 @@ def test_decoding_does_not_consult_the_memo(fast):
         fast.decode(document(number="bad"))
 
 
-def test_the_memo_holds_at_most_the_documented_bound_per_attribute(fast):
+def test_the_memo_holds_at_most_the_documented_bound_per_attribute(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """The memo holds at most the documented bound per attribute.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     number = attributes_of(fast)["number"]
     limit = _fast_schema().MEMO_LIMIT
     assert limit == 128
@@ -880,7 +1191,14 @@ def test_the_memo_holds_at_most_the_documented_bound_per_attribute(fast):
         fast.validate(document(number="x"))
 
 
-def test_long_values_are_validated_every_time_and_never_kept(fast):
+def test_long_values_are_validated_every_time_and_never_kept(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """Long values are validated every time and never kept.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     number = attributes_of(fast)["number"]
     limit = _fast_schema().MEMO_VALUE_LIMIT
     assert limit == 64
@@ -893,7 +1211,14 @@ def test_long_values_are_validated_every_time_and_never_kept(fast):
     assert number._memo == {kept}
 
 
-def test_the_memo_agrees_with_plain_xmlschema_on_unusual_values(fast):
+def test_the_memo_agrees_with_plain_xmlschema_on_unusual_values(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """The memo agrees with plain xmlschema on unusual values.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     plain = xmlschema.XMLSchema11(SAFETY)
     values = [
         ("number", ["1", " 1 ", "+1", "-0", "01", "1.0", "٣", "", "x", "1 2"]),
@@ -914,14 +1239,21 @@ def test_the_memo_agrees_with_plain_xmlschema_on_unusual_values(fast):
                 ], (name, value)
 
 
-def test_concurrent_validation_never_changes_a_verdict(fast):
+def test_concurrent_validation_never_changes_a_verdict(
+    fast: xmlschema.XMLSchema11,
+) -> None:
+    """Concurrent validation never changes a verdict.
+
+    Args:
+        fast: Fast registry of the safety schema.
+    """
     plain = xmlschema.XMLSchema11(SAFETY)
     number = attributes_of(fast)["number"]
     values = [str(n) for n in range(300)] + ["x", "1.5", "", " 3 ", "٣", "0x1"]
     expected = {value: plain.is_valid(document(number=value)) for value in values}
     barrier = threading.Barrier(8)
 
-    def work(seed):
+    def work(seed: int) -> bool:
         rng = random.Random(seed)
         barrier.wait()
         return all(
@@ -1022,13 +1354,23 @@ ASSERTED_VALUES = {
 
 
 @pytest.fixture
-def fast_asserted():
+def fast_asserted() -> xmlschema.XMLSchema11:
+    """Compile the schema with assertions using the fast registry.
+
+    Returns:
+        The fast registry of the schema with assertions.
+    """
     return _fast_schema().FastXMLSchema11(ASSERTED)
 
 
 def test_a_type_with_an_assertion_anywhere_in_its_chain_is_never_memoized(
-    fast_asserted,
-):
+    fast_asserted: xmlschema.XMLSchema11,
+) -> None:
+    """A type with an assertion anywhere in its chain is never memoized.
+
+    Args:
+        fast_asserted: Fast registry of the schema with assertions.
+    """
     attributes = attributes_of(fast_asserted)
 
     assert {name for name, a in attributes.items() if a._memo is None} == ASSERTED_NAMES
@@ -1038,7 +1380,14 @@ def test_a_type_with_an_assertion_anywhere_in_its_chain_is_never_memoized(
     )
 
 
-def test_values_of_types_with_assertions_agree_with_plain_xmlschema(fast_asserted):
+def test_values_of_types_with_assertions_agree_with_plain_xmlschema(
+    fast_asserted: xmlschema.XMLSchema11,
+) -> None:
+    """Values of types with assertions agree with plain xmlschema.
+
+    Args:
+        fast_asserted: Fast registry of the schema with assertions.
+    """
     plain = xmlschema.XMLSchema11(ASSERTED)
     assert set(ASSERTED_VALUES) == ASSERTED_NAMES | ASSERTION_FREE_NAMES
 
@@ -1076,8 +1425,15 @@ CUTOFF = START + timedelta(seconds=10)
 
 
 @pytest.fixture
-def clock(monkeypatch):
-    """Control the clock that elementpath reads for current-dateTime()."""
+def clock(monkeypatch: pytest.MonkeyPatch) -> list[datetime]:
+    """Control the clock that elementpath reads for current-dateTime().
+
+    Args:
+        monkeypatch: Replaces the clock that elementpath reads.
+
+    Returns:
+        Mutable one-item list that holds the current time.
+    """
     now = [START]
     frozen = SimpleNamespace(now=lambda tz=None: now[0])
     monkeypatch.setattr(xpath_context, "datetime", SimpleNamespace(datetime=frozen))
@@ -1085,7 +1441,17 @@ def clock(monkeypatch):
 
 
 @pytest.fixture(scope="module")
-def expiry(tmp_path_factory):
+def expiry(
+    tmp_path_factory: pytest.TempPathFactory,
+) -> tuple[Path, xmlschema.XMLSchema11, xmlschema.XMLSchema11]:
+    """Compile the expiry schema with the plain and the fast registry.
+
+    Args:
+        tmp_path_factory: Creates the temporary directory that holds the schema file.
+
+    Returns:
+        The schema path, the plain registry and the fast registry.
+    """
     path = tmp_path_factory.mktemp("expiry") / "expiry.xsd"
     path.write_text(EXPIRY, encoding="utf-8")
     state = schema._registry_state([path])
@@ -1098,8 +1464,17 @@ def expiry(tmp_path_factory):
 
 @pytest.mark.parametrize("name", ["expires-at", "inherited", "items", "member"])
 def test_a_time_dependent_assertion_is_evaluated_on_every_validation(
-    expiry, clock, name
-):
+    expiry: tuple[Path, xmlschema.XMLSchema11, xmlschema.XMLSchema11],
+    clock: list[datetime],
+    name: str,
+) -> None:
+    """A time-dependent assertion is evaluated on every validation.
+
+    Args:
+        expiry: Schema path together with its plain and fast registries.
+        clock: Mutable holder of the current time.
+        name: Name of the element declaration or attribute that is checked.
+    """
     path, plain, fast = expiry
     stamp = CUTOFF.isoformat()
     value = f"{stamp} {stamp}" if name == "items" else stamp
@@ -1112,7 +1487,7 @@ def test_a_time_dependent_assertion_is_evaluated_on_every_validation(
     expected = [None, None, None, "schema", "schema", "schema", "schema"]
     expected += ["schema", None, None]
 
-    def outcomes(check):
+    def outcomes(check: Callable[[], object]) -> list[str | None]:
         found = []
         for second in seconds:
             clock[0] = START + timedelta(seconds=second)
@@ -1124,7 +1499,7 @@ def test_a_time_dependent_assertion_is_evaluated_on_every_validation(
                 found.append(None)
         return found
 
-    def through(registry):
+    def through(registry: xmlschema.XMLSchema11) -> list[str | None]:
         return outcomes(lambda: schema._validate_schema_root(parse(source), registry))
 
     with override_settings(HYPERVIEW={"EXTRA_SCHEMAS": [path]}):

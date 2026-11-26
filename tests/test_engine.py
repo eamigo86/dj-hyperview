@@ -1,5 +1,8 @@
+"""Template engine integration tests."""
+
 import copy
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from threading import Event
 from unittest.mock import patch
 
@@ -22,10 +25,25 @@ from dj_hyperview.sources import ResolvedTemplate
 
 
 class MemorySource:
-    def __init__(self, templates):
+    """Source that serves templates from an in-memory mapping."""
+
+    def __init__(self, templates: dict[str, str]) -> None:
+        """Store the templates that the source serves.
+
+        Args:
+            templates: Template contents by name.
+        """
         self.templates = templates
 
-    def resolve(self, name):
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Return the stored template, or None when the name is unknown.
+
+        Args:
+            name: Template name to look up.
+
+        Returns:
+            The resolved template, or None for an unknown name.
+        """
         if name not in self.templates:
             return None
         content = self.templates[name]
@@ -33,13 +51,28 @@ class MemorySource:
 
 
 class BlockingMutationSource(MemorySource):
-    def __init__(self, templates):
+    """Memory source that pauses once so a test can mutate it mid-render."""
+
+    def __init__(self, templates: dict[str, str]) -> None:
+        """Create the source together with the events that pause and resume it.
+
+        Args:
+            templates: Template contents by name.
+        """
         super().__init__(templates)
         self.paused = Event()
         self.resume = Event()
         self.has_paused = False
 
-    def resolve(self, name):
+    def resolve(self, name: str) -> ResolvedTemplate | None:
+        """Pause once on the trigger template until the test resumes the source.
+
+        Args:
+            name: Template name to look up.
+
+        Returns:
+            The resolved template, or None for an unknown name.
+        """
         if name == "trigger.xml" and not self.has_paused:
             self.has_paused = True
             self.paused.set()
@@ -47,7 +80,8 @@ class BlockingMutationSource(MemorySource):
         return super().resolve(name)
 
 
-def test_engine_renders_a_root_template_with_django_semantics():
+def test_engine_renders_a_root_template_with_django_semantics() -> None:
+    """The engine renders a root template with Django semantics."""
     resolver = TemplateResolver(
         [
             MemorySource(
@@ -74,7 +108,8 @@ def test_engine_renders_a_root_template_with_django_semantics():
     )
 
 
-def test_engine_raises_django_error_after_resolver_miss():
+def test_engine_raises_django_error_after_resolver_miss() -> None:
+    """The engine raises Django's error after the resolver misses."""
     engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
 
     with pytest.raises(TemplateDoesNotExist) as error:
@@ -83,7 +118,8 @@ def test_engine_raises_django_error_after_resolver_miss():
     assert error.value.args[0] == "missing.xml"
 
 
-def test_engine_reports_every_selected_name_after_all_miss():
+def test_engine_reports_every_selected_name_after_all_miss() -> None:
+    """The engine reports every selected name after all of them miss."""
     engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
 
     with pytest.raises(TemplateDoesNotExist, match="first.xml, second.xml"):
@@ -125,8 +161,12 @@ def test_engine_rejects_an_invalid_single_name_without_disclosing_it() -> None:
 
 
 @pytest.mark.parametrize("name", ["", None, 123])
-def test_get_template_rejects_non_canonical_names_on_every_django(name) -> None:
-    """Django 6.1 rejects these before any loader; the package must not differ."""
+def test_get_template_rejects_non_canonical_names_on_every_django(name: object) -> None:
+    """Django 6.1 rejects these before any loader; the package must not differ.
+
+    Args:
+        name: Template name that is not a canonical string.
+    """
     engine = HyperviewEngine(TemplateResolver([MemorySource({})]))
 
     with pytest.raises(InvalidTemplateName, match="^Invalid template name$") as error:
@@ -287,7 +327,8 @@ def test_engine_entry_points_raise_the_package_not_found_specialization() -> Non
         engine.select_template(["first.xml", "second.xml"])
 
 
-def test_extends_and_include_use_resolver_names_and_precedence():
+def test_extends_and_include_use_resolver_names_and_precedence() -> None:
+    """Extends and include use resolver names and the resolver precedence."""
     first = MemorySource({"parts/item.xml": "<text>first: {{ value }}</text>"})
     second = MemorySource(
         {
@@ -310,7 +351,8 @@ def test_extends_and_include_use_resolver_names_and_precedence():
     )
 
 
-def test_empty_root_template_is_found_then_rejected_as_invalid_hxml():
+def test_empty_root_template_is_found_then_rejected_as_invalid_hxml() -> None:
+    """An empty root template is found, then rejected as invalid HXML."""
     engine = HyperviewEngine(TemplateResolver([MemorySource({"empty.xml": ""})]))
 
     with pytest.raises(TemplateValidationError) as error:
@@ -319,7 +361,8 @@ def test_empty_root_template_is_found_then_rejected_as_invalid_hxml():
     assert error.value.code == "malformed_xml"
 
 
-def test_render_snapshot_does_not_mix_a_concurrent_source_mutation():
+def test_render_snapshot_does_not_mix_a_concurrent_source_mutation() -> None:
+    """A render snapshot does not mix in a concurrent source mutation."""
     source = BlockingMutationSource(
         {
             "screen.xml": (
@@ -354,7 +397,12 @@ def test_render_snapshot_does_not_mix_a_concurrent_source_mutation():
         )
 
 
-def test_template_response_uses_the_dedicated_engine(tmp_path):
+def test_template_response_uses_the_dedicated_engine(tmp_path: Path) -> None:
+    """A template response uses the dedicated package engine.
+
+    Args:
+        tmp_path: Temporary directory that holds the template files.
+    """
     (tmp_path / "parts").mkdir()
     (tmp_path / "screen.xml").write_text(
         (
@@ -414,7 +462,8 @@ def test_template_response_uses_the_dedicated_engine(tmp_path):
         ]
     },
 )
-def test_template_response_preserves_explicit_django_engine_selection():
+def test_template_response_preserves_explicit_django_engine_selection() -> None:
+    """A template response keeps an explicit Django engine selection."""
     response = HyperviewTemplateResponse(
         RequestFactory().get("/screen"), "screen.xml", using="django"
     )
@@ -440,7 +489,8 @@ def test_template_response_preserves_explicit_django_engine_selection():
         ]
     }
 )
-def test_render_template_uses_current_hyperview_settings():
+def test_render_template_uses_current_hyperview_settings() -> None:
+    """Rendering a template uses the current Hyperview settings."""
     assert render_template("screen.xml", {"title": "Configured"}) == (
         '<text xmlns="https://hyperview.org/hyperview">Configured</text>'
     )
@@ -500,7 +550,8 @@ def test_default_render_paths_reuse_engine_until_hyperview_changes() -> None:
     assert engine.call_count == 3
 
 
-def test_engine_contract_is_exported_from_package_root():
+def test_engine_contract_is_exported_from_package_root() -> None:
+    """The engine contract is exported from the package root."""
     import dj_hyperview
 
     assert dj_hyperview.HyperviewEngine is HyperviewEngine
@@ -603,8 +654,15 @@ def test_default_engine_is_rebuilt_when_debug_changes() -> None:
     ],
     ids=["no-backend", "none-backend", "not-a-mapping", "jinja2-first", "options-none"],
 )
-def test_odd_templates_entries_never_break_the_engine(templates, inherited) -> None:
-    """Only a Django backend entry contributes options; the others are skipped."""
+def test_odd_templates_entries_never_break_the_engine(
+    templates: list[object], inherited: dict[str, object]
+) -> None:
+    """Only a Django backend entry contributes options; the others are skipped.
+
+    Args:
+        templates: TEMPLATES setting entries that the test installs.
+        inherited: Options the engine is expected to inherit from the consumer.
+    """
     from dj_hyperview.engine import _consumer_django_template_options
 
     with override_settings(TEMPLATES=templates):

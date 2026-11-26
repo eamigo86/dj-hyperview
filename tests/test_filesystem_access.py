@@ -14,7 +14,13 @@ from dj_hyperview.sources import FileSystemSource
 def test_stat_errors_cannot_be_misreported_as_missing_files(
     error_number: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Use stat explicitly rather than Python 3.14's error-suppressing is_file."""
+    """Use stat explicitly rather than Python 3.14's error-suppressing is_file.
+
+    Args:
+        error_number: Error number of the OSError that the patched stat raises.
+        tmp_path: Temporary directory that holds the template roots.
+        monkeypatch: Patches the path methods the source uses for this test.
+    """
     candidate = tmp_path / "screen.xml"
     candidate.write_text("<view />", encoding="utf-8")
     original_stat = Path.stat
@@ -39,7 +45,13 @@ def test_stat_errors_cannot_be_misreported_as_missing_files(
 def test_known_stat_misses_preserve_the_fallback_contract(
     error_number: int, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Only known absent or unusable paths remain ordinary misses."""
+    """Only known absent or unusable paths remain ordinary misses.
+
+    Args:
+        error_number: Error number of the OSError that the patched stat raises.
+        tmp_path: Temporary directory that holds the template roots.
+        monkeypatch: Patches the path methods the source uses for this test.
+    """
     candidate = tmp_path / "screen.xml"
     original_stat = Path.stat
 
@@ -56,7 +68,11 @@ def test_known_stat_misses_preserve_the_fallback_contract(
 def test_unsearchable_directory_does_not_serve_a_lower_priority_template(
     tmp_path: Path,
 ) -> None:
-    """An actual permission failure remains a typed error on Python 3.14."""
+    """An actual permission failure remains a typed error on Python 3.14.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     private = tmp_path / "primary" / "private"
     fallback = tmp_path / "fallback" / "private"
     private.mkdir(parents=True)
@@ -76,7 +92,11 @@ def test_unsearchable_directory_does_not_serve_a_lower_priority_template(
 
 
 def test_directory_is_not_a_regular_template_file(tmp_path: Path) -> None:
-    """A directory with a template-like name remains a miss."""
+    """A directory with a template-like name remains a miss.
+
+    Args:
+        tmp_path: Temporary directory that holds the template roots.
+    """
     (tmp_path / "screen.xml").mkdir()
 
     assert FileSystemSource([tmp_path]).resolve("screen.xml") is None

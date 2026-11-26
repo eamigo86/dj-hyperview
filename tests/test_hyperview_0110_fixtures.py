@@ -84,7 +84,11 @@ def test_manifest_digests_cover_every_contract_artifact() -> None:
 
 @pytest.mark.parametrize("name", FIXTURES)
 def test_synthetic_fixture_parses_and_validates_offline(name: str) -> None:
-    """Validate each committed fixture without network access."""
+    """Validate each committed fixture without network access.
+
+    Args:
+        name: Name of the committed fixture file.
+    """
     document = _parse(CONTRACT / name)
     schema = _schema()
 
@@ -133,7 +137,11 @@ def test_fixture_references_resolve_to_unique_ids() -> None:
     ],
 )
 def test_focused_schema_rejects_contract_mutations(invalid: bytes) -> None:
-    """Reject namespace, shape, attribute, and element mutations."""
+    """Reject namespace, shape, attribute, and element mutations.
+
+    Args:
+        invalid: Mutated document that the focused schema must reject.
+    """
     assert not _schema().validate(_parse(invalid))
 
 
@@ -172,6 +180,10 @@ def test_contract_rejects_target_without_exactly_one_matching_id() -> None:
     ],
 )
 def test_contract_rejects_duplicate_or_invalid_ids(invalid: str) -> None:
-    """Reject non-unique and lexically invalid Hyperview identifiers."""
+    """Reject non-unique and lexically invalid Hyperview identifiers.
+
+    Args:
+        invalid: Document with a duplicate or lexically invalid identifier.
+    """
     with pytest.raises(ContractValidationError, match="schema validation failed"):
         validate_contract_document(_parse(invalid.encode()), schema=_schema())

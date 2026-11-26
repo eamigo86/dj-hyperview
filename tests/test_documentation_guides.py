@@ -32,13 +32,22 @@ def _documented_callables() -> dict[str, object]:
 
 @pytest.mark.parametrize("page", PAGES, ids=lambda page: page.name)
 def test_python_examples_compile(page: Path) -> None:
+    """Every Python example in the guides compiles.
+
+    Args:
+        page: Documentation page whose Python examples are checked.
+    """
     for block in _python_blocks(page.read_text()):
         compile(block, str(page), "exec")
 
 
 @pytest.mark.parametrize("page", PAGES, ids=lambda page: page.name)
 def test_documented_calls_match_the_signatures_they_call(page: Path) -> None:
-    """A call to a public name must bind to that name's real signature."""
+    """A call to a public name must bind to that name's real signature.
+
+    Args:
+        page: Documentation page whose Python examples are checked.
+    """
     callables = _documented_callables()
     mismatches = []
     for block in _python_blocks(page.read_text()):
@@ -65,7 +74,11 @@ def test_documented_calls_match_the_signatures_they_call(page: Path) -> None:
 def test_security_csrf_example_passes_automatic_render_validation(
     tmp_path: Path,
 ) -> None:
-    """The documented CSRF form uses real HXML rather than HTML form attributes."""
+    """The documented CSRF form uses real HXML rather than HTML form attributes.
+
+    Args:
+        tmp_path: Temporary directory that holds the template written from the example.
+    """
     from django.test import RequestFactory, override_settings
 
     page = _read_document("security.md")
@@ -88,7 +101,11 @@ def test_security_csrf_example_passes_automatic_render_validation(
 def test_security_text_safety_example_cleans_and_escapes_rendered_values(
     tmp_path: Path,
 ) -> None:
-    """The documented filters strip illegal characters and keep attribute newlines."""
+    """The documented filters strip illegal characters and keep attribute newlines.
+
+    Args:
+        tmp_path: Temporary directory that holds the template written from the example.
+    """
     from types import SimpleNamespace
 
     from django.test import override_settings
@@ -124,6 +141,7 @@ def test_configuration_guide_documents_exactly_the_emitted_check_ids() -> None:
 
 
 def test_mobile_guide_installs_the_hypertodo_matrix() -> None:
+    """The mobile guide installs the HyperTodo version matrix."""
     guide = _read_document("mobile-getting-started.md")
 
     assert "hyperview@0.115.1" in guide

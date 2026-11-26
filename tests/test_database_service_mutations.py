@@ -47,6 +47,15 @@ class _WriteRouter:
 
 @pytest.fixture
 def mutation_model(django_db_blocker: Any) -> Iterator[type[Model]]:
+    """Create the template table on every alias for one test.
+
+    Args:
+        django_db_blocker: Allows the fixture to create the tables outside a test
+            transaction.
+
+    Yields:
+        The template model class, with its table present on every alias.
+    """
     with override_settings(INSTALLED_APPS=DATABASE_APPS):
         model = apps.get_model("dj_hyperview_database", "HyperviewTemplate")
         with django_db_blocker.unblock():
@@ -63,6 +72,11 @@ def mutation_model(django_db_blocker: Any) -> Iterator[type[Model]]:
 def test_rename_updates_optional_fields_and_revision_once(
     mutation_model: type[Model],
 ) -> None:
+    """Renaming updates the optional fields and bumps the revision once per call.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     source = mutation_model.objects.create(
         name="old.xml", content="<old />", active=True, revision=3
     )
@@ -94,6 +108,11 @@ def test_rename_updates_optional_fields_and_revision_once(
 def test_rename_conflicts_leave_source_and_target_unchanged(
     mutation_model: type[Model],
 ) -> None:
+    """A rename conflict leaves both the source and the target unchanged.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     source = mutation_model.objects.create(name="old.xml", content="<old />")
     target = mutation_model.objects.create(name="taken.xml", content="<taken />")
     with patch(SCHEDULE) as schedule:
@@ -129,6 +148,14 @@ def test_rename_validates_all_inputs_before_database_effects(
     expected: object,
     error: type[Exception],
 ) -> None:
+    """Rename rejects invalid names and revisions before it opens a transaction.
+
+    Args:
+        current: Name of the template to rename.
+        new: New template name.
+        expected: Expected revision passed to the rename, or an invalid value for it.
+        error: Exception type the rename is expected to raise.
+    """
     with (
         patch("dj_hyperview.contrib.database.services.transaction.atomic") as atomic,
         pytest.raises(error),
@@ -140,7 +167,11 @@ def test_rename_validates_all_inputs_before_database_effects(
 def test_noncanonical_current_name_is_a_missing_source_conflict(
     mutation_model: type[Model],
 ) -> None:
-    """An unsafe historical source name is data identity, not a path input."""
+    """An unsafe historical source name is data identity, not a path input.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     with pytest.raises(PublicationConflict):
         rename_template("../private.xml", "safe.xml")
 
@@ -148,6 +179,7 @@ def test_noncanonical_current_name_is_a_missing_source_conflict(
 
 
 def test_mutation_boundary_rejects_unknown_alias_and_missing_app() -> None:
+    """The mutation boundary rejects an unknown alias and a missing database app."""
     with pytest.raises(SourceUnavailable, match="alias unavailable"):
         rename_template("old.xml", "new.xml", using="missing")
     with pytest.raises(SourceUnavailable, match="app unavailable"):
@@ -157,6 +189,11 @@ def test_mutation_boundary_rejects_unknown_alias_and_missing_app() -> None:
 def test_rename_validation_error_rolls_back_without_invalidation(
     mutation_model: type[Model],
 ) -> None:
+    """A validation failure during rename rolls back and schedules no invalidation.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     mutation_model.objects.create(name="old.xml", content="<old />")
     with (
         patch(SCHEDULE) as schedule,
@@ -172,6 +209,12 @@ def test_rename_validation_error_rolls_back_without_invalidation(
 def test_delete_existing_missing_and_revision_contract(
     mutation_model: type[Model],
 ) -> None:
+    """Delete removes an existing template, reports a missing one and checks the
+    revision.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     mutation_model.objects.create(name="delete.xml", content="<delete />", revision=2)
     with patch(SCHEDULE) as schedule:
         with pytest.raises(PublicationConflict):
@@ -188,6 +231,11 @@ def test_delete_existing_missing_and_revision_contract(
 def test_mutations_select_write_router_once_and_honor_explicit_alias(
     mutation_model: type[Model],
 ) -> None:
+    """Mutations ask the write router once and honor an explicit alias.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     mutation_model.objects.using("replica").create(name="routed.xml", content="<r />")
     mutation_model.objects.create(name="explicit.xml", content="<e />")
     router = _WriteRouter("replica")
@@ -208,6 +256,13 @@ def test_rename_preserves_unverified_database_error(
     monkeypatch: pytest.MonkeyPatch,
     error_type: type[DatabaseError],
 ) -> None:
+    """Rename re-raises a database error it cannot attribute to a name conflict.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+        monkeypatch: Makes the model save raise the database error.
+        error_type: Database error type the save raises.
+    """
     mutation_model.objects.create(name="old.xml", content="<old />")
     failure = error_type("private infrastructure failure")
 
@@ -226,6 +281,11 @@ def test_rename_preserves_unverified_database_error(
 def test_case_equivalent_target_does_not_mask_unrelated_integrity_error(
     mutation_model: type[Model],
 ) -> None:
+    """A case-equivalent target does not hide an unrelated integrity error.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     connection = connections["default"]
     if connection.vendor != "sqlite":
         pytest.skip("SQLite NOCASE regression")
@@ -262,7 +322,11 @@ def test_case_equivalent_target_does_not_mask_unrelated_integrity_error(
 def test_case_variants_remain_distinct_under_case_insensitive_collation(
     mutation_model: type[Model],
 ) -> None:
-    """Package identity stays byte-exact when the database collation does not."""
+    """Package identity stays byte-exact when the database collation does not.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     connection = connections["default"]
     if connection.vendor != "sqlite":
         pytest.skip("SQLite NOCASE regression")
@@ -293,6 +357,13 @@ def test_rename_proof_failure_preserves_primary_database_error(
     monkeypatch: pytest.MonkeyPatch,
     primary_type: type[DatabaseError],
 ) -> None:
+    """Rename keeps the primary database error when the conflict check fails as well.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+        monkeypatch: Makes the save and the conflict check fail.
+        primary_type: Type of the primary database error the save raises.
+    """
     primary = primary_type("primary write failure")
     secondary = InterfaceError("secondary proof failure")
     mutation_model.objects.create(name="old.xml", content="<old />")
@@ -317,6 +388,14 @@ def test_rename_proof_failure_preserves_primary_database_error(
 def test_concurrent_source_deletion_becomes_conflict_without_recreation(
     mutation_model: type[Model], monkeypatch: pytest.MonkeyPatch, operation: str
 ) -> None:
+    """A source deleted concurrently becomes a conflict and is not recreated.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+        monkeypatch: Makes the locked row lookup return a stale row.
+        operation: Mutation under test, either rename or delete.
+    """
+
     def stale_locked_row(queryset: Any, *args: object, **kwargs: object) -> Model:
         del queryset, args, kwargs
         return mutation_model(pk=99, name="old.xml", content="<old />")
@@ -334,6 +413,13 @@ def test_concurrent_source_deletion_becomes_conflict_without_recreation(
 def test_zero_row_delete_discards_invalidation_before_conflict(
     mutation_model: type[Model], monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    """A delete that removes no row raises a conflict and schedules no invalidation.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+        monkeypatch: Makes the locked row lookup return a stale row.
+    """
+
     def stale_locked_row(queryset: QuerySet, *args: object, **kwargs: object) -> Model:
         del queryset, args, kwargs
         return mutation_model(pk=99, name="old.xml", content="<old />")
@@ -353,6 +439,11 @@ def test_zero_row_delete_discards_invalidation_before_conflict(
 def test_rollback_and_postcommit_cache_failure_keep_database_truth(
     mutation_model: type[Model],
 ) -> None:
+    """A rollback restores the rows and a post-commit cache failure keeps the delete.
+
+    Args:
+        mutation_model: Template model class created on every alias.
+    """
     mutation_model.objects.create(name="old.xml", content="<old />")
     with pytest.raises(RuntimeError, match="rollback"):
         with transaction.atomic():

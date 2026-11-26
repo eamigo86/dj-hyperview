@@ -1,11 +1,17 @@
+"""Database template source integration tests."""
+
 import importlib
+from collections.abc import Callable, Iterator
+from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from django.apps import apps
 from django.core.exceptions import AppRegistryNotReady
 from django.db import InterfaceError, connection
+from django.db.models import Model
 from django.test import override_settings
+from pytest_django.fixtures import DjangoAssertNumQueries
 
 from dj_hyperview.checks import check_hyperview_settings
 from dj_hyperview.exceptions import (
@@ -39,16 +45,36 @@ def _assert_redacted_source_error(
 
 
 class RecordingRouter:
-    def __init__(self):
+    """Database router that records every read it routes."""
+
+    def __init__(self) -> None:
+        """Start with no recorded reads."""
         self.reads = []
 
-    def db_for_read(self, model, **hints):
+    def db_for_read(self, model: type[Model], **hints: object) -> str:
+        """Record the read and route it to the default alias.
+
+        Args:
+            model: Model class that the router is asked about.
+            **hints: Routing hints that Django passes.
+
+        Returns:
+            The default database alias.
+        """
         self.reads.append((model, hints))
         return "default"
 
 
 @pytest.fixture
-def database_model(transactional_db):
+def database_model(transactional_db: None) -> Iterator[type[Model]]:
+    """Create the template table for one test.
+
+    Args:
+        transactional_db: Enables transactional database access for the fixture.
+
+    Yields:
+        The template model class, with its table present.
+    """
     with override_settings(INSTALLED_APPS=DATABASE_APPS):
         model = apps.get_model("dj_hyperview_database", "HyperviewTemplate")
         with connection.schema_editor() as editor:
@@ -58,13 +84,19 @@ def database_model(transactional_db):
             editor.delete_model(model)
 
 
-def database_source_class():
+def database_source_class() -> Callable[..., TemplateSource]:
+    """Import the database source class lazily.
+
+    Returns:
+        The database source class, which builds a source when called.
+    """
     return importlib.import_module(
         "dj_hyperview.contrib.database.sources"
     ).DatabaseSource
 
 
-def test_database_source_module_import_is_lazy():
+def test_database_source_module_import_is_lazy() -> None:
+    """Importing the database source module does not import the models."""
     result = run_isolated(
         "tests.settings",
         "import sys, dj_hyperview.contrib.database; "
@@ -80,7 +112,8 @@ def test_database_source_module_import_is_lazy():
     assert isinstance(database_source_class()(), TemplateSource)
 
 
-def test_database_source_requires_installed_contrib_without_leaking_context():
+def test_database_source_requires_installed_contrib_without_leaking_context() -> None:
+    """Without the installed database app, the source fails with a stable error."""
     source = database_source_class()()
 
     with pytest.raises(SourceUnavailable) as captured:
@@ -95,7 +128,12 @@ def test_database_source_requires_installed_contrib_without_leaking_context():
 @pytest.mark.parametrize(
     "failure", [AppRegistryNotReady("private registry"), LookupError("private model")]
 )
-def test_registry_failures_are_stable_and_redacted(failure):
+def test_registry_failures_are_stable_and_redacted(failure: Exception) -> None:
+    """Registry lookup failures become stable, redacted source errors.
+
+    Args:
+        failure: Registry error that the model lookup raises.
+    """
     module = importlib.import_module("dj_hyperview.contrib.database.sources")
 
     with patch.object(module.apps, "get_model", side_effect=failure):
@@ -112,8 +150,17 @@ def test_registry_failures_are_stable_and_redacted(failure):
 
 @pytest.mark.parametrize("content", ["<view>stored</view>", ""])
 def test_active_template_resolves_in_one_query(
-    database_model, django_assert_num_queries, content
-):
+    database_model: type[Model],
+    django_assert_num_queries: DjangoAssertNumQueries,
+    content: str,
+) -> None:
+    """An active template resolves with a single query.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+        django_assert_num_queries: Asserts how many queries run inside its block.
+        content: Template content stored in the row, empty content included.
+    """
     database_model.objects.create(name="screens/home.xml", content=content, revision=7)
 
     with django_assert_num_queries(1):
@@ -129,8 +176,14 @@ def test_active_template_resolves_in_one_query(
 
 
 def test_inactive_and_absent_templates_are_source_misses(
-    database_model, django_assert_num_queries
-):
+    database_model: type[Model], django_assert_num_queries: DjangoAssertNumQueries
+) -> None:
+    """Inactive and absent templates are source misses.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+        django_assert_num_queries: Asserts how many queries run inside its block.
+    """
     database_model.objects.create(name="inactive.xml", content="<view />", active=False)
     source = database_source_class()()
 
@@ -142,7 +195,8 @@ def test_inactive_and_absent_templates_are_source_misses(
     assert absent is None
 
 
-def test_name_is_canonicalized_before_registry_or_database_access():
+def test_name_is_canonicalized_before_registry_or_database_access() -> None:
+    """Names are canonicalized before any registry or database access."""
     module = importlib.import_module("dj_hyperview.contrib.database.sources")
 
     with patch.object(
@@ -153,8 +207,14 @@ def test_name_is_canonicalized_before_registry_or_database_access():
 
 
 def test_default_manager_honors_database_router(
-    database_model, django_assert_num_queries
-):
+    database_model: type[Model], django_assert_num_queries: DjangoAssertNumQueries
+) -> None:
+    """The default manager honors the database router.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+        django_assert_num_queries: Asserts how many queries run inside its block.
+    """
     database_model.objects.create(name="screen.xml", content="<view />")
     router = RecordingRouter()
 
@@ -165,7 +225,12 @@ def test_default_manager_honors_database_router(
     assert router.reads == [(database_model, {})]
 
 
-def test_uncached_reads_observe_database_updates(database_model):
+def test_uncached_reads_observe_database_updates(database_model: type[Model]) -> None:
+    """Uncached reads observe database updates.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+    """
     database_model.objects.create(
         name="screen.xml", content="<view>old</view>", revision=1
     )
@@ -182,8 +247,14 @@ def test_uncached_reads_observe_database_updates(database_model):
 
 
 def test_resolver_preserves_database_and_filesystem_precedence(
-    database_model, tmp_path
-):
+    database_model: type[Model], tmp_path: Path
+) -> None:
+    """The resolver keeps the order of the database and filesystem sources.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+        tmp_path: Temporary directory that holds the filesystem template.
+    """
     database_model.objects.create(name="screen.xml", content="database")
     (tmp_path / "screen.xml").write_text("filesystem", encoding="utf-8")
     database = database_source_class()()
@@ -202,9 +273,14 @@ def test_resolver_preserves_database_and_filesystem_precedence(
 
 
 def test_database_identity_divergence_falls_through_to_next_source(
-    database_model, tmp_path
+    database_model: type[Model], tmp_path: Path
 ) -> None:
-    """A damaged database identity behaves as a miss, not an outage."""
+    """A damaged database identity behaves as a miss, not an outage.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+        tmp_path: Temporary directory that holds the filesystem template.
+    """
     template = database_model.objects.create(name="screen.xml", content="database")
     database_model._base_manager.filter(pk=template.pk).update(name="renamed.xml")
     (tmp_path / "screen.xml").write_text("filesystem", encoding="utf-8")
@@ -217,7 +293,14 @@ def test_database_identity_divergence_falls_through_to_next_source(
     assert resolved.source == "filesystem"
 
 
-def test_configured_source_passes_checks_and_resolver_integration(database_model):
+def test_configured_source_passes_checks_and_resolver_integration(
+    database_model: type[Model],
+) -> None:
+    """A configured database source passes the checks and resolves templates.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+    """
     database_model.objects.create(name="screen.xml", content="configured", revision=3)
     configured = {
         "SOURCES": [{"BACKEND": DATABASE_BACKEND, "OPTIONS": {"using": "default"}}]
@@ -230,7 +313,8 @@ def test_configured_source_passes_checks_and_resolver_integration(database_model
     assert (resolved.content, resolved.revision) == ("configured", "3")
 
 
-def test_configured_source_without_contrib_fails_before_resolver_construction():
+def test_configured_source_without_contrib_fails_before_resolver_construction() -> None:
+    """A configured source without the database app fails before the resolver exists."""
     configured = {"SOURCES": [{"BACKEND": DATABASE_BACKEND}]}
 
     with override_settings(HYPERVIEW=configured):
@@ -242,7 +326,15 @@ def test_configured_source_without_contrib_fails_before_resolver_construction():
 @pytest.mark.parametrize(
     ("using", "reason"), [(None, "query failed"), ("missing", "alias unavailable")]
 )
-def test_database_infrastructure_failures_are_stable_and_redacted(using, reason):
+def test_database_infrastructure_failures_are_stable_and_redacted(
+    using: str | None, reason: str
+) -> None:
+    """Database infrastructure failures become stable, redacted source errors.
+
+    Args:
+        using: Database alias the source reads from, or None for the default.
+        reason: Public failure reason the error is expected to carry.
+    """
     sensitive_name = "private/screen.xml"
     with override_settings(INSTALLED_APPS=DATABASE_APPS):
         source = database_source_class()(using=using)
@@ -257,7 +349,14 @@ def test_database_infrastructure_failures_are_stable_and_redacted(using, reason)
     )
 
 
-def test_programming_errors_are_not_converted_to_source_failures(database_model):
+def test_programming_errors_are_not_converted_to_source_failures(
+    database_model: type[Model],
+) -> None:
+    """Programming errors are not converted into source failures.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+    """
     failure = RuntimeError("programming failure")
     manager = database_model._default_manager
 
@@ -268,8 +367,14 @@ def test_programming_errors_are_not_converted_to_source_failures(database_model)
     assert captured.value is failure
 
 
-def test_interface_errors_become_redacted_source_failures(database_model) -> None:
-    """Closed pooled connections preserve the public source error contract."""
+def test_interface_errors_become_redacted_source_failures(
+    database_model: type[Model],
+) -> None:
+    """Closed pooled connections preserve the public source error contract.
+
+    Args:
+        database_model: Template model class with its table created for this test.
+    """
     manager = database_model._default_manager
 
     with patch.object(

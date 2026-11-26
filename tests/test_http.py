@@ -1,10 +1,14 @@
+"""HTTP response, template response and view integration tests."""
+
 import encodings
 import uuid
+from collections.abc import Callable, Iterator
 
 import pytest
 from django.core.exceptions import ImproperlyConfigured
+from django.http import HttpRequest, HttpResponse
 from django.template import TemplateDoesNotExist
-from django.template.response import ContentNotRenderedError
+from django.template.response import ContentNotRenderedError, TemplateResponse
 from django.test import RequestFactory, override_settings
 
 import dj_hyperview
@@ -52,7 +56,8 @@ HYPERVIEW_SOURCES = {
 
 
 @override_settings(DEFAULT_CHARSET="iso-8859-1")
-def test_hyperview_response_preserves_http_contract():
+def test_hyperview_response_preserves_http_contract() -> None:
+    """A Hyperview response preserves status, headers and the UTF-8 contract."""
     response = HyperviewResponse(
         '<text xmlns="https://hyperview.org/hyperview">Accepted</text>',
         status=202,
@@ -69,7 +74,8 @@ def test_hyperview_response_preserves_http_contract():
     assert response.headers["Content-Type"] == f"{HYPERVIEW_MEDIA_TYPE}; charset=utf-8"
 
 
-def test_hyperview_response_preserves_explicit_content_type_and_utf8():
+def test_hyperview_response_preserves_explicit_content_type_and_utf8() -> None:
+    """An explicit content type is kept and the body is still UTF-8."""
     document = '<text xmlns="https://hyperview.org/hyperview">olá</text>'
     response = HyperviewResponse(
         document,
@@ -86,6 +92,7 @@ def test_hyperview_response_preserves_explicit_content_type_and_utf8():
 
 
 def test_foreign_media_type_still_rejects_a_non_utf8_charset() -> None:
+    """A foreign media type still rejects a non-UTF-8 charset."""
     with pytest.raises(ValueError, match="UTF-8"):
         HyperviewResponse("olá", content_type="text/plain; charset=iso-8859-1")
 
@@ -100,7 +107,11 @@ def test_foreign_media_type_still_rejects_a_non_utf8_charset() -> None:
 def test_hyperview_response_rejects_non_utf8_content_type_charset(
     content_type: str,
 ) -> None:
-    """The media-type parameter cannot silently override the UTF-8 contract."""
+    """The media-type parameter cannot silently override the UTF-8 contract.
+
+    Args:
+        content_type: Content-Type header value with a non-UTF-8 charset.
+    """
     with pytest.raises(ValueError, match="Hyperview responses require UTF-8"):
         HyperviewResponse(
             '<text xmlns="https://hyperview.org/hyperview" />',
@@ -137,7 +148,11 @@ def test_hyperview_response_parses_quoted_content_type_parameters() -> None:
     ],
 )
 def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> None:
-    """A parameter value that is not a token is quoted and escaped, never raw."""
+    """A parameter value that is not a token is quoted and escaped, never raw.
+
+    Args:
+        parameter: Content-Type parameter appended to the media type.
+    """
     from django.utils.http import parse_header_parameters
 
     response = HyperviewResponse(
@@ -189,6 +204,11 @@ def test_content_type_parameters_are_requoted_per_rfc_9110(parameter: str) -> No
 def test_content_type_parameters_that_cannot_be_represented_are_rejected(
     parameter: str,
 ) -> None:
+    """Content-Type parameters that cannot be represented are rejected.
+
+    Args:
+        parameter: Content-Type parameter appended to the media type.
+    """
     with pytest.raises(ValueError, match="Content-Type parameter"):
         HyperviewResponse(
             '<text xmlns="https://hyperview.org/hyperview" />',
@@ -209,6 +229,9 @@ def test_a_content_type_parameter_without_a_value_is_dropped_by_django(
     """Django keeps no name that has no "=", star or not, so nothing is altered.
 
     That is unlike "a*=x", which Django keeps as "a=x" and so must be rejected.
+
+    Args:
+        header: Content-Type header value with a parameter that has no value.
     """
     response = HyperviewResponse(VALID_HXML, content_type=header)
 
@@ -227,6 +250,10 @@ def test_a_content_type_over_10000_characters_is_rejected_before_parsing(
 
     Reading the parameters is quadratic in their number, and 5.2 takes about 15 s
     over 1 MB of semicolons.
+
+    Args:
+        media_type: Media type that the response class is expected to use.
+        unit: Text repeated to pad the header over the limit.
     """
     prefix, suffix = f"{media_type}; p=", "; charset=utf-8"
 
@@ -247,8 +274,15 @@ def test_a_content_type_over_10000_characters_is_rejected_before_parsing(
         (HyperviewFragmentResponse, HYPERVIEW_FRAGMENT_MEDIA_TYPE),
     ],
 )
-def test_none_content_type_is_the_default_media_type(response_type, media_type):
-    """Passing None gives the media type of the class, as the default does."""
+def test_none_content_type_is_the_default_media_type(
+    response_type: type[HyperviewResponse], media_type: str
+) -> None:
+    """Passing None gives the media type of the class, as the default does.
+
+    Args:
+        response_type: Response class under test.
+        media_type: Media type that the response class is expected to use.
+    """
     document = '<text xmlns="https://hyperview.org/hyperview" />'
 
     assert response_type(document, content_type=None).headers["Content-Type"] == (
@@ -264,8 +298,14 @@ def test_none_content_type_is_the_default_media_type(response_type, media_type):
     ],
 )
 def test_none_content_type_is_the_default_media_type_for_template_responses(
-    response_type, media_type
-):
+    response_type: type[HyperviewTemplateResponse], media_type: str
+) -> None:
+    """None as content type gives the media type of the template response class.
+
+    Args:
+        response_type: Response class under test.
+        media_type: Media type that the response class is expected to use.
+    """
     response = response_type(None, "screen.xml", content_type=None)
 
     assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
@@ -280,9 +320,15 @@ def test_none_content_type_is_the_default_media_type_for_template_responses(
     ],
 )
 def test_none_content_type_keeps_a_content_type_header(
-    response_type, media_type, header
-):
-    """None means not given, so a Content-Type header is not a second source."""
+    response_type: type[HyperviewResponse], media_type: str, header: str
+) -> None:
+    """None means not given, so a Content-Type header is not a second source.
+
+    Args:
+        response_type: Response class under test.
+        media_type: Media type that the response class is expected to use.
+        header: Case variant of the Content-Type header name.
+    """
     document = '<text xmlns="https://hyperview.org/hyperview" />'
 
     response = response_type(
@@ -301,8 +347,15 @@ def test_none_content_type_keeps_a_content_type_header(
     ],
 )
 def test_none_content_type_keeps_a_content_type_header_for_template_responses(
-    response_type, media_type, header
-):
+    response_type: type[HyperviewTemplateResponse], media_type: str, header: str
+) -> None:
+    """None as content type keeps a Content-Type header on template responses.
+
+    Args:
+        response_type: Response class under test.
+        media_type: Media type that the response class is expected to use.
+        header: Case variant of the Content-Type header name.
+    """
     response = response_type(
         None,
         "screen.xml",
@@ -313,7 +366,7 @@ def test_none_content_type_keeps_a_content_type_header_for_template_responses(
     assert response.headers["Content-Type"] == f"{media_type}; charset=utf-8"
 
 
-def _one_shot_headers(content_type: str):
+def _one_shot_headers(content_type: str) -> Iterator[tuple[str, str]]:
     """Headers as a generator, which can be read only once."""
     return (
         pair
@@ -332,8 +385,14 @@ def _one_shot_headers(content_type: str):
     ],
 )
 def test_none_content_type_keeps_every_header_of_a_one_shot_iterable(
-    response_type, media_type
-):
+    response_type: type[HyperviewResponse], media_type: str
+) -> None:
+    """None as content type keeps every header of a one-shot iterable.
+
+    Args:
+        response_type: Response class under test.
+        media_type: Media type that the response class is expected to use.
+    """
     document = '<text xmlns="https://hyperview.org/hyperview" />'
 
     response = response_type(
@@ -354,8 +413,14 @@ def test_none_content_type_keeps_every_header_of_a_one_shot_iterable(
     ],
 )
 def test_none_content_type_keeps_every_header_of_a_one_shot_iterable_for_templates(
-    response_type, media_type
-):
+    response_type: type[HyperviewTemplateResponse], media_type: str
+) -> None:
+    """None as content type keeps every one-shot header of template responses.
+
+    Args:
+        response_type: Response class under test.
+        media_type: Media type that the response class is expected to use.
+    """
     response = response_type(
         None, "screen.xml", content_type=None, headers=_one_shot_headers(media_type)
     )
@@ -367,6 +432,7 @@ def test_none_content_type_keeps_every_header_of_a_one_shot_iterable_for_templat
 
 
 def test_a_content_type_header_still_rejects_a_non_utf8_charset() -> None:
+    """A Content-Type header still rejects a non-UTF-8 charset."""
     with pytest.raises(ValueError, match="Hyperview responses require UTF-8"):
         HyperviewResponse(
             '<text xmlns="https://hyperview.org/hyperview" />',
@@ -394,7 +460,11 @@ def test_fragment_response_uses_fragment_media_type_and_utf8() -> None:
 
 @pytest.mark.parametrize("root", ["doc", "navigator", "screen", "body"])
 def test_fragment_response_rejects_document_roots(root: str) -> None:
-    """Replacement fragments cannot contain client-owned document roots."""
+    """Replacement fragments cannot contain client-owned document roots.
+
+    Args:
+        root: Client-owned document root that the fragment must not use.
+    """
     with pytest.raises(TemplateValidationError) as error:
         HyperviewFragmentResponse(f"<{root} />")
 
@@ -423,7 +493,8 @@ def test_fragment_template_response_is_lazy_and_validates_its_root() -> None:
     HYPERVIEW=HYPERVIEW_SOURCES,
     DEFAULT_CHARSET="iso-8859-1",
 )
-def test_template_response_preserves_lazy_render_contract():
+def test_template_response_preserves_lazy_render_contract() -> None:
+    """A template response keeps the lazy render contract."""
     request = RequestFactory().get("/screen")
     response = HyperviewTemplateResponse(
         request,
@@ -451,7 +522,8 @@ def test_template_response_preserves_lazy_render_contract():
 
 
 @override_settings(TEMPLATES=TEMPLATES)
-def test_template_response_defers_missing_template_error_until_render():
+def test_template_response_defers_missing_template_error_until_render() -> None:
+    """A template response defers the missing template error until render."""
     response = HyperviewTemplateResponse(
         RequestFactory().get("/missing"),
         "missing.xml",
@@ -464,7 +536,7 @@ def test_template_response_defers_missing_template_error_until_render():
 
 
 @override_settings(TEMPLATES=TEMPLATES, HYPERVIEW={})
-def test_template_response_requires_explicit_django_engine_without_sources():
+def test_template_response_requires_explicit_django_engine_without_sources() -> None:
     """Implicit response rendering never changes engines with configuration."""
     package_response = HyperviewTemplateResponse(
         RequestFactory().get("/screen"),
@@ -487,7 +559,8 @@ def test_template_response_requires_explicit_django_engine_without_sources():
 
 
 @override_settings(TEMPLATES=TEMPLATES, HYPERVIEW=HYPERVIEW_SOURCES)
-def test_template_view_renders_consumer_template_and_context():
+def test_template_view_renders_consumer_template_and_context() -> None:
+    """The template view renders the consumer template with its context."""
     view = HyperviewTemplateView.as_view(
         template_name="screen.xml",
         extra_context={"title": "Consumer screen"},
@@ -510,11 +583,15 @@ def test_template_view_renders_consumer_template_and_context():
 
 
 @override_settings(TEMPLATES=TEMPLATES, HYPERVIEW=HYPERVIEW_SOURCES)
-def test_template_view_forwards_response_status_and_headers():
+def test_template_view_forwards_response_status_and_headers() -> None:
+    """The template view forwards the response status and headers."""
+
     class AcceptedView(HyperviewTemplateView):
         template_name = "screen.xml"
 
-        def render_to_response(self, context, **response_kwargs):
+        def render_to_response(
+            self, context: dict[str, object], **response_kwargs: object
+        ) -> TemplateResponse:
             return super().render_to_response(
                 context,
                 status=202,
@@ -533,14 +610,16 @@ def test_template_view_forwards_response_status_and_headers():
     )
 
 
-def test_template_view_requires_a_consumer_template_name():
+def test_template_view_requires_a_consumer_template_name() -> None:
+    """The template view requires a consumer template name."""
     view = HyperviewTemplateView.as_view()
 
     with pytest.raises(ImproperlyConfigured, match="requires either a definition"):
         view(RequestFactory().get("/missing-template"))
 
 
-def test_http_api_is_available_from_the_package_namespace():
+def test_http_api_is_available_from_the_package_namespace() -> None:
+    """The HTTP API is available from the package namespace."""
     assert dj_hyperview.HYPERVIEW_MEDIA_TYPE == "application/vnd.hyperview+xml"
     assert dj_hyperview.HYPERVIEW_FRAGMENT_MEDIA_TYPE == (
         "application/vnd.hyperview_fragment+xml"
@@ -568,12 +647,18 @@ VALID_HXML = '<view xmlns="https://hyperview.org/hyperview"><text>Ready</text></
         b"\xff",
     ],
 )
-def test_eager_response_rejects_invalid_final_content(content):
+def test_eager_response_rejects_invalid_final_content(content: bytes | str) -> None:
+    """An eager response rejects invalid final content.
+
+    Args:
+        content: Final content that is not a valid Hyperview document.
+    """
     with pytest.raises(TemplateValidationError):
         HyperviewResponse(content)
 
 
-def test_foreign_media_type_cannot_disable_hyperview_validation():
+def test_foreign_media_type_cannot_disable_hyperview_validation() -> None:
+    """A foreign media type cannot disable Hyperview validation."""
     with pytest.raises(TemplateValidationError):
         HyperviewResponse("not XML", content_type="text/plain")
     with pytest.raises(ValueError, match="UTF-8"):
@@ -584,7 +669,15 @@ def test_foreign_media_type_cannot_disable_hyperview_validation():
     "response_type", [HyperviewResponse, HyperviewFragmentResponse]
 )
 @pytest.mark.parametrize("mutation", ["content", "write", "writelines"])
-def test_invalid_response_mutations_are_atomic(response_type, mutation):
+def test_invalid_response_mutations_are_atomic(
+    response_type: type[HyperviewResponse], mutation: str
+) -> None:
+    """Invalid response mutations are atomic.
+
+    Args:
+        response_type: Response class under test.
+        mutation: Way the invalid content is assigned, as content, write or writelines.
+    """
     response = response_type(VALID_HXML)
     before = response.content
     with pytest.raises(TemplateValidationError):
@@ -602,9 +695,15 @@ def test_invalid_response_mutations_are_atomic(response_type, mutation):
 )
 @pytest.mark.parametrize("mutation", ["construct", "content", "write", "writelines"])
 def test_lone_surrogates_get_the_actionable_xml_character_message(
-    response_type, mutation
-):
-    """Text that cannot be encoded fails like every other XML 1.0 violation."""
+    response_type: type[HyperviewResponse], mutation: str
+) -> None:
+    """Text that cannot be encoded fails like every other XML 1.0 violation.
+
+    Args:
+        response_type: Response class under test.
+        mutation: Way the surrogate reaches the response, as construct, content,
+            write or writelines.
+    """
     surrogate = "\U0000d800"
     response = None if mutation == "construct" else response_type(VALID_HXML)
     with pytest.raises(TemplateValidationError) as error:
@@ -629,9 +728,15 @@ def test_lone_surrogates_get_the_actionable_xml_character_message(
 @pytest.mark.parametrize("as_bytes", [False, True])
 @pytest.mark.parametrize("mutation", ["construct", "content"])
 def test_a_nul_in_the_declared_encoding_is_a_typed_failure(
-    response_type, as_bytes, mutation
-):
-    """codecs.lookup raises a bare ValueError for NUL, which must not escape."""
+    response_type: type[HyperviewResponse], as_bytes: bool, mutation: str
+) -> None:
+    """codecs.lookup raises a bare ValueError for NUL, which must not escape.
+
+    Args:
+        response_type: Response class under test.
+        as_bytes: Whether the document is passed as bytes instead of text.
+        mutation: Way the document reaches the response, as construct or content.
+    """
     document = (
         '<?xml version="1.0" encoding="UTF-8\x00"?>'
         '<text xmlns="https://hyperview.org/hyperview" />'
@@ -650,18 +755,20 @@ def test_a_nul_in_the_declared_encoding_is_a_typed_failure(
         assert response.content == VALID_HXML.encode()
 
 
-def test_writelines_assembles_once_before_validating():
+def test_writelines_assembles_once_before_validating() -> None:
+    """Writelines assembles all chunks once before it validates."""
     response = HyperviewResponse(VALID_HXML)
     response.writelines(iter(["<!--", "comment", "-->"]))
     assert response.content == (VALID_HXML + "<!--comment-->").encode()
 
 
 @override_settings(HYPERVIEW={"VALIDATION": {"MAX_BYTES": 100}})
-def test_content_iterator_limit_is_bounded_and_preserves_previous_body():
+def test_content_iterator_limit_is_bounded_and_preserves_previous_body() -> None:
+    """The content iterator is read only up to the limit and the old body stays."""
     response = HyperviewResponse(VALID_HXML)
     consumed = []
 
-    def chunks():
+    def chunks() -> Iterator[str]:
         for index in range(1000):
             consumed.append(index)
             yield "x" * 50
@@ -674,7 +781,12 @@ def test_content_iterator_limit_is_bounded_and_preserves_previous_body():
 
 
 @pytest.mark.parametrize("status", [204, 205, 304])
-def test_only_bodyless_statuses_accept_empty_and_reject_nonempty(status):
+def test_only_bodyless_statuses_accept_empty_and_reject_nonempty(status: int) -> None:
+    """Only bodyless statuses accept empty content and reject non-empty content.
+
+    Args:
+        status: Bodyless status code under test.
+    """
     response = HyperviewResponse(status=status)
     assert response.content == b""
     with pytest.raises(TemplateValidationError):
@@ -687,7 +799,14 @@ def test_only_bodyless_statuses_accept_empty_and_reject_nonempty(status):
 @pytest.mark.parametrize(
     "read", [lambda response: response.content, lambda response: list(response), bytes]
 )
-def test_status_body_coherence_is_checked_before_read_or_emission(read):
+def test_status_body_coherence_is_checked_before_read_or_emission(
+    read: Callable[[HyperviewResponse], object],
+) -> None:
+    """Status and body coherence is checked before any read or emission.
+
+    Args:
+        read: Function that reads the response in one particular way.
+    """
     response = HyperviewResponse(VALID_HXML)
     response.status_code = 204
     with pytest.raises(TemplateValidationError):
@@ -704,8 +823,13 @@ def test_status_body_coherence_is_checked_before_read_or_emission(read):
     "response_type", [HyperviewTemplateResponse, HyperviewFragmentTemplateResponse]
 )
 def test_lazy_response_retains_unrendered_state_when_final_validation_fails(
-    response_type,
-):
+    response_type: type[HyperviewTemplateResponse],
+) -> None:
+    """A lazy response keeps its unrendered state when final validation fails.
+
+    Args:
+        response_type: Response class under test.
+    """
     from django.template import engines
 
     with override_settings(TEMPLATES=TEMPLATES):
@@ -728,7 +852,14 @@ def test_lazy_response_retains_unrendered_state_when_final_validation_fails(
 @pytest.mark.parametrize(
     "response_type", [HyperviewTemplateResponse, HyperviewFragmentTemplateResponse]
 )
-def test_lazy_response_callbacks_cannot_install_invalid_hyperview_body(response_type):
+def test_lazy_response_callbacks_cannot_install_invalid_hyperview_body(
+    response_type: type[HyperviewTemplateResponse],
+) -> None:
+    """Lazy response callbacks cannot install an invalid Hyperview body.
+
+    Args:
+        response_type: Response class under test.
+    """
     from django.template import engines
 
     with override_settings(TEMPLATES=TEMPLATES):
@@ -743,11 +874,17 @@ def test_lazy_response_callbacks_cannot_install_invalid_hyperview_body(response_
 
 
 @pytest.mark.parametrize("status", [204, 205, 304])
-def test_lazy_bodyless_response_renders_once_and_rejects_nonempty(status):
+def test_lazy_bodyless_response_renders_once_and_rejects_nonempty(status: int) -> None:
+    """A lazy bodyless response renders once and rejects non-empty content.
+
+    Args:
+        status: Bodyless status code under test.
+    """
+
     class Template:
         calls = 0
 
-        def render(self, context, request):
+        def render(self, context: object, request: object) -> str:
             self.calls += 1
             return ""
 
@@ -763,7 +900,8 @@ def test_lazy_bodyless_response_renders_once_and_rejects_nonempty(status):
     assert invalid.is_rendered is False
 
 
-def test_lazy_callback_replacement_preserves_django_semantics():
+def test_lazy_callback_replacement_preserves_django_semantics() -> None:
+    """A lazy callback that replaces the response keeps Django semantics."""
     from django.http import HttpResponse
     from django.template import engines
 
@@ -780,7 +918,8 @@ def test_lazy_callback_replacement_preserves_django_semantics():
         assert response.render() is response
 
 
-def test_head_request_does_not_bypass_final_validation():
+def test_head_request_does_not_bypass_final_validation() -> None:
+    """A HEAD request does not bypass the final validation."""
     from django.template import engines
 
     with override_settings(TEMPLATES=TEMPLATES):
@@ -791,12 +930,13 @@ def test_head_request_does_not_bypass_final_validation():
             response.render()
 
 
-def test_django_client_head_suppresses_only_after_lazy_document_validation():
+def test_django_client_head_suppresses_only_after_lazy_document_validation() -> None:
+    """The Django client drops a HEAD body only after validating the document."""
     from django.template import engines
     from django.test import Client
     from django.urls import path
 
-    def view(request):
+    def view(request: HttpRequest) -> HttpResponse:
         return HyperviewTemplateResponse(
             request, engines["django"].from_string(VALID_HXML)
         )
@@ -816,8 +956,13 @@ def test_django_client_head_suppresses_only_after_lazy_document_validation():
     "response_type", [HyperviewResponse, HyperviewFragmentResponse]
 )
 def test_eager_head_context_keeps_validated_document_before_transport_suppression(
-    response_type,
-):
+    response_type: type[HyperviewResponse],
+) -> None:
+    """An eager HEAD response is validated before the transport suppresses its body.
+
+    Args:
+        response_type: Response class under test.
+    """
     request = RequestFactory().head("/")
     response = response_type(VALID_HXML, request=request)
     response["Content-Length"] = len(response.content)
@@ -844,7 +989,14 @@ def test_eager_head_context_keeps_validated_document_before_transport_suppressio
 
 
 @pytest.mark.parametrize("http_request", [None, RequestFactory().get("/")])
-def test_empty_200_setter_without_head_context_remains_strict(http_request):
+def test_empty_200_setter_without_head_context_remains_strict(
+    http_request: HttpRequest | None,
+) -> None:
+    """An empty 200 body stays rejected without a HEAD request context.
+
+    Args:
+        http_request: Request passed to the response, or None for no request.
+    """
     response = HyperviewResponse(VALID_HXML, request=http_request)
     with pytest.raises(TemplateValidationError):
         response.content = b""
@@ -852,12 +1004,20 @@ def test_empty_200_setter_without_head_context_remains_strict(http_request):
 
 
 @pytest.mark.parametrize("content", [b"", "<invalid>"])
-def test_head_constructor_must_first_validate_a_nonempty_document(content):
+def test_head_constructor_must_first_validate_a_nonempty_document(
+    content: bytes | str,
+) -> None:
+    """A HEAD constructor must first validate a non-empty document.
+
+    Args:
+        content: Content passed to the constructor of the HEAD response.
+    """
     with pytest.raises(TemplateValidationError):
         HyperviewResponse(content, request=RequestFactory().head("/"))
 
 
-def test_cached_text_cannot_bypass_status_body_coherence():
+def test_cached_text_cannot_bypass_status_body_coherence() -> None:
+    """Cached text cannot bypass the status and body coherence check."""
     response = HyperviewResponse(VALID_HXML)
     assert response.text == VALID_HXML
     response.status_code = 204
@@ -866,7 +1026,12 @@ def test_cached_text_cannot_bypass_status_body_coherence():
 
 
 @pytest.mark.parametrize("mutation", ["charset", "header"])
-def test_response_read_rejects_mutated_non_utf8_metadata(mutation):
+def test_response_read_rejects_mutated_non_utf8_metadata(mutation: str) -> None:
+    """Reading rejects metadata that was mutated away from UTF-8.
+
+    Args:
+        mutation: Metadata that is mutated away from UTF-8, the charset or the header.
+    """
     response = HyperviewResponse(VALID_HXML)
     if mutation == "charset":
         response.charset = "latin1"
@@ -883,15 +1048,21 @@ def test_response_read_rejects_mutated_non_utf8_metadata(mutation):
         iter([VALID_HXML[:10], VALID_HXML[10:].encode()]),
     ],
 )
-def test_eager_response_accepts_bounded_utf8_candidate_forms(content):
+def test_eager_response_accepts_bounded_utf8_candidate_forms(content: object) -> None:
+    """An eager response accepts bounded UTF-8 candidate forms.
+
+    Args:
+        content: Content passed in a supported form such as a memoryview or an iterator.
+    """
     assert HyperviewResponse(content).content == VALID_HXML.encode()
 
 
-def test_iterator_failure_closes_input_and_preserves_committed_bytes():
+def test_iterator_failure_closes_input_and_preserves_committed_bytes() -> None:
+    """A failing iterator is closed and the committed bytes are kept."""
     response = HyperviewResponse(VALID_HXML)
     closed = []
 
-    def chunks():
+    def chunks() -> Iterator[str]:
         try:
             yield VALID_HXML
             raise RuntimeError("producer failure")
@@ -905,14 +1076,22 @@ def test_iterator_failure_closes_input_and_preserves_committed_bytes():
 
 
 @pytest.mark.parametrize("content", ["\ud800", b"\xff", 12])
-def test_invalid_candidate_encoding_or_scalar_preserves_committed_body(content):
+def test_invalid_candidate_encoding_or_scalar_preserves_committed_body(
+    content: object,
+) -> None:
+    """An invalid candidate encoding or scalar keeps the committed body.
+
+    Args:
+        content: Candidate content that is rejected.
+    """
     response = HyperviewResponse(VALID_HXML)
     with pytest.raises(TemplateValidationError):
         response.content = content
     assert response.content == VALID_HXML.encode()
 
 
-def test_multibyte_content_limit_counts_utf8_bytes():
+def test_multibyte_content_limit_counts_utf8_bytes() -> None:
+    """The multibyte content limit counts UTF-8 bytes."""
     response = HyperviewResponse(VALID_HXML)
     candidate = '<text xmlns="https://hyperview.org/hyperview">éé</text>'
     with override_settings(HYPERVIEW={"VALIDATION": {"MAX_BYTES": len(candidate)}}):
@@ -926,15 +1105,30 @@ def test_multibyte_content_limit_counts_utf8_bytes():
     "content_type,charset",
     [(None, "unknown-codec"), ("application/xml; charset=unknown-codec", None)],
 )
-def test_unknown_response_encoding_is_rejected(content_type, charset):
+def test_unknown_response_encoding_is_rejected(
+    content_type: str | None, charset: str | None
+) -> None:
+    """An unknown response encoding is rejected.
+
+    Args:
+        content_type: Content-Type header value, or None to omit it.
+        charset: Charset argument passed to the constructor, or None.
+    """
     with pytest.raises(ValueError, match="UTF-8"):
         HyperviewResponse(VALID_HXML, content_type=content_type, charset=charset)
 
 
 @pytest.mark.parametrize("name", ["utf-8\x00", "\x00", "utf-8\U0000d800"])
 @pytest.mark.parametrize("where", ["argument", "content_type"])
-def test_unlookupable_response_encoding_is_the_same_typed_failure(where, name):
-    """codecs.lookup raises ValueError, not LookupError, for NUL and a surrogate."""
+def test_unlookupable_response_encoding_is_the_same_typed_failure(
+    where: str, name: str
+) -> None:
+    """codecs.lookup raises ValueError, not LookupError, for NUL and a surrogate.
+
+    Args:
+        where: Where the charset is given, as the argument or inside the content type.
+        name: Charset name that codecs cannot look up.
+    """
     options = (
         {"charset": name}
         if where == "argument"
@@ -948,8 +1142,12 @@ def test_unlookupable_response_encoding_is_the_same_typed_failure(where, name):
 
 
 @pytest.mark.parametrize("where", ["argument", "content_type"])
-def test_distinct_charset_names_never_grow_the_codec_cache(where):
-    """A charset is decided from the alias table, not remembered by codecs.lookup."""
+def test_distinct_charset_names_never_grow_the_codec_cache(where: str) -> None:
+    """A charset is decided from the alias table, not remembered by codecs.lookup.
+
+    Args:
+        where: Where the charset is given, as the argument or inside the content type.
+    """
     before = len(encodings._cache)
     unique = uuid.uuid4().hex
 
@@ -967,7 +1165,12 @@ def test_distinct_charset_names_never_grow_the_codec_cache(where):
 
 
 @pytest.mark.parametrize("name", ["UTF-8", "utf8", "U8", "utf_8", "cp65001"])
-def test_every_spelling_of_utf8_is_still_a_valid_response_charset(name):
+def test_every_spelling_of_utf8_is_still_a_valid_response_charset(name: str) -> None:
+    """Every spelling of UTF-8 is still a valid response charset.
+
+    Args:
+        name: Spelling of the UTF-8 charset name.
+    """
     response = HyperviewResponse(
         VALID_HXML, content_type=f"application/xml; charset={name}"
     )
@@ -975,10 +1178,12 @@ def test_every_spelling_of_utf8_is_still_a_valid_response_charset(name):
     assert response.charset == "utf-8"
 
 
-def test_overridden_rendered_content_cannot_bypass_final_validation():
+def test_overridden_rendered_content_cannot_bypass_final_validation() -> None:
+    """An overridden rendered content cannot bypass the final validation."""
+
     class CustomResponse(HyperviewTemplateResponse):
         @property
-        def rendered_content(self):
+        def rendered_content(self) -> str:
             return "<invalid>"
 
     response = CustomResponse(None, "unused.xml")
@@ -987,14 +1192,15 @@ def test_overridden_rendered_content_cannot_bypass_final_validation():
     assert not response.is_rendered
 
 
-def test_django_client_eager_head_validates_then_suppresses_transport():
+def test_django_client_eager_head_validates_then_suppresses_transport() -> None:
+    """The Django client validates an eager HEAD response before it drops the body."""
     from django.test import Client
     from django.urls import path
 
-    def view(request):
+    def view(request: HttpRequest) -> HttpResponse:
         return HyperviewResponse(VALID_HXML, request=request)
 
-    def invalid(request):
+    def invalid(request: HttpRequest) -> HttpResponse:
         return HyperviewResponse("<invalid>", request=request)
 
     with override_settings(ROOT_URLCONF=__name__):
@@ -1023,7 +1229,14 @@ GZIP_HXML = (
         HyperviewFragmentTemplateResponse,
     ],
 )
-def test_django_gzip_middleware_encodes_only_a_validated_representation(response_type):
+def test_django_gzip_middleware_encodes_only_a_validated_representation(
+    response_type: type[HyperviewResponse] | type[HyperviewTemplateResponse],
+) -> None:
+    """Django's gzip middleware encodes only a validated representation.
+
+    Args:
+        response_type: Response class under test.
+    """
     import gzip
 
     from django.middleware.gzip import GZipMiddleware
@@ -1050,7 +1263,8 @@ def test_django_gzip_middleware_encodes_only_a_validated_representation(response
     assert bytes(response).endswith(response.content)
 
 
-def test_gzip_transport_requires_matching_header_at_every_emission_boundary():
+def test_gzip_transport_requires_matching_header_at_every_emission_boundary() -> None:
+    """Gzip transport needs a matching header at every emission boundary."""
     import gzip
 
     response = HyperviewResponse(GZIP_HXML)
@@ -1070,8 +1284,12 @@ def test_gzip_transport_requires_matching_header_at_every_emission_boundary():
 
 
 @pytest.mark.parametrize("encoding", ["br", "zstd", "deflate", "gzip, br"])
-def test_non_gzip_content_encoding_is_reported_as_unsupported(encoding):
-    """The message names the real limit instead of suggesting a transport mismatch."""
+def test_non_gzip_content_encoding_is_reported_as_unsupported(encoding: str) -> None:
+    """The message names the real limit instead of suggesting a transport mismatch.
+
+    Args:
+        encoding: Unsupported Content-Encoding header value.
+    """
     response = HyperviewResponse(VALID_HXML, headers={"Content-Encoding": encoding})
 
     with pytest.raises(TemplateValidationError, match="only gzip") as error:
@@ -1080,7 +1298,8 @@ def test_non_gzip_content_encoding_is_reported_as_unsupported(encoding):
     assert encoding not in str(error.value)
 
 
-def test_gzip_header_without_a_gzip_body_keeps_the_mismatch_message():
+def test_gzip_header_without_a_gzip_body_keeps_the_mismatch_message() -> None:
+    """A gzip header without a gzip body keeps the mismatch message."""
     response = HyperviewResponse(VALID_HXML, headers={"Content-Encoding": "gzip"})
 
     with pytest.raises(TemplateValidationError, match="does not match"):
@@ -1090,7 +1309,12 @@ def test_gzip_header_without_a_gzip_body_keeps_the_mismatch_message():
 @pytest.mark.parametrize(
     "kind", ["different", "truncated", "trailing", "members", "bomb", "corrupt"]
 )
-def test_gzip_candidate_must_be_exact_complete_and_bounded(kind):
+def test_gzip_candidate_must_be_exact_complete_and_bounded(kind: str) -> None:
+    """A gzip candidate must be exact, complete and bounded.
+
+    Args:
+        kind: Way the candidate differs from a valid gzip body.
+    """
     import gzip
 
     encoded = gzip.compress(GZIP_HXML.encode())
@@ -1108,7 +1332,8 @@ def test_gzip_candidate_must_be_exact_complete_and_bounded(kind):
     assert response.content == GZIP_HXML.encode()
 
 
-def test_gzip_constructor_is_not_a_validation_bypass():
+def test_gzip_constructor_is_not_a_validation_bypass() -> None:
+    """The gzip constructor path is not a validation bypass."""
     import gzip
 
     with pytest.raises(TemplateValidationError):
@@ -1118,7 +1343,14 @@ def test_gzip_constructor_is_not_a_validation_bypass():
 
 
 @pytest.mark.parametrize("mutation", ["content", "write", "writelines"])
-def test_document_mutation_after_gzip_requires_header_removal_and_is_atomic(mutation):
+def test_document_mutation_after_gzip_requires_header_removal_and_is_atomic(
+    mutation: str,
+) -> None:
+    """Mutating the document after gzip needs header removal and stays atomic.
+
+    Args:
+        mutation: Way the document is mutated, as content, write or writelines.
+    """
     import gzip
 
     response = HyperviewResponse(GZIP_HXML)
@@ -1144,7 +1376,8 @@ def test_document_mutation_after_gzip_requires_header_removal_and_is_atomic(muta
     assert b"".join(response) == VALID_HXML.encode()
 
 
-def test_lazy_callback_can_gzip_then_head_suppresses_only_transport():
+def test_lazy_callback_can_gzip_then_head_suppresses_only_transport() -> None:
+    """A lazy callback can gzip, and HEAD then suppresses only the transport."""
     import gzip
 
     from django.middleware.gzip import GZipMiddleware
@@ -1171,7 +1404,15 @@ def test_lazy_callback_can_gzip_then_head_suppresses_only_transport():
 
 @pytest.mark.parametrize("status", [204, 205, 304])
 @pytest.mark.parametrize("encoding", ["gzip", "br"])
-def test_bodyless_status_preserves_representation_encoding_metadata(status, encoding):
+def test_bodyless_status_preserves_representation_encoding_metadata(
+    status: int, encoding: str
+) -> None:
+    """A bodyless status keeps the representation encoding metadata.
+
+    Args:
+        status: Bodyless status code under test.
+        encoding: Content-Encoding header value that is kept as metadata.
+    """
     response = HyperviewResponse(
         status=status, headers={"Content-Encoding": encoding, "ETag": '"v1"'}
     )
@@ -1184,7 +1425,12 @@ def test_bodyless_status_preserves_representation_encoding_metadata(status, enco
 
 
 @pytest.mark.parametrize("method", ["get", "head"])
-def test_nonbodyless_response_encoding_must_still_match_transport(method):
+def test_nonbodyless_response_encoding_must_still_match_transport(method: str) -> None:
+    """A non-bodyless response must still match its encoding to the transport.
+
+    Args:
+        method: Lower-case HTTP method the request uses.
+    """
     request = getattr(RequestFactory(), method)("/")
     response = HyperviewResponse(
         VALID_HXML, request=request, headers={"Content-Encoding": "gzip"}

@@ -39,6 +39,7 @@ def _declared_requirements() -> list[str]:
 
 
 def test_locked_versions_satisfy_every_declared_requirement() -> None:
+    """The lock file satisfies every requirement the project declares."""
     lock = tomllib.loads((ROOT / "uv.lock").read_text())
     locked: dict[str, list[str]] = {}
     for package in lock["package"]:
@@ -58,6 +59,7 @@ def test_locked_versions_satisfy_every_declared_requirement() -> None:
 
 
 def test_uv_lock_is_versioned() -> None:
+    """The uv lock file is under version control."""
     assert "uv.lock" not in (ROOT / ".gitignore").read_text().splitlines()
 
 
@@ -88,6 +90,7 @@ def test_classifiers_list_exactly_the_tested_pythons() -> None:
 
 
 def test_classifiers_list_exactly_the_tested_djangos() -> None:
+    """The classifiers list exactly the Django versions that are tested."""
     prefix = "Framework :: Django :: "
     classified = [
         classifier.removeprefix(prefix)
@@ -116,6 +119,7 @@ def test_django_range_spans_exactly_the_tested_minors() -> None:
 
 
 def test_manifest_and_repository_declare_the_mit_license() -> None:
+    """The manifest and the repository both declare the MIT license."""
     license_text = (ROOT / "LICENSE").read_text()
 
     assert METADATA["project"]["license"] == "MIT"
