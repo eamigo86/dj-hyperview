@@ -7,10 +7,12 @@ dependency. You do not need to clone the Hyperview repository or copy its
 example application.
 
 This guide uses the matrix that HyperTodo 1.3.3 runs in CI (typecheck, Jest and
-Expo Doctor). The code below, with the type declaration in step 2, type-checks
-against those exact packages. The install commands were not re-run for this
-revision, and native device acceptance remains pending. It is an example, not a
-compatibility range: HyperTodo updates its own pins independently, so read its
+Expo Doctor). Every step below was run end to end on 2026-11-26 against the
+[quickstart](quickstart.md) project, in the iOS Simulator through both Expo Go
+and a native build: `tsc`, Expo Doctor (all 21 checks), the iOS and Android
+exports and the screen-to-fragment tap all worked. A physical device and the
+Android emulator have not been tried. It is an example, not a compatibility
+range: HyperTodo updates its own pins independently, so read its
 `mobile/package.json` for the versions it uses today. See
 [Hyperview compatibility](hyperview-compatibility.md) for the schema the package
 validates.
@@ -31,10 +33,14 @@ Use Node 22.19.0, Corepack, and a blank TypeScript project:
 nvm install 22.19.0
 nvm use 22.19.0
 corepack enable
-npx create-expo-app@latest hyperview-mobile --template blank-typescript --no-install
+npx create-expo-app@latest hyperview-mobile --template expo-template-blank-typescript@sdk-57 --no-install
 cd hyperview-mobile
 corepack yarn set version classic
 ```
+
+The template is pinned to Expo SDK 57. Without the `@sdk-57` tag,
+`create-expo-app` now creates an SDK 58 project, and the matrix below would leave
+SDK 58 packages behind.
 
 Install the matrix, which includes every peer dependency of Hyperview 0.115.1:
 
@@ -51,12 +57,25 @@ corepack yarn add expo@~57.0.34 hyperview@0.115.1 \
 ```
 
 The blank TypeScript template already provides `@types/react`, which Hyperview
-also lists as a peer. Run Expo Doctor and test on a device before relying on the
-matrix; Yarn does not check native compatibility.
+also lists as a peer. Hyperview ships TypeScript sources that import `lodash` and
+`url-parse`, so add their type packages too:
+
+```console
+corepack yarn add -D @types/lodash@^4.17.20 @types/url-parse@^1.4.11
+```
+
+Yarn does not check native compatibility. Check it with Expo, which should report
+every check passed and up-to-date dependencies:
+
+```console
+npx expo-doctor
+corepack yarn expo install --check
+```
 
 ## 2. Register the entry point
 
-Create `index.ts` and set `package.json` `main` to `index.ts`:
+The template already points `package.json` `main` to `index.ts`. Replace the
+contents of `index.ts` with:
 
 ```typescript
 import "react-native-gesture-handler";
@@ -81,19 +100,22 @@ declare module "@react-native/normalize-colors" {
 
 ## 3. Create the application shell
 
-Configure the backend URL through an Expo public environment variable:
+Create `.env` in the project root and configure the backend URL through an Expo
+public environment variable. This URL is the screen the
+[quickstart](quickstart.md) serves:
 
 ```dotenv
-EXPO_PUBLIC_API_URL=http://127.0.0.1:8000/hv/
+EXPO_PUBLIC_API_URL=http://127.0.0.1:8000/hyperview/home/
 ```
 
-Then create the smallest useful shell:
+Then replace the contents of `App.tsx` with the smallest useful shell. The
+`SafeAreaView` keeps the screen below the status bar, where taps reach it:
 
 ```tsx
 import { NavigationContainer } from "@react-navigation/native";
 import Hyperview from "hyperview";
 import moment from "moment";
-import { SafeAreaProvider } from "react-native-safe-area-context";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 const entrypointUrl = process.env.EXPO_PUBLIC_API_URL;
 
@@ -104,15 +126,17 @@ if (!entrypointUrl) {
 export default function App() {
   return (
     <SafeAreaProvider>
-      <NavigationContainer>
-        <Hyperview
-          entrypointUrl={entrypointUrl}
-          fetch={fetch}
-          formatDate={(date, format) =>
-            date && format ? moment(date).format(format) : undefined
-          }
-        />
-      </NavigationContainer>
+      <SafeAreaView style={{ flex: 1 }}>
+        <NavigationContainer>
+          <Hyperview
+            entrypointUrl={entrypointUrl}
+            fetch={fetch}
+            formatDate={(date, format) =>
+              date && format ? moment(date).format(format) : undefined
+            }
+          />
+        </NavigationContainer>
+      </SafeAreaView>
     </SafeAreaProvider>
   );
 }
@@ -147,11 +171,13 @@ Start Metro from the mobile project:
 corepack yarn expo start --go
 ```
 
-Scan the QR code with the phone camera and open it in Expo Go. JavaScript,
-TypeScript, and server-rendered HXML changes do not require a native rebuild.
+Scan the QR code with the phone camera and open it in Expo Go. On the iOS
+Simulator, `corepack yarn expo start --go --ios` installs Expo Go and opens the
+project without a QR code. JavaScript, TypeScript, and server-rendered HXML
+changes do not require a native rebuild.
 
-Expo Go and Expo CLI must use the same Expo account when the project is signed.
-Check or establish the CLI session with:
+This flow needs no Expo account. If you sign the project, Expo Go and Expo CLI
+must use the same account; check or establish the CLI session with:
 
 ```console
 corepack yarn expo whoami
@@ -162,7 +188,9 @@ For an Expo account created through Google, finish browser authentication with
 **Continue with Google**. Do not enter the Google password in the terminal.
 
 Create a development build only when the application adds native dependencies
-or native configuration not bundled in Expo Go.
+or native configuration not bundled in Expo Go. For the iOS Simulator,
+`corepack yarn expo run:ios` builds and launches one; it needs Xcode and
+CocoaPods.
 
 ## Troubleshoot update responses
 
