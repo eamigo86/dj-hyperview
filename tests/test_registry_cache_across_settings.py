@@ -1,6 +1,6 @@
 """Compiled registries and catalogs outlive a change of the HYPERVIEW setting.
 
-A test suite that enters ``override_settings`` with the same value must not compile
+A test suite that enters override_settings with the same value must not compile
 the schema again, and one that changes the schema settings must still get the
 registry of the new settings.
 """

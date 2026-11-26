@@ -69,9 +69,9 @@ Tools enforce only part of that contract.
   parameters, `*args`, `**kwargs` or return are not annotated. `Any` is allowed,
   because ANN401 is ignored.
 - `tests/test_public_api_quality.py` rejects backticks in the docstring of every
-  module, class and function under `src/dj_hyperview`, nested and private ones
-  included, and requires a docstring on every exported name and on every public
-  member it inherits, including those defined in underscore modules.
+  module, class and function under `src/dj_hyperview`, `tests` and `tools`, nested
+  and private ones included, and requires a docstring on every exported name and
+  on every public member it inherits, including those defined in underscore modules.
 
 No tool checks these, so review checks them by hand:
 
@@ -85,7 +85,7 @@ No tool checks these, so review checks them by hand:
 Tests and tools are exempt from the docstring and annotation rules, and generated
 migrations from the docstring rules, as the Ruff configuration in `pyproject.toml`
 exempts them. Rule C still applies to every docstring in `tests/` and `tools/`
-that exists, although no tool checks it there.
+that exists, and the backtick test checks it there too.
 
 ## Documentation contract
 

@@ -1,9 +1,9 @@
 """A rendered response stays picklable, copyable and cacheable.
 
-Django serializes a response to store it: ``cache_page`` writes it to the cache,
-and ``copy.deepcopy`` and ``pickle`` copy it. The response keeps the private
+Django serializes a response to store it: cache_page writes it to the cache,
+and copy.deepcopy and pickle copy it. The response keeps the private
 validated result for the gzip handoff, so that result must not carry the settings
-snapshot: ``HYPERVIEW["SOURCES"]`` options are read-only mappings that cannot be
+snapshot: HYPERVIEW["SOURCES"] options are read-only mappings that cannot be
 pickled, and they may hold credentials that must not reach a shared cache entry.
 """
 

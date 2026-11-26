@@ -737,7 +737,7 @@ def test_url_syntax_cannot_name_a_different_file_than_the_inspected_one(
     """The compiler rebuilds a path from URL parts; the guard must not trust it.
 
     xmlschema drops an empty query or fragment and folds a first segment like "1:."
-    into a drive, so these locations name the symlink `loaded` for the compiler,
+    into a drive, so these locations name the symlink called loaded for the compiler,
     while the guard would join the literal text onto a benign decoy beside the root.
     """
     outside = tmp_path / "outside.xsd"

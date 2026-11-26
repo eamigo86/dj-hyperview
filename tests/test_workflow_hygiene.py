@@ -61,7 +61,7 @@ def _needs(job: dict) -> list[str]:
 
 
 def _upstream(jobs: dict, name: str) -> set[str]:
-    """Return every job that must finish before `name` may start."""
+    """Return every job that must finish before the job called name may start."""
     found: set[str] = set()
     pending = _needs(jobs[name])
     while pending:

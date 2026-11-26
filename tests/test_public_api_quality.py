@@ -1,9 +1,10 @@
-"""Package docstrings stay free of backticks and cover the whole exported API.
+"""Docstrings stay free of backticks and cover the whole exported API.
 
 Ruff requires the docstrings and their parameter descriptions (rules D1 and
 D417 in pyproject.toml) but has no rule against backticks, and it treats a module
 whose name starts with an underscore as private, so a public member inherited from
-one is checked here too.
+one is checked here too. The backtick rule covers the package, the tests and the
+tools.
 """
 
 import ast
@@ -19,7 +20,8 @@ import pytest
 
 from tests.test_database_app import run_isolated
 
-PACKAGE_ROOT = Path(__file__).parents[1] / "src" / "dj_hyperview"
+REPOSITORY_ROOT = Path(__file__).parents[1]
+PACKAGE_ROOT = REPOSITORY_ROOT / "src" / "dj_hyperview"
 DOCUMENTED = (ast.Module, ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
 
 
@@ -31,12 +33,13 @@ def _backticked(source: str, path: str) -> list[str]:
     ]
 
 
-def test_package_docstrings_contain_no_backticks() -> None:
+@pytest.mark.parametrize("folder", ["src/dj_hyperview", "tests", "tools"])
+def test_docstrings_contain_no_backticks(folder: str) -> None:
     offenders = [
         hit
-        for path in sorted(PACKAGE_ROOT.rglob("*.py"))
+        for path in sorted((REPOSITORY_ROOT / folder).rglob("*.py"))
         for hit in _backticked(
-            path.read_text(encoding="utf-8"), str(path.relative_to(PACKAGE_ROOT))
+            path.read_text(encoding="utf-8"), str(path.relative_to(REPOSITORY_ROOT))
         )
     ]
 

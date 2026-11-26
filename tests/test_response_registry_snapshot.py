@@ -1,6 +1,6 @@
 """One registry snapshot per response, and the commit checks that must remain.
 
-The snapshot (`_get_registry_snapshot`) guards and fingerprints every configured
+The snapshot (_get_registry_snapshot) guards and fingerprints every configured
 extra schema, so each call costs time in proportion to their number and size. A
 response needs it once, to validate. A result that waits before it is committed
 (a gzip handoff after middleware, content assigned later) is still checked against

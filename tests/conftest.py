@@ -19,7 +19,7 @@ def extra_schema(tmp_path):
 def cold_schema_caches() -> Iterator[None]:
     """Start with no compiled registry or catalog and leave none behind.
 
-    Compiled results outlive ``override_settings``, so a test that counts compilations
+    Compiled results outlive override_settings, so a test that counts compilations
     needs an empty cache, and a test that compiles through a patched seam must not
     leave that result for the next test.
     """

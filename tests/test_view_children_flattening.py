@@ -1,10 +1,10 @@
 """The flat child groups keep the content model of the nested upstream groups.
 
-The active ``hyperview.xsd`` overrides ``viewChildren`` and ``nonListViewChildren``
+The active hyperview.xsd overrides viewChildren and nonListViewChildren
 with a hand-written flat copy of the nested upstream groups. Every container that
 uses them must keep the upstream content model, so this compares the compiled models
 as canonical trees. A tree keeps the order and the grouping of a sequence, which a
-list of leaves does not: ``(A|B)*`` and ``A* B*`` have the same leaves.
+list of leaves does not: (A|B)* and A* B* have the same leaves.
 """
 
 import pytest
@@ -63,8 +63,8 @@ def _splices(child, outer):
 def _canonical(particle):
     """Return a tree of the content model: what is matched, how often, in which group.
 
-    An element or wildcard is ``("particle", matches, occurs)`` and a group is
-    ``(model, occurs, children)``. For the bundled groups under test, normalize:
+    An element or wildcard is ("particle", matches, occurs) and a group is
+    (model, occurs, children). For the bundled groups under test, normalize:
 
     - a sequence keeps its children in order, a choice sorts them (a set);
     - a group at 1..1 around a single particle is that particle;

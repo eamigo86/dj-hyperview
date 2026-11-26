@@ -2,7 +2,7 @@
 
 The tests state how pyproject.toml, uv.lock and the supported-version policy
 relate to each other. None repeats a version number, so a dependency bump or a
-`uv lock --upgrade` inside the declared ranges changes no test.
+uv lock --upgrade inside the declared ranges changes no test.
 """
 
 import tomllib

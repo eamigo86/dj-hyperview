@@ -398,10 +398,10 @@ def test_namespaces_leave_scope_with_their_element() -> None:
 
 
 def rebinding_path(declarations: int, *, distinct: int = 8, leaves: int = 1) -> str:
-    """Nest views that rebind the same prefixes until one path holds `declarations`.
+    """Nest views that rebind the same prefixes until one path holds declarations.
 
-    The root also binds the default namespace. Rebinding keeps at most `distinct`
-    bindings in scope, so only the declarations along the path grow.
+    The root also binds the default namespace. Rebinding keeps at most the distinct
+    count of bindings in scope, so only the declarations along the path grow.
     """
     opening: list[str] = []
     remaining = declarations
