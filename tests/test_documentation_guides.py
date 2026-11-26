@@ -121,3 +121,12 @@ def test_configuration_guide_documents_exactly_the_emitted_check_ids() -> None:
 
     assert emitted
     assert documented == emitted
+
+
+def test_mobile_guide_installs_the_hypertodo_matrix() -> None:
+    guide = _read_document("mobile-getting-started.md")
+
+    assert "hyperview@0.115.1" in guide
+    assert "@react-navigation/native-stack@7.21.0" in guide
+    assert "hyperview@0.111.0" not in guide
+    assert "@react-navigation/native@6" not in guide

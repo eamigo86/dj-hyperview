@@ -87,4 +87,4 @@ written against 0.110.0 and is described in
   only. The 0.113.0 to 0.115.1 comparison above does not bundle new files or
   establish a blanket compatibility range for future releases.
 - The reference mobile matrix in [Mobile Getting Started](mobile-getting-started.md)
-  is a tested example, not a compatibility range.
+  is the matrix HyperTodo 1.3.3 runs, a tested example and not a compatibility range.

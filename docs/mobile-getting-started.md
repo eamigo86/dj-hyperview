@@ -6,19 +6,23 @@ Start with a normal blank Expo application and install Hyperview as a
 dependency. You do not need to clone the Hyperview repository or copy its
 example application.
 
-This guide records the reference matrix that the 0.1.0b2 release was written
-against, pairing Hyperview 0.111.0 with the schema the package validates. It is a
-tested example, not a compatibility range, and native device acceptance remains
-pending. HyperTodo updates its own pins independently, so read its
-`mobile/package.json` for the versions it uses today. The earlier 0.1.0b1 release
-used the 0.110.0 contract; see [Hyperview compatibility](hyperview-compatibility.md).
+This guide uses the matrix that HyperTodo 1.3.3 runs in CI (typecheck, Jest and
+Expo Doctor). The code below, with the type declaration in step 2, type-checks against those
+exact packages. The
+install commands were not re-run for this revision, and native device
+acceptance remains pending. It is a tested example, not a compatibility range:
+HyperTodo updates its own pins independently, so read its `mobile/package.json`
+for the versions it uses today. See
+[Hyperview compatibility](hyperview-compatibility.md) for the schema the package
+validates.
 
-| Dependency | Tested version |
+| Dependency | Version |
 | --- | --- |
-| Expo | `~57.0.20` |
-| Hyperview | `0.111.0` |
+| Expo | `~57.0.34` |
+| Hyperview | `0.115.1` |
 | React | `19.2.3` |
 | React Native | `0.86.3` |
+| React Navigation (native, native-stack, stack, bottom-tabs) | `7.5.1`, `7.21.0`, `7.12.1`, `7.21.0` |
 
 ## 1. Create the application
 
@@ -33,23 +37,23 @@ cd hyperview-mobile
 corepack yarn set version classic
 ```
 
-Install the tested runtime matrix:
+Install the matrix, which includes every peer dependency of Hyperview 0.115.1:
 
 ```console
-corepack yarn add expo@~57.0.20 hyperview@0.111.0 \
-  react@19.2.3 react-native@0.86.3 moment@2.30.1 \
+corepack yarn add expo@~57.0.34 hyperview@0.115.1 \
+  react@19.2.3 react-native@0.86.3 moment@2.31.0 \
   @react-native-community/datetimepicker@9.1.0 \
   @react-native-picker/picker@2.11.4 \
-  @react-navigation/native@6.1.6 @react-navigation/stack@6.3.16 \
-  @react-navigation/bottom-tabs@6.5.7 \
+  @react-navigation/native@7.5.1 @react-navigation/native-stack@7.21.0 \
+  @react-navigation/stack@7.12.1 @react-navigation/bottom-tabs@7.21.0 \
   react-native-gesture-handler@~2.32.0 \
   react-native-safe-area-context@~5.7.0 \
   react-native-screens@~4.26.0 react-native-webview@13.16.1
 ```
 
-Hyperview declares peer ranges from an older example stack, so Yarn can report
-peer warnings for this tested Expo matrix. Use Expo Doctor and device testing as
-the compatibility gates.
+The blank TypeScript template already provides `@types/react`, which Hyperview
+also lists as a peer. Run Expo Doctor and test on a device before relying on the
+matrix; Yarn does not check native compatibility.
 
 ## 2. Register the entry point
 
@@ -65,6 +69,16 @@ registerRootComponent(App);
 ```
 
 The gesture-handler import must run before other UI modules.
+
+Hyperview 0.115.1 imports `@react-native/normalize-colors`, which ships no types.
+Add the declaration HyperTodo uses at `types/react-native-normalize-colors.d.ts`,
+or `tsc` fails inside Hyperview's sources:
+
+```typescript
+declare module "@react-native/normalize-colors" {
+  export default function normalizeColor(color: unknown): number | null;
+}
+```
 
 ## 3. Create the application shell
 
@@ -94,6 +108,7 @@ export default function App() {
       <NavigationContainer>
         <Hyperview
           entrypointUrl={entrypointUrl}
+          fetch={fetch}
           formatDate={(date, format) =>
             date && format ? moment(date).format(format) : undefined
           }
