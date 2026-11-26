@@ -73,13 +73,28 @@ Tools enforce only part of that contract.
   and private ones included, and requires a docstring on every exported name and
   on every public member it inherits, including those defined in underscore modules.
 
+- `tests/test_docstring_standards.py` parses `src/dj_hyperview` with the `ast`
+  module, migrations excluded, and rejects:
+  - a missing module docstring, underscore and package init modules included, and a
+    missing docstring on a public name, an exported name or a public member;
+  - an `Args:` section that omits a parameter, `*args` or `**kwargs`, lists a name
+    that is not a parameter, or is absent where parameters exist; a class
+    documents its constructor arguments in the class or `__init__` docstring;
+  - a missing `Returns:` on a function whose annotation is not `None`, `NoReturn`
+    or `Never` (a property, a cached property and a generator are exempt), a
+    missing `Yields:` on a generator, and a missing or incomplete `Raises:` for an
+    exception the function raises by name and does not catch itself;
+  - a heading other than the exact Google spelling, and an empty section;
+  - an unannotated parameter or return on any function, nested ones included;
+  - a type written in `Args:` as `name (type):` or at the start of `Returns:` or
+    `Yields:`.
+
+  It reads source and never imports it. It skips overloads and property setters and
+  deleters, and it cannot follow a bare re-raise or a raise of a variable, so review
+  still reads those by hand.
+
 No tool checks these, so review checks them by hand:
 
-- `Yields:` on a generator, `Returns:` and `Raises:` completeness, and an `Args:`
-  section where parameters call for one;
-- exact section headings, and sections that are empty or misspelled;
-- types repeated inside a docstring;
-- the module docstring of an underscore module;
 - the quality of every description.
 
 Tests and tools are exempt from the docstring and annotation rules, and generated
