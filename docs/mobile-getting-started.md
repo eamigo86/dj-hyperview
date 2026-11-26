@@ -7,12 +7,11 @@ dependency. You do not need to clone the Hyperview repository or copy its
 example application.
 
 This guide uses the matrix that HyperTodo 1.3.3 runs in CI (typecheck, Jest and
-Expo Doctor). The code below, with the type declaration in step 2, type-checks against those
-exact packages. The
-install commands were not re-run for this revision, and native device
-acceptance remains pending. It is a tested example, not a compatibility range:
-HyperTodo updates its own pins independently, so read its `mobile/package.json`
-for the versions it uses today. See
+Expo Doctor). The code below, with the type declaration in step 2, type-checks
+against those exact packages. The install commands were not re-run for this
+revision, and native device acceptance remains pending. It is an example, not a
+compatibility range: HyperTodo updates its own pins independently, so read its
+`mobile/package.json` for the versions it uses today. See
 [Hyperview compatibility](hyperview-compatibility.md) for the schema the package
 validates.
 
