@@ -94,9 +94,7 @@ select = ["E", "F", "I", "UP", "B", "DJ", "D1", "D417", "ANN"]
 ignore = ["ANN401"]
 
 [tool.ruff.lint.per-file-ignores]
-# Documentation rules apply to the shipped package only, and migrations are generated.
-# Annotation rules skip tests and tools.
-"tests/**" = ["D", "ANN"]
+# Documentation and annotation rules skip tools, and migrations are generated.
 "tools/**" = ["D", "ANN"]
 "**/migrations/*.py" = ["D"]
 

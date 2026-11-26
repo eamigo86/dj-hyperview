@@ -33,7 +33,7 @@ from pathlib import Path
 import pytest
 
 REPOSITORY_ROOT = Path(__file__).parents[1]
-SCOPE = ("src/dj_hyperview",)
+SCOPE = ("src/dj_hyperview", "tests")
 SKIPPED_PARTS = frozenset({"migrations", "__pycache__"})
 
 Finding = tuple[int, str, str]

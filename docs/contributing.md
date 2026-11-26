@@ -65,7 +65,7 @@ Tools enforce only part of that contract.
   `**kwargs` included, missing from an `Args` section, and so catches an empty
   `Args` section on a function that has parameters. It checks only a docstring that
   already has an `Args` section, so it never asks for one.
-- `ruff check` (ANN) rejects a function in `src/`, public or private, whose
+- `ruff check` (ANN) rejects a function in `src/` or `tests/`, public or private, whose
   parameters, `*args`, `**kwargs` or return are not annotated. `Any` is allowed,
   because ANN401 is ignored.
 - `tests/test_public_api_quality.py` rejects backticks in the docstring of every
@@ -73,8 +73,8 @@ Tools enforce only part of that contract.
   and private ones included, and requires a docstring on every exported name and
   on every public member it inherits, including those defined in underscore modules.
 
-- `tests/test_docstring_standards.py` parses `src/dj_hyperview` with the `ast`
-  module, migrations excluded, and rejects:
+- `tests/test_docstring_standards.py` parses `src/dj_hyperview` and `tests` with the
+  `ast` module, migrations excluded, and rejects:
   - a missing module docstring, underscore and package init modules included, and a
     missing docstring on a public name, an exported name or a public member;
   - an `Args:` section that omits a parameter, `*args` or `**kwargs`, lists a name
@@ -83,7 +83,8 @@ Tools enforce only part of that contract.
   - a missing `Returns:` on a function whose annotation is not `None`, `NoReturn`
     or `Never` (a property, a cached property and a generator are exempt), a
     missing `Yields:` on a generator, and a missing or incomplete `Raises:` for an
-    exception the function raises by name and does not catch itself;
+    exception the function raises by name and does not catch itself (a `try`
+    handler, `pytest.raises`, `assertRaises` or `contextlib.suppress` catches);
   - a heading other than the exact Google spelling, and an empty section;
   - an unannotated parameter or return on any function, nested ones included;
   - a type written in `Args:` as `name (type):` or at the start of `Returns:` or
@@ -97,10 +98,11 @@ No tool checks these, so review checks them by hand:
 
 - the quality of every description.
 
-Tests and tools are exempt from the docstring and annotation rules, and generated
-migrations from the docstring rules, as the Ruff configuration in `pyproject.toml`
-exempts them. Rule C still applies to every docstring in `tests/` and `tools/`
-that exists, and the backtick test checks it there too.
+Tests follow all three rules, and Ruff and the tests above check them there.
+Tools are exempt from the docstring and annotation rules, and generated migrations
+from the docstring rules, as the Ruff configuration in `pyproject.toml` exempts
+them. Rule C still applies to every docstring in `tools/`, and the backtick test
+checks it there too.
 
 ## Documentation contract
 
