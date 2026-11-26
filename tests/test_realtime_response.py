@@ -493,7 +493,7 @@ def test_normal_asgi_completion_releases_and_detaches_request_owner(
 
 
 def test_wrapper_non_http_passthrough_and_scope_refuses_late_registration() -> None:
-    """The wrapper passes non-HTTP scopes through, and the scope refuses late registration."""
+    """The wrapper passes non-HTTP scopes through and the scope refuses late use."""
     from dj_hyperview.realtime import realtime_asgi
 
     async def run() -> None:
